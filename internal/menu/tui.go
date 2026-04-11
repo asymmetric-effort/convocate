@@ -21,15 +21,19 @@ var (
 )
 
 type tui struct {
-	screen   tcell.Screen
-	sessions []session.Metadata
-	cursor   int
-	offset   int
+	screen       tcell.Screen
+	sessions     []session.Metadata
+	cursor       int
+	offset       int
+	tickInterval time.Duration
 }
+
+// newScreenFunc creates a new tcell.Screen. Override in tests.
+var newScreenFunc = tcell.NewScreen
 
 // Display renders the TUI session menu and returns the user's selection.
 func Display(sessions []session.Metadata) (Selection, error) {
-	screen, err := tcell.NewScreen()
+	screen, err := newScreenFunc()
 	if err != nil {
 		return Selection{}, fmt.Errorf("failed to create screen: %w", err)
 	}
@@ -43,14 +47,19 @@ func Display(sessions []session.Metadata) (Selection, error) {
 
 // DisplayWithScreen renders the TUI on a provided screen (for testing).
 func DisplayWithScreen(sessions []session.Metadata, screen tcell.Screen) (Selection, error) {
+	return displayWithOptions(sessions, screen, 1*time.Second)
+}
+
+func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickInterval time.Duration) (Selection, error) {
 	t := &tui{
-		screen:   screen,
-		sessions: sessions,
+		screen:       screen,
+		sessions:     sessions,
+		tickInterval: tickInterval,
 	}
 
-	// Tick every second to keep the clock updated
+	// Tick periodically to keep the clock updated
 	go func() {
-		ticker := time.NewTicker(1 * time.Second)
+		ticker := time.NewTicker(t.tickInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			screen.PostEvent(tcell.NewEventInterrupt(nil))

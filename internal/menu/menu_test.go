@@ -2,12 +2,24 @@ package menu
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/asymmetric-effort/claude-shell/internal/session"
 )
+
+// errReader is an io.Reader that always returns an error.
+type errReader struct{}
+
+func (e *errReader) Read([]byte) (int, error) {
+	return 0, errors.New("read error")
+}
+
+// Ensure errReader implements io.Reader.
+var _ io.Reader = (*errReader)(nil)
 
 func testSessions() []session.Metadata {
 	return []session.Metadata{
@@ -26,236 +38,90 @@ func testSessions() []session.Metadata {
 	}
 }
 
-func TestDisplay_NewSession(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("c\n")
-	writer := &bytes.Buffer{}
+// --- parseSelection tests ---
 
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.Action != ActionNewSession {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionNewSession)
-	}
-}
-
-func TestDisplay_NewSessionUppercase(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("C\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.Action != ActionNewSession {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionNewSession)
+func TestParseSelection_Create(t *testing.T) {
+	for _, input := range []string{"c", "C"} {
+		sel, err := parseSelection(input, testSessions())
+		if err != nil {
+			t.Fatalf("parseSelection(%q) failed: %v", input, err)
+		}
+		if sel.Action != ActionNewSession {
+			t.Errorf("parseSelection(%q).Action = %q, want %q", input, sel.Action, ActionNewSession)
+		}
 	}
 }
 
-func TestDisplay_DefaultSelection(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.Action != ActionNewSession {
-		t.Errorf("default should be new session, got %q", sel.Action)
+func TestParseSelection_Delete(t *testing.T) {
+	for _, input := range []string{"d", "D"} {
+		sel, err := parseSelection(input, testSessions())
+		if err != nil {
+			t.Fatalf("parseSelection(%q) failed: %v", input, err)
+		}
+		if sel.Action != ActionDeleteSession {
+			t.Errorf("parseSelection(%q).Action = %q, want %q", input, sel.Action, ActionDeleteSession)
+		}
 	}
 }
 
-func TestDisplay_ResumeSession(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("1\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.SessionID != "aaaaaaaa-1111-1111-1111-111111111111" {
-		t.Errorf("SessionID = %q, want first session UUID", sel.SessionID)
+func TestParseSelection_Reload(t *testing.T) {
+	for _, input := range []string{"r", "R"} {
+		sel, err := parseSelection(input, testSessions())
+		if err != nil {
+			t.Fatalf("parseSelection(%q) failed: %v", input, err)
+		}
+		if sel.Action != ActionReload {
+			t.Errorf("parseSelection(%q).Action = %q, want %q", input, sel.Action, ActionReload)
+		}
 	}
 }
 
-func TestDisplay_ResumeSecondSession(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("2\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.SessionID != "bbbbbbbb-2222-2222-2222-222222222222" {
-		t.Errorf("SessionID = %q, want second session UUID", sel.SessionID)
+func TestParseSelection_Quit(t *testing.T) {
+	for _, input := range []string{"q", "Q"} {
+		sel, err := parseSelection(input, testSessions())
+		if err != nil {
+			t.Fatalf("parseSelection(%q) failed: %v", input, err)
+		}
+		if sel.Action != ActionQuit {
+			t.Errorf("parseSelection(%q).Action = %q, want %q", input, sel.Action, ActionQuit)
+		}
 	}
 }
 
-func TestDisplay_DeleteAction(t *testing.T) {
+func TestParseSelection_SessionByNumber(t *testing.T) {
 	sessions := testSessions()
-	reader := strings.NewReader("d\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
+	sel, err := parseSelection("1", sessions)
 	if err != nil {
-		t.Fatalf("Display failed: %v", err)
+		t.Fatalf("parseSelection(1) failed: %v", err)
 	}
-	if sel.Action != ActionDeleteSession {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionDeleteSession)
+	if sel.SessionID != sessions[0].UUID {
+		t.Errorf("SessionID = %q, want %q", sel.SessionID, sessions[0].UUID)
+	}
+
+	sel, err = parseSelection("2", sessions)
+	if err != nil {
+		t.Fatalf("parseSelection(2) failed: %v", err)
+	}
+	if sel.SessionID != sessions[1].UUID {
+		t.Errorf("SessionID = %q, want %q", sel.SessionID, sessions[1].UUID)
 	}
 }
 
-func TestDisplay_DeleteUppercase(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("D\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.Action != ActionDeleteSession {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionDeleteSession)
-	}
-}
-
-func TestDisplay_ReloadAction(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("r\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.Action != ActionReload {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionReload)
-	}
-}
-
-func TestDisplay_ReloadUppercase(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("R\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.Action != ActionReload {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionReload)
-	}
-}
-
-func TestDisplay_QuitAction(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("q\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.Action != ActionQuit {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
-	}
-}
-
-func TestDisplay_QuitUppercase(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("Q\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(sessions, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.Action != ActionQuit {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
-	}
-}
-
-func TestDisplay_InvalidSelection(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("99\n")
-	writer := &bytes.Buffer{}
-
-	_, err := Display(sessions, reader, writer)
+func TestParseSelection_InvalidNumber(t *testing.T) {
+	_, err := parseSelection("99", testSessions())
 	if err == nil {
-		t.Error("expected error for invalid selection, got nil")
+		t.Error("expected error for out-of-range selection")
 	}
 }
 
-func TestDisplay_NonNumericInput(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("xyz\n")
-	writer := &bytes.Buffer{}
-
-	_, err := Display(sessions, reader, writer)
+func TestParseSelection_InvalidText(t *testing.T) {
+	_, err := parseSelection("xyz", testSessions())
 	if err == nil {
-		t.Error("expected error for non-numeric input, got nil")
+		t.Error("expected error for non-numeric input")
 	}
 }
 
-func TestDisplay_NoInput(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("")
-	writer := &bytes.Buffer{}
-
-	_, err := Display(sessions, reader, writer)
-	if err == nil {
-		t.Error("expected error for no input, got nil")
-	}
-}
-
-func TestDisplay_EmptySessions(t *testing.T) {
-	reader := strings.NewReader("c\n")
-	writer := &bytes.Buffer{}
-
-	sel, err := Display(nil, reader, writer)
-	if err != nil {
-		t.Fatalf("Display failed: %v", err)
-	}
-	if sel.Action != ActionNewSession {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionNewSession)
-	}
-}
-
-func TestDisplay_MenuOutput(t *testing.T) {
-	sessions := testSessions()
-	reader := strings.NewReader("c\n")
-	writer := &bytes.Buffer{}
-
-	_, _ = Display(sessions, reader, writer)
-
-	output := writer.String()
-	if !strings.Contains(output, "Session Manager") {
-		t.Error("menu output missing header")
-	}
-	if !strings.Contains(output, "Create a session") {
-		t.Error("menu output missing create option")
-	}
-	if !strings.Contains(output, "first-session") {
-		t.Error("menu output missing first session")
-	}
-	if !strings.Contains(output, "second-session") {
-		t.Error("menu output missing second session")
-	}
-	if !strings.Contains(output, "Delete") {
-		t.Error("menu output missing delete option")
-	}
-	if !strings.Contains(output, "Reload") {
-		t.Error("menu output missing reload option")
-	}
-	if !strings.Contains(output, "Quit") {
-		t.Error("menu output missing quit option")
-	}
-}
+// --- Prompt tests ---
 
 func TestPromptSessionName_Success(t *testing.T) {
 	reader := strings.NewReader("my-session\n")
@@ -405,6 +271,45 @@ func TestConfirmDelete_DefaultNo(t *testing.T) {
 		t.Error("expected confirmed=false for empty input (default N)")
 	}
 }
+
+// --- Scanner error path tests ---
+
+func TestPromptSessionName_ReaderError(t *testing.T) {
+	writer := &bytes.Buffer{}
+	_, err := PromptSessionName(&errReader{}, writer)
+	if err == nil {
+		t.Error("expected error from reader error")
+	}
+	if !strings.Contains(err.Error(), "failed to read input") {
+		t.Errorf("error = %q, want 'failed to read input'", err.Error())
+	}
+}
+
+func TestPromptDeleteSession_ReaderError(t *testing.T) {
+	writer := &bytes.Buffer{}
+	_, err := PromptDeleteSession(testSessions(), &errReader{}, writer)
+	if err == nil {
+		t.Error("expected error from reader error")
+	}
+	if !strings.Contains(err.Error(), "failed to read input") {
+		t.Errorf("error = %q, want 'failed to read input'", err.Error())
+	}
+}
+
+func TestConfirmDelete_NoInput(t *testing.T) {
+	reader := strings.NewReader("")
+	writer := &bytes.Buffer{}
+
+	confirmed, err := ConfirmDelete("test", "aaaaaaaa-1111-1111-1111-111111111111", reader, writer)
+	if err != nil {
+		t.Fatalf("ConfirmDelete failed: %v", err)
+	}
+	if confirmed {
+		t.Error("expected confirmed=false for no input (EOF)")
+	}
+}
+
+// --- truncate tests ---
 
 func TestTruncate(t *testing.T) {
 	tests := []struct {
