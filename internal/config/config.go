@@ -38,6 +38,9 @@ const (
 	// ClaudeSharedDir is the mount point for shared claude config inside the container.
 	ClaudeSharedDir = ".claude-shared"
 
+	// ClaudeShellBinaryPath is the installed path for the claude-shell binary.
+	ClaudeShellBinaryPath = "/usr/local/bin/claude-shell"
+
 	// DockerSocket is the path to the Docker socket.
 	DockerSocket = "/var/run/docker.sock"
 

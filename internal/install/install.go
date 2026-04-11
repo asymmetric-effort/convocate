@@ -2,13 +2,16 @@
 package install
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/asymmetric-effort/claude-shell/internal/assets"
 	"github.com/asymmetric-effort/claude-shell/internal/config"
@@ -54,7 +57,9 @@ func (inst *Installer) Run() error {
 		{"Creating claude user", inst.createUser},
 		{"Setting up skeleton directory", inst.setupSkel},
 		{"Checking claude CLI", inst.checkClaudeCLI},
+		{"Installing claude-shell binary", inst.installBinary},
 		{"Building Docker image", inst.buildImage},
+		{"Configuring login shell", inst.configureLoginShell},
 	}
 
 	for _, step := range steps {
@@ -172,6 +177,119 @@ func (inst *Installer) buildImage() error {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to build Docker image: %w", err)
+	}
+
+	return nil
+}
+
+func (inst *Installer) installBinary() error {
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to determine own executable path: %w", err)
+	}
+	self, err = filepath.EvalSymlinks(self)
+	if err != nil {
+		return fmt.Errorf("failed to resolve executable symlink: %w", err)
+	}
+
+	dest := config.ClaudeShellBinaryPath
+
+	// Skip if we're already running from the install location.
+	if self == dest {
+		fmt.Printf("[install]   Already installed at %s\n", dest)
+		return nil
+	}
+
+	if err := copyBinary(self, dest); err != nil {
+		return err
+	}
+
+	fmt.Printf("[install]   Installed %s\n", dest)
+	return nil
+}
+
+// copyBinary copies src to dest atomically via a temporary file, preserving 0755 permissions.
+func copyBinary(src, dest string) error {
+	sf, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source binary: %w", err)
+	}
+	defer sf.Close()
+
+	tmp := dest + ".tmp"
+	df, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create destination binary: %w", err)
+	}
+	defer func() {
+		df.Close()
+		os.Remove(tmp) // clean up on failure; no-op after rename
+	}()
+
+	if _, err := io.Copy(df, sf); err != nil {
+		return fmt.Errorf("failed to copy binary: %w", err)
+	}
+	if err := df.Close(); err != nil {
+		return fmt.Errorf("failed to close destination binary: %w", err)
+	}
+
+	if err := os.Rename(tmp, dest); err != nil {
+		return fmt.Errorf("failed to install binary: %w", err)
+	}
+
+	return nil
+}
+
+func (inst *Installer) configureLoginShell() error {
+	shellPath := config.ClaudeShellBinaryPath
+
+	// Ensure the binary exists at the expected path.
+	if _, err := os.Stat(shellPath); os.IsNotExist(err) {
+		return fmt.Errorf("claude-shell binary not found at %s", shellPath)
+	}
+
+	// Add to /etc/shells if not already present.
+	if err := ensureInEtcShells("/etc/shells", shellPath); err != nil {
+		return fmt.Errorf("failed to update /etc/shells: %w", err)
+	}
+
+	// Set the login shell for the claude user.
+	cmd := inst.execFn("usermod", "--shell", shellPath, config.ClaudeUser)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to set login shell for %q: %w", config.ClaudeUser, err)
+	}
+
+	fmt.Printf("[install]   Login shell set to %s for user %q\n", shellPath, config.ClaudeUser)
+	return nil
+}
+
+// ensureInEtcShells adds shellPath to the given shells file if it's not already listed.
+func ensureInEtcShells(shellsFile, shellPath string) error {
+	f, err := os.Open(shellsFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if strings.TrimSpace(scanner.Text()) == shellPath {
+			return nil // already present
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	// Append the shell path.
+	af, err := os.OpenFile(shellsFile, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer af.Close()
+
+	if _, err := fmt.Fprintf(af, "%s\n", shellPath); err != nil {
+		return err
 	}
 
 	return nil
