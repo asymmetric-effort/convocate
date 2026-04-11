@@ -17,7 +17,6 @@ Thank you for your interest in contributing to claude-shell.
 
 - Go 1.26+
 - Docker
-- golangci-lint
 - yamllint
 - jsonlint (via npm: `npm install -g jsonlint`)
 
