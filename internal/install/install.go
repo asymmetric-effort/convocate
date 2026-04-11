@@ -10,7 +10,9 @@ import (
 	"runtime"
 	"strconv"
 
+	"github.com/asymmetric-effort/claude-shell/internal/assets"
 	"github.com/asymmetric-effort/claude-shell/internal/config"
+	"github.com/asymmetric-effort/claude-shell/internal/diskspace"
 	"github.com/asymmetric-effort/claude-shell/internal/skel"
 )
 
@@ -134,15 +136,37 @@ func (inst *Installer) checkClaudeCLI() error {
 }
 
 func (inst *Installer) buildImage() error {
-	dockerfilePath := inst.findDockerfile()
-	if dockerfilePath == "" {
-		return fmt.Errorf("Dockerfile not found; ensure it exists in the project directory")
+	// Write embedded assets to a temporary build context directory.
+	buildCtx, err := os.MkdirTemp("", "claude-shell-build-*")
+	if err != nil {
+		return fmt.Errorf("failed to create build context: %w", err)
+	}
+	defer os.RemoveAll(buildCtx)
+
+	dockerfile, err := assets.Dockerfile()
+	if err != nil {
+		return fmt.Errorf("failed to extract embedded Dockerfile: %w", err)
+	}
+	entrypoint, err := assets.Entrypoint()
+	if err != nil {
+		return fmt.Errorf("failed to extract embedded entrypoint.sh: %w", err)
+	}
+
+	totalSize := int64(len(dockerfile) + len(entrypoint))
+	if err := diskspace.CheckForFile(buildCtx, totalSize); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(filepath.Join(buildCtx, "Dockerfile"), dockerfile, 0644); err != nil {
+		return fmt.Errorf("failed to write Dockerfile: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(buildCtx, "entrypoint.sh"), entrypoint, 0755); err != nil {
+		return fmt.Errorf("failed to write entrypoint.sh: %w", err)
 	}
 
 	cmd := inst.execFn("docker", "build",
 		"-t", config.ContainerImage(),
-		"-f", dockerfilePath,
-		filepath.Dir(dockerfilePath),
+		buildCtx,
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -151,27 +175,6 @@ func (inst *Installer) buildImage() error {
 	}
 
 	return nil
-}
-
-func (inst *Installer) findDockerfile() string {
-	// Check next to the binary
-	execPath, err := os.Executable()
-	if err == nil {
-		candidate := filepath.Join(filepath.Dir(execPath), "Dockerfile")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-
-	// Check current working directory
-	if cwd, err := os.Getwd(); err == nil {
-		candidate := filepath.Join(cwd, "Dockerfile")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-
-	return ""
 }
 
 func chownRecursive(path string, uid, gid int) error {

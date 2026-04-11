@@ -32,17 +32,10 @@ func TestRun_AsRoot(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("test requires root")
 	}
-	// Run with mock exec; it will fail at buildImage because no Dockerfile in cwd
-	origDir, _ := os.Getwd()
-	tmpDir := t.TempDir()
-	_ = os.Chdir(tmpDir)
-	defer func() { _ = os.Chdir(origDir) }()
-
 	inst := NewWithExec(mockExecSuccess)
 	err := inst.Run()
-	// Will fail at buildImage step (no Dockerfile) - that's expected
-	if err == nil {
-		t.Log("Run completed successfully (unexpected but ok)")
+	if err != nil {
+		t.Logf("Run error (may be expected if claude user missing): %v", err)
 	}
 }
 
@@ -110,92 +103,16 @@ func TestSetupSkel(t *testing.T) {
 	}
 }
 
-func TestFindDockerfile_NotFound(t *testing.T) {
+func TestBuildImage_Success(t *testing.T) {
 	inst := NewWithExec(mockExecSuccess)
-
-	origDir, _ := os.Getwd()
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	path := inst.findDockerfile()
-	if path != "" {
-		t.Errorf("expected empty path when no Dockerfile exists, got %q", path)
-	}
-}
-
-func TestFindDockerfile_InCwd(t *testing.T) {
-	inst := NewWithExec(mockExecSuccess)
-
-	origDir, _ := os.Getwd()
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	if err := os.WriteFile("Dockerfile", []byte("FROM ubuntu:24.04"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	path := inst.findDockerfile()
-	if path == "" {
-		t.Error("expected to find Dockerfile in cwd")
-	}
-}
-
-func TestBuildImage_NoDockerfile(t *testing.T) {
-	inst := NewWithExec(mockExecSuccess)
-
-	origDir, _ := os.Getwd()
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	err := inst.buildImage()
-	if err == nil {
-		t.Error("expected error when Dockerfile not found")
-	}
-}
-
-func TestBuildImage_WithDockerfile(t *testing.T) {
-	inst := NewWithExec(mockExecSuccess)
-
-	origDir, _ := os.Getwd()
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	if err := os.WriteFile("Dockerfile", []byte("FROM ubuntu:24.04"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	err := inst.buildImage()
 	if err != nil {
-		t.Errorf("buildImage failed with Dockerfile present: %v", err)
+		t.Errorf("buildImage failed: %v", err)
 	}
 }
 
 func TestBuildImage_DockerFails(t *testing.T) {
 	inst := NewWithExec(mockExecFailure)
-
-	origDir, _ := os.Getwd()
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	if err := os.WriteFile("Dockerfile", []byte("FROM ubuntu:24.04"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
 	err := inst.buildImage()
 	if err == nil {
 		t.Error("expected error when docker build fails")
