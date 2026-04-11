@@ -69,18 +69,28 @@ jobs:
           name: coverage
           path: coverage.out
 
-      - name: Generate coverage badge
+      - name: Update coverage badge
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: schneegans/dynamic-badges-action@v1.7.0
-        with:
-          auth: ${{ secrets.GIST_TOKEN }}
-          gistID: claude-shell-coverage
-          filename: coverage.json
-          label: coverage
-          message: ${{ steps.coverage.outputs.coverage }}
-          valColorRange: ${{ steps.coverage.outputs.coverage }}
-          minColorRange: 50
-          maxColorRange: 100
+        run: |
+          COVERAGE="${{ steps.coverage.outputs.coverage }}"
+          PCT="${COVERAGE%%%*}"
+          if (( $(echo "$PCT >= 90" | bc -l) )); then COLOR="brightgreen"
+          elif (( $(echo "$PCT >= 80" | bc -l) )); then COLOR="green"
+          elif (( $(echo "$PCT >= 70" | bc -l) )); then COLOR="yellowgreen"
+          elif (( $(echo "$PCT >= 60" | bc -l) )); then COLOR="yellow"
+          else COLOR="red"; fi
+          mkdir -p .badges
+          printf '{"schemaVersion":1,"label":"coverage",' > .badges/coverage.json
+          printf '"message":"%s","color":"%s"}\n' "${COVERAGE}" "${COLOR}" >> .badges/coverage.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git stash --include-untracked
+          git fetch origin badges 2>/dev/null && git checkout badges || git checkout --orphan badges
+          git rm -rf . 2>/dev/null || true
+          git checkout stash -- .badges/coverage.json
+          git add .badges/coverage.json
+          git diff --cached --quiet || git commit -m "Update coverage badge [skip ci]"
+          git push origin badges
 
   build:
     name: Build
