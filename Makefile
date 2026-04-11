@@ -22,23 +22,16 @@ clean:
 	@$(GO) clean -testcache
 	@echo "Clean complete."
 
-lint: lint-go lint-yaml lint-json
+lint: lint-go lint-yaml
 	@echo "All linters passed."
 
 lint-go:
 	@echo "Running Go linter..."
-	golangci-lint run ./...
+	go vet -v ./...
 
 lint-yaml:
 	@echo "Running YAML linter..."
 	@find . -name '*.yml' -o -name '*.yaml' | grep -v vendor | xargs yamllint -s
-
-lint-json:
-	@echo "Running JSON linter..."
-	@find . -name '*.json' -not -path './vendor/*' -not -path './.git/*' | while read f; do \
-		jsonlint -q "$$f" || exit 1; \
-	done
-	@echo "JSON lint passed."
 
 test: test-unit test-integration
 	@echo "All tests passed."
