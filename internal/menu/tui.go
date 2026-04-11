@@ -28,17 +28,23 @@ type tui struct {
 	tickInterval time.Duration
 }
 
-// newScreenFunc creates a new tcell.Screen. Override in tests.
-var newScreenFunc = tcell.NewScreen
+// screenFactory creates and initializes a tcell.Screen. Override in tests.
+var screenFactory func() (tcell.Screen, error) = func() (tcell.Screen, error) {
+	screen, err := tcell.NewScreen()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create screen: %w", err)
+	}
+	if err := screen.Init(); err != nil {
+		return nil, fmt.Errorf("failed to init screen: %w", err)
+	}
+	return screen, nil
+}
 
 // Display renders the TUI session menu and returns the user's selection.
 func Display(sessions []session.Metadata) (Selection, error) {
-	screen, err := newScreenFunc()
+	screen, err := screenFactory()
 	if err != nil {
-		return Selection{}, fmt.Errorf("failed to create screen: %w", err)
-	}
-	if err := screen.Init(); err != nil {
-		return Selection{}, fmt.Errorf("failed to init screen: %w", err)
+		return Selection{}, err
 	}
 	defer screen.Fini()
 
@@ -51,6 +57,9 @@ func DisplayWithScreen(sessions []session.Metadata, screen tcell.Screen) (Select
 }
 
 func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickInterval time.Duration) (Selection, error) {
+	done := make(chan struct{})
+	defer close(done)
+
 	t := &tui{
 		screen:       screen,
 		sessions:     sessions,
@@ -61,8 +70,13 @@ func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickIn
 	go func() {
 		ticker := time.NewTicker(t.tickInterval)
 		defer ticker.Stop()
-		for range ticker.C {
-			screen.PostEvent(tcell.NewEventInterrupt(nil))
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				screen.PostEvent(tcell.NewEventInterrupt(nil))
+			}
 		}
 	}()
 

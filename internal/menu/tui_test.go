@@ -11,19 +11,6 @@ import (
 	"github.com/asymmetric-effort/claude-shell/internal/session"
 )
 
-// failInitScreen wraps a simulation screen but makes Init() fail.
-type failInitScreen struct {
-	tcell.Screen
-}
-
-func newFailInitScreen() *failInitScreen {
-	return &failInitScreen{Screen: tcell.NewSimulationScreen("")}
-}
-
-func (f *failInitScreen) Init() error {
-	return errors.New("init failed")
-}
-
 const (
 	testScreenWidth  = 100
 	testScreenHeight = 30
@@ -71,55 +58,39 @@ func getScreenText(screen tcell.SimulationScreen, row, width int) string {
 
 // --- Display function tests ---
 
-func TestDisplay_ScreenCreateError(t *testing.T) {
-	orig := newScreenFunc
-	defer func() { newScreenFunc = orig }()
+func TestDisplay_ScreenFactoryError(t *testing.T) {
+	orig := screenFactory
+	defer func() { screenFactory = orig }()
 
-	newScreenFunc = func() (tcell.Screen, error) {
+	screenFactory = func() (tcell.Screen, error) {
 		return nil, errors.New("no terminal")
 	}
 
 	_, err := Display(testSessions())
 	if err == nil {
-		t.Error("expected error when screen creation fails")
+		t.Error("expected error when screen factory fails")
 	}
-	if !strings.Contains(err.Error(), "failed to create screen") {
-		t.Errorf("error = %q, want 'failed to create screen'", err.Error())
-	}
-}
-
-func TestDisplay_ScreenInitError(t *testing.T) {
-	orig := newScreenFunc
-	defer func() { newScreenFunc = orig }()
-
-	newScreenFunc = func() (tcell.Screen, error) {
-		return newFailInitScreen(), nil
-	}
-
-	_, err := Display(testSessions())
-	if err == nil {
-		t.Error("expected error when screen init fails")
-	}
-	if !strings.Contains(err.Error(), "failed to init screen") {
-		t.Errorf("error = %q, want 'failed to init screen'", err.Error())
+	if !strings.Contains(err.Error(), "no terminal") {
+		t.Errorf("error = %q, want 'no terminal'", err.Error())
 	}
 }
 
 func TestDisplay_FullPath(t *testing.T) {
-	orig := newScreenFunc
-	defer func() { newScreenFunc = orig }()
+	orig := screenFactory
+	defer func() { screenFactory = orig }()
 
-	var simScreen tcell.SimulationScreen
-	newScreenFunc = func() (tcell.Screen, error) {
-		simScreen = tcell.NewSimulationScreen("")
-		return simScreen, nil
+	screenCh := make(chan tcell.SimulationScreen, 1)
+	screenFactory = func() (tcell.Screen, error) {
+		s := tcell.NewSimulationScreen("")
+		if err := s.Init(); err != nil {
+			return nil, err
+		}
+		screenCh <- s
+		return s, nil
 	}
 
 	go func() {
-		// Wait for the screen to init and event loop to start
-		for simScreen == nil {
-			time.Sleep(5 * time.Millisecond)
-		}
+		simScreen := <-screenCh
 		time.Sleep(20 * time.Millisecond)
 		simScreen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
