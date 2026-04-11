@@ -92,6 +92,7 @@ func TestBuildRunArgs(t *testing.T) {
 	}{
 		{"--rm", "--rm"},
 		{"--detach", "--detach"},
+		{"-w", "-w /home/claude"},
 		{"--name", "--name claude-session-test"},
 		{"--hostname", "--hostname claude-abcdef12"},
 		{"session home", sessionDir + ":/home/claude"},

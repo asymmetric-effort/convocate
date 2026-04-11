@@ -79,17 +79,22 @@ jobs:
           elif (( $(echo "$PCT >= 70" | bc -l) )); then COLOR="yellowgreen"
           elif (( $(echo "$PCT >= 60" | bc -l) )); then COLOR="yellow"
           else COLOR="red"; fi
-          mkdir -p .badges
-          printf '{"schemaVersion":1,"label":"coverage",' > .badges/coverage.json
-          printf '"message":"%s","color":"%s"}\n' "${COVERAGE}" "${COLOR}" >> .badges/coverage.json
+          BADGE=/tmp/coverage.json
+          printf '{"schemaVersion":1,"label":"coverage",' > "$BADGE"
+          printf '"message":"%s","color":"%s"}\n' \
+            "${COVERAGE}" "${COLOR}" >> "$BADGE"
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git stash --include-untracked
-          git fetch origin badges 2>/dev/null && git checkout badges || git checkout --orphan badges
+          git config user.email \
+            "github-actions[bot]@users.noreply.github.com"
+          git fetch origin badges 2>/dev/null \
+            && git checkout badges \
+            || git checkout --orphan badges
           git rm -rf . 2>/dev/null || true
-          git checkout stash -- .badges/coverage.json
+          mkdir -p .badges
+          cp "$BADGE" .badges/coverage.json
           git add .badges/coverage.json
-          git diff --cached --quiet || git commit -m "Update coverage badge [skip ci]"
+          git diff --cached --quiet \
+            || git commit -m "Update coverage badge [skip ci]"
           git push origin badges
 
   build:

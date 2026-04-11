@@ -120,6 +120,7 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 		"--detach",
 		"--name", containerName,
 		"--hostname", fmt.Sprintf("claude-%s", r.sessionID[:8]),
+		"-w", "/home/claude",
 	}
 
 	// Session home directory
