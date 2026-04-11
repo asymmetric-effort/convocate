@@ -5,7 +5,7 @@ GO := go
 GOFLAGS := -trimpath
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 
-.PHONY: all generate build clean lint lint-go lint-yaml lint-json test test-unit test-integration test-e2e
+.PHONY: all generate build clean lint lint-go lint-yaml lint-json test test-unit test-integration test-e2e release release/major release/minor
 
 all: lint test build
 
@@ -61,3 +61,30 @@ test-coverage: test-unit
 	@echo "Generating coverage report..."
 	@$(GO) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+
+release:
+	@LATEST=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0"); \
+	MAJOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f1); \
+	MINOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f2); \
+	PATCH=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f3); \
+	NEXT="v$$MAJOR.$$MINOR.$$((PATCH + 1))"; \
+	echo "Bumping $$LATEST -> $$NEXT"; \
+	git tag "$$NEXT" && git push --tags && \
+	echo "Released $$NEXT"
+
+release/minor:
+	@LATEST=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0"); \
+	MAJOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f1); \
+	MINOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f2); \
+	NEXT="v$$MAJOR.$$((MINOR + 1)).0"; \
+	echo "Bumping $$LATEST -> $$NEXT"; \
+	git tag "$$NEXT" && git push --tags && \
+	echo "Released $$NEXT"
+
+release/major:
+	@LATEST=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0"); \
+	MAJOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f1); \
+	NEXT="v$$((MAJOR + 1)).0.0"; \
+	echo "Bumping $$LATEST -> $$NEXT"; \
+	git tag "$$NEXT" && git push --tags && \
+	echo "Released $$NEXT"
