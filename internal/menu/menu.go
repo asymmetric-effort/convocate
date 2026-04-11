@@ -26,6 +26,7 @@ const (
 type Selection struct {
 	Action    string
 	SessionID string
+	Name      string
 }
 
 // PromptSessionName asks the user for a session name.

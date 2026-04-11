@@ -323,6 +323,7 @@ func copyFile(src, dst string) error {
 }
 
 // ValidateName checks if a session name is valid.
+// Names may contain letters, digits, spaces, underscores, hyphens, and periods.
 func ValidateName(name string) error {
 	if len(strings.TrimSpace(name)) == 0 {
 		return fmt.Errorf("session name cannot be empty")
@@ -331,9 +332,17 @@ func ValidateName(name string) error {
 		return fmt.Errorf("session name cannot exceed 64 characters")
 	}
 	for _, c := range name {
-		if c < 32 || c == 127 {
-			return fmt.Errorf("session name contains invalid control characters")
+		if !isValidNameRune(c) {
+			return fmt.Errorf("session name contains invalid character: %q (only letters, digits, spaces, _, -, . allowed)", c)
 		}
 	}
 	return nil
+}
+
+// isValidNameRune returns true if the rune is allowed in a session name.
+func isValidNameRune(c rune) bool {
+	return (c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9') ||
+		c == ' ' || c == '_' || c == '-' || c == '.'
 }

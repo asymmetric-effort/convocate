@@ -12,12 +12,23 @@ import (
 )
 
 var (
-	titleStyle    = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlue)
-	menuBarStyle  = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
-	headerStyle   = tcell.StyleDefault.Foreground(tcell.ColorYellow).Bold(true)
-	normalStyle   = tcell.StyleDefault
-	selectedStyle = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorWhite)
+	titleStyle     = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlue)
+	menuBarStyle   = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
+	headerStyle    = tcell.StyleDefault.Foreground(tcell.ColorYellow).Bold(true)
+	normalStyle    = tcell.StyleDefault
+	selectedStyle  = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorWhite)
 	separatorStyle = tcell.StyleDefault.Foreground(tcell.ColorGray)
+	dialogStyle    = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkBlue)
+	dialogErrStyle = tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorDarkBlue)
+	inputStyle     = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
+)
+
+type tuiMode int
+
+const (
+	modeMenu tuiMode = iota
+	modeCreateDialog
+	modeDeleteConfirm
 )
 
 type tui struct {
@@ -26,6 +37,9 @@ type tui struct {
 	cursor       int
 	offset       int
 	tickInterval time.Duration
+	mode         tuiMode
+	inputBuf     []rune
+	dialogErr    string
 }
 
 // screenFactory creates and initializes a tcell.Screen. Override in tests.
@@ -113,6 +127,13 @@ func (t *tui) draw() {
 	t.drawTitleBar(width)
 	t.drawSessionTable(width, height)
 	t.drawMenuBar(width, height)
+
+	switch t.mode {
+	case modeCreateDialog:
+		t.drawCreateDialog(width, height)
+	case modeDeleteConfirm:
+		t.drawDeleteDialog(width, height)
+	}
 }
 
 func (t *tui) drawTitleBar(width int) {
@@ -199,7 +220,141 @@ func (t *tui) drawMenuBar(width, height int) {
 		menuBarStyle)
 }
 
+func (t *tui) drawCreateDialog(width, height int) {
+	const dialogWidth = 52
+	const dialogHeight = 7
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	// Draw dialog background
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	// Title
+	title := " Create New Session "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	// Label
+	drawString(t.screen, x0+2, y0+2, "Name:", dialogStyle)
+
+	// Input field background
+	inputX := x0 + 8
+	inputW := dialogWidth - 10
+	for col := inputX; col < inputX+inputW; col++ {
+		t.screen.SetContent(col, y0+2, ' ', nil, inputStyle)
+	}
+
+	// Input text
+	inputText := string(t.inputBuf)
+	if len(inputText) > inputW {
+		inputText = inputText[len(inputText)-inputW:]
+	}
+	drawString(t.screen, inputX, y0+2, inputText, inputStyle)
+
+	// Cursor
+	cursorX := inputX + len(t.inputBuf)
+	if len(t.inputBuf) > inputW {
+		cursorX = inputX + inputW
+	}
+	if cursorX < x0+dialogWidth-2 {
+		t.screen.SetContent(cursorX, y0+2, ' ', nil, inputStyle.Reverse(true))
+	}
+
+	// Error message
+	if t.dialogErr != "" {
+		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
+		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+	}
+
+	// Hint
+	hint := "Enter=Create  Esc=Cancel"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) drawDeleteDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	prompt := fmt.Sprintf("Delete session %q?", name)
+	dialogWidth := len(prompt) + 6
+	if dialogWidth < 36 {
+		dialogWidth = 36
+	}
+	const dialogHeight = 5
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	// Draw dialog background
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	// Title
+	title := " Confirm Delete "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	// Prompt
+	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
+
+	// Hint
+	hint := "(Y)es  (N)o"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleDeleteDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'y', 'Y':
+			if t.cursor >= 0 && t.cursor < len(t.sessions) {
+				s := t.sessions[t.cursor]
+				return Selection{Action: ActionDeleteSession, SessionID: s.UUID, Name: s.Name}, true
+			}
+			t.mode = modeMenu
+		case 'n', 'N':
+			t.mode = modeMenu
+		}
+	}
+	return Selection{}, false
+}
+
 func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
+	switch t.mode {
+	case modeCreateDialog:
+		return t.handleCreateDialogKey(ev)
+	case modeDeleteConfirm:
+		return t.handleDeleteDialogKey(ev)
+	default:
+		return t.handleMenuKey(ev)
+	}
+}
+
+func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 	switch ev.Key() {
 	case tcell.KeyUp:
 		if t.cursor > 0 {
@@ -219,9 +374,13 @@ func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
 	case tcell.KeyRune:
 		switch ev.Rune() {
 		case 'c', 'C':
-			return Selection{Action: ActionNewSession}, true
+			t.mode = modeCreateDialog
+			t.inputBuf = nil
+			t.dialogErr = ""
 		case 'd', 'D':
-			return Selection{Action: ActionDeleteSession}, true
+			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
+				t.mode = modeDeleteConfirm
+			}
 		case 'r', 'R':
 			return Selection{Action: ActionReload}, true
 		case 'q', 'Q':
@@ -234,6 +393,33 @@ func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
 					return Selection{Action: s.UUID, SessionID: s.UUID}, true
 				}
 			}
+		}
+	}
+	return Selection{}, false
+}
+
+func (t *tui) handleCreateDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+		t.inputBuf = nil
+		t.dialogErr = ""
+	case tcell.KeyEnter:
+		name := strings.TrimSpace(string(t.inputBuf))
+		if err := session.ValidateName(name); err != nil {
+			t.dialogErr = err.Error()
+			return Selection{}, false
+		}
+		return Selection{Action: ActionNewSession, Name: name}, true
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if len(t.inputBuf) > 0 {
+			t.inputBuf = t.inputBuf[:len(t.inputBuf)-1]
+			t.dialogErr = ""
+		}
+	case tcell.KeyRune:
+		if len(t.inputBuf) < 64 {
+			t.inputBuf = append(t.inputBuf, ev.Rune())
+			t.dialogErr = ""
 		}
 	}
 	return Selection{}, false

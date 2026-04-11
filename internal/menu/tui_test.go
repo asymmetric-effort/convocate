@@ -127,24 +127,245 @@ func TestTUI_QuitOnEscape(t *testing.T) {
 	}
 }
 
-func TestTUI_CreateOnC(t *testing.T) {
-	sel := runWithKey(t, testSessions(), tcell.KeyRune, 'c')
+func TestTUI_CreateDialog_TypeAndEnter(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone) // open dialog
+		time.Sleep(10 * time.Millisecond)
+		for _, ch := range "my-session" {
+			screen.InjectKey(tcell.KeyRune, ch, tcell.ModNone)
+			time.Sleep(5 * time.Millisecond)
+		}
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // confirm
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
 	if sel.Action != ActionNewSession {
 		t.Errorf("Action = %q, want %q", sel.Action, ActionNewSession)
 	}
-}
-
-func TestTUI_CreateOnUpperC(t *testing.T) {
-	sel := runWithKey(t, testSessions(), tcell.KeyRune, 'C')
-	if sel.Action != ActionNewSession {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionNewSession)
+	if sel.Name != "my-session" {
+		t.Errorf("Name = %q, want %q", sel.Name, "my-session")
 	}
 }
 
-func TestTUI_DeleteOnD(t *testing.T) {
-	sel := runWithKey(t, testSessions(), tcell.KeyRune, 'd')
+func TestTUI_CreateDialog_UpperC(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'C', tcell.ModNone) // open dialog
+		time.Sleep(10 * time.Millisecond)
+		for _, ch := range "test" {
+			screen.InjectKey(tcell.KeyRune, ch, tcell.ModNone)
+			time.Sleep(5 * time.Millisecond)
+		}
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Action != ActionNewSession {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionNewSession)
+	}
+	if sel.Name != "test" {
+		t.Errorf("Name = %q, want %q", sel.Name, "test")
+	}
+}
+
+func TestTUI_CreateDialog_EscapeCancels(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone) // open dialog
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone) // cancel
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Action != ActionQuit {
+		t.Errorf("Action = %q, want %q (escape should cancel dialog)", sel.Action, ActionQuit)
+	}
+}
+
+func TestTUI_CreateDialog_EmptyNameShowsError(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone) // open dialog
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // empty name
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone) // cancel
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Action != ActionQuit {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
+	}
+}
+
+func TestTUI_CreateDialog_InvalidCharShowsError(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone)
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, '!', tcell.ModNone) // invalid char
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // try to submit
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone)
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Action != ActionQuit {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
+	}
+}
+
+func TestTUI_CreateDialog_Backspace(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone)
+		time.Sleep(10 * time.Millisecond)
+		for _, ch := range "testx" {
+			screen.InjectKey(tcell.KeyRune, ch, tcell.ModNone)
+			time.Sleep(5 * time.Millisecond)
+		}
+		screen.InjectKey(tcell.KeyBackspace2, 0, tcell.ModNone) // delete 'x'
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Name != "test" {
+		t.Errorf("Name = %q, want %q", sel.Name, "test")
+	}
+}
+
+func TestTUI_DeleteDialog_ConfirmYes(t *testing.T) {
+	sessions := testSessions()
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'd', tcell.ModNone) // open delete dialog
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'y', tcell.ModNone) // confirm
+	}()
+
+	sel, err := DisplayWithScreen(sessions, screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
 	if sel.Action != ActionDeleteSession {
 		t.Errorf("Action = %q, want %q", sel.Action, ActionDeleteSession)
+	}
+	if sel.SessionID != sessions[0].UUID {
+		t.Errorf("SessionID = %q, want %q", sel.SessionID, sessions[0].UUID)
+	}
+}
+
+func TestTUI_DeleteDialog_ConfirmNo(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'd', tcell.ModNone)
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'n', tcell.ModNone) // decline
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Action != ActionQuit {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
+	}
+}
+
+func TestTUI_DeleteDialog_EscapeCancels(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'd', tcell.ModNone)
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone) // cancel
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Action != ActionQuit {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
+	}
+}
+
+func TestTUI_DeleteDialog_EmptySessionsIgnored(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'd', tcell.ModNone) // no sessions, should be ignored
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	sel, err := DisplayWithScreen(nil, screen)
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Action != ActionQuit {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
 	}
 }
 
@@ -482,17 +703,13 @@ func TestTUI_HandleKeyUnit(t *testing.T) {
 	}
 }
 
-func TestTUI_HandleKeyRunes(t *testing.T) {
+func TestTUI_HandleKeyRunes_ImmediateReturn(t *testing.T) {
 	ui := &tui{sessions: testSessions(), cursor: 0}
 
 	tests := []struct {
 		rune   rune
 		action string
 	}{
-		{'c', ActionNewSession},
-		{'C', ActionNewSession},
-		{'d', ActionDeleteSession},
-		{'D', ActionDeleteSession},
 		{'r', ActionReload},
 		{'R', ActionReload},
 		{'q', ActionQuit},
@@ -500,6 +717,7 @@ func TestTUI_HandleKeyRunes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		ui.mode = modeMenu
 		sel, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, tt.rune, tcell.ModNone))
 		if !done {
 			t.Errorf("key %q should finish", tt.rune)
@@ -507,6 +725,41 @@ func TestTUI_HandleKeyRunes(t *testing.T) {
 		if sel.Action != tt.action {
 			t.Errorf("key %q: Action = %q, want %q", tt.rune, sel.Action, tt.action)
 		}
+	}
+}
+
+func TestTUI_HandleKeyRunes_OpensDialog(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0}
+
+	// 'c' opens create dialog
+	ui.mode = modeMenu
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'c', tcell.ModNone))
+	if done {
+		t.Error("'c' should not finish (opens dialog)")
+	}
+	if ui.mode != modeCreateDialog {
+		t.Errorf("mode = %d, want modeCreateDialog", ui.mode)
+	}
+
+	// 'd' opens delete dialog
+	ui.mode = modeMenu
+	_, done = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'd', tcell.ModNone))
+	if done {
+		t.Error("'d' should not finish (opens dialog)")
+	}
+	if ui.mode != modeDeleteConfirm {
+		t.Errorf("mode = %d, want modeDeleteConfirm", ui.mode)
+	}
+}
+
+func TestTUI_HandleKeyRunes_DIgnoredNoSessions(t *testing.T) {
+	ui := &tui{sessions: nil, cursor: 0}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'd', tcell.ModNone))
+	if done {
+		t.Error("'d' with no sessions should not finish")
+	}
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu (should stay in menu)", ui.mode)
 	}
 }
 

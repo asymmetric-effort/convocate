@@ -57,14 +57,30 @@ jobs:
         run: make test-integration
 
       - name: Check coverage
+        id: coverage
         run: |
-          go tool cover -func=coverage.out | tail -1
+          COVERAGE=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}')
+          echo "coverage=${COVERAGE}" >> "$GITHUB_OUTPUT"
+          echo "Coverage: ${COVERAGE}"
 
       - name: Upload coverage
         uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
+
+      - name: Generate coverage badge
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: claude-shell-coverage
+          filename: coverage.json
+          label: coverage
+          message: ${{ steps.coverage.outputs.coverage }}
+          valColorRange: ${{ steps.coverage.outputs.coverage }}
+          minColorRange: 50
+          maxColorRange: 100
 
   build:
     name: Build

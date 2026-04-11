@@ -90,19 +90,17 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			fmt.Println("Goodbye!")
 			return nil
 		case menu.ActionNewSession:
-			if err := handleNewSession(mgr, userInfo, paths, log); err != nil {
+			if err := handleNewSession(mgr, sel.Name, userInfo, paths, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
 		case menu.ActionReload:
 			continue
 		case menu.ActionDeleteSession:
-			if len(sessions) == 0 {
-				fmt.Println("No sessions to delete.")
-				continue
-			}
-			if err := handleDeleteSession(mgr, sessions); err != nil {
+			if err := mgr.Delete(sel.SessionID); err != nil {
 				fmt.Fprintf(os.Stderr, "delete error: %v\n", err)
+			} else {
+				fmt.Printf("Deleted session %q (%s)\n", sel.Name, sel.SessionID[:8])
 			}
 			continue
 		default:
@@ -115,16 +113,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 	}
 }
 
-func handleNewSession(mgr *session.Manager, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
-	name, err := menu.PromptSessionName(os.Stdin, os.Stdout)
-	if err != nil {
-		return err
-	}
-
-	if err := session.ValidateName(name); err != nil {
-		return fmt.Errorf("invalid session name: %w", err)
-	}
-
+func handleNewSession(mgr *session.Manager, name string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
 	meta, err := mgr.Create(name)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
@@ -150,37 +139,6 @@ func handleResumeSession(mgr *session.Manager, sessionID string, userInfo user.I
 	fmt.Printf("Resuming session %q (%s)\n", meta.Name, meta.UUID[:8])
 
 	return launchSession(mgr, sessionID, userInfo, paths, log)
-}
-
-func handleDeleteSession(mgr *session.Manager, sessions []session.Metadata) error {
-	id, err := menu.PromptDeleteSession(sessions, os.Stdin, os.Stdout)
-	if err != nil {
-		return err
-	}
-	if id == "" {
-		return nil // cancelled
-	}
-
-	meta, err := mgr.Get(id)
-	if err != nil {
-		return err
-	}
-
-	confirmed, err := menu.ConfirmDelete(meta.Name, meta.UUID, os.Stdin, os.Stdout)
-	if err != nil {
-		return err
-	}
-	if !confirmed {
-		fmt.Println("Cancelled.")
-		return nil
-	}
-
-	if err := mgr.Delete(id); err != nil {
-		return err
-	}
-
-	fmt.Printf("Deleted session %q (%s)\n", meta.Name, id[:8])
-	return nil
 }
 
 func launchSession(mgr *session.Manager, sessionID string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {

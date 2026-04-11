@@ -410,6 +410,8 @@ func TestValidateName_Valid(t *testing.T) {
 		"Session 1",
 		"bug_fix_123",
 		"a",
+		"project.v2",
+		"A-Z.0-9_test",
 	}
 
 	for _, name := range validNames {
@@ -448,6 +450,41 @@ func TestValidateName_ControlChars(t *testing.T) {
 	err := ValidateName("test\x00name")
 	if err == nil {
 		t.Error("expected error for name with control characters")
+	}
+}
+
+func TestValidateName_Punctuation(t *testing.T) {
+	invalidNames := []string{
+		"test!name",
+		"hello@world",
+		"foo#bar",
+		"test/path",
+		"name;drop",
+		"test&name",
+		"a,b",
+		"test(1)",
+	}
+
+	for _, name := range invalidNames {
+		if err := ValidateName(name); err == nil {
+			t.Errorf("ValidateName(%q) should reject punctuation", name)
+		}
+	}
+}
+
+func TestIsValidNameRune(t *testing.T) {
+	valid := []rune{'a', 'z', 'A', 'Z', '0', '9', ' ', '_', '-', '.'}
+	for _, r := range valid {
+		if !isValidNameRune(r) {
+			t.Errorf("isValidNameRune(%q) = false, want true", r)
+		}
+	}
+
+	invalid := []rune{'!', '@', '#', '$', '/', '\\', ';', ',', '(', ')', '\t', '\n', '\x00'}
+	for _, r := range invalid {
+		if isValidNameRune(r) {
+			t.Errorf("isValidNameRune(%q) = true, want false", r)
+		}
 	}
 }
 
