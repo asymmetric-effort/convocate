@@ -5,11 +5,16 @@ GO := go
 GOFLAGS := -trimpath
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 
-.PHONY: all build clean lint lint-go lint-yaml lint-json test test-unit test-integration test-e2e
+.PHONY: all generate build clean lint lint-go lint-yaml lint-json test test-unit test-integration test-e2e
 
 all: lint test build
 
-build:
+generate:
+	@echo "Generating embedded assets..."
+	$(GO) generate ./internal/assets/
+	@echo "Assets generated."
+
+build: generate
 	@echo "Building $(BINARY_NAME) $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/claude-shell/
