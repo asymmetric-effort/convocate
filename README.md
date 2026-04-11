@@ -1,7 +1,7 @@
 # claude-shell
 
 [![CI](https://github.com/sam-caldwell/claude-shell/actions/workflows/ci.yml/badge.svg)](https://github.com/sam-caldwell/claude-shell/actions/workflows/ci.yml)
-[![Coverage](https://raw.githubusercontent.com/sam-caldwell/claude-shell/badges/.badges/coverage.svg)](https://github.com/sam-caldwell/claude-shell/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/sam-caldwell/claude-shell/badges/.badges/coverage.json)](https://github.com/sam-caldwell/claude-shell/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/sam-caldwell/claude-shell)](https://goreportcard.com/report/github.com/sam-caldwell/claude-shell)
 
 A Go wrapper around the Claude CLI that provides isolated, containerized sessions for concurrent use.
