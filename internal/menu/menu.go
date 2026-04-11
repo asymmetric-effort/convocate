@@ -16,6 +16,10 @@ const (
 	ActionNewSession = "new"
 	// ActionDeleteSession indicates the user wants to delete a session.
 	ActionDeleteSession = "delete"
+	// ActionReload indicates the user wants to reload the session list.
+	ActionReload = "reload"
+	// ActionQuit indicates the user wants to quit the shell.
+	ActionQuit = "quit"
 )
 
 // Selection represents the user's menu choice.
@@ -40,7 +44,7 @@ func Display(sessions []session.Metadata, reader io.Reader, writer io.Writer) (S
 
 	input := strings.TrimSpace(scanner.Text())
 	if input == "" {
-		input = "1"
+		input = "c"
 	}
 
 	return parseSelection(input, sessions)
@@ -105,16 +109,10 @@ func printMenu(sessions []session.Metadata, writer io.Writer) {
 	fmt.Fprintln(writer, strings.Repeat("-", 80))
 	fmt.Fprintf(writer, "  %-4s| %-20s | %-36s | %-12s | %s\n", "#", "Name", "Session ID", "Created", "Last Accessed")
 	fmt.Fprintln(writer, strings.Repeat("-", 80))
-	fmt.Fprintf(writer, "  %-4s| %-20s | %-36s | %-12s | %s\n", "1", "+ New Session", "", "", "")
 
 	for i, s := range sessions {
-		status := ""
-		if s.UUID != "" {
-			status = ""
-		}
-		_ = status
 		fmt.Fprintf(writer, "  %-4s| %-20s | %s | %-12s | %s\n",
-			strconv.Itoa(i+2),
+			strconv.Itoa(i+1),
 			truncate(s.Name, 20),
 			s.UUID,
 			s.CreatedAt.Format("2006-01-02"),
@@ -123,13 +121,23 @@ func printMenu(sessions []session.Metadata, writer io.Writer) {
 	}
 
 	fmt.Fprintln(writer, strings.Repeat("-", 80))
+	fmt.Fprintf(writer, "  %-4s| %-20s |\n", "C", "Create a session")
 	fmt.Fprintf(writer, "  %-4s| %-20s |\n", "D", "Delete a session")
+	fmt.Fprintf(writer, "  %-4s| %-20s |\n", "R", "Reload")
+	fmt.Fprintf(writer, "  %-4s| %-20s |\n", "Q", "Quit")
 	fmt.Fprintln(writer, strings.Repeat("-", 80))
 }
 
 func parseSelection(input string, sessions []session.Metadata) (Selection, error) {
-	if strings.ToLower(input) == "d" {
+	switch strings.ToLower(input) {
+	case "c":
+		return Selection{Action: ActionNewSession}, nil
+	case "d":
 		return Selection{Action: ActionDeleteSession}, nil
+	case "r":
+		return Selection{Action: ActionReload}, nil
+	case "q":
+		return Selection{Action: ActionQuit}, nil
 	}
 
 	idx, err := strconv.Atoi(input)
@@ -137,13 +145,9 @@ func parseSelection(input string, sessions []session.Metadata) (Selection, error
 		return Selection{}, fmt.Errorf("invalid selection: %q", input)
 	}
 
-	if idx == 1 {
-		return Selection{Action: ActionNewSession}, nil
-	}
-
-	sessionIdx := idx - 2
+	sessionIdx := idx - 1
 	if sessionIdx < 0 || sessionIdx >= len(sessions) {
-		return Selection{}, fmt.Errorf("invalid selection: %d (valid range: 1-%d, D)", idx, len(sessions)+1)
+		return Selection{}, fmt.Errorf("invalid selection: %d (valid range: 1-%d, C, D, Q)", idx, len(sessions))
 	}
 
 	return Selection{

@@ -38,6 +38,13 @@ chown claude:claude /home/claude
 # Add Go to path in profile
 echo 'export PATH="${PATH}:/usr/local/go/bin"' > /etc/profile.d/go.sh
 
-# Switch to claude user and exec claude
+# Switch to claude user and run claude inside tmux
 export HOME=/home/claude
-exec sudo -E -u claude -H -- /usr/local/bin/claude
+
+# Start a detached tmux session running claude
+sudo -E -u claude -H -- tmux new-session -d -s claude /usr/local/bin/claude
+
+# Keep container alive while the tmux session exists
+while sudo -u claude tmux has-session -t claude 2>/dev/null; do
+    sleep 1
+done

@@ -51,7 +51,7 @@ func buildMockClaude() error {
 func buildTestImage() error {
 	projectRoot := findProjectRoot()
 	dockerfileContent := `FROM ubuntu:24.04
-RUN apt-get update && apt-get install -y --no-install-recommends sudo locales \
+RUN apt-get update && apt-get install -y --no-install-recommends sudo locales tmux \
     && locale-gen en_US.UTF-8 \
     && rm -rf /var/lib/apt/lists/*
 ENV LANG=en_US.UTF-8
@@ -93,91 +93,140 @@ func findProjectRoot() string {
 	return "/root/git/claude-shell"
 }
 
-func TestContainerStarts(t *testing.T) {
-	containerName := fmt.Sprintf("e2e-start-%d", time.Now().UnixNano())
+// startDetachedContainer starts a container in detached mode and returns its name.
+// The container runs the entrypoint which starts Claude inside tmux.
+func startDetachedContainer(t *testing.T, prefix string, extraArgs ...string) string {
+	t.Helper()
+	containerName := fmt.Sprintf("e2e-%s-%d", prefix, time.Now().UnixNano())
 
-	cmd := exec.Command("docker", "run",
-		"--rm",
-		"-i",
+	args := []string{
+		"run", "--detach", "--rm",
 		"--name", containerName,
 		"-e", "CLAUDE_UID=1000",
 		"-e", "CLAUDE_GID=1000",
-		testImageName+":"+testImageTag,
-	)
+	}
+	args = append(args, extraArgs...)
+	args = append(args, testImageName+":"+testImageTag)
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	cmd := exec.Command("docker", args...)
+	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	cmd.Stdin = strings.NewReader("exit\n")
-
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("container failed to start: %v\nstderr: %s", err, stderr.String())
+	if out, err := cmd.Output(); err != nil {
+		t.Fatalf("failed to start container: %v\nstderr: %s\nout: %s", err, stderr.String(), string(out))
 	}
 
-	output := stdout.String()
+	t.Cleanup(func() {
+		_ = exec.Command("docker", "rm", "-f", containerName).Run()
+	})
+
+	// Wait for tmux session to be ready
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		check := exec.Command("docker", "exec", containerName,
+			"sudo", "-u", "claude", "tmux", "has-session", "-t", "claude")
+		if check.Run() == nil {
+			return containerName
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatal("tmux session did not start within timeout")
+	return ""
+}
+
+// execInTmux sends keys to the tmux session and captures pane output.
+func execInTmux(containerName, keys string) error {
+	cmd := exec.Command("docker", "exec", containerName,
+		"sudo", "-u", "claude", "tmux", "send-keys", "-t", "claude", keys, "Enter")
+	return cmd.Run()
+}
+
+// captureTmuxPane captures the current tmux pane content.
+func captureTmuxPane(containerName string) (string, error) {
+	cmd := exec.Command("docker", "exec", containerName,
+		"sudo", "-u", "claude", "tmux", "capture-pane", "-t", "claude", "-p")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func TestContainerStarts(t *testing.T) {
+	containerName := startDetachedContainer(t, "start")
+
+	// The mock claude should have printed its greeting in the tmux pane
+	output, err := captureTmuxPane(containerName)
+	if err != nil {
+		t.Fatalf("failed to capture tmux pane: %v", err)
+	}
+
 	if !strings.Contains(output, "Claude CLI (mock) - Ready") {
 		t.Errorf("expected mock claude greeting in output, got: %s", output)
-	}
-	if !strings.Contains(output, "Goodbye!") {
-		t.Errorf("expected goodbye message in output, got: %s", output)
 	}
 }
 
 func TestContainerUserSetup(t *testing.T) {
 	containerName := fmt.Sprintf("e2e-user-%d", time.Now().UnixNano())
 
-	cmd := exec.Command("docker", "run",
-		"--rm",
-		"-i",
+	args := []string{
+		"run", "--detach", "--rm",
 		"--name", containerName,
 		"-e", "CLAUDE_UID=1337",
 		"-e", "CLAUDE_GID=1337",
-		testImageName+":"+testImageTag,
-	)
-
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stdin = strings.NewReader("exit\n")
-
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("container failed: %v", err)
+		testImageName + ":" + testImageTag,
 	}
 
-	output := stdout.String()
+	cmd := exec.Command("docker", args...)
+	if _, err := cmd.Output(); err != nil {
+		t.Fatalf("failed to start container: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = exec.Command("docker", "rm", "-f", containerName).Run()
+	})
 
-	// Check the mock claude reports the user as claude
+	// Wait for tmux session
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		check := exec.Command("docker", "exec", containerName,
+			"sudo", "-u", "claude", "tmux", "has-session", "-t", "claude")
+		if check.Run() == nil {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	output, err := captureTmuxPane(containerName)
+	if err != nil {
+		t.Fatalf("failed to capture tmux pane: %v", err)
+	}
+
 	if !strings.Contains(output, "User: claude") {
 		t.Errorf("expected User: claude, got: %s", output)
 	}
-	// Check the mock claude shows a home directory
 	if !strings.Contains(output, "Home: /home/claude") {
 		t.Errorf("expected Home: /home/claude, got: %s", output)
 	}
 }
 
 func TestContainerEchoIO(t *testing.T) {
-	containerName := fmt.Sprintf("e2e-io-%d", time.Now().UnixNano())
+	containerName := startDetachedContainer(t, "io")
 
-	input := "hello world\ntest message\nexit\n"
+	// Send input via tmux
+	if err := execInTmux(containerName, "hello world"); err != nil {
+		t.Fatalf("failed to send keys: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
 
-	cmd := exec.Command("docker", "run",
-		"--rm",
-		"-i",
-		"--name", containerName,
-		"-e", "CLAUDE_UID=1000",
-		"-e", "CLAUDE_GID=1000",
-		testImageName+":"+testImageTag,
-	)
+	if err := execInTmux(containerName, "test message"); err != nil {
+		t.Fatalf("failed to send keys: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
 
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stdin = strings.NewReader(input)
-
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("container failed: %v", err)
+	output, err := captureTmuxPane(containerName)
+	if err != nil {
+		t.Fatalf("failed to capture tmux pane: %v", err)
 	}
 
-	output := stdout.String()
 	if !strings.Contains(output, "echo: hello world") {
 		t.Errorf("expected echo of input, got: %s", output)
 	}
@@ -257,26 +306,102 @@ func TestContainerSessionMount(t *testing.T) {
 	}
 }
 
-func TestContainerEphemeral(t *testing.T) {
-	containerName := fmt.Sprintf("e2e-ephemeral-%d", time.Now().UnixNano())
+func TestContainerTmuxSession(t *testing.T) {
+	containerName := startDetachedContainer(t, "tmux")
 
-	cmd := exec.Command("docker", "run",
-		"--rm",
-		"-i",
-		"--name", containerName,
-		"-e", "CLAUDE_UID=1000",
-		"-e", "CLAUDE_GID=1000",
-		testImageName+":"+testImageTag,
-	)
-	cmd.Stdin = strings.NewReader("exit\n")
+	// Verify tmux session exists with correct name
+	cmd := exec.Command("docker", "exec", containerName,
+		"sudo", "-u", "claude", "tmux", "list-sessions")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("failed to list tmux sessions: %v", err)
+	}
+	if !strings.Contains(string(out), "claude:") {
+		t.Errorf("expected tmux session named 'claude', got: %s", string(out))
+	}
+}
 
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("container failed: %v", err)
+func TestContainerTmuxPersistsAfterDetach(t *testing.T) {
+	containerName := startDetachedContainer(t, "persist")
+
+	// Send some input to create state
+	if err := execInTmux(containerName, "hello persistence"); err != nil {
+		t.Fatalf("failed to send keys: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify the input was echoed (state exists)
+	output, err := captureTmuxPane(containerName)
+	if err != nil {
+		t.Fatalf("failed to capture pane: %v", err)
+	}
+	if !strings.Contains(output, "echo: hello persistence") {
+		t.Errorf("expected echoed input before detach, got: %s", output)
 	}
 
-	// Verify container no longer exists
-	inspect := exec.Command("docker", "inspect", containerName)
-	if err := inspect.Run(); err == nil {
+	// Verify container is still running (tmux keeps it alive)
+	inspect := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", containerName)
+	inspectOut, err := inspect.Output()
+	if err != nil {
+		t.Fatalf("failed to inspect container: %v", err)
+	}
+	if strings.TrimSpace(string(inspectOut)) != "true" {
+		t.Error("container should still be running after detach")
+	}
+
+	// Verify tmux session still exists
+	check := exec.Command("docker", "exec", containerName,
+		"sudo", "-u", "claude", "tmux", "has-session", "-t", "claude")
+	if err := check.Run(); err != nil {
+		t.Error("tmux session should still exist after detach")
+	}
+}
+
+func TestContainerStopsWhenClaudeExits(t *testing.T) {
+	containerName := startDetachedContainer(t, "exit")
+
+	// Send "exit" to claude via tmux
+	if err := execInTmux(containerName, "exit"); err != nil {
+		t.Fatalf("failed to send exit: %v", err)
+	}
+
+	// Wait for container to stop (tmux session ends → entrypoint loop exits → container stops)
+	deadline := time.Now().Add(10 * time.Second)
+	stopped := false
+	for time.Now().Before(deadline) {
+		inspect := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", containerName)
+		out, err := inspect.Output()
+		if err != nil || strings.TrimSpace(string(out)) != "true" {
+			stopped = true
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if !stopped {
+		t.Error("container should stop after claude exits")
+	}
+}
+
+func TestContainerEphemeral(t *testing.T) {
+	containerName := startDetachedContainer(t, "ephemeral")
+
+	// Send "exit" to claude
+	if err := execInTmux(containerName, "exit"); err != nil {
+		t.Fatalf("failed to send exit: %v", err)
+	}
+
+	// Wait for container to be removed (--rm flag)
+	deadline := time.Now().Add(10 * time.Second)
+	removed := false
+	for time.Now().Before(deadline) {
+		inspect := exec.Command("docker", "inspect", containerName)
+		if inspect.Run() != nil {
+			removed = true
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if !removed {
 		t.Error("container should have been removed (--rm)")
 	}
 }

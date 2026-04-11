@@ -86,8 +86,16 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 		}
 
 		switch sel.Action {
+		case menu.ActionQuit:
+			fmt.Println("Goodbye!")
+			return nil
 		case menu.ActionNewSession:
-			return handleNewSession(mgr, userInfo, paths, log)
+			if err := handleNewSession(mgr, userInfo, paths, log); err != nil {
+				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
+			}
+			continue
+		case menu.ActionReload:
+			continue
 		case menu.ActionDeleteSession:
 			if len(sessions) == 0 {
 				fmt.Println("No sessions to delete.")
@@ -99,7 +107,10 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			continue
 		default:
 			// Resume existing session
-			return handleResumeSession(mgr, sel.SessionID, userInfo, paths, log)
+			if err := handleResumeSession(mgr, sel.SessionID, userInfo, paths, log); err != nil {
+				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
+			}
+			continue
 		}
 	}
 }
@@ -196,12 +207,19 @@ func launchSession(mgr *session.Manager, sessionID string, userInfo user.Info, p
 		if log != nil {
 			log.Infof("attaching to running container for session %s", sessionID)
 		}
-		return runner.Attach()
+		if err := runner.Attach(); err != nil {
+			// Ignore normal exit status from tmux detach
+			if !strings.Contains(err.Error(), "exit status") {
+				return fmt.Errorf("attach error: %w", err)
+			}
+		}
+		return nil
 	}
 
 	// Set up signal handling for graceful termination
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 
 	done := make(chan error, 1)
 	go func() {
@@ -219,7 +237,6 @@ func launchSession(mgr *session.Manager, sessionID string, userInfo user.Info, p
 				log.Errorf("failed to stop container: %v", err)
 			}
 		}
-		fmt.Println("Session stopped. Goodbye!")
 		return nil
 	case err := <-done:
 		if err != nil {
@@ -229,7 +246,6 @@ func launchSession(mgr *session.Manager, sessionID string, userInfo user.Info, p
 			}
 			return fmt.Errorf("session error: %w", err)
 		}
-		fmt.Println("Session ended. Goodbye!")
 		return nil
 	}
 }

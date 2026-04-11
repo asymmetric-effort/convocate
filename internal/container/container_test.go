@@ -91,8 +91,7 @@ func TestBuildRunArgs(t *testing.T) {
 		pattern string
 	}{
 		{"--rm", "--rm"},
-		{"--interactive", "--interactive"},
-		{"--tty", "--tty"},
+		{"--detach", "--detach"},
 		{"--name", "--name claude-session-test"},
 		{"--hostname", "--hostname claude-abcdef12"},
 		{"session home", sessionDir + ":/home/claude"},
@@ -266,15 +265,91 @@ func TestDefaultExecFunc(t *testing.T) {
 	}
 }
 
-func TestStart_Failure(t *testing.T) {
+func TestStart_DockerRunFailure(t *testing.T) {
 	mockExec := func(name string, args ...string) *exec.Cmd {
 		return exec.Command("false")
 	}
 
-	r := NewRunnerWithExec("test-uuid", "/tmp/session", testUserInfo(), testPaths(), mockExec)
+	r := NewRunnerWithExec("test-uuid-1234567890", "/tmp/session", testUserInfo(), testPaths(), mockExec)
 	err := r.Start()
 	if err == nil {
-		t.Error("expected error from failed start")
+		t.Error("expected error from failed docker run")
+	}
+	if !strings.Contains(err.Error(), "failed to start container") {
+		t.Errorf("expected 'failed to start container' error, got: %v", err)
+	}
+}
+
+func TestStart_AttachTmuxArgs(t *testing.T) {
+	var capturedCalls [][]string
+	callCount := 0
+	mockExec := func(name string, args ...string) *exec.Cmd {
+		capturedCalls = append(capturedCalls, append([]string{name}, args...))
+		callCount++
+		if callCount == 1 {
+			// docker run --detach succeeds
+			return exec.Command("echo", "container-id")
+		}
+		// docker exec (attachTmux) - use "true" to succeed
+		return exec.Command("true")
+	}
+
+	r := NewRunnerWithExec("test-uuid-1234567890", "/tmp/session", testUserInfo(), testPaths(), mockExec)
+	err := r.Start()
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	if len(capturedCalls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(capturedCalls))
+	}
+
+	// Verify first call is docker run --detach
+	runArgs := capturedCalls[0]
+	runStr := strings.Join(runArgs, " ")
+	if !strings.Contains(runStr, "--detach") {
+		t.Errorf("docker run should include --detach, got: %s", runStr)
+	}
+	if strings.Contains(runStr, "--interactive") {
+		t.Errorf("docker run should not include --interactive, got: %s", runStr)
+	}
+
+	// Verify second call is docker exec with tmux attach
+	execArgs := capturedCalls[1]
+	execStr := strings.Join(execArgs, " ")
+	if !strings.Contains(execStr, "exec") {
+		t.Errorf("second call should be docker exec, got: %s", execStr)
+	}
+	if !strings.Contains(execStr, "tmux") {
+		t.Errorf("exec should include tmux, got: %s", execStr)
+	}
+	if !strings.Contains(execStr, "attach-session") {
+		t.Errorf("exec should include attach-session, got: %s", execStr)
+	}
+	if !strings.Contains(execStr, "-t claude") {
+		t.Errorf("exec should target tmux session 'claude', got: %s", execStr)
+	}
+}
+
+func TestAttach_UsesTmux(t *testing.T) {
+	var capturedArgs []string
+	mockExec := func(name string, args ...string) *exec.Cmd {
+		capturedArgs = append([]string{name}, args...)
+		return exec.Command("true")
+	}
+
+	r := NewRunnerWithExec("test-uuid-1234567890", "/tmp/session", testUserInfo(), testPaths(), mockExec)
+	err := r.Attach()
+	if err != nil {
+		t.Fatalf("Attach failed: %v", err)
+	}
+
+	argStr := strings.Join(capturedArgs, " ")
+	if !strings.Contains(argStr, "docker exec -it") {
+		t.Errorf("Attach should use 'docker exec -it', got: %s", argStr)
+	}
+	if !strings.Contains(argStr, "tmux attach-session -t claude") {
+		t.Errorf("Attach should use 'tmux attach-session -t claude', got: %s", argStr)
 	}
 }
 
@@ -283,9 +358,25 @@ func TestAttach_Failure(t *testing.T) {
 		return exec.Command("false")
 	}
 
-	r := NewRunnerWithExec("test-uuid", "/tmp/session", testUserInfo(), testPaths(), mockExec)
+	r := NewRunnerWithExec("test-uuid-1234567890", "/tmp/session", testUserInfo(), testPaths(), mockExec)
 	err := r.Attach()
 	if err == nil {
 		t.Error("expected error from failed attach")
+	}
+}
+
+func TestBuildRunArgs_NoInteractiveTty(t *testing.T) {
+	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", "/tmp/session", testUserInfo(), testPaths())
+	args := r.buildRunArgs("test-container")
+	argStr := strings.Join(args, " ")
+
+	if strings.Contains(argStr, "--interactive") {
+		t.Error("buildRunArgs should not include --interactive")
+	}
+	if strings.Contains(argStr, "--tty") {
+		t.Error("buildRunArgs should not include --tty")
+	}
+	if !strings.Contains(argStr, "--detach") {
+		t.Error("buildRunArgs should include --detach")
 	}
 }

@@ -28,7 +28,21 @@ func testSessions() []session.Metadata {
 
 func TestDisplay_NewSession(t *testing.T) {
 	sessions := testSessions()
-	reader := strings.NewReader("1\n")
+	reader := strings.NewReader("c\n")
+	writer := &bytes.Buffer{}
+
+	sel, err := Display(sessions, reader, writer)
+	if err != nil {
+		t.Fatalf("Display failed: %v", err)
+	}
+	if sel.Action != ActionNewSession {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionNewSession)
+	}
+}
+
+func TestDisplay_NewSessionUppercase(t *testing.T) {
+	sessions := testSessions()
+	reader := strings.NewReader("C\n")
 	writer := &bytes.Buffer{}
 
 	sel, err := Display(sessions, reader, writer)
@@ -56,7 +70,7 @@ func TestDisplay_DefaultSelection(t *testing.T) {
 
 func TestDisplay_ResumeSession(t *testing.T) {
 	sessions := testSessions()
-	reader := strings.NewReader("2\n")
+	reader := strings.NewReader("1\n")
 	writer := &bytes.Buffer{}
 
 	sel, err := Display(sessions, reader, writer)
@@ -70,7 +84,7 @@ func TestDisplay_ResumeSession(t *testing.T) {
 
 func TestDisplay_ResumeSecondSession(t *testing.T) {
 	sessions := testSessions()
-	reader := strings.NewReader("3\n")
+	reader := strings.NewReader("2\n")
 	writer := &bytes.Buffer{}
 
 	sel, err := Display(sessions, reader, writer)
@@ -110,6 +124,62 @@ func TestDisplay_DeleteUppercase(t *testing.T) {
 	}
 }
 
+func TestDisplay_ReloadAction(t *testing.T) {
+	sessions := testSessions()
+	reader := strings.NewReader("r\n")
+	writer := &bytes.Buffer{}
+
+	sel, err := Display(sessions, reader, writer)
+	if err != nil {
+		t.Fatalf("Display failed: %v", err)
+	}
+	if sel.Action != ActionReload {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionReload)
+	}
+}
+
+func TestDisplay_ReloadUppercase(t *testing.T) {
+	sessions := testSessions()
+	reader := strings.NewReader("R\n")
+	writer := &bytes.Buffer{}
+
+	sel, err := Display(sessions, reader, writer)
+	if err != nil {
+		t.Fatalf("Display failed: %v", err)
+	}
+	if sel.Action != ActionReload {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionReload)
+	}
+}
+
+func TestDisplay_QuitAction(t *testing.T) {
+	sessions := testSessions()
+	reader := strings.NewReader("q\n")
+	writer := &bytes.Buffer{}
+
+	sel, err := Display(sessions, reader, writer)
+	if err != nil {
+		t.Fatalf("Display failed: %v", err)
+	}
+	if sel.Action != ActionQuit {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
+	}
+}
+
+func TestDisplay_QuitUppercase(t *testing.T) {
+	sessions := testSessions()
+	reader := strings.NewReader("Q\n")
+	writer := &bytes.Buffer{}
+
+	sel, err := Display(sessions, reader, writer)
+	if err != nil {
+		t.Fatalf("Display failed: %v", err)
+	}
+	if sel.Action != ActionQuit {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
+	}
+}
+
 func TestDisplay_InvalidSelection(t *testing.T) {
 	sessions := testSessions()
 	reader := strings.NewReader("99\n")
@@ -144,7 +214,7 @@ func TestDisplay_NoInput(t *testing.T) {
 }
 
 func TestDisplay_EmptySessions(t *testing.T) {
-	reader := strings.NewReader("1\n")
+	reader := strings.NewReader("c\n")
 	writer := &bytes.Buffer{}
 
 	sel, err := Display(nil, reader, writer)
@@ -158,7 +228,7 @@ func TestDisplay_EmptySessions(t *testing.T) {
 
 func TestDisplay_MenuOutput(t *testing.T) {
 	sessions := testSessions()
-	reader := strings.NewReader("1\n")
+	reader := strings.NewReader("c\n")
 	writer := &bytes.Buffer{}
 
 	_, _ = Display(sessions, reader, writer)
@@ -167,8 +237,8 @@ func TestDisplay_MenuOutput(t *testing.T) {
 	if !strings.Contains(output, "Session Manager") {
 		t.Error("menu output missing header")
 	}
-	if !strings.Contains(output, "New Session") {
-		t.Error("menu output missing New Session option")
+	if !strings.Contains(output, "Create a session") {
+		t.Error("menu output missing create option")
 	}
 	if !strings.Contains(output, "first-session") {
 		t.Error("menu output missing first session")
@@ -178,6 +248,12 @@ func TestDisplay_MenuOutput(t *testing.T) {
 	}
 	if !strings.Contains(output, "Delete") {
 		t.Error("menu output missing delete option")
+	}
+	if !strings.Contains(output, "Reload") {
+		t.Error("menu output missing reload option")
+	}
+	if !strings.Contains(output, "Quit") {
+		t.Error("menu output missing quit option")
 	}
 }
 

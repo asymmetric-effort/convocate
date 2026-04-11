@@ -46,6 +46,9 @@ const (
 
 	// LockFileExtension is the extension for session lock files.
 	LockFileExtension = ".lock"
+
+	// TmuxSessionName is the name of the tmux session inside the container.
+	TmuxSessionName = "claude"
 )
 
 // Paths holds resolved filesystem paths for claude-shell.

@@ -50,18 +50,18 @@ func NewRunnerWithExec(sessionID, sessionDir string, userInfo user.Info, paths c
 	}
 }
 
-// Start launches the container and attaches stdin/stdout/stderr.
+// Start launches the container in detached mode and attaches to the tmux session.
 func (r *Runner) Start() error {
 	containerName := config.ContainerName(r.sessionID)
 
 	args := r.buildRunArgs(containerName)
 
 	cmd := r.execFn("docker", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to start container: %w: %s", err, strings.TrimSpace(string(out)))
+	}
 
-	return cmd.Run()
+	return r.attachTmux()
 }
 
 // Stop gracefully stops the container.
@@ -82,10 +82,19 @@ func (r *Runner) IsRunning() (bool, error) {
 	return strings.TrimSpace(string(out)) == "true", nil
 }
 
-// Attach attaches to a running container.
+// Attach attaches to the tmux session in a running container.
 func (r *Runner) Attach() error {
+	return r.attachTmux()
+}
+
+// attachTmux connects to the tmux session inside the container.
+func (r *Runner) attachTmux() error {
 	containerName := config.ContainerName(r.sessionID)
-	cmd := r.execFn("docker", "attach", containerName)
+	cmd := r.execFn("docker", "exec", "-it",
+		containerName,
+		"sudo", "-E", "-u", "claude", "-H", "--",
+		"tmux", "attach-session", "-t", config.TmuxSessionName,
+	)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -108,8 +117,7 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 	args := []string{
 		"run",
 		"--rm",
-		"--interactive",
-		"--tty",
+		"--detach",
 		"--name", containerName,
 		"--hostname", fmt.Sprintf("claude-%s", r.sessionID[:8]),
 	}
