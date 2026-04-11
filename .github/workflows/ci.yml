@@ -66,7 +66,7 @@ jobs:
           go tool cover -func=coverage.out | tail -1
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.out
@@ -100,7 +100,7 @@ jobs:
             ./cmd/claude-shell/
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: claude-shell-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/
