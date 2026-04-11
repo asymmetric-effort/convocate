@@ -1,6 +1,6 @@
 # Binaries
-claude-shell
-mock-claude
+/claude-shell
+/mock-claude
 *.exe
 *.exe~
 *.dll
