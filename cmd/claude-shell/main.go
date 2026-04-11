@@ -80,7 +80,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			return fmt.Errorf("failed to list sessions: %w", err)
 		}
 
-		sel, err := menu.Display(sessions, os.Stdin, os.Stdout)
+		sel, err := menu.Display(sessions)
 		if err != nil {
 			return fmt.Errorf("menu error: %w", err)
 		}

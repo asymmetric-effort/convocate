@@ -28,28 +28,6 @@ type Selection struct {
 	SessionID string
 }
 
-// Display renders the session menu and returns the user's selection.
-func Display(sessions []session.Metadata, reader io.Reader, writer io.Writer) (Selection, error) {
-	printMenu(sessions, writer)
-
-	scanner := bufio.NewScanner(reader)
-	fmt.Fprint(writer, "\nSelect option: ")
-
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return Selection{}, fmt.Errorf("failed to read input: %w", err)
-		}
-		return Selection{}, fmt.Errorf("no input received")
-	}
-
-	input := strings.TrimSpace(scanner.Text())
-	if input == "" {
-		input = "c"
-	}
-
-	return parseSelection(input, sessions)
-}
-
 // PromptSessionName asks the user for a session name.
 func PromptSessionName(reader io.Reader, writer io.Writer) (string, error) {
 	fmt.Fprint(writer, "Session name: ")
@@ -101,31 +79,6 @@ func ConfirmDelete(name, id string, reader io.Reader, writer io.Writer) (bool, e
 	}
 	input := strings.TrimSpace(strings.ToLower(scanner.Text()))
 	return input == "y" || input == "yes", nil
-}
-
-func printMenu(sessions []session.Metadata, writer io.Writer) {
-	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, "claude-shell - Session Manager")
-	fmt.Fprintln(writer, strings.Repeat("-", 80))
-	fmt.Fprintf(writer, "  %-4s| %-20s | %-36s | %-12s | %s\n", "#", "Name", "Session ID", "Created", "Last Accessed")
-	fmt.Fprintln(writer, strings.Repeat("-", 80))
-
-	for i, s := range sessions {
-		fmt.Fprintf(writer, "  %-4s| %-20s | %s | %-12s | %s\n",
-			strconv.Itoa(i+1),
-			truncate(s.Name, 20),
-			s.UUID,
-			s.CreatedAt.Format("2006-01-02"),
-			s.LastAccessed.Format("2006-01-02"),
-		)
-	}
-
-	fmt.Fprintln(writer, strings.Repeat("-", 80))
-	fmt.Fprintf(writer, "  %-4s| %-20s |\n", "C", "Create a session")
-	fmt.Fprintf(writer, "  %-4s| %-20s |\n", "D", "Delete a session")
-	fmt.Fprintf(writer, "  %-4s| %-20s |\n", "R", "Reload")
-	fmt.Fprintf(writer, "  %-4s| %-20s |\n", "Q", "Quit")
-	fmt.Fprintln(writer, strings.Repeat("-", 80))
 }
 
 func parseSelection(input string, sessions []session.Metadata) (Selection, error) {
