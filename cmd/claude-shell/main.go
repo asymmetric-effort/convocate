@@ -85,6 +85,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			IsRunning:    container.IsContainerRunning,
 			Reload:       mgr.List,
 			OverrideLock: mgr.OverrideLock,
+			KillSession:  container.StopContainer,
 		})
 		if err != nil {
 			return fmt.Errorf("menu error: %w", err)

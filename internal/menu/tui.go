@@ -31,6 +31,7 @@ const (
 	modeDeleteConfirm
 	modeLockedDialog
 	modeOverrideConfirm
+	modeKillConfirm
 )
 
 type tui struct {
@@ -47,6 +48,7 @@ type tui struct {
 	isRunningFunc    func(id string) bool
 	reloadFunc       func() ([]session.Metadata, error)
 	overrideLockFunc func(id string) error
+	killFunc         func(id string) error
 }
 
 func (t *tui) isLocked(id string) bool {
@@ -81,6 +83,7 @@ type DisplayOptions struct {
 	IsRunning    func(string) bool
 	Reload       func() ([]session.Metadata, error)
 	OverrideLock func(string) error
+	KillSession  func(string) error
 }
 
 // Display renders the TUI session menu and returns the user's selection.
@@ -122,6 +125,7 @@ func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickIn
 		isRunningFunc:    isRunning,
 		reloadFunc:       opts.Reload,
 		overrideLockFunc: opts.OverrideLock,
+		killFunc:         opts.KillSession,
 	}
 
 	// Tick periodically to keep the clock updated
@@ -208,6 +212,8 @@ func (t *tui) draw() {
 		t.drawLockedDialog(width, height)
 	case modeOverrideConfirm:
 		t.drawOverrideDialog(width, height)
+	case modeKillConfirm:
+		t.drawKillDialog(width, height)
 	}
 }
 
@@ -299,7 +305,7 @@ func (t *tui) drawMenuBar(width, height int) {
 	row := height - 1
 	fillRow(t.screen, row, width, menuBarStyle)
 	drawString(t.screen, 1, row,
-		"(C)reate | (D)elete | (O)verride lock | (R)eload | (Q)uit",
+		"(C)reate | (D)elete | (K)ill | (O)verride lock | (R)eload | (Q)uit",
 		menuBarStyle)
 }
 
@@ -532,6 +538,84 @@ func (t *tui) handleOverrideDialogKey(ev *tcell.EventKey) (Selection, bool) {
 	return Selection{}, false
 }
 
+func (t *tui) drawKillDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	prompt := fmt.Sprintf("Kill running session %q?", name)
+	dialogWidth := len(prompt) + 6
+	if dialogWidth < 40 {
+		dialogWidth = 40
+	}
+	dialogHeight := 5
+	if t.dialogErr != "" {
+		dialogHeight = 7
+	}
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	// Draw dialog background
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	// Title
+	title := " Kill Session "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	// Prompt
+	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
+
+	// Error message
+	if t.dialogErr != "" {
+		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
+		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+	}
+
+	// Hint
+	hint := "(Y)es  (N)o"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleKillDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+		t.dialogErr = ""
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'y', 'Y':
+			if t.cursor >= 0 && t.cursor < len(t.sessions) && t.killFunc != nil {
+				s := t.sessions[t.cursor]
+				if err := t.killFunc(s.UUID); err != nil {
+					t.dialogErr = err.Error()
+					return Selection{}, false
+				}
+				t.mode = modeMenu
+				t.dialogErr = ""
+			} else {
+				t.mode = modeMenu
+			}
+		case 'n', 'N':
+			t.mode = modeMenu
+			t.dialogErr = ""
+		}
+	}
+	return Selection{}, false
+}
+
 func (t *tui) handleDeleteDialogKey(ev *tcell.EventKey) (Selection, bool) {
 	switch ev.Key() {
 	case tcell.KeyEscape:
@@ -561,6 +645,8 @@ func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
 		return t.handleLockedDialogKey(ev)
 	case modeOverrideConfirm:
 		return t.handleOverrideDialogKey(ev)
+	case modeKillConfirm:
+		return t.handleKillDialogKey(ev)
 	default:
 		return t.handleMenuKey(ev)
 	}
@@ -602,6 +688,14 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 				s := t.sessions[t.cursor]
 				if t.isLocked(s.UUID) {
 					t.mode = modeOverrideConfirm
+					t.dialogErr = ""
+				}
+			}
+		case 'k', 'K':
+			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
+				s := t.sessions[t.cursor]
+				if t.isRunning(s.UUID) {
+					t.mode = modeKillConfirm
 					t.dialogErr = ""
 				}
 			}

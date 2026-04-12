@@ -112,6 +112,13 @@ func IsContainerRunning(sessionID string) bool {
 	return strings.TrimSpace(string(out)) == "true"
 }
 
+// StopContainer stops the container for a given session ID.
+func StopContainer(sessionID string) error {
+	containerName := config.ContainerName(sessionID)
+	cmd := exec.Command("docker", "stop", "-t", "10", containerName)
+	return cmd.Run()
+}
+
 // ImageExists checks if the claude-shell Docker image exists.
 func ImageExists(execFn ExecFunc) (bool, error) {
 	if execFn == nil {
