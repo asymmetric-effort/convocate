@@ -39,7 +39,7 @@ func runWithKey(t *testing.T, sessions []session.Metadata, key tcell.Key, ch run
 		screen.InjectKey(key, ch, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen)
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestDisplay_ScreenFactoryError(t *testing.T) {
 		return nil, errors.New("no terminal")
 	}
 
-	_, err := Display(testSessions())
+	_, err := Display(testSessions(), DisplayOptions{})
 	if err == nil {
 		t.Error("expected error when screen factory fails")
 	}
@@ -95,7 +95,7 @@ func TestDisplay_FullPath(t *testing.T) {
 		simScreen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := Display(testSessions())
+	sel, err := Display(testSessions(), DisplayOptions{})
 	if err != nil {
 		t.Fatalf("Display failed: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestTUI_CreateDialog_TypeAndEnter(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // confirm
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestTUI_CreateDialog_UpperC(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestTUI_CreateDialog_EscapeCancels(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestTUI_CreateDialog_EmptyNameShowsError(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestTUI_CreateDialog_InvalidCharShowsError(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestTUI_CreateDialog_Backspace(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestTUI_DeleteDialog_ConfirmYes(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'y', tcell.ModNone) // confirm
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen)
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestTUI_DeleteDialog_ConfirmNo(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestTUI_DeleteDialog_EscapeCancels(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestTUI_DeleteDialog_EmptySessionsIgnored(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(nil, screen)
+	sel, err := DisplayWithScreen(nil, screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestTUI_NumberOutOfRange(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestTUI_ArrowDownThenEnter(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen)
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestTUI_ArrowUpClampsAtZero(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen)
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestTUI_EmptySessions_EnterIgnored(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(nil, screen)
+	sel, err := DisplayWithScreen(nil, screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestTUI_TitleBarContent(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen)
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 
 	row := getScreenText(screen, 0, testScreenWidth)
 	if !strings.Contains(row, "claude-shell") {
@@ -504,7 +504,7 @@ func TestTUI_TitleBarStyle(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen)
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 
 	_, _, style, _ := screen.GetContent(1, 0)
 	fg, bg, _ := style.Decompose()
@@ -525,7 +525,7 @@ func TestTUI_MenuBarContent(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen)
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 
 	row := getScreenText(screen, testScreenHeight-1, testScreenWidth)
 	for _, label := range []string{"(C)reate", "(D)elete", "(R)eload", "(Q)uit"} {
@@ -544,7 +544,7 @@ func TestTUI_MenuBarStyle(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen)
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 
 	_, _, style, _ := screen.GetContent(1, testScreenHeight-1)
 	fg, bg, _ := style.Decompose()
@@ -565,7 +565,7 @@ func TestTUI_SessionsDisplayed(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen)
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 
 	// Check that session names appear in the session area (rows 4+)
 	found := false
@@ -590,7 +590,7 @@ func TestTUI_EmptySessionsMessage(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(nil, screen)
+	_, _ = DisplayWithScreen(nil, screen, DisplayOptions{})
 
 	found := false
 	for row := 4; row < testScreenHeight-1; row++ {
@@ -614,7 +614,7 @@ func TestTUI_ColumnHeaders(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen)
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 
 	headerRow := getScreenText(screen, 2, testScreenWidth)
 	for _, col := range []string{"#", "Name", "Session ID", "Created", "Last Accessed"} {
@@ -652,7 +652,7 @@ func TestTUI_ScrollWithManySessions(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen)
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -793,7 +793,7 @@ func TestTUI_ResizeEvent(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -817,7 +817,7 @@ func TestTUI_TinyScreen(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -839,7 +839,7 @@ func TestTUI_NarrowScreen(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -863,7 +863,7 @@ func TestTUI_MinimalHeight(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen)
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -923,7 +923,7 @@ func TestTUI_TitleBarNarrowHidesClock(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen)
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 
 	row := getScreenText(screen, 0, 30)
 	if !strings.Contains(row, "claude-shell") {
@@ -995,7 +995,7 @@ func TestTUI_ClockTicker(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := displayWithOptions(testSessions(), screen, 50*time.Millisecond)
+	sel, err := displayWithOptions(testSessions(), screen, 50*time.Millisecond, 10*time.Second, DisplayOptions{})
 	if err != nil {
 		t.Fatalf("displayWithOptions failed: %v", err)
 	}

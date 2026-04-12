@@ -18,6 +18,8 @@ const (
 	ActionDeleteSession = "delete"
 	// ActionReload indicates the user wants to reload the session list.
 	ActionReload = "reload"
+	// ActionOverrideLock indicates the user wants to override a stale session lock.
+	ActionOverrideLock = "override-lock"
 	// ActionQuit indicates the user wants to quit the shell.
 	ActionQuit = "quit"
 )

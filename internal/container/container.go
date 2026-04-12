@@ -101,6 +101,17 @@ func (r *Runner) attachTmux() error {
 	return cmd.Run()
 }
 
+// IsContainerRunning checks if the container for a given session ID is running.
+func IsContainerRunning(sessionID string) bool {
+	containerName := config.ContainerName(sessionID)
+	cmd := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", containerName)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "true"
+}
+
 // ImageExists checks if the claude-shell Docker image exists.
 func ImageExists(execFn ExecFunc) (bool, error) {
 	if execFn == nil {

@@ -196,6 +196,38 @@ func (m *Manager) IsLocked(id string) bool {
 	return true
 }
 
+// OverrideLock removes a stale lock file if the owning process is no longer running.
+// Returns an error if the session is actively locked by a running process.
+func (m *Manager) OverrideLock(id string) error {
+	lockPath := filepath.Join(m.basePath, id+config.LockFileExtension)
+	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		return fmt.Errorf("session %q is not locked", id)
+	}
+
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		// Can't read lock file — remove it
+		return os.Remove(lockPath)
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil {
+		// Invalid PID — remove stale lock
+		return os.Remove(lockPath)
+	}
+
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return os.Remove(lockPath)
+	}
+
+	if err := process.Signal(syscall.Signal(0)); err == nil {
+		return fmt.Errorf("session %q is actively in use by process %d", id, pid)
+	}
+
+	return os.Remove(lockPath)
+}
+
 // SessionDir returns the directory path for a session.
 func (m *Manager) SessionDir(id string) string {
 	return filepath.Join(m.basePath, id)

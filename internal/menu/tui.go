@@ -29,17 +29,38 @@ const (
 	modeMenu tuiMode = iota
 	modeCreateDialog
 	modeDeleteConfirm
+	modeLockedDialog
+	modeOverrideConfirm
 )
 
 type tui struct {
-	screen       tcell.Screen
-	sessions     []session.Metadata
-	cursor       int
-	offset       int
-	tickInterval time.Duration
-	mode         tuiMode
-	inputBuf     []rune
-	dialogErr    string
+	screen         tcell.Screen
+	sessions       []session.Metadata
+	cursor         int
+	offset         int
+	tickInterval   time.Duration
+	reloadInterval time.Duration
+	mode           tuiMode
+	inputBuf       []rune
+	dialogErr      string
+	isLockedFunc     func(id string) bool
+	isRunningFunc    func(id string) bool
+	reloadFunc       func() ([]session.Metadata, error)
+	overrideLockFunc func(id string) error
+}
+
+func (t *tui) isLocked(id string) bool {
+	if t.isLockedFunc == nil {
+		return false
+	}
+	return t.isLockedFunc(id)
+}
+
+func (t *tui) isRunning(id string) bool {
+	if t.isRunningFunc == nil {
+		return false
+	}
+	return t.isRunningFunc(id)
 }
 
 // screenFactory creates and initializes a tcell.Screen. Override in tests.
@@ -54,30 +75,53 @@ var screenFactory func() (tcell.Screen, error) = func() (tcell.Screen, error) {
 	return screen, nil
 }
 
+// DisplayOptions configures the TUI display.
+type DisplayOptions struct {
+	IsLocked     func(string) bool
+	IsRunning    func(string) bool
+	Reload       func() ([]session.Metadata, error)
+	OverrideLock func(string) error
+}
+
 // Display renders the TUI session menu and returns the user's selection.
-func Display(sessions []session.Metadata) (Selection, error) {
+func Display(sessions []session.Metadata, opts DisplayOptions) (Selection, error) {
 	screen, err := screenFactory()
 	if err != nil {
 		return Selection{}, err
 	}
 	defer screen.Fini()
 
-	return DisplayWithScreen(sessions, screen)
+	return DisplayWithScreen(sessions, screen, opts)
 }
 
 // DisplayWithScreen renders the TUI on a provided screen (for testing).
-func DisplayWithScreen(sessions []session.Metadata, screen tcell.Screen) (Selection, error) {
-	return displayWithOptions(sessions, screen, 1*time.Second)
+func DisplayWithScreen(sessions []session.Metadata, screen tcell.Screen, opts DisplayOptions) (Selection, error) {
+	return displayWithOptions(sessions, screen, 1*time.Second, 10*time.Second, opts)
 }
 
-func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickInterval time.Duration) (Selection, error) {
+func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickInterval, reloadInterval time.Duration, opts DisplayOptions) (Selection, error) {
 	done := make(chan struct{})
 	defer close(done)
 
+	isLocked := opts.IsLocked
+	if isLocked == nil {
+		isLocked = func(string) bool { return false }
+	}
+
+	isRunning := opts.IsRunning
+	if isRunning == nil {
+		isRunning = func(string) bool { return false }
+	}
+
 	t := &tui{
-		screen:       screen,
-		sessions:     sessions,
-		tickInterval: tickInterval,
+		screen:           screen,
+		sessions:         sessions,
+		tickInterval:     tickInterval,
+		reloadInterval:   reloadInterval,
+		isLockedFunc:     isLocked,
+		isRunningFunc:    isRunning,
+		reloadFunc:       opts.Reload,
+		overrideLockFunc: opts.OverrideLock,
 	}
 
 	// Tick periodically to keep the clock updated
@@ -93,6 +137,23 @@ func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickIn
 			}
 		}
 	}()
+
+	// Reload sessions periodically
+	if t.reloadFunc != nil {
+		go func() {
+			ticker := time.NewTicker(t.reloadInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-ticker.C:
+					reloadFlag := true
+					screen.PostEvent(tcell.NewEventInterrupt(reloadFlag))
+				}
+			}
+		}()
+	}
 
 	return t.run()
 }
@@ -112,7 +173,17 @@ func (t *tui) run() (Selection, error) {
 		case *tcell.EventResize:
 			t.screen.Sync()
 		case *tcell.EventInterrupt:
-			// clock tick — just redraw
+			if _, ok := ev.Data().(bool); ok && t.reloadFunc != nil {
+				if sessions, err := t.reloadFunc(); err == nil {
+					t.sessions = sessions
+					if t.cursor >= len(t.sessions) {
+						t.cursor = len(t.sessions) - 1
+					}
+					if t.cursor < 0 {
+						t.cursor = 0
+					}
+				}
+			}
 		}
 	}
 }
@@ -133,6 +204,10 @@ func (t *tui) draw() {
 		t.drawCreateDialog(width, height)
 	case modeDeleteConfirm:
 		t.drawDeleteDialog(width, height)
+	case modeLockedDialog:
+		t.drawLockedDialog(width, height)
+	case modeOverrideConfirm:
+		t.drawOverrideDialog(width, height)
 	}
 }
 
@@ -154,8 +229,8 @@ func (t *tui) drawSessionTable(width, height int) {
 	menuBarRow := height - 1
 
 	// Column header
-	header := fmt.Sprintf("  %-4s| %-20s | %-36s | %-12s | %s",
-		"#", "Name", "Session ID", "Created", "Last Accessed")
+	header := fmt.Sprintf("  %-4s| %-20s | %-36s | %-12s | %-13s | %s",
+		"#", "Name", "Session ID", "Created", "Last Accessed", "S")
 	drawString(t.screen, 0, headerRow, clipToWidth(header, width), headerStyle)
 
 	// Separator
@@ -198,12 +273,20 @@ func (t *tui) drawSessionTable(width, height int) {
 			style = selectedStyle
 		}
 
-		line := fmt.Sprintf("  %-4s| %-20s | %s | %-12s | %s",
+		statusIndicator := "-"
+		if t.isRunning(s.UUID) {
+			statusIndicator = "R"
+		} else if t.isLocked(s.UUID) {
+			statusIndicator = "L"
+		}
+
+		line := fmt.Sprintf("  %-4s| %-20s | %s | %-12s | %-13s | %s",
 			strconv.Itoa(idx+1),
 			truncate(s.Name, 20),
 			s.UUID,
 			s.CreatedAt.Format("2006-01-02"),
 			s.LastAccessed.Format("2006-01-02"),
+			statusIndicator,
 		)
 
 		row := sessionsStart + i
@@ -216,7 +299,7 @@ func (t *tui) drawMenuBar(width, height int) {
 	row := height - 1
 	fillRow(t.screen, row, width, menuBarStyle)
 	drawString(t.screen, 1, row,
-		"(C)reate a session | (D)elete a session | (R)eload | (Q)uit",
+		"(C)reate | (D)elete | (O)verride lock | (R)eload | (Q)uit",
 		menuBarStyle)
 }
 
@@ -324,6 +407,131 @@ func (t *tui) drawDeleteDialog(width, height int) {
 	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
 }
 
+func (t *tui) drawLockedDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	msg := fmt.Sprintf("Session %q is currently locked.", name)
+	dialogWidth := len(msg) + 6
+	if dialogWidth < 40 {
+		dialogWidth = 40
+	}
+	const dialogHeight = 5
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	// Draw dialog background
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	// Title
+	title := " Session Locked "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	// Message
+	drawString(t.screen, x0+2, y0+2, msg, dialogStyle)
+
+	// Hint
+	hint := "Press any key to continue"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleLockedDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	t.mode = modeMenu
+	return Selection{}, false
+}
+
+func (t *tui) drawOverrideDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	prompt := fmt.Sprintf("Override lock for session %q?", name)
+	dialogWidth := len(prompt) + 6
+	if dialogWidth < 44 {
+		dialogWidth = 44
+	}
+	dialogHeight := 5
+	if t.dialogErr != "" {
+		dialogHeight = 7
+	}
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	// Draw dialog background
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	// Title
+	title := " Override Lock "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	// Prompt
+	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
+
+	// Error message
+	if t.dialogErr != "" {
+		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
+		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+	}
+
+	// Hint
+	hint := "(Y)es  (N)o"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleOverrideDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+		t.dialogErr = ""
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'y', 'Y':
+			if t.cursor >= 0 && t.cursor < len(t.sessions) && t.overrideLockFunc != nil {
+				s := t.sessions[t.cursor]
+				if err := t.overrideLockFunc(s.UUID); err != nil {
+					t.dialogErr = err.Error()
+					return Selection{}, false
+				}
+				t.mode = modeMenu
+				t.dialogErr = ""
+			} else {
+				t.mode = modeMenu
+			}
+		case 'n', 'N':
+			t.mode = modeMenu
+			t.dialogErr = ""
+		}
+	}
+	return Selection{}, false
+}
+
 func (t *tui) handleDeleteDialogKey(ev *tcell.EventKey) (Selection, bool) {
 	switch ev.Key() {
 	case tcell.KeyEscape:
@@ -349,6 +557,10 @@ func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
 		return t.handleCreateDialogKey(ev)
 	case modeDeleteConfirm:
 		return t.handleDeleteDialogKey(ev)
+	case modeLockedDialog:
+		return t.handleLockedDialogKey(ev)
+	case modeOverrideConfirm:
+		return t.handleOverrideDialogKey(ev)
 	default:
 		return t.handleMenuKey(ev)
 	}
@@ -367,6 +579,10 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 	case tcell.KeyEnter:
 		if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
 			s := t.sessions[t.cursor]
+			if t.isLocked(s.UUID) {
+				t.mode = modeLockedDialog
+				return Selection{}, false
+			}
 			return Selection{Action: s.UUID, SessionID: s.UUID}, true
 		}
 	case tcell.KeyEscape:
@@ -381,6 +597,14 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
 				t.mode = modeDeleteConfirm
 			}
+		case 'o', 'O':
+			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
+				s := t.sessions[t.cursor]
+				if t.isLocked(s.UUID) {
+					t.mode = modeOverrideConfirm
+					t.dialogErr = ""
+				}
+			}
 		case 'r', 'R':
 			return Selection{Action: ActionReload}, true
 		case 'q', 'Q':
@@ -390,6 +614,11 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 				idx := int(ev.Rune() - '1')
 				if idx < len(t.sessions) {
 					s := t.sessions[idx]
+					if t.isLocked(s.UUID) {
+						t.cursor = idx
+						t.mode = modeLockedDialog
+						return Selection{}, false
+					}
 					return Selection{Action: s.UUID, SessionID: s.UUID}, true
 				}
 			}
