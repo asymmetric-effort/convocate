@@ -14,6 +14,8 @@ import (
 const (
 	// ActionNewSession indicates the user wants to create a new session.
 	ActionNewSession = "new"
+	// ActionCloneSession indicates the user wants to clone an existing session.
+	ActionCloneSession = "clone"
 	// ActionDeleteSession indicates the user wants to delete a session.
 	ActionDeleteSession = "delete"
 	// ActionReload indicates the user wants to reload the session list.

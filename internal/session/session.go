@@ -71,6 +71,37 @@ func (m *Manager) CreateWithUUID(id, name string) (Metadata, error) {
 	return meta, nil
 }
 
+// Clone creates a new session whose home directory is a copy of an existing session's.
+func (m *Manager) Clone(sourceID, newName string) (Metadata, error) {
+	srcDir := filepath.Join(m.basePath, sourceID)
+	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+		return Metadata{}, fmt.Errorf("session %q does not exist", sourceID)
+	}
+
+	newID := uuid.New().String()
+	dstDir := filepath.Join(m.basePath, newID)
+
+	if err := copyDir(srcDir, dstDir); err != nil {
+		_ = os.RemoveAll(dstDir)
+		return Metadata{}, fmt.Errorf("failed to copy session directory: %w", err)
+	}
+
+	now := time.Now().UTC()
+	meta := Metadata{
+		UUID:         newID,
+		Name:         newName,
+		CreatedAt:    now,
+		LastAccessed: now,
+	}
+
+	if err := m.writeMetadata(dstDir, meta); err != nil {
+		_ = os.RemoveAll(dstDir)
+		return Metadata{}, fmt.Errorf("failed to write session metadata: %w", err)
+	}
+
+	return meta, nil
+}
+
 // List returns all existing sessions sorted by last accessed time (most recent first).
 func (m *Manager) List() ([]Metadata, error) {
 	entries, err := os.ReadDir(m.basePath)

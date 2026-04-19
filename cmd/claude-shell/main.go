@@ -100,6 +100,11 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
+		case menu.ActionCloneSession:
+			if err := handleCloneSession(mgr, sel.SessionID, sel.Name, userInfo, paths, log); err != nil {
+				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
+			}
+			continue
 		case menu.ActionReload:
 			continue
 		case menu.ActionDeleteSession:
@@ -129,6 +134,20 @@ func handleNewSession(mgr *session.Manager, name string, userInfo user.Info, pat
 		log.Infof("created session %s (%s)", meta.UUID, meta.Name)
 	}
 	fmt.Printf("Created session %q (%s)\n", meta.Name, meta.UUID[:8])
+
+	return launchSession(mgr, meta.UUID, userInfo, paths, log)
+}
+
+func handleCloneSession(mgr *session.Manager, sourceID, name string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+	meta, err := mgr.Clone(sourceID, name)
+	if err != nil {
+		return fmt.Errorf("failed to clone session: %w", err)
+	}
+
+	if log != nil {
+		log.Infof("cloned session %s from %s (%s)", meta.UUID, sourceID, meta.Name)
+	}
+	fmt.Printf("Cloned session %q (%s) from %s\n", meta.Name, meta.UUID[:8], sourceID[:8])
 
 	return launchSession(mgr, meta.UUID, userInfo, paths, log)
 }

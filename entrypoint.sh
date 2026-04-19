@@ -42,7 +42,7 @@ echo 'export PATH="${PATH}:/usr/local/go/bin"' > /etc/profile.d/go.sh
 export HOME=/home/claude
 
 # Start a detached tmux session running claude
-sudo -E -u claude -H -- tmux new-session -d -s claude /usr/local/bin/claude
+sudo -E -u claude -H -- tmux new-session -d -s claude "/usr/local/bin/claude --dangerously-skip-permissions"
 
 # Keep container alive while the tmux session exists
 while sudo -u claude tmux has-session -t claude 2>/dev/null; do

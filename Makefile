@@ -5,7 +5,7 @@ GO := go
 GOFLAGS := -trimpath
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 
-.PHONY: all generate build clean lint lint-go lint-yaml lint-json test test-unit test-integration test-e2e release release/major release/minor
+.PHONY: all generate build install clean lint lint-go lint-yaml lint-json test test-unit test-integration test-e2e release release/major release/minor
 
 all: lint test build
 
@@ -19,6 +19,10 @@ build: generate
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/claude-shell/
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+
+install: build
+	@echo "Installing $(BINARY_NAME)..."
+	sudo ./$(BUILD_DIR)/$(BINARY_NAME) install
 
 clean:
 	@echo "Cleaning..."

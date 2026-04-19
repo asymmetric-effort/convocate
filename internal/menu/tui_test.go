@@ -133,7 +133,7 @@ func TestTUI_CreateDialog_TypeAndEnter(t *testing.T) {
 
 	go func() {
 		time.Sleep(10 * time.Millisecond)
-		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone) // open dialog
+		screen.InjectKey(tcell.KeyRune, 'n', tcell.ModNone) // open dialog
 		time.Sleep(10 * time.Millisecond)
 		for _, ch := range "my-session" {
 			screen.InjectKey(tcell.KeyRune, ch, tcell.ModNone)
@@ -155,13 +155,13 @@ func TestTUI_CreateDialog_TypeAndEnter(t *testing.T) {
 	}
 }
 
-func TestTUI_CreateDialog_UpperC(t *testing.T) {
+func TestTUI_CreateDialog_UpperN(t *testing.T) {
 	screen := newTestScreen(t)
 	defer screen.Fini()
 
 	go func() {
 		time.Sleep(10 * time.Millisecond)
-		screen.InjectKey(tcell.KeyRune, 'C', tcell.ModNone) // open dialog
+		screen.InjectKey(tcell.KeyRune, 'N', tcell.ModNone) // open dialog
 		time.Sleep(10 * time.Millisecond)
 		for _, ch := range "test" {
 			screen.InjectKey(tcell.KeyRune, ch, tcell.ModNone)
@@ -189,7 +189,7 @@ func TestTUI_CreateDialog_EscapeCancels(t *testing.T) {
 
 	go func() {
 		time.Sleep(10 * time.Millisecond)
-		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone) // open dialog
+		screen.InjectKey(tcell.KeyRune, 'n', tcell.ModNone) // open dialog
 		time.Sleep(10 * time.Millisecond)
 		screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone) // cancel
 		time.Sleep(10 * time.Millisecond)
@@ -211,7 +211,7 @@ func TestTUI_CreateDialog_EmptyNameShowsError(t *testing.T) {
 
 	go func() {
 		time.Sleep(10 * time.Millisecond)
-		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone) // open dialog
+		screen.InjectKey(tcell.KeyRune, 'n', tcell.ModNone) // open dialog
 		time.Sleep(10 * time.Millisecond)
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // empty name
 		time.Sleep(10 * time.Millisecond)
@@ -235,7 +235,7 @@ func TestTUI_CreateDialog_InvalidCharShowsError(t *testing.T) {
 
 	go func() {
 		time.Sleep(10 * time.Millisecond)
-		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone)
+		screen.InjectKey(tcell.KeyRune, 'n', tcell.ModNone)
 		time.Sleep(10 * time.Millisecond)
 		screen.InjectKey(tcell.KeyRune, '!', tcell.ModNone) // invalid char
 		time.Sleep(10 * time.Millisecond)
@@ -261,7 +261,7 @@ func TestTUI_CreateDialog_Backspace(t *testing.T) {
 
 	go func() {
 		time.Sleep(10 * time.Millisecond)
-		screen.InjectKey(tcell.KeyRune, 'c', tcell.ModNone)
+		screen.InjectKey(tcell.KeyRune, 'n', tcell.ModNone)
 		time.Sleep(10 * time.Millisecond)
 		for _, ch := range "testx" {
 			screen.InjectKey(tcell.KeyRune, ch, tcell.ModNone)
@@ -528,7 +528,7 @@ func TestTUI_MenuBarContent(t *testing.T) {
 	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 
 	row := getScreenText(screen, testScreenHeight-1, testScreenWidth)
-	for _, label := range []string{"(C)reate", "(D)elete", "(R)eload", "(Q)uit"} {
+	for _, label := range []string{"(N)ew", "(D)elete", "(R)eload", "(Q)uit"} {
 		if !strings.Contains(row, label) {
 			t.Errorf("menu bar missing %q, got: %q", label, row)
 		}
@@ -731,11 +731,11 @@ func TestTUI_HandleKeyRunes_ImmediateReturn(t *testing.T) {
 func TestTUI_HandleKeyRunes_OpensDialog(t *testing.T) {
 	ui := &tui{sessions: testSessions(), cursor: 0}
 
-	// 'c' opens create dialog
+	// 'n' opens create dialog
 	ui.mode = modeMenu
-	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'c', tcell.ModNone))
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'n', tcell.ModNone))
 	if done {
-		t.Error("'c' should not finish (opens dialog)")
+		t.Error("'n' should not finish (opens dialog)")
 	}
 	if ui.mode != modeCreateDialog {
 		t.Errorf("mode = %d, want modeCreateDialog", ui.mode)

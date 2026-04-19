@@ -20,6 +20,7 @@ var (
 	separatorStyle = tcell.StyleDefault.Foreground(tcell.ColorGray)
 	dialogStyle    = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkBlue)
 	dialogErrStyle = tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorDarkBlue)
+	dialogWarnStyle = tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorRed)
 	inputStyle     = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
 )
 
@@ -28,10 +29,13 @@ type tuiMode int
 const (
 	modeMenu tuiMode = iota
 	modeCreateDialog
+	modeCloneDialog
 	modeDeleteConfirm
 	modeLockedDialog
 	modeOverrideConfirm
 	modeKillConfirm
+	modeNotRunningDialog
+	modeKillInitiated
 )
 
 type tui struct {
@@ -206,6 +210,8 @@ func (t *tui) draw() {
 	switch t.mode {
 	case modeCreateDialog:
 		t.drawCreateDialog(width, height)
+	case modeCloneDialog:
+		t.drawCloneDialog(width, height)
 	case modeDeleteConfirm:
 		t.drawDeleteDialog(width, height)
 	case modeLockedDialog:
@@ -214,6 +220,10 @@ func (t *tui) draw() {
 		t.drawOverrideDialog(width, height)
 	case modeKillConfirm:
 		t.drawKillDialog(width, height)
+	case modeNotRunningDialog:
+		t.drawNotRunningDialog(width, height)
+	case modeKillInitiated:
+		t.drawKillInitiatedDialog(width, height)
 	}
 }
 
@@ -266,7 +276,7 @@ func (t *tui) drawSessionTable(width, height int) {
 	}
 
 	if len(t.sessions) == 0 {
-		drawString(t.screen, 2, sessionsStart, "No sessions. Press (C) to create one.", normalStyle)
+		drawString(t.screen, 2, sessionsStart, "No sessions. Press (N) to create one.", normalStyle)
 		return
 	}
 
@@ -305,7 +315,7 @@ func (t *tui) drawMenuBar(width, height int) {
 	row := height - 1
 	fillRow(t.screen, row, width, menuBarStyle)
 	drawString(t.screen, 1, row,
-		"(C)reate | (D)elete | (K)ill | (O)verride lock | (R)eload | (Q)uit",
+		"(N)ew | (C)lone | (D)elete | (K)ill | (O)verride lock | (R)eload | (Q)uit",
 		menuBarStyle)
 }
 
@@ -368,6 +378,67 @@ func (t *tui) drawCreateDialog(width, height int) {
 
 	// Hint
 	hint := "Enter=Create  Esc=Cancel"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) drawCloneDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	const dialogWidth = 60
+	const dialogHeight = 8
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	title := " Clone Session "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	source := fmt.Sprintf("From: %s", truncate(s.Name, dialogWidth-10))
+	drawString(t.screen, x0+2, y0+2, source, dialogStyle)
+
+	drawString(t.screen, x0+2, y0+3, "Name:", dialogStyle)
+
+	inputX := x0 + 8
+	inputW := dialogWidth - 10
+	for col := inputX; col < inputX+inputW; col++ {
+		t.screen.SetContent(col, y0+3, ' ', nil, inputStyle)
+	}
+
+	inputText := string(t.inputBuf)
+	if len(inputText) > inputW {
+		inputText = inputText[len(inputText)-inputW:]
+	}
+	drawString(t.screen, inputX, y0+3, inputText, inputStyle)
+
+	cursorX := inputX + len(t.inputBuf)
+	if len(t.inputBuf) > inputW {
+		cursorX = inputX + inputW
+	}
+	if cursorX < x0+dialogWidth-2 {
+		t.screen.SetContent(cursorX, y0+3, ' ', nil, inputStyle.Reverse(true))
+	}
+
+	if t.dialogErr != "" {
+		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
+		drawString(t.screen, x0+2, y0+5, errMsg, dialogErrStyle)
+	}
+
+	hint := "Enter=Clone  Esc=Cancel"
 	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
 }
 
@@ -460,6 +531,100 @@ func (t *tui) handleLockedDialogKey(ev *tcell.EventKey) (Selection, bool) {
 	return Selection{}, false
 }
 
+func (t *tui) drawNotRunningDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	msg := fmt.Sprintf("Session %q is not running.", name)
+	dialogWidth := len(msg) + 6
+	if dialogWidth < 40 {
+		dialogWidth = 40
+	}
+	const dialogHeight = 5
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	// Draw dialog background (red)
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogWarnStyle)
+		}
+	}
+
+	// Title
+	title := " Not Running "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogWarnStyle.Bold(true))
+
+	// Message
+	drawString(t.screen, x0+2, y0+2, msg, dialogWarnStyle)
+
+	// Hint
+	hint := "Press any key to continue"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogWarnStyle)
+}
+
+func (t *tui) handleNotRunningDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	t.mode = modeMenu
+	return Selection{}, false
+}
+
+func (t *tui) drawKillInitiatedDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	msg := fmt.Sprintf("Kill initiated for session %q.", name)
+	dialogWidth := len(msg) + 6
+	if dialogWidth < 40 {
+		dialogWidth = 40
+	}
+	const dialogHeight = 5
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	// Draw dialog background
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	// Title
+	title := " Kill Initiated "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	// Message
+	drawString(t.screen, x0+2, y0+2, msg, dialogStyle)
+
+	// Hint
+	hint := "Press any key to continue"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleKillInitiatedDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	t.mode = modeMenu
+	return Selection{}, false
+}
+
 func (t *tui) drawOverrideDialog(width, height int) {
 	if t.cursor < 0 || t.cursor >= len(t.sessions) {
 		return
@@ -545,7 +710,7 @@ func (t *tui) drawKillDialog(width, height int) {
 	s := t.sessions[t.cursor]
 
 	name := truncate(s.Name, 30)
-	prompt := fmt.Sprintf("Kill running session %q?", name)
+	prompt := fmt.Sprintf("Kill session %q?", name)
 	dialogWidth := len(prompt) + 6
 	if dialogWidth < 40 {
 		dialogWidth = 40
@@ -597,13 +762,20 @@ func (t *tui) handleKillDialogKey(ev *tcell.EventKey) (Selection, bool) {
 	case tcell.KeyRune:
 		switch ev.Rune() {
 		case 'y', 'Y':
-			if t.cursor >= 0 && t.cursor < len(t.sessions) && t.killFunc != nil {
+			if t.cursor >= 0 && t.cursor < len(t.sessions) {
 				s := t.sessions[t.cursor]
-				if err := t.killFunc(s.UUID); err != nil {
-					t.dialogErr = err.Error()
+				if !t.isRunning(s.UUID) {
+					t.mode = modeNotRunningDialog
+					t.dialogErr = ""
 					return Selection{}, false
 				}
-				t.mode = modeMenu
+				if t.killFunc != nil {
+					if err := t.killFunc(s.UUID); err != nil {
+						t.dialogErr = err.Error()
+						return Selection{}, false
+					}
+				}
+				t.mode = modeKillInitiated
 				t.dialogErr = ""
 			} else {
 				t.mode = modeMenu
@@ -639,6 +811,8 @@ func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
 	switch t.mode {
 	case modeCreateDialog:
 		return t.handleCreateDialogKey(ev)
+	case modeCloneDialog:
+		return t.handleCloneDialogKey(ev)
 	case modeDeleteConfirm:
 		return t.handleDeleteDialogKey(ev)
 	case modeLockedDialog:
@@ -647,6 +821,10 @@ func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
 		return t.handleOverrideDialogKey(ev)
 	case modeKillConfirm:
 		return t.handleKillDialogKey(ev)
+	case modeNotRunningDialog:
+		return t.handleNotRunningDialogKey(ev)
+	case modeKillInitiated:
+		return t.handleKillInitiatedDialogKey(ev)
 	default:
 		return t.handleMenuKey(ev)
 	}
@@ -675,10 +853,16 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 		return Selection{Action: ActionQuit}, true
 	case tcell.KeyRune:
 		switch ev.Rune() {
-		case 'c', 'C':
+		case 'n', 'N':
 			t.mode = modeCreateDialog
 			t.inputBuf = nil
 			t.dialogErr = ""
+		case 'c', 'C':
+			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
+				t.mode = modeCloneDialog
+				t.inputBuf = nil
+				t.dialogErr = ""
+			}
 		case 'd', 'D':
 			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
 				t.mode = modeDeleteConfirm
@@ -693,11 +877,8 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 			}
 		case 'k', 'K':
 			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
-				s := t.sessions[t.cursor]
-				if t.isRunning(s.UUID) {
-					t.mode = modeKillConfirm
-					t.dialogErr = ""
-				}
+				t.mode = modeKillConfirm
+				t.dialogErr = ""
 			}
 		case 'r', 'R':
 			return Selection{Action: ActionReload}, true
@@ -734,6 +915,38 @@ func (t *tui) handleCreateDialogKey(ev *tcell.EventKey) (Selection, bool) {
 			return Selection{}, false
 		}
 		return Selection{Action: ActionNewSession, Name: name}, true
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if len(t.inputBuf) > 0 {
+			t.inputBuf = t.inputBuf[:len(t.inputBuf)-1]
+			t.dialogErr = ""
+		}
+	case tcell.KeyRune:
+		if len(t.inputBuf) < 64 {
+			t.inputBuf = append(t.inputBuf, ev.Rune())
+			t.dialogErr = ""
+		}
+	}
+	return Selection{}, false
+}
+
+func (t *tui) handleCloneDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+		t.inputBuf = nil
+		t.dialogErr = ""
+	case tcell.KeyEnter:
+		if t.cursor < 0 || t.cursor >= len(t.sessions) {
+			t.mode = modeMenu
+			return Selection{}, false
+		}
+		name := strings.TrimSpace(string(t.inputBuf))
+		if err := session.ValidateName(name); err != nil {
+			t.dialogErr = err.Error()
+			return Selection{}, false
+		}
+		s := t.sessions[t.cursor]
+		return Selection{Action: ActionCloneSession, SessionID: s.UUID, Name: name}, true
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if len(t.inputBuf) > 0 {
 			t.inputBuf = t.inputBuf[:len(t.inputBuf)-1]
