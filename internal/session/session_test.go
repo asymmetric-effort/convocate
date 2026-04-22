@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,6 +74,33 @@ func TestCreateWithPort_Auto(t *testing.T) {
 	}
 	if meta2.Port == meta.Port {
 		t.Errorf("two auto-assigned ports collided: %d", meta.Port)
+	}
+}
+
+func TestCreateWithPort_PersistsToSessionJSON(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	meta, err := mgr.CreateWithPort("svc", 8080)
+	if err != nil {
+		t.Fatalf("CreateWithPort failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(base, meta.UUID, "session.json"))
+	if err != nil {
+		t.Fatalf("read session.json: %v", err)
+	}
+	if !strings.Contains(string(data), `"port": 8080`) {
+		t.Errorf("session.json does not contain port 8080:\n%s", string(data))
+	}
+
+	// Re-read via Get and confirm the round-trip preserves the port.
+	got, err := mgr.Get(meta.UUID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if got.Port != 8080 {
+		t.Errorf("Get returned Port = %d, want 8080", got.Port)
 	}
 }
 
@@ -750,5 +778,369 @@ func TestTouch_NonexistentSession(t *testing.T) {
 	err := mgr.Touch("nonexistent")
 	if err == nil {
 		t.Error("expected error when touching nonexistent session")
+	}
+}
+
+// --- Clone ---
+
+func TestClone_Success(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	src, err := mgr.Create("original")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// Write a marker file into the source session.
+	markerPath := filepath.Join(base, src.UUID, "marker.txt")
+	if err := os.WriteFile(markerPath, []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	clone, err := mgr.Clone(src.UUID, "copy")
+	if err != nil {
+		t.Fatalf("Clone failed: %v", err)
+	}
+	if clone.Name != "copy" {
+		t.Errorf("Name = %q, want 'copy'", clone.Name)
+	}
+	if clone.UUID == src.UUID {
+		t.Error("Clone should generate a new UUID")
+	}
+
+	// Marker file should be copied.
+	data, err := os.ReadFile(filepath.Join(base, clone.UUID, "marker.txt"))
+	if err != nil {
+		t.Fatalf("marker not copied: %v", err)
+	}
+	if string(data) != "hello" {
+		t.Errorf("marker content = %q, want 'hello'", data)
+	}
+}
+
+func TestClone_Nonexistent(t *testing.T) {
+	base := t.TempDir()
+	mgr := NewManager(base, "")
+	_, err := mgr.Clone("nope", "new")
+	if err == nil {
+		t.Error("expected error cloning nonexistent session")
+	}
+}
+
+// --- OverrideLock ---
+
+func TestOverrideLock_NotLocked(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.Create("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.OverrideLock(meta.UUID); err == nil {
+		t.Error("expected error when overriding an unlocked session")
+	}
+}
+
+func TestOverrideLock_StaleByDeadPID(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.Create("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Write a lock with a PID almost certainly not running.
+	lockPath := filepath.Join(base, meta.UUID+".lock")
+	if err := os.WriteFile(lockPath, []byte("999999"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.OverrideLock(meta.UUID); err != nil {
+		t.Errorf("OverrideLock failed on stale lock: %v", err)
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Error("stale lock file was not removed")
+	}
+}
+
+func TestOverrideLock_InvalidPIDContent(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.Create("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(base, meta.UUID+".lock")
+	if err := os.WriteFile(lockPath, []byte("not-a-pid"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.OverrideLock(meta.UUID); err != nil {
+		t.Errorf("OverrideLock failed on invalid PID: %v", err)
+	}
+}
+
+func TestOverrideLock_ActivelyHeld(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.Create("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(base, meta.UUID+".lock")
+	pid := os.Getpid()
+	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("%d", pid)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err = mgr.OverrideLock(meta.UUID)
+	if err == nil {
+		t.Error("expected error overriding an actively held lock")
+	}
+}
+
+// --- IsLocked: stale (>24h) ---
+
+func TestIsLocked_StaleFile(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.Create("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(base, meta.UUID+".lock")
+	if err := os.WriteFile(lockPath, []byte("12345"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Age the mtime past the 24h staleness window.
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if mgr.IsLocked(meta.UUID) {
+		t.Error("stale lock file should be considered not locked")
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Error("stale lock file should have been removed")
+	}
+}
+
+func TestIsLocked_LivePID(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.Create("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(base, meta.UUID+".lock")
+	// Our own PID is alive → locked.
+	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !mgr.IsLocked(meta.UUID) {
+		t.Error("expected IsLocked=true for live PID")
+	}
+}
+
+// --- Delete: locked session cannot be deleted ---
+
+func TestDelete_LockedSessionRejected(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.Create("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(base, meta.UUID+".lock")
+	if err := os.WriteFile(lockPath, []byte("1"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.Delete(meta.UUID); err == nil {
+		t.Error("expected error deleting a locked session")
+	}
+}
+
+// --- resolvePort: invalid negative port that isn't PortAuto ---
+
+func TestResolvePort_InvalidNegative(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	_, err := mgr.CreateWithPort("bad", -42)
+	if err == nil {
+		t.Error("expected error for invalid negative port")
+	}
+}
+
+// --- Update ---
+
+func TestUpdate_RenameOnly(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.CreateWithPort("before", 8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := mgr.Update(meta.UUID, "after", 8080)
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if updated.Name != "after" || updated.Port != 8080 {
+		t.Errorf("updated = %+v, want name=after port=8080", updated)
+	}
+	// Round-trip read from disk.
+	got, err := mgr.Get(meta.UUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "after" {
+		t.Errorf("persisted name = %q, want 'after'", got.Name)
+	}
+}
+
+func TestUpdate_ChangePortToAuto(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.CreateWithPort("s", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := mgr.Update(meta.UUID, "s", PortAuto)
+	if err != nil {
+		t.Fatalf("Update(PortAuto) failed: %v", err)
+	}
+	if updated.Port < PortAutoMin {
+		t.Errorf("auto port = %d, want >= %d", updated.Port, PortAutoMin)
+	}
+}
+
+func TestUpdate_ChangePortToZero(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.CreateWithPort("s", 8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := mgr.Update(meta.UUID, "s", 0)
+	if err != nil {
+		t.Fatalf("Update port->0 failed: %v", err)
+	}
+	if updated.Port != 0 {
+		t.Errorf("updated.Port = %d, want 0", updated.Port)
+	}
+}
+
+func TestUpdate_ChangePortToSpecific(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.CreateWithPort("s", 8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := mgr.Update(meta.UUID, "s", 9090)
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if updated.Port != 9090 {
+		t.Errorf("updated.Port = %d, want 9090", updated.Port)
+	}
+}
+
+func TestUpdate_PortCollisionWithOther(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	_, err := mgr.CreateWithPort("a", 8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, err := mgr.CreateWithPort("b", 8081)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = mgr.Update(meta.UUID, "b", 8080)
+	if err == nil {
+		t.Error("expected collision error when updating to a port held by another session")
+	}
+}
+
+func TestUpdate_KeepSamePort(t *testing.T) {
+	// Saving without changing the port should not complain about self-collision.
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.CreateWithPort("s", 8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := mgr.Update(meta.UUID, "s-renamed", 8080)
+	if err != nil {
+		t.Fatalf("Update with unchanged port failed: %v", err)
+	}
+	if updated.Port != 8080 {
+		t.Errorf("port should remain 8080, got %d", updated.Port)
+	}
+}
+
+func TestUpdate_InvalidName(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.Create("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = mgr.Update(meta.UUID, "", 0)
+	if err == nil {
+		t.Error("expected error for empty name")
+	}
+}
+
+func TestUpdate_InvalidPort(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.Create("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = mgr.Update(meta.UUID, "s", -42)
+	if err == nil {
+		t.Error("expected error for invalid port")
+	}
+}
+
+func TestUpdate_Nonexistent(t *testing.T) {
+	base := t.TempDir()
+	mgr := NewManager(base, "")
+	_, err := mgr.Update("missing", "name", 0)
+	if err == nil {
+		t.Error("expected error updating nonexistent session")
+	}
+}
+
+func TestIsPortUsedByOther_NoMatch(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	_, err := mgr.CreateWithPort("x", 8080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mgr.isPortUsedByOther("some-id", 9999) {
+		t.Error("expected false when no session uses port 9999")
+	}
+}
+
+// --- Symlinks: re-create is idempotent ---
+
+func TestSetupClaudeSymlinks_ExistingSymlinks(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	// Creating the same session twice with different UUIDs should both succeed;
+	// setupClaudeSymlinks is idempotent against existing symlinks.
+	_, err := mgr.Create("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, err := mgr.Create("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Now call setupClaudeSymlinks again on the same directory to exercise the
+	// "skip existing" branch.
+	if err := mgr.setupClaudeSymlinks(filepath.Join(base, meta.UUID)); err != nil {
+		t.Errorf("second setupClaudeSymlinks failed: %v", err)
 	}
 }

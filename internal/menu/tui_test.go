@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	testScreenWidth  = 100
+	testScreenWidth  = 110
 	testScreenHeight = 30
 )
 
@@ -369,10 +369,27 @@ func TestTUI_DeleteDialog_EmptySessionsIgnored(t *testing.T) {
 	}
 }
 
-func TestTUI_ReloadOnR(t *testing.T) {
-	sel := runWithKey(t, testSessions(), tcell.KeyRune, 'r')
-	if sel.Action != ActionReload {
-		t.Errorf("Action = %q, want %q", sel.Action, ActionReload)
+func TestTUI_RestartOnR_OpensDialog(t *testing.T) {
+	// 'R' on a non-running session opens the restart confirm dialog; since the
+	// dialog doesn't finish the loop, we also need to quit afterward.
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'r', tcell.ModNone)
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone) // cancel dialog
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Action != ActionQuit {
+		t.Errorf("Action = %q, want %q (restart dialog should be cancellable)", sel.Action, ActionQuit)
 	}
 }
 
@@ -528,7 +545,7 @@ func TestTUI_MenuBarContent(t *testing.T) {
 	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
 
 	row := getScreenText(screen, testScreenHeight-1, testScreenWidth)
-	for _, label := range []string{"(N)ew", "(D)elete", "(R)eload", "(Q)uit"} {
+	for _, label := range []string{"(N)ew", "(D)elete", "(R)estart", "(Q)uit"} {
 		if !strings.Contains(row, label) {
 			t.Errorf("menu bar missing %q, got: %q", label, row)
 		}
@@ -710,8 +727,6 @@ func TestTUI_HandleKeyRunes_ImmediateReturn(t *testing.T) {
 		rune   rune
 		action string
 	}{
-		{'r', ActionReload},
-		{'R', ActionReload},
 		{'q', ActionQuit},
 		{'Q', ActionQuit},
 	}
@@ -1423,6 +1438,1211 @@ func TestTUI_MenuBarIncludesBackground(t *testing.T) {
 	row := getScreenText(screen, testScreenHeight-1, testScreenWidth)
 	if !strings.Contains(row, "(B)ackground") {
 		t.Errorf("menu bar missing '(B)ackground', got: %q", row)
+	}
+}
+
+// --- Restart dialog flow ---
+
+func TestTUI_RestartKey_NoSessionsIgnored(t *testing.T) {
+	ui := &tui{sessions: nil, cursor: 0}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'r', tcell.ModNone))
+	if done {
+		t.Error("'r' with no sessions should not finish")
+	}
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_RestartKey_OpensConfirmForStopped(t *testing.T) {
+	ui := &tui{
+		sessions:      testSessions(),
+		cursor:        0,
+		isRunningFunc: func(string) bool { return false },
+	}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'r', tcell.ModNone))
+	if done {
+		t.Error("'r' should not finish (opens dialog)")
+	}
+	if ui.mode != modeRestartConfirm {
+		t.Errorf("mode = %d, want modeRestartConfirm", ui.mode)
+	}
+}
+
+func TestTUI_RestartKey_AlreadyRunningDialog(t *testing.T) {
+	sessions := testSessions()
+	ui := &tui{
+		sessions:      sessions,
+		cursor:        0,
+		isRunningFunc: func(id string) bool { return id == sessions[0].UUID },
+	}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'R', tcell.ModNone))
+	if done {
+		t.Error("'R' on running session should not finish")
+	}
+	if ui.mode != modeAlreadyRunningDialog {
+		t.Errorf("mode = %d, want modeAlreadyRunningDialog", ui.mode)
+	}
+}
+
+func TestTUI_RestartDialog_ConfirmYes_CallsCallback(t *testing.T) {
+	sessions := testSessions()
+	var called string
+	ui := &tui{
+		sessions:    sessions,
+		cursor:      0,
+		mode:        modeRestartConfirm,
+		restartFunc: func(id string) error { called = id; return nil },
+	}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if done {
+		t.Error("confirm-yes should not finish the menu loop")
+	}
+	if called != sessions[0].UUID {
+		t.Errorf("restartFunc called with %q, want %q", called, sessions[0].UUID)
+	}
+	if ui.mode != modeRestartInitiated {
+		t.Errorf("mode = %d, want modeRestartInitiated", ui.mode)
+	}
+}
+
+func TestTUI_RestartDialog_ConfirmYes_CallbackError(t *testing.T) {
+	ui := &tui{
+		sessions:    testSessions(),
+		cursor:      0,
+		mode:        modeRestartConfirm,
+		restartFunc: func(string) error { return errors.New("boom") },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'Y', tcell.ModNone))
+	if ui.mode != modeRestartConfirm {
+		t.Errorf("mode = %d, want modeRestartConfirm (stay in dialog on error)", ui.mode)
+	}
+	if ui.dialogErr != "boom" {
+		t.Errorf("dialogErr = %q, want %q", ui.dialogErr, "boom")
+	}
+}
+
+func TestTUI_RestartDialog_ConfirmYes_NoCallback(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeRestartConfirm}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeRestartInitiated {
+		t.Errorf("mode = %d, want modeRestartInitiated", ui.mode)
+	}
+}
+
+func TestTUI_RestartDialog_ConfirmYes_OutOfRangeCursor(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 99, mode: modeRestartConfirm}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu (bad cursor falls back to menu)", ui.mode)
+	}
+}
+
+func TestTUI_RestartDialog_DeclineN(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeRestartConfirm}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'N', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_RestartDialog_Escape(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeRestartConfirm, dialogErr: "x"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+	if ui.dialogErr != "" {
+		t.Errorf("dialogErr = %q, want empty after escape", ui.dialogErr)
+	}
+}
+
+func TestTUI_RestartInitiated_EnterDismisses(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeRestartInitiated}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu after Enter", ui.mode)
+	}
+}
+
+func TestTUI_RestartInitiated_NonEnterKeyHolds(t *testing.T) {
+	// Any key other than Enter must NOT dismiss — the dialog is a notification
+	// that the user has to acknowledge with Enter.
+	for _, ev := range []*tcell.EventKey{
+		tcell.NewEventKey(tcell.KeyRune, 'x', tcell.ModNone),
+		tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone),
+		tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModNone),
+	} {
+		ui := &tui{sessions: testSessions(), cursor: 0, mode: modeRestartInitiated}
+		_, _ = ui.handleKey(ev)
+		if ui.mode != modeRestartInitiated {
+			t.Errorf("key %v: mode = %d, want modeRestartInitiated (only Enter dismisses)", ev.Key(), ui.mode)
+		}
+	}
+}
+
+func TestTUI_AlreadyRunning_AnyKeyDismisses(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeAlreadyRunningDialog}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_MenuBarShowsRestart(t *testing.T) {
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
+
+	row := getScreenText(screen, testScreenHeight-1, 120)
+	if !strings.Contains(row, "(R)estart") {
+		t.Errorf("menu bar missing '(R)estart', got: %q", row)
+	}
+	if strings.Contains(row, "(R)eload") {
+		t.Errorf("menu bar should not contain '(R)eload', got: %q", row)
+	}
+}
+
+// --- Draw tests for dialogs (exercise render paths) ---
+
+func newDrawTUI(t *testing.T, mode tuiMode) (*tui, tcell.SimulationScreen) {
+	t.Helper()
+	screen := newWideTestScreen(t)
+	return &tui{
+		screen:   screen,
+		sessions: testSessions(),
+		cursor:   0,
+		mode:     mode,
+	}, screen
+}
+
+func TestTUI_DrawAllDialogs(t *testing.T) {
+	modes := []struct {
+		mode tuiMode
+		err  string
+	}{
+		{modeCreateDialog, ""},
+		{modeCreateDialog, "name error"},
+		{modeCloneDialog, ""},
+		{modeCloneDialog, "err"},
+		{modeDeleteConfirm, ""},
+		{modeLockedDialog, ""},
+		{modeOverrideConfirm, ""},
+		{modeOverrideConfirm, "err"},
+		{modeKillConfirm, ""},
+		{modeKillConfirm, "err"},
+		{modeNotRunningDialog, ""},
+		{modeKillInitiated, ""},
+		{modeBackgroundConfirm, ""},
+		{modeBackgroundConfirm, "err"},
+		{modeBackgroundInitiated, ""},
+		{modeNotConnectedDialog, ""},
+		{modeSettingsDialog, ""},
+		{modeRestartConfirm, ""},
+		{modeRestartConfirm, "boom"},
+		{modeRestartInitiated, ""},
+		{modeAlreadyRunningDialog, ""},
+	}
+	for _, tc := range modes {
+		ui, screen := newDrawTUI(t, tc.mode)
+		ui.dialogErr = tc.err
+		ui.draw()
+		screen.Fini()
+	}
+}
+
+func TestTUI_DrawDialogs_BadCursor(t *testing.T) {
+	// Dialogs that dereference t.sessions[t.cursor] must early-return cleanly.
+	modes := []tuiMode{
+		modeCloneDialog,
+		modeDeleteConfirm,
+		modeLockedDialog,
+		modeOverrideConfirm,
+		modeKillConfirm,
+		modeNotRunningDialog,
+		modeKillInitiated,
+		modeBackgroundConfirm,
+		modeBackgroundInitiated,
+		modeNotConnectedDialog,
+		modeRestartConfirm,
+		modeRestartInitiated,
+		modeAlreadyRunningDialog,
+	}
+	for _, m := range modes {
+		screen := newWideTestScreen(t)
+		ui := &tui{screen: screen, sessions: nil, cursor: 0, mode: m}
+		ui.draw() // should not panic
+		screen.Fini()
+	}
+}
+
+// --- Handler tests that were previously uncovered ---
+
+func TestTUI_HandleLockedDialogKey(t *testing.T) {
+	ui := &tui{mode: modeLockedDialog}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleNotRunningDialogKey(t *testing.T) {
+	ui := &tui{mode: modeNotRunningDialog}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleKillInitiatedDialogKey(t *testing.T) {
+	ui := &tui{mode: modeKillInitiated}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleBackgroundInitiatedDialogKey(t *testing.T) {
+	ui := &tui{mode: modeBackgroundInitiated}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleNotConnectedDialogKey(t *testing.T) {
+	ui := &tui{mode: modeNotConnectedDialog}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleBackgroundDialog_Escape(t *testing.T) {
+	ui := &tui{mode: modeBackgroundConfirm, dialogErr: "x"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu || ui.dialogErr != "" {
+		t.Errorf("escape did not clear dialog state")
+	}
+}
+
+func TestTUI_HandleBackgroundDialog_OutOfRangeCursor(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 99, mode: modeBackgroundConfirm}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleBackgroundDialog_CallbackError(t *testing.T) {
+	sessions := testSessions()
+	ui := &tui{
+		sessions:       sessions,
+		cursor:         0,
+		mode:           modeBackgroundConfirm,
+		isRunningFunc:  func(string) bool { return true },
+		isLockedFunc:   func(string) bool { return true },
+		backgroundFunc: func(string) error { return errors.New("nope") },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeBackgroundConfirm {
+		t.Errorf("mode = %d, want modeBackgroundConfirm (error should keep dialog open)", ui.mode)
+	}
+	if ui.dialogErr == "" {
+		t.Error("expected dialogErr to be set on callback error")
+	}
+}
+
+// --- Kill dialog / Override dialog handler tests ---
+
+func TestTUI_HandleKillDialog_ConfirmRuns(t *testing.T) {
+	sessions := testSessions()
+	var killed string
+	ui := &tui{
+		sessions:      sessions,
+		cursor:        0,
+		mode:          modeKillConfirm,
+		isRunningFunc: func(string) bool { return true },
+		killFunc:      func(id string) error { killed = id; return nil },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if killed != sessions[0].UUID {
+		t.Errorf("killFunc called with %q, want %q", killed, sessions[0].UUID)
+	}
+	if ui.mode != modeKillInitiated {
+		t.Errorf("mode = %d, want modeKillInitiated", ui.mode)
+	}
+}
+
+func TestTUI_HandleKillDialog_NotRunning(t *testing.T) {
+	ui := &tui{
+		sessions:      testSessions(),
+		cursor:        0,
+		mode:          modeKillConfirm,
+		isRunningFunc: func(string) bool { return false },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeNotRunningDialog {
+		t.Errorf("mode = %d, want modeNotRunningDialog", ui.mode)
+	}
+}
+
+func TestTUI_HandleKillDialog_CallbackError(t *testing.T) {
+	ui := &tui{
+		sessions:      testSessions(),
+		cursor:        0,
+		mode:          modeKillConfirm,
+		isRunningFunc: func(string) bool { return true },
+		killFunc:      func(string) error { return errors.New("no") },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'Y', tcell.ModNone))
+	if ui.mode != modeKillConfirm {
+		t.Errorf("mode = %d, want modeKillConfirm (stay on error)", ui.mode)
+	}
+	if ui.dialogErr == "" {
+		t.Error("expected dialogErr")
+	}
+}
+
+func TestTUI_HandleKillDialog_Decline(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeKillConfirm}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'n', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleKillDialog_OutOfRange(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 99, mode: modeKillConfirm}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleKillDialog_Escape(t *testing.T) {
+	ui := &tui{mode: modeKillConfirm, dialogErr: "x"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu || ui.dialogErr != "" {
+		t.Errorf("escape did not reset")
+	}
+}
+
+func TestTUI_HandleOverrideDialog_ConfirmYes(t *testing.T) {
+	sessions := testSessions()
+	var overrode string
+	ui := &tui{
+		sessions:         sessions,
+		cursor:           0,
+		mode:             modeOverrideConfirm,
+		overrideLockFunc: func(id string) error { overrode = id; return nil },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if overrode != sessions[0].UUID {
+		t.Errorf("overrideLockFunc called with %q, want %q", overrode, sessions[0].UUID)
+	}
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleOverrideDialog_CallbackError(t *testing.T) {
+	ui := &tui{
+		sessions:         testSessions(),
+		cursor:           0,
+		mode:             modeOverrideConfirm,
+		overrideLockFunc: func(string) error { return errors.New("x") },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'Y', tcell.ModNone))
+	if ui.mode != modeOverrideConfirm {
+		t.Errorf("mode = %d, want modeOverrideConfirm (stay on error)", ui.mode)
+	}
+	if ui.dialogErr == "" {
+		t.Error("expected dialogErr")
+	}
+}
+
+func TestTUI_HandleOverrideDialog_NoCursor(t *testing.T) {
+	ui := &tui{sessions: nil, cursor: 0, mode: modeOverrideConfirm}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleOverrideDialog_Decline(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeOverrideConfirm}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'n', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleOverrideDialog_Escape(t *testing.T) {
+	ui := &tui{mode: modeOverrideConfirm, dialogErr: "x"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu || ui.dialogErr != "" {
+		t.Errorf("escape did not reset state")
+	}
+}
+
+// --- handleMenuKey remaining branches (kill, override, enter-locked) ---
+
+func TestTUI_HandleMenu_KillOpensDialog(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'k', tcell.ModNone))
+	if ui.mode != modeKillConfirm {
+		t.Errorf("mode = %d, want modeKillConfirm", ui.mode)
+	}
+}
+
+func TestTUI_HandleMenu_OverrideOnlyWhenLocked(t *testing.T) {
+	sessions := testSessions()
+	ui := &tui{
+		sessions:     sessions,
+		cursor:       0,
+		isLockedFunc: func(id string) bool { return id == sessions[0].UUID },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'o', tcell.ModNone))
+	if ui.mode != modeOverrideConfirm {
+		t.Errorf("mode = %d, want modeOverrideConfirm", ui.mode)
+	}
+
+	// Unlocked: O is a no-op.
+	ui2 := &tui{sessions: sessions, cursor: 0, isLockedFunc: func(string) bool { return false }}
+	_, _ = ui2.handleKey(tcell.NewEventKey(tcell.KeyRune, 'O', tcell.ModNone))
+	if ui2.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui2.mode)
+	}
+}
+
+func TestTUI_HandleMenu_EnterOnLockedOpensLockDialog(t *testing.T) {
+	sessions := testSessions()
+	ui := &tui{
+		sessions:     sessions,
+		cursor:       0,
+		isLockedFunc: func(id string) bool { return id == sessions[0].UUID },
+	}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if done {
+		t.Error("Enter on locked session should not finish")
+	}
+	if ui.mode != modeLockedDialog {
+		t.Errorf("mode = %d, want modeLockedDialog", ui.mode)
+	}
+}
+
+func TestTUI_HandleMenu_NumberOnLockedOpensLockDialog(t *testing.T) {
+	sessions := testSessions()
+	ui := &tui{
+		sessions:     sessions,
+		cursor:       0,
+		isLockedFunc: func(id string) bool { return id == sessions[0].UUID },
+	}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, '1', tcell.ModNone))
+	if done {
+		t.Error("number selecting locked session should not finish")
+	}
+	if ui.mode != modeLockedDialog {
+		t.Errorf("mode = %d, want modeLockedDialog", ui.mode)
+	}
+}
+
+func TestTUI_HandleMenu_CloneOpensDialog(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'c', tcell.ModNone))
+	if ui.mode != modeCloneDialog {
+		t.Errorf("mode = %d, want modeCloneDialog", ui.mode)
+	}
+}
+
+func TestTUI_HandleMenu_CloneNoSessionsIgnored(t *testing.T) {
+	ui := &tui{sessions: nil, cursor: 0}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'c', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+// --- handleCloneDialogKey ---
+
+func TestTUI_HandleCloneDialog_Enter(t *testing.T) {
+	sessions := testSessions()
+	ui := &tui{sessions: sessions, cursor: 0, mode: modeCloneDialog, inputBuf: []rune("clone-name")}
+	sel, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if !done {
+		t.Error("Enter should finish the clone dialog")
+	}
+	if sel.Action != ActionCloneSession || sel.Name != "clone-name" || sel.SessionID != sessions[0].UUID {
+		t.Errorf("unexpected selection: %+v", sel)
+	}
+}
+
+func TestTUI_HandleCloneDialog_InvalidName(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeCloneDialog, inputBuf: []rune("")}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if done {
+		t.Error("Enter with empty name should not finish")
+	}
+	if ui.dialogErr == "" {
+		t.Error("expected dialogErr for empty name")
+	}
+}
+
+func TestTUI_HandleCloneDialog_OutOfRangeCursor(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 99, mode: modeCloneDialog, inputBuf: []rune("x")}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if done {
+		t.Error("should not finish with bad cursor")
+	}
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_HandleCloneDialog_Escape(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeCloneDialog, inputBuf: []rune("x"), dialogErr: "e"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu || ui.dialogErr != "" || len(ui.inputBuf) != 0 {
+		t.Errorf("escape did not reset state")
+	}
+}
+
+func TestTUI_HandleCloneDialog_Rune(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeCloneDialog, dialogErr: "x"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone))
+	if string(ui.inputBuf) != "a" {
+		t.Errorf("inputBuf = %q, want 'a'", string(ui.inputBuf))
+	}
+	if ui.dialogErr != "" {
+		t.Error("rune should clear dialogErr")
+	}
+}
+
+func TestTUI_HandleCloneDialog_Backspace(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeCloneDialog, inputBuf: []rune("ab"), dialogErr: "x"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBackspace2, 0, tcell.ModNone))
+	if string(ui.inputBuf) != "a" {
+		t.Errorf("inputBuf after backspace = %q, want 'a'", string(ui.inputBuf))
+	}
+	if ui.dialogErr != "" {
+		t.Error("backspace should clear dialogErr")
+	}
+}
+
+func TestTUI_HandleCloneDialog_RuneMaxLength(t *testing.T) {
+	ui := &tui{
+		sessions: testSessions(),
+		cursor:   0,
+		mode:     modeCloneDialog,
+		inputBuf: []rune(strings.Repeat("a", 64)),
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'b', tcell.ModNone))
+	if len(ui.inputBuf) != 64 {
+		t.Errorf("inputBuf length = %d, want 64 (cap enforced)", len(ui.inputBuf))
+	}
+}
+
+// --- Create dialog: additional branches ---
+
+func TestTUI_HandleCreateDialog_NameRuneMaxLength(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 0, inputBuf: []rune(strings.Repeat("a", 64))}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'b', tcell.ModNone))
+	if len(ui.inputBuf) != 64 {
+		t.Errorf("name length = %d, want cap 64", len(ui.inputBuf))
+	}
+}
+
+func TestTUI_HandleCreateDialog_PortBackspace(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 1, inputBufPort: []rune("80"), dialogErr: "x"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBackspace2, 0, tcell.ModNone))
+	if string(ui.inputBufPort) != "8" {
+		t.Errorf("port = %q, want '8'", string(ui.inputBufPort))
+	}
+	if ui.dialogErr != "" {
+		t.Error("backspace should clear err")
+	}
+}
+
+func TestTUI_HandleCreateDialog_PortMaxLength(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 1, inputBufPort: []rune("12345")}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, '6', tcell.ModNone))
+	if string(ui.inputBufPort) != "12345" {
+		t.Errorf("port buffer = %q, want '12345' (max 5 digits)", string(ui.inputBufPort))
+	}
+}
+
+func TestTUI_HandleCreateDialog_Escape(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 1, inputBuf: []rune("x"), inputBufPort: []rune("1"), dialogErr: "e"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+	if len(ui.inputBuf) != 0 || len(ui.inputBufPort) != 0 || ui.dialogErr != "" || ui.activeField != 0 {
+		t.Error("escape did not fully reset create-dialog state")
+	}
+}
+
+// --- reload event path ---
+
+func TestTUI_ReloadEventUpdatesSessions(t *testing.T) {
+	reloadCalls := 0
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		// First tick should reload; then quit.
+		time.Sleep(90 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	opts := DisplayOptions{
+		Reload: func() ([]session.Metadata, error) {
+			reloadCalls++
+			return []session.Metadata{testSessions()[0]}, nil
+		},
+	}
+	_, err := displayWithOptions(testSessions(), screen, 50*time.Millisecond, 50*time.Millisecond, opts)
+	if err != nil {
+		t.Fatalf("displayWithOptions failed: %v", err)
+	}
+	if reloadCalls == 0 {
+		t.Error("reload callback was never invoked")
+	}
+}
+
+func TestTUI_ReloadError_IsSwallowed(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(90 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	opts := DisplayOptions{
+		Reload: func() ([]session.Metadata, error) { return nil, errors.New("boom") },
+	}
+	_, err := displayWithOptions(testSessions(), screen, 50*time.Millisecond, 50*time.Millisecond, opts)
+	if err != nil {
+		t.Fatalf("displayWithOptions should swallow reload errors, got: %v", err)
+	}
+}
+
+func TestTUI_ReloadClampsCursor(t *testing.T) {
+	// Start with 2 sessions, cursor at 1, then reload returns 1 session — cursor clamps.
+	sessions := testSessions()
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyDown, 0, tcell.ModNone) // cursor -> 1
+		time.Sleep(90 * time.Millisecond)                 // let reload fire
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	opts := DisplayOptions{
+		Reload: func() ([]session.Metadata, error) {
+			return []session.Metadata{sessions[0]}, nil
+		},
+	}
+	_, _ = displayWithOptions(sessions, screen, 50*time.Millisecond, 50*time.Millisecond, opts)
+}
+
+// --- Edit dialog flow ---
+
+func TestTUI_EditKey_OpensDialogWithCurrentValues(t *testing.T) {
+	sessions := []session.Metadata{
+		{
+			UUID:         "aaaaaaaa-1111-1111-1111-111111111111",
+			Name:         "proj",
+			Port:         8080,
+			CreatedAt:    time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC),
+			LastAccessed: time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	ui := &tui{sessions: sessions, cursor: 0}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+	if ui.mode != modeEditDialog {
+		t.Fatalf("mode = %d, want modeEditDialog", ui.mode)
+	}
+	if string(ui.inputBuf) != "proj" {
+		t.Errorf("inputBuf = %q, want 'proj'", string(ui.inputBuf))
+	}
+	if string(ui.inputBufPort) != "8080" {
+		t.Errorf("inputBufPort = %q, want '8080'", string(ui.inputBufPort))
+	}
+}
+
+func TestTUI_EditKey_UpperE(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'E', tcell.ModNone))
+	if ui.mode != modeEditDialog {
+		t.Errorf("mode = %d, want modeEditDialog", ui.mode)
+	}
+}
+
+func TestTUI_EditKey_NoSessionsIgnored(t *testing.T) {
+	ui := &tui{sessions: nil, cursor: 0}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_EditKey_PortZeroNotPrepopulated(t *testing.T) {
+	sessions := []session.Metadata{
+		{UUID: "aaaaaaaa-1111-1111-1111-111111111111", Name: "noport", Port: 0},
+	}
+	ui := &tui{sessions: sessions, cursor: 0}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+	if len(ui.inputBufPort) != 0 {
+		t.Errorf("expected empty port buffer for Port=0, got %q", string(ui.inputBufPort))
+	}
+}
+
+func TestTUI_EditDialog_TabSwitchesFields(t *testing.T) {
+	ui := &tui{mode: modeEditDialog, activeField: 0}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
+	if ui.activeField != 1 {
+		t.Errorf("Tab -> activeField = %d, want 1", ui.activeField)
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone))
+	if ui.activeField != 0 {
+		t.Errorf("Shift+Tab -> activeField = %d, want 0", ui.activeField)
+	}
+}
+
+func TestTUI_EditDialog_TypeNameAndPort(t *testing.T) {
+	ui := &tui{mode: modeEditDialog, activeField: 0}
+	for _, r := range "my-session" {
+		_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone))
+	}
+	if string(ui.inputBuf) != "my-session" {
+		t.Errorf("name buf = %q, want 'my-session'", string(ui.inputBuf))
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
+	for _, r := range "9090a" { // 'a' filtered
+		_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone))
+	}
+	if string(ui.inputBufPort) != "9090" {
+		t.Errorf("port buf = %q, want '9090'", string(ui.inputBufPort))
+	}
+}
+
+func TestTUI_EditDialog_Backspace(t *testing.T) {
+	ui := &tui{mode: modeEditDialog, activeField: 0, inputBuf: []rune("abc"), inputBufPort: []rune("80"), dialogErr: "x"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBackspace2, 0, tcell.ModNone))
+	if string(ui.inputBuf) != "ab" {
+		t.Errorf("name after backspace = %q, want 'ab'", string(ui.inputBuf))
+	}
+	if ui.dialogErr != "" {
+		t.Error("backspace should clear dialogErr")
+	}
+	ui.activeField = 1
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBackspace2, 0, tcell.ModNone))
+	if string(ui.inputBufPort) != "8" {
+		t.Errorf("port after backspace = %q, want '8'", string(ui.inputBufPort))
+	}
+}
+
+func TestTUI_EditDialog_NameMaxLength(t *testing.T) {
+	ui := &tui{mode: modeEditDialog, activeField: 0, inputBuf: []rune(strings.Repeat("a", 64))}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'b', tcell.ModNone))
+	if len(ui.inputBuf) != 64 {
+		t.Errorf("name length = %d, want 64 (cap enforced)", len(ui.inputBuf))
+	}
+}
+
+func TestTUI_EditDialog_PortMaxLength(t *testing.T) {
+	ui := &tui{mode: modeEditDialog, activeField: 1, inputBufPort: []rune("12345")}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, '6', tcell.ModNone))
+	if string(ui.inputBufPort) != "12345" {
+		t.Errorf("port buffer = %q, want '12345' (max 5 digits)", string(ui.inputBufPort))
+	}
+}
+
+func TestTUI_EditDialog_Escape(t *testing.T) {
+	ui := &tui{
+		mode:         modeEditDialog,
+		activeField:  1,
+		inputBuf:     []rune("x"),
+		inputBufPort: []rune("80"),
+		dialogErr:    "err",
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+	if len(ui.inputBuf) != 0 || len(ui.inputBufPort) != 0 || ui.dialogErr != "" || ui.activeField != 0 {
+		t.Error("escape did not reset state")
+	}
+}
+
+func TestTUI_EditDialog_EnterInvalidName(t *testing.T) {
+	ui := &tui{
+		sessions:     testSessions(),
+		cursor:       0,
+		mode:         modeEditDialog,
+		activeField:  1,
+		inputBuf:     []rune(""),
+		inputBufPort: []rune("80"),
+	}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if done {
+		t.Error("invalid name should not finish")
+	}
+	if ui.dialogErr == "" {
+		t.Error("expected dialogErr for empty name")
+	}
+	if ui.activeField != 0 {
+		t.Errorf("activeField = %d, want 0 (focus returns to Name)", ui.activeField)
+	}
+}
+
+func TestTUI_EditDialog_EnterInvalidPort(t *testing.T) {
+	ui := &tui{
+		sessions:     testSessions(),
+		cursor:       0,
+		mode:         modeEditDialog,
+		activeField:  0,
+		inputBuf:     []rune("good"),
+		inputBufPort: []rune("99999"),
+	}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if done {
+		t.Error("invalid port should not finish")
+	}
+	if ui.dialogErr == "" {
+		t.Error("expected dialogErr for invalid port")
+	}
+	if ui.activeField != 1 {
+		t.Errorf("activeField = %d, want 1 (focus returns to Port)", ui.activeField)
+	}
+}
+
+func TestTUI_EditDialog_EnterCallsSave(t *testing.T) {
+	sessions := testSessions()
+	var savedID, savedName string
+	var savedPort int
+	ui := &tui{
+		sessions:     sessions,
+		cursor:       0,
+		mode:         modeEditDialog,
+		inputBuf:     []rune("renamed"),
+		inputBufPort: []rune("8081"),
+		editSaveFunc: func(id, name string, port int) error {
+			savedID, savedName, savedPort = id, name, port
+			return nil
+		},
+	}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if done {
+		t.Error("Save should transition to restart prompt, not finish")
+	}
+	if ui.mode != modeEditRestartPrompt {
+		t.Errorf("mode = %d, want modeEditRestartPrompt", ui.mode)
+	}
+	if savedID != sessions[0].UUID {
+		t.Errorf("save called with id %q, want %q", savedID, sessions[0].UUID)
+	}
+	if savedName != "renamed" {
+		t.Errorf("save called with name %q, want 'renamed'", savedName)
+	}
+	if savedPort != 8081 {
+		t.Errorf("save called with port %d, want 8081", savedPort)
+	}
+}
+
+func TestTUI_EditDialog_EnterSaveError(t *testing.T) {
+	ui := &tui{
+		sessions:     testSessions(),
+		cursor:       0,
+		mode:         modeEditDialog,
+		inputBuf:     []rune("ok"),
+		inputBufPort: []rune("1234"),
+		editSaveFunc: func(string, string, int) error { return errors.New("collide") },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if ui.mode != modeEditDialog {
+		t.Errorf("mode = %d, want modeEditDialog (stay on save error)", ui.mode)
+	}
+	if ui.dialogErr != "collide" {
+		t.Errorf("dialogErr = %q, want 'collide'", ui.dialogErr)
+	}
+}
+
+func TestTUI_EditDialog_EnterNoCallback(t *testing.T) {
+	ui := &tui{
+		sessions:     testSessions(),
+		cursor:       0,
+		mode:         modeEditDialog,
+		inputBuf:     []rune("ok"),
+		inputBufPort: []rune(""),
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if ui.mode != modeEditRestartPrompt {
+		t.Errorf("mode = %d, want modeEditRestartPrompt even without callback", ui.mode)
+	}
+}
+
+func TestTUI_EditDialog_EnterOutOfRangeCursor(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 99, mode: modeEditDialog, inputBuf: []rune("x")}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_EditRestartPrompt_Yes(t *testing.T) {
+	sessions := testSessions()
+	var restarted string
+	ui := &tui{
+		sessions:    sessions,
+		cursor:      0,
+		mode:        modeEditRestartPrompt,
+		restartFunc: func(id string) error { restarted = id; return nil },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+	if restarted != sessions[0].UUID {
+		t.Errorf("restartFunc called with %q, want %q", restarted, sessions[0].UUID)
+	}
+}
+
+func TestTUI_EditRestartPrompt_YesError(t *testing.T) {
+	ui := &tui{
+		sessions:    testSessions(),
+		cursor:      0,
+		mode:        modeEditRestartPrompt,
+		restartFunc: func(string) error { return errors.New("bad") },
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'Y', tcell.ModNone))
+	if ui.mode != modeEditRestartPrompt {
+		t.Errorf("mode = %d, want modeEditRestartPrompt (stay on error)", ui.mode)
+	}
+	if ui.dialogErr != "bad" {
+		t.Errorf("dialogErr = %q, want 'bad'", ui.dialogErr)
+	}
+}
+
+func TestTUI_EditRestartPrompt_YesNoCallback(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeEditRestartPrompt}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_EditRestartPrompt_YesOutOfRangeCursor(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 99, mode: modeEditRestartPrompt}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_EditRestartPrompt_No(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeEditRestartPrompt}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'N', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_EditRestartPrompt_Escape(t *testing.T) {
+	ui := &tui{mode: modeEditRestartPrompt, dialogErr: "x"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu || ui.dialogErr != "" {
+		t.Errorf("escape did not reset state")
+	}
+}
+
+func TestTUI_MenuBarIncludesEdit(t *testing.T) {
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
+
+	row := getScreenText(screen, testScreenHeight-1, 120)
+	if !strings.Contains(row, "(E)dit") {
+		t.Errorf("menu bar missing '(E)dit', got: %q", row)
+	}
+}
+
+func TestTUI_DrawEditDialogs(t *testing.T) {
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+	ui := &tui{
+		screen:       screen,
+		sessions:     testSessions(),
+		cursor:       0,
+		mode:         modeEditDialog,
+		inputBuf:     []rune("name"),
+		inputBufPort: []rune("80"),
+	}
+	ui.draw()
+	// With error.
+	ui.dialogErr = "error text"
+	ui.draw()
+	// Restart prompt.
+	ui.mode = modeEditRestartPrompt
+	ui.dialogErr = ""
+	ui.draw()
+	ui.dialogErr = "retry err"
+	ui.draw()
+}
+
+func TestTUI_DrawDialogs_TinyScreenClipsDialogs(t *testing.T) {
+	// Clipping branches: dialog placed such that y0+dialogHeight > height or
+	// x0+dialogWidth > width. We use a small-but-not-too-small screen that still
+	// passes the top-level draw check (height>=4, width>=20) and exercises the
+	// per-row clipping in each dialog.
+	screen := tcell.NewSimulationScreen("")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("init screen: %v", err)
+	}
+	defer screen.Fini()
+	screen.SetSize(40, 8)
+
+	modes := []tuiMode{
+		modeCreateDialog,
+		modeCloneDialog,
+		modeDeleteConfirm,
+		modeLockedDialog,
+		modeOverrideConfirm,
+		modeKillConfirm,
+		modeNotRunningDialog,
+		modeKillInitiated,
+		modeBackgroundConfirm,
+		modeBackgroundInitiated,
+		modeNotConnectedDialog,
+		modeSettingsDialog,
+		modeRestartConfirm,
+		modeRestartInitiated,
+		modeAlreadyRunningDialog,
+		modeEditDialog,
+		modeEditRestartPrompt,
+	}
+	for _, m := range modes {
+		ui := &tui{
+			screen:       screen,
+			sessions:     testSessions(),
+			cursor:       0,
+			mode:         m,
+			inputBuf:     []rune("name"),
+			inputBufPort: []rune("80"),
+		}
+		ui.draw()
+	}
+}
+
+func TestTUI_DrawDialogs_WideDialogClippedByWidth(t *testing.T) {
+	// Screen narrower than the dialog exercises the x0 < 0 clip branch.
+	screen := tcell.NewSimulationScreen("")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	defer screen.Fini()
+	screen.SetSize(25, 30)
+
+	modes := []tuiMode{
+		modeCreateDialog,
+		modeCloneDialog,
+		modeDeleteConfirm,
+		modeLockedDialog,
+		modeOverrideConfirm,
+		modeKillConfirm,
+		modeNotRunningDialog,
+		modeKillInitiated,
+		modeBackgroundConfirm,
+		modeBackgroundInitiated,
+		modeNotConnectedDialog,
+		modeSettingsDialog,
+		modeRestartConfirm,
+		modeRestartInitiated,
+		modeAlreadyRunningDialog,
+		modeEditDialog,
+		modeEditRestartPrompt,
+	}
+	for _, m := range modes {
+		ui := &tui{
+			screen:       screen,
+			sessions:     testSessions(),
+			cursor:       0,
+			mode:         m,
+			inputBuf:     []rune("n"),
+			inputBufPort: []rune("1"),
+			dialogErr:    "e",
+		}
+		ui.draw()
+	}
+}
+
+func TestTUI_DrawDialogs_TallDialogClippedByHeight(t *testing.T) {
+	// Screens where height < dialogHeight, exercising the y0 < 0 clip branch.
+	screen := tcell.NewSimulationScreen("")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	defer screen.Fini()
+	screen.SetSize(120, 5)
+
+	modes := []tuiMode{
+		modeCreateDialog,
+		modeEditDialog,
+		modeEditRestartPrompt,
+		modeBackgroundConfirm,
+		modeOverrideConfirm,
+		modeKillConfirm,
+		modeRestartConfirm,
+		modeSettingsDialog,
+		modeAlreadyRunningDialog,
+	}
+	for _, m := range modes {
+		ui := &tui{
+			screen:       screen,
+			sessions:     testSessions(),
+			cursor:       0,
+			mode:         m,
+			inputBuf:     []rune("n"),
+			inputBufPort: []rune("1"),
+			dialogErr:    "e",
+		}
+		ui.draw()
+	}
+}
+
+func TestTUI_DrawInputField_TextOverflow(t *testing.T) {
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+	ui := &tui{screen: screen}
+	// Text longer than field width exercises the overflow branch.
+	ui.drawInputField(0, 0, 5, []rune("abcdefghij"), true)
+	// Also the unfocused path.
+	ui.drawInputField(0, 1, 5, []rune("ab"), false)
+}
+
+func TestTUI_DrawEditDialogs_BadCursor(t *testing.T) {
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+	for _, m := range []tuiMode{modeEditDialog, modeEditRestartPrompt} {
+		ui := &tui{screen: screen, sessions: nil, cursor: 0, mode: m}
+		ui.draw() // early return — no panic
 	}
 }
 

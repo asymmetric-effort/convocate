@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/asymmetric-effort/claude-shell/internal/capacity"
 	"github.com/asymmetric-effort/claude-shell/internal/config"
 	"github.com/asymmetric-effort/claude-shell/internal/container"
 	"github.com/asymmetric-effort/claude-shell/internal/install"
@@ -87,6 +88,19 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			OverrideLock:      mgr.OverrideLock,
 			KillSession:       container.StopContainer,
 			BackgroundSession: container.DetachClients,
+			RestartSession: func(id string) error {
+				return restartSessionDetached(mgr, id, userInfo, paths, log)
+			},
+			SaveSessionEdit: func(id, name string, port int) error {
+				_, err := mgr.Update(id, name, port)
+				if err != nil {
+					return err
+				}
+				if log != nil {
+					log.Infof("updated session %s: name=%q port=%d", id, name, port)
+				}
+				return nil
+			},
 		})
 		if err != nil {
 			return fmt.Errorf("menu error: %w", err)
@@ -105,8 +119,6 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			if err := handleCloneSession(mgr, sel.SessionID, sel.Name, userInfo, paths, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
-			continue
-		case menu.ActionReload:
 			continue
 		case menu.ActionDeleteSession:
 			if err := mgr.Delete(sel.SessionID); err != nil {
@@ -157,6 +169,46 @@ func handleCloneSession(mgr *session.Manager, sourceID, name string, userInfo us
 	return launchSession(mgr, meta.UUID, meta.Port, userInfo, paths, log)
 }
 
+// newRunner is the package-level factory for container runners. Tests override
+// it to substitute a runner backed by a mock exec function.
+var newRunner = container.NewRunner
+
+// restartSessionDetached launches the session's container in background mode
+// without attaching a user terminal. The container runs autonomously until the
+// user attaches (via Enter on a running session) or kills it.
+func restartSessionDetached(mgr *session.Manager, sessionID string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+	meta, err := mgr.Get(sessionID)
+	if err != nil {
+		return err
+	}
+
+	if err := mgr.Touch(sessionID); err != nil {
+		if log != nil {
+			log.Warningf("failed to update last accessed time: %v", err)
+		}
+	}
+
+	runner := newRunner(sessionID, mgr.SessionDir(sessionID), userInfo, paths)
+	runner.SetPort(meta.Port)
+
+	running, err := runner.IsRunning()
+	if err != nil {
+		return fmt.Errorf("failed to check container status: %w", err)
+	}
+	if running {
+		return fmt.Errorf("session %q is already running", meta.Name)
+	}
+
+	if err := capacity.Check(capacity.DefaultThreshold); err != nil {
+		return err
+	}
+
+	if log != nil {
+		log.Infof("restarting session %s (%s) in background", meta.UUID, meta.Name)
+	}
+	return runner.StartDetached()
+}
+
 func handleResumeSession(mgr *session.Manager, sessionID string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
 	meta, err := mgr.Get(sessionID)
 	if err != nil {
@@ -203,6 +255,11 @@ func launchSession(mgr *session.Manager, sessionID string, port int, userInfo us
 			}
 		}
 		return nil
+	}
+
+	// Refuse to start new containers when the host is already saturated.
+	if err := capacity.Check(capacity.DefaultThreshold); err != nil {
+		return err
 	}
 
 	// Set up signal handling for graceful termination

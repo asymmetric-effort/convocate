@@ -237,6 +237,70 @@ func (m *Manager) Delete(id string) error {
 	return os.RemoveAll(sessionDir)
 }
 
+// Update applies edited fields (name, port) to the given session and persists
+// them to session.json. UUID, CreatedAt, and LastAccessed are preserved. If
+// the requested port differs from the current one and is already in use by
+// another session, an error is returned and no change is written.
+func (m *Manager) Update(id, newName string, newPort int) (Metadata, error) {
+	sessionDir := filepath.Join(m.basePath, id)
+	current, err := m.readMetadata(sessionDir)
+	if err != nil {
+		return Metadata{}, err
+	}
+
+	if err := ValidateName(newName); err != nil {
+		return Metadata{}, err
+	}
+
+	resolvedPort := current.Port
+	if newPort != current.Port {
+		// Temporarily remove our own port from the in-use set so resolvePort
+		// doesn't treat it as a collision when the user re-saves the same port.
+		switch {
+		case newPort == 0:
+			resolvedPort = 0
+		case newPort == PortAuto:
+			rp, err := m.FindAvailablePort(PortAutoMin)
+			if err != nil {
+				return Metadata{}, err
+			}
+			resolvedPort = rp
+		case newPort > 0 && newPort <= 65535:
+			if m.isPortUsedByOther(id, newPort) {
+				return Metadata{}, fmt.Errorf("port %d is already assigned to another session", newPort)
+			}
+			resolvedPort = newPort
+		default:
+			return Metadata{}, fmt.Errorf("invalid port: %d", newPort)
+		}
+	}
+
+	current.Name = newName
+	current.Port = resolvedPort
+	if err := m.writeMetadata(sessionDir, current); err != nil {
+		return Metadata{}, err
+	}
+	return current, nil
+}
+
+// isPortUsedByOther reports whether the given port is held by any session
+// other than the one identified by excludeID.
+func (m *Manager) isPortUsedByOther(excludeID string, port int) bool {
+	sessions, err := m.List()
+	if err != nil {
+		return false
+	}
+	for _, s := range sessions {
+		if s.UUID == excludeID {
+			continue
+		}
+		if s.Port == port {
+			return true
+		}
+	}
+	return false
+}
+
 // Touch updates the last accessed time for a session.
 func (m *Manager) Touch(id string) error {
 	sessionDir := filepath.Join(m.basePath, id)

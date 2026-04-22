@@ -59,6 +59,16 @@ func NewRunnerWithExec(sessionID, sessionDir string, userInfo user.Info, paths c
 
 // Start launches the container in detached mode and attaches to the tmux session.
 func (r *Runner) Start() error {
+	if err := r.StartDetached(); err != nil {
+		return err
+	}
+	return r.attachTmux()
+}
+
+// StartDetached launches the container in detached mode without attaching any
+// user terminal. The tmux session inside the container runs autonomously; a
+// later call to Attach (or pressing Enter in the TUI) will connect to it.
+func (r *Runner) StartDetached() error {
 	containerName := config.ContainerName(r.sessionID)
 
 	args := r.buildRunArgs(containerName)
@@ -67,8 +77,7 @@ func (r *Runner) Start() error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to start container: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-
-	return r.attachTmux()
+	return nil
 }
 
 // Stop gracefully stops the container.
@@ -108,10 +117,14 @@ func (r *Runner) attachTmux() error {
 	return cmd.Run()
 }
 
+// pkgExecFn is the package-level command executor used by standalone helpers
+// (IsContainerRunning, StopContainer, DetachClients). Tests override it.
+var pkgExecFn ExecFunc = DefaultExecFunc
+
 // IsContainerRunning checks if the container for a given session ID is running.
 func IsContainerRunning(sessionID string) bool {
 	containerName := config.ContainerName(sessionID)
-	cmd := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", containerName)
+	cmd := pkgExecFn("docker", "inspect", "-f", "{{.State.Running}}", containerName)
 	out, err := cmd.Output()
 	if err != nil {
 		return false
@@ -122,7 +135,7 @@ func IsContainerRunning(sessionID string) bool {
 // StopContainer stops the container for a given session ID.
 func StopContainer(sessionID string) error {
 	containerName := config.ContainerName(sessionID)
-	cmd := exec.Command("docker", "stop", "-t", "10", containerName)
+	cmd := pkgExecFn("docker", "stop", "-t", "10", containerName)
 	return cmd.Run()
 }
 
@@ -131,7 +144,7 @@ func StopContainer(sessionID string) error {
 // only the user-facing terminal connections are dropped.
 func DetachClients(sessionID string) error {
 	containerName := config.ContainerName(sessionID)
-	cmd := exec.Command("docker", "exec", containerName,
+	cmd := pkgExecFn("docker", "exec", containerName,
 		"sudo", "-u", config.ClaudeUser, "--",
 		"tmux", "detach-client", "-s", config.TmuxSessionName,
 	)

@@ -402,3 +402,113 @@ func TestBuildRunArgs_NoInteractiveTty(t *testing.T) {
 		t.Error("buildRunArgs should include --detach")
 	}
 }
+
+// --- Package-level helper tests ---
+
+func withPkgExec(t *testing.T, fn ExecFunc) {
+	t.Helper()
+	orig := pkgExecFn
+	pkgExecFn = fn
+	t.Cleanup(func() { pkgExecFn = orig })
+}
+
+func TestIsContainerRunning_True(t *testing.T) {
+	withPkgExec(t, func(name string, args ...string) *exec.Cmd {
+		return exec.Command("echo", "true")
+	})
+	if !IsContainerRunning("x") {
+		t.Error("expected IsContainerRunning=true when docker reports 'true'")
+	}
+}
+
+func TestIsContainerRunning_False(t *testing.T) {
+	withPkgExec(t, func(name string, args ...string) *exec.Cmd {
+		return exec.Command("echo", "false")
+	})
+	if IsContainerRunning("x") {
+		t.Error("expected IsContainerRunning=false when docker reports 'false'")
+	}
+}
+
+func TestIsContainerRunning_CommandError(t *testing.T) {
+	withPkgExec(t, func(name string, args ...string) *exec.Cmd {
+		return exec.Command("false")
+	})
+	if IsContainerRunning("x") {
+		t.Error("expected IsContainerRunning=false when command errors")
+	}
+}
+
+func TestStopContainer_Success(t *testing.T) {
+	withPkgExec(t, func(name string, args ...string) *exec.Cmd {
+		return exec.Command("true")
+	})
+	if err := StopContainer("x"); err != nil {
+		t.Errorf("StopContainer returned error: %v", err)
+	}
+}
+
+func TestStopContainer_Error(t *testing.T) {
+	withPkgExec(t, func(name string, args ...string) *exec.Cmd {
+		return exec.Command("false")
+	})
+	if err := StopContainer("x"); err == nil {
+		t.Error("expected StopContainer error")
+	}
+}
+
+func TestDetachClients_Success(t *testing.T) {
+	withPkgExec(t, func(name string, args ...string) *exec.Cmd {
+		return exec.Command("true")
+	})
+	if err := DetachClients("x"); err != nil {
+		t.Errorf("DetachClients returned error: %v", err)
+	}
+}
+
+func TestDetachClients_Error(t *testing.T) {
+	withPkgExec(t, func(name string, args ...string) *exec.Cmd {
+		return exec.Command("false")
+	})
+	err := DetachClients("x")
+	if err == nil {
+		t.Error("expected DetachClients error")
+	}
+	if !strings.Contains(err.Error(), "failed to detach") {
+		t.Errorf("error = %q, want 'failed to detach'", err.Error())
+	}
+}
+
+// --- Runner.StartDetached (background start) ---
+
+func TestRunner_StartDetached_Success(t *testing.T) {
+	var calls [][]string
+	mockExec := func(name string, args ...string) *exec.Cmd {
+		calls = append(calls, append([]string{name}, args...))
+		return exec.Command("true")
+	}
+	r := NewRunnerWithExec("uuid-1234", "/tmp/session", testUserInfo(), testPaths(), mockExec)
+	if err := r.StartDetached(); err != nil {
+		t.Fatalf("StartDetached failed: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 docker call (run only), got %d: %v", len(calls), calls)
+	}
+	joined := strings.Join(calls[0], " ")
+	if !strings.Contains(joined, "--detach") {
+		t.Errorf("expected --detach in args: %s", joined)
+	}
+	if strings.Contains(joined, "tmux attach") {
+		t.Errorf("StartDetached must not attach to tmux: %s", joined)
+	}
+}
+
+func TestRunner_StartDetached_Failure(t *testing.T) {
+	mockExec := func(name string, args ...string) *exec.Cmd {
+		return exec.Command("false")
+	}
+	r := NewRunnerWithExec("uuid-1234", "/tmp/session", testUserInfo(), testPaths(), mockExec)
+	if err := r.StartDetached(); err == nil {
+		t.Error("expected StartDetached error when docker run fails")
+	}
+}

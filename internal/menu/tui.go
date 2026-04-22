@@ -54,6 +54,11 @@ const (
 	modeBackgroundInitiated
 	modeNotConnectedDialog
 	modeSettingsDialog
+	modeRestartConfirm
+	modeRestartInitiated
+	modeAlreadyRunningDialog
+	modeEditDialog
+	modeEditRestartPrompt
 )
 
 type tui struct {
@@ -74,6 +79,8 @@ type tui struct {
 	overrideLockFunc func(id string) error
 	killFunc         func(id string) error
 	backgroundFunc   func(id string) error
+	restartFunc      func(id string) error
+	editSaveFunc     func(id, name string, port int) error
 }
 
 func (t *tui) isLocked(id string) bool {
@@ -118,6 +125,10 @@ type DisplayOptions struct {
 	OverrideLock      func(string) error
 	KillSession       func(string) error
 	BackgroundSession func(string) error
+	RestartSession    func(string) error
+	// SaveSessionEdit persists edited session metadata fields to disk.
+	// It is called with the session ID, the new name, and the new port.
+	SaveSessionEdit func(id, name string, port int) error
 }
 
 // Display renders the TUI session menu and returns the user's selection.
@@ -133,7 +144,7 @@ func Display(sessions []session.Metadata, opts DisplayOptions) (Selection, error
 
 // DisplayWithScreen renders the TUI on a provided screen (for testing).
 func DisplayWithScreen(sessions []session.Metadata, screen tcell.Screen, opts DisplayOptions) (Selection, error) {
-	return displayWithOptions(sessions, screen, 1*time.Second, 10*time.Second, opts)
+	return displayWithOptions(sessions, screen, 1*time.Second, 15*time.Second, opts)
 }
 
 func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickInterval, reloadInterval time.Duration, opts DisplayOptions) (Selection, error) {
@@ -161,6 +172,8 @@ func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickIn
 		overrideLockFunc: opts.OverrideLock,
 		killFunc:         opts.KillSession,
 		backgroundFunc:   opts.BackgroundSession,
+		restartFunc:      opts.RestartSession,
+		editSaveFunc:     opts.SaveSessionEdit,
 	}
 
 	// Tick periodically to keep the clock updated
@@ -263,6 +276,16 @@ func (t *tui) draw() {
 		t.drawNotConnectedDialog(width, height)
 	case modeSettingsDialog:
 		t.drawSettingsDialog(width, height)
+	case modeRestartConfirm:
+		t.drawRestartDialog(width, height)
+	case modeRestartInitiated:
+		t.drawRestartInitiatedDialog(width, height)
+	case modeAlreadyRunningDialog:
+		t.drawAlreadyRunningDialog(width, height)
+	case modeEditDialog:
+		t.drawEditDialog(width, height)
+	case modeEditRestartPrompt:
+		t.drawEditRestartPromptDialog(width, height)
 	}
 }
 
@@ -368,7 +391,7 @@ func (t *tui) drawMenuBar(width, height int) {
 	row := height - 1
 	fillRow(t.screen, row, width, menuBarStyle)
 	drawString(t.screen, 1, row,
-		"(N)ew | (C)lone | (B)ackground | (D)elete | (K)ill | (O)verride | (S)ettings | (R)eload | (Q)uit",
+		"(N)ew | (C)lone | (E)dit | (B)ackground | (D)elete | (K)ill | (O)verride | (S)ettings | (R)estart | (Q)uit",
 		menuBarStyle)
 }
 
@@ -852,6 +875,370 @@ func (t *tui) handleNotConnectedDialogKey(ev *tcell.EventKey) (Selection, bool) 
 	return Selection{}, false
 }
 
+func (t *tui) drawRestartDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	prompt := fmt.Sprintf("Restart session %q in background?", name)
+	dialogWidth := len(prompt) + 6
+	if dialogWidth < 48 {
+		dialogWidth = 48
+	}
+	dialogHeight := 5
+	if t.dialogErr != "" {
+		dialogHeight = 7
+	}
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	title := " Restart Session "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
+
+	if t.dialogErr != "" {
+		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
+		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+	}
+
+	hint := "(Y)es  (N)o"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleRestartDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+		t.dialogErr = ""
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'y', 'Y':
+			if t.cursor < 0 || t.cursor >= len(t.sessions) {
+				t.mode = modeMenu
+				return Selection{}, false
+			}
+			s := t.sessions[t.cursor]
+			if t.restartFunc != nil {
+				if err := t.restartFunc(s.UUID); err != nil {
+					t.dialogErr = err.Error()
+					return Selection{}, false
+				}
+			}
+			t.mode = modeRestartInitiated
+			t.dialogErr = ""
+		case 'n', 'N':
+			t.mode = modeMenu
+			t.dialogErr = ""
+		}
+	}
+	return Selection{}, false
+}
+
+func (t *tui) drawRestartInitiatedDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	msg := fmt.Sprintf("Restarting session %q in the background...", name)
+	dialogWidth := len(msg) + 6
+	if dialogWidth < 48 {
+		dialogWidth = 48
+	}
+	const dialogHeight = 5
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	title := " Restarting "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	drawString(t.screen, x0+2, y0+2, msg, dialogStyle)
+
+	hint := "Press Enter to continue"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleRestartInitiatedDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	if ev.Key() == tcell.KeyEnter {
+		t.mode = modeMenu
+	}
+	return Selection{}, false
+}
+
+func (t *tui) drawAlreadyRunningDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	msg := fmt.Sprintf("Session %q is already running.", name)
+	dialogWidth := len(msg) + 6
+	if dialogWidth < 48 {
+		dialogWidth = 48
+	}
+	const dialogHeight = 6
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	title := " Already Running "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	drawString(t.screen, x0+2, y0+2, msg, dialogStyle)
+	drawString(t.screen, x0+2, y0+3, "Press Enter on it to connect.", dialogStyle)
+
+	hint := "Press any key to continue"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleAlreadyRunningDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	t.mode = modeMenu
+	return Selection{}, false
+}
+
+func (t *tui) drawEditDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	const dialogWidth = 68
+	const dialogHeight = 14
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	title := " Edit Session "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	// Read-only metadata.
+	drawString(t.screen, x0+2, y0+2, "Session ID:", dialogStyle)
+	drawString(t.screen, x0+15, y0+2, s.UUID, dialogStyle)
+
+	drawString(t.screen, x0+2, y0+3, "Created:", dialogStyle)
+	drawString(t.screen, x0+15, y0+3, s.CreatedAt.Format("2006-01-02 15:04:05 UTC"), dialogStyle)
+
+	drawString(t.screen, x0+2, y0+4, "Accessed:", dialogStyle)
+	drawString(t.screen, x0+15, y0+4, s.LastAccessed.Format("2006-01-02 15:04:05 UTC"), dialogStyle)
+
+	// Editable fields.
+	drawString(t.screen, x0+2, y0+6, "Name:", dialogStyle)
+	nameX := x0 + 15
+	nameW := dialogWidth - 17
+	t.drawInputField(nameX, y0+6, nameW, t.inputBuf, t.activeField == 0)
+
+	drawString(t.screen, x0+2, y0+8, "Port:", dialogStyle)
+	portX := x0 + 15
+	portW := 10
+	t.drawInputField(portX, y0+8, portW, t.inputBufPort, t.activeField == 1)
+	drawString(t.screen, portX+portW+2, y0+8, "(blank=none, 0=auto)", dialogStyle)
+
+	if t.dialogErr != "" {
+		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
+		drawString(t.screen, x0+2, y0+10, errMsg, dialogErrStyle)
+	}
+
+	hint := "Tab=Next  Enter=Save  Esc=Cancel"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleEditDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+		t.inputBuf = nil
+		t.inputBufPort = nil
+		t.activeField = 0
+		t.dialogErr = ""
+	case tcell.KeyTab, tcell.KeyBacktab:
+		t.activeField = 1 - t.activeField
+		t.dialogErr = ""
+	case tcell.KeyEnter:
+		if t.cursor < 0 || t.cursor >= len(t.sessions) {
+			t.mode = modeMenu
+			return Selection{}, false
+		}
+		name := strings.TrimSpace(string(t.inputBuf))
+		if err := session.ValidateName(name); err != nil {
+			t.dialogErr = err.Error()
+			t.activeField = 0
+			return Selection{}, false
+		}
+		port, err := parsePortInput(string(t.inputBufPort))
+		if err != nil {
+			t.dialogErr = err.Error()
+			t.activeField = 1
+			return Selection{}, false
+		}
+		s := t.sessions[t.cursor]
+		if t.editSaveFunc != nil {
+			if err := t.editSaveFunc(s.UUID, name, port); err != nil {
+				t.dialogErr = err.Error()
+				return Selection{}, false
+			}
+		}
+		t.mode = modeEditRestartPrompt
+		t.dialogErr = ""
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if t.activeField == 0 {
+			if len(t.inputBuf) > 0 {
+				t.inputBuf = t.inputBuf[:len(t.inputBuf)-1]
+				t.dialogErr = ""
+			}
+		} else {
+			if len(t.inputBufPort) > 0 {
+				t.inputBufPort = t.inputBufPort[:len(t.inputBufPort)-1]
+				t.dialogErr = ""
+			}
+		}
+	case tcell.KeyRune:
+		if t.activeField == 0 {
+			if len(t.inputBuf) < 64 {
+				t.inputBuf = append(t.inputBuf, ev.Rune())
+				t.dialogErr = ""
+			}
+		} else {
+			r := ev.Rune()
+			if r >= '0' && r <= '9' && len(t.inputBufPort) < 5 {
+				t.inputBufPort = append(t.inputBufPort, r)
+				t.dialogErr = ""
+			}
+		}
+	}
+	return Selection{}, false
+}
+
+func (t *tui) drawEditRestartPromptDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	prompt := fmt.Sprintf("Saved. Restart session %q now?", name)
+	dialogWidth := len(prompt) + 6
+	if dialogWidth < 52 {
+		dialogWidth = 52
+	}
+	dialogHeight := 6
+	if t.dialogErr != "" {
+		dialogHeight = 8
+	}
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	title := " Restart Session "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
+	drawString(t.screen, x0+2, y0+3, "Y = restart now   N = keep config, don't restart", dialogStyle)
+
+	if t.dialogErr != "" {
+		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
+		drawString(t.screen, x0+2, y0+5, errMsg, dialogErrStyle)
+	}
+
+	hint := "(Y)es  (N)o"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleEditRestartPromptKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+		t.dialogErr = ""
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'y', 'Y':
+			if t.cursor < 0 || t.cursor >= len(t.sessions) {
+				t.mode = modeMenu
+				return Selection{}, false
+			}
+			s := t.sessions[t.cursor]
+			if t.restartFunc != nil {
+				if err := t.restartFunc(s.UUID); err != nil {
+					t.dialogErr = err.Error()
+					return Selection{}, false
+				}
+			}
+			t.mode = modeMenu
+			t.dialogErr = ""
+		case 'n', 'N':
+			t.mode = modeMenu
+			t.dialogErr = ""
+		}
+	}
+	return Selection{}, false
+}
+
 func (t *tui) drawSettingsDialog(width, height int) {
 	const dialogWidth = 64
 	const dialogHeight = 9
@@ -1103,6 +1490,16 @@ func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
 		return t.handleNotConnectedDialogKey(ev)
 	case modeSettingsDialog:
 		return t.handleSettingsDialogKey(ev)
+	case modeRestartConfirm:
+		return t.handleRestartDialogKey(ev)
+	case modeRestartInitiated:
+		return t.handleRestartInitiatedDialogKey(ev)
+	case modeAlreadyRunningDialog:
+		return t.handleAlreadyRunningDialogKey(ev)
+	case modeEditDialog:
+		return t.handleEditDialogKey(ev)
+	case modeEditRestartPrompt:
+		return t.handleEditRestartPromptKey(ev)
 	default:
 		return t.handleMenuKey(ev)
 	}
@@ -1155,6 +1552,19 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 					t.dialogErr = ""
 				}
 			}
+		case 'e', 'E':
+			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
+				s := t.sessions[t.cursor]
+				t.mode = modeEditDialog
+				t.inputBuf = []rune(s.Name)
+				if s.Port > 0 {
+					t.inputBufPort = []rune(strconv.Itoa(s.Port))
+				} else {
+					t.inputBufPort = nil
+				}
+				t.activeField = 0
+				t.dialogErr = ""
+			}
 		case 'k', 'K':
 			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
 				t.mode = modeKillConfirm
@@ -1169,7 +1579,16 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 			t.mode = modeSettingsDialog
 			t.dialogErr = ""
 		case 'r', 'R':
-			return Selection{Action: ActionReload}, true
+			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
+				s := t.sessions[t.cursor]
+				if t.isRunning(s.UUID) {
+					t.mode = modeAlreadyRunningDialog
+					t.dialogErr = ""
+					return Selection{}, false
+				}
+				t.mode = modeRestartConfirm
+				t.dialogErr = ""
+			}
 		case 'q', 'Q':
 			return Selection{Action: ActionQuit}, true
 		default:

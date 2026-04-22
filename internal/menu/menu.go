@@ -18,8 +18,12 @@ const (
 	ActionCloneSession = "clone"
 	// ActionDeleteSession indicates the user wants to delete a session.
 	ActionDeleteSession = "delete"
-	// ActionReload indicates the user wants to reload the session list.
+	// ActionReload indicates the UI should refresh the session list.
+	// It is emitted by the periodic auto-refresh timer, not by a user key.
 	ActionReload = "reload"
+	// ActionRestart indicates the user wants to start the selected session
+	// container in detached/background mode so it runs autonomously.
+	ActionRestart = "restart"
 	// ActionOverrideLock indicates the user wants to override a stale session lock.
 	ActionOverrideLock = "override-lock"
 	// ActionBackground indicates the user wants to disconnect an attached
