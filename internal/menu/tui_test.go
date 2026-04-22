@@ -2646,6 +2646,178 @@ func TestTUI_DrawEditDialogs_BadCursor(t *testing.T) {
 	}
 }
 
+// --- wrapErrorText / sizeDialogForError tests ---
+
+func TestWrapErrorText_Empty(t *testing.T) {
+	if got := wrapErrorText("", 40); got != nil {
+		t.Errorf("wrapErrorText(\"\") = %v, want nil", got)
+	}
+}
+
+func TestWrapErrorText_NonPositiveWidth(t *testing.T) {
+	if got := wrapErrorText("hello", 0); got != nil {
+		t.Errorf("width=0 should return nil, got %v", got)
+	}
+	if got := wrapErrorText("hello", -3); got != nil {
+		t.Errorf("negative width should return nil, got %v", got)
+	}
+}
+
+func TestWrapErrorText_FitsOnOneLine(t *testing.T) {
+	got := wrapErrorText("short message", 40)
+	if len(got) != 1 || got[0] != "short message" {
+		t.Errorf("got %v, want single line", got)
+	}
+}
+
+func TestWrapErrorText_WordWrap(t *testing.T) {
+	got := wrapErrorText("the quick brown fox jumps over the lazy dog", 15)
+	// Expect wrapping at word boundaries; every line <= 15 chars.
+	joined := strings.Join(got, " ")
+	if joined != "the quick brown fox jumps over the lazy dog" {
+		t.Errorf("reassembled %q, want original sentence", joined)
+	}
+	for _, line := range got {
+		if len(line) > 15 {
+			t.Errorf("line too long (%d > 15): %q", len(line), line)
+		}
+	}
+}
+
+func TestWrapErrorText_HardWrapLongWord(t *testing.T) {
+	// A word longer than width is hard-wrapped.
+	got := wrapErrorText("abcdefghij", 4)
+	if len(got) != 3 {
+		t.Fatalf("got %d lines, want 3: %v", len(got), got)
+	}
+	expected := []string{"abcd", "efgh", "ij"}
+	for i, want := range expected {
+		if got[i] != want {
+			t.Errorf("line %d = %q, want %q", i, got[i], want)
+		}
+	}
+}
+
+func TestWrapErrorText_HardWrapMidSentence(t *testing.T) {
+	// Long word in the middle should flush the current line before hard-wrap.
+	got := wrapErrorText("hi abcdefghij world", 4)
+	// "hi" flushes, then "abcdefghij" hard-wraps as "abcd"/"efgh"/"ij", then "world" hard-wraps.
+	if len(got) < 4 {
+		t.Fatalf("expected at least 4 lines, got %d: %v", len(got), got)
+	}
+	if got[0] != "hi" {
+		t.Errorf("line 0 = %q, want 'hi'", got[0])
+	}
+}
+
+func TestWrapErrorText_TruncatesAt500Chars(t *testing.T) {
+	long := strings.Repeat("a", 600)
+	got := wrapErrorText(long, 80)
+	total := 0
+	for _, line := range got {
+		total += len(line)
+	}
+	// The input is truncated to 500 chars with "..." replacing the last 3 chars,
+	// so wrapped output reconstructs to exactly 500 chars of content.
+	if total != 500 {
+		t.Errorf("total chars = %d, want 500 after truncation", total)
+	}
+	reassembled := strings.Join(got, "")
+	if !strings.HasSuffix(reassembled, "...") {
+		t.Errorf("truncated text should end with '...', got: %q", reassembled[len(reassembled)-10:])
+	}
+}
+
+func TestSizeDialogForError_NoError(t *testing.T) {
+	// Natural width >= min, no error → use natural.
+	if got := sizeDialogForError(60, 40, "", 120); got != 60 {
+		t.Errorf("got %d, want 60", got)
+	}
+	// Natural < min → use min.
+	if got := sizeDialogForError(30, 40, "", 120); got != 40 {
+		t.Errorf("got %d, want 40 (min)", got)
+	}
+}
+
+func TestSizeDialogForError_WithError(t *testing.T) {
+	// With error, widen to errorDialogMinWidth even if natural is smaller.
+	got := sizeDialogForError(40, 40, "boom", 120)
+	if got != errorDialogMinWidth {
+		t.Errorf("got %d, want %d (errorDialogMinWidth)", got, errorDialogMinWidth)
+	}
+}
+
+func TestSizeDialogForError_CapsToScreenWidth(t *testing.T) {
+	// Screen narrower than preferred width: cap.
+	got := sizeDialogForError(80, 40, "err", 50)
+	if got != 48 {
+		t.Errorf("got %d, want 48 (screenWidth-2)", got)
+	}
+}
+
+func TestSizeDialogForError_ScreenTooNarrowHoldsMin(t *testing.T) {
+	// Screen even narrower than min: refuse to go below min (so layout is
+	// predictable even when the user drastically shrinks the terminal).
+	got := sizeDialogForError(60, 40, "err", 30)
+	if got != 40 {
+		t.Errorf("got %d, want %d (min held)", got, 40)
+	}
+}
+
+// --- Integration: restart dialog shows full multi-line error ---
+
+func TestTUI_RestartDialog_LongErrorWraps(t *testing.T) {
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+
+	longErr := "docker: Error response from daemon: driver failed programming external connectivity on endpoint claude-session-xxx: Bind for 0.0.0.0:53 failed: port is already allocated."
+	ui := &tui{
+		screen:    screen,
+		sessions:  testSessions(),
+		cursor:    0,
+		mode:      modeRestartConfirm,
+		dialogErr: longErr,
+	}
+	ui.draw()
+
+	// Search every row of the screen and normalize runs of whitespace so that
+	// wrapped phrases reassemble across line breaks.
+	w, h := screen.Size()
+	var all strings.Builder
+	for row := 0; row < h; row++ {
+		all.WriteString(getScreenText(screen, row, w))
+		all.WriteByte(' ')
+	}
+	joined := strings.Join(strings.Fields(all.String()), " ")
+	if !strings.Contains(joined, "driver failed programming external connectivity") {
+		t.Errorf("full error not rendered across wrapped lines; searched:\n%s", joined)
+	}
+	if !strings.Contains(joined, "port is already allocated") {
+		t.Errorf("trailing part of error missing; searched:\n%s", joined)
+	}
+}
+
+func TestTUI_RestartDialog_Truncates500(t *testing.T) {
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+	ui := &tui{
+		screen:    screen,
+		sessions:  testSessions(),
+		cursor:    0,
+		mode:      modeRestartConfirm,
+		dialogErr: strings.Repeat("a", 800),
+	}
+	ui.draw()
+	w, h := screen.Size()
+	var all strings.Builder
+	for row := 0; row < h; row++ {
+		all.WriteString(getScreenText(screen, row, w))
+	}
+	if !strings.Contains(all.String(), "...") {
+		t.Error("expected ellipsis after 500-char truncation")
+	}
+}
+
 // --- clipToWidth tests ---
 
 func TestClipToWidth(t *testing.T) {

@@ -396,8 +396,12 @@ func (t *tui) drawMenuBar(width, height int) {
 }
 
 func (t *tui) drawCreateDialog(width, height int) {
-	const dialogWidth = 58
-	const dialogHeight = 10
+	dialogWidth := sizeDialogForError(58, 58, t.dialogErr, width)
+	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
+	dialogHeight := 9
+	if len(errLines) > 0 {
+		dialogHeight = 7 + len(errLines) + 1
+	}
 
 	x0 := (width - dialogWidth) / 2
 	y0 := (height - dialogHeight) / 2
@@ -433,10 +437,9 @@ func (t *tui) drawCreateDialog(width, height int) {
 	t.drawInputField(portX, y0+4, portW, t.inputBufPort, t.activeField == 1)
 	drawString(t.screen, portX+portW+2, y0+4, "(blank=none, 0=auto)", dialogStyle)
 
-	// Error message
-	if t.dialogErr != "" {
-		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
-		drawString(t.screen, x0+2, y0+6, errMsg, dialogErrStyle)
+	// Error message (wrapped)
+	for i, line := range errLines {
+		drawString(t.screen, x0+2, y0+6+i, line, dialogErrStyle)
 	}
 
 	// Hint
@@ -471,8 +474,12 @@ func (t *tui) drawCloneDialog(width, height int) {
 	}
 	s := t.sessions[t.cursor]
 
-	const dialogWidth = 60
-	const dialogHeight = 8
+	dialogWidth := sizeDialogForError(60, 60, t.dialogErr, width)
+	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
+	dialogHeight := 7
+	if len(errLines) > 0 {
+		dialogHeight = 5 + len(errLines) + 2
+	}
 
 	x0 := (width - dialogWidth) / 2
 	y0 := (height - dialogHeight) / 2
@@ -517,9 +524,8 @@ func (t *tui) drawCloneDialog(width, height int) {
 		t.screen.SetContent(cursorX, y0+3, ' ', nil, inputStyle.Reverse(true))
 	}
 
-	if t.dialogErr != "" {
-		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
-		drawString(t.screen, x0+2, y0+5, errMsg, dialogErrStyle)
+	for i, line := range errLines {
+		drawString(t.screen, x0+2, y0+5+i, line, dialogErrStyle)
 	}
 
 	hint := "Enter=Clone  Esc=Cancel"
@@ -717,13 +723,11 @@ func (t *tui) drawBackgroundDialog(width, height int) {
 
 	name := truncate(s.Name, 30)
 	prompt := fmt.Sprintf("Background session %q?", name)
-	dialogWidth := len(prompt) + 6
-	if dialogWidth < 44 {
-		dialogWidth = 44
-	}
+	dialogWidth := sizeDialogForError(len(prompt)+6, 44, t.dialogErr, width)
+	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
 	dialogHeight := 5
-	if t.dialogErr != "" {
-		dialogHeight = 7
+	if len(errLines) > 0 {
+		dialogHeight = 4 + len(errLines) + 2
 	}
 
 	x0 := (width - dialogWidth) / 2
@@ -746,9 +750,8 @@ func (t *tui) drawBackgroundDialog(width, height int) {
 
 	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
 
-	if t.dialogErr != "" {
-		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
-		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+	for i, line := range errLines {
+		drawString(t.screen, x0+2, y0+4+i, line, dialogErrStyle)
 	}
 
 	hint := "(Y)es  (N)o"
@@ -883,13 +886,11 @@ func (t *tui) drawRestartDialog(width, height int) {
 
 	name := truncate(s.Name, 30)
 	prompt := fmt.Sprintf("Restart session %q in background?", name)
-	dialogWidth := len(prompt) + 6
-	if dialogWidth < 48 {
-		dialogWidth = 48
-	}
+	dialogWidth := sizeDialogForError(len(prompt)+6, 48, t.dialogErr, width)
+	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
 	dialogHeight := 5
-	if t.dialogErr != "" {
-		dialogHeight = 7
+	if len(errLines) > 0 {
+		dialogHeight = 4 + len(errLines) + 2 // prompt, gap, err..., gap, hint
 	}
 
 	x0 := (width - dialogWidth) / 2
@@ -912,9 +913,8 @@ func (t *tui) drawRestartDialog(width, height int) {
 
 	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
 
-	if t.dialogErr != "" {
-		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
-		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+	for i, line := range errLines {
+		drawString(t.screen, x0+2, y0+4+i, line, dialogErrStyle)
 	}
 
 	hint := "(Y)es  (N)o"
@@ -1045,8 +1045,12 @@ func (t *tui) drawEditDialog(width, height int) {
 	}
 	s := t.sessions[t.cursor]
 
-	const dialogWidth = 68
-	const dialogHeight = 14
+	dialogWidth := sizeDialogForError(68, 68, t.dialogErr, width)
+	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
+	dialogHeight := 13
+	if len(errLines) > 0 {
+		dialogHeight = 11 + len(errLines) + 1
+	}
 
 	x0 := (width - dialogWidth) / 2
 	y0 := (height - dialogHeight) / 2
@@ -1088,9 +1092,8 @@ func (t *tui) drawEditDialog(width, height int) {
 	t.drawInputField(portX, y0+8, portW, t.inputBufPort, t.activeField == 1)
 	drawString(t.screen, portX+portW+2, y0+8, "(blank=none, 0=auto)", dialogStyle)
 
-	if t.dialogErr != "" {
-		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
-		drawString(t.screen, x0+2, y0+10, errMsg, dialogErrStyle)
+	for i, line := range errLines {
+		drawString(t.screen, x0+2, y0+10+i, line, dialogErrStyle)
 	}
 
 	hint := "Tab=Next  Enter=Save  Esc=Cancel"
@@ -1171,13 +1174,11 @@ func (t *tui) drawEditRestartPromptDialog(width, height int) {
 
 	name := truncate(s.Name, 30)
 	prompt := fmt.Sprintf("Saved. Restart session %q now?", name)
-	dialogWidth := len(prompt) + 6
-	if dialogWidth < 52 {
-		dialogWidth = 52
-	}
+	dialogWidth := sizeDialogForError(len(prompt)+6, 52, t.dialogErr, width)
+	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
 	dialogHeight := 6
-	if t.dialogErr != "" {
-		dialogHeight = 8
+	if len(errLines) > 0 {
+		dialogHeight = 5 + len(errLines) + 2
 	}
 
 	x0 := (width - dialogWidth) / 2
@@ -1201,9 +1202,8 @@ func (t *tui) drawEditRestartPromptDialog(width, height int) {
 	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
 	drawString(t.screen, x0+2, y0+3, "Y = restart now   N = keep config, don't restart", dialogStyle)
 
-	if t.dialogErr != "" {
-		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
-		drawString(t.screen, x0+2, y0+5, errMsg, dialogErrStyle)
+	for i, line := range errLines {
+		drawString(t.screen, x0+2, y0+5+i, line, dialogErrStyle)
 	}
 
 	hint := "(Y)es  (N)o"
@@ -1290,13 +1290,11 @@ func (t *tui) drawOverrideDialog(width, height int) {
 
 	name := truncate(s.Name, 30)
 	prompt := fmt.Sprintf("Override lock for session %q?", name)
-	dialogWidth := len(prompt) + 6
-	if dialogWidth < 44 {
-		dialogWidth = 44
-	}
+	dialogWidth := sizeDialogForError(len(prompt)+6, 44, t.dialogErr, width)
+	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
 	dialogHeight := 5
-	if t.dialogErr != "" {
-		dialogHeight = 7
+	if len(errLines) > 0 {
+		dialogHeight = 4 + len(errLines) + 2
 	}
 
 	x0 := (width - dialogWidth) / 2
@@ -1322,10 +1320,9 @@ func (t *tui) drawOverrideDialog(width, height int) {
 	// Prompt
 	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
 
-	// Error message
-	if t.dialogErr != "" {
-		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
-		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+	// Error message (wrapped)
+	for i, line := range errLines {
+		drawString(t.screen, x0+2, y0+4+i, line, dialogErrStyle)
 	}
 
 	// Hint
@@ -1368,13 +1365,11 @@ func (t *tui) drawKillDialog(width, height int) {
 
 	name := truncate(s.Name, 30)
 	prompt := fmt.Sprintf("Kill session %q?", name)
-	dialogWidth := len(prompt) + 6
-	if dialogWidth < 40 {
-		dialogWidth = 40
-	}
+	dialogWidth := sizeDialogForError(len(prompt)+6, 40, t.dialogErr, width)
+	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
 	dialogHeight := 5
-	if t.dialogErr != "" {
-		dialogHeight = 7
+	if len(errLines) > 0 {
+		dialogHeight = 4 + len(errLines) + 2
 	}
 
 	x0 := (width - dialogWidth) / 2
@@ -1400,10 +1395,9 @@ func (t *tui) drawKillDialog(width, height int) {
 	// Prompt
 	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
 
-	// Error message
-	if t.dialogErr != "" {
-		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
-		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+	// Error message (wrapped)
+	for i, line := range errLines {
+		drawString(t.screen, x0+2, y0+4+i, line, dialogErrStyle)
 	}
 
 	// Hint
@@ -1714,4 +1708,79 @@ func clipToWidth(s string, width int) string {
 		return s
 	}
 	return string(runes[:width])
+}
+
+// errorDialogMinWidth is the minimum dialog width to use when an error must
+// be displayed — wide enough that wrapped lines read cleanly instead of
+// collapsing to one word per row.
+const errorDialogMinWidth = 72
+
+// sizeDialogForError returns the dialog width to use given the dialog's
+// natural width, its minimum width, the current error string, and the screen
+// width. When an error is present, the dialog is widened to at least
+// errorDialogMinWidth; the result is capped so the dialog still fits on screen.
+func sizeDialogForError(natural, minWidth int, errText string, screenWidth int) int {
+	width := natural
+	if width < minWidth {
+		width = minWidth
+	}
+	if errText != "" && width < errorDialogMinWidth {
+		width = errorDialogMinWidth
+	}
+	if width > screenWidth-2 {
+		width = screenWidth - 2
+	}
+	if width < minWidth {
+		width = minWidth
+	}
+	return width
+}
+
+// errorTextMaxChars caps how much of a dialog error message is displayed.
+// Anything beyond this is replaced with a trailing ellipsis so the dialog
+// cannot grow unbounded on enormous error strings.
+const errorTextMaxChars = 500
+
+// wrapErrorText word-wraps an error message into lines of at most width
+// characters, preserving word boundaries where possible and hard-wrapping
+// single words that exceed width. Inputs longer than errorTextMaxChars are
+// truncated with "..." before wrapping. Returns nil for empty input or
+// non-positive width.
+func wrapErrorText(s string, width int) []string {
+	if s == "" || width <= 0 {
+		return nil
+	}
+	if len([]rune(s)) > errorTextMaxChars {
+		r := []rune(s)
+		s = string(r[:errorTextMaxChars-3]) + "..."
+	}
+	var lines []string
+	var current []rune
+	flush := func() {
+		if len(current) > 0 {
+			lines = append(lines, string(current))
+			current = current[:0]
+		}
+	}
+	for _, word := range strings.Fields(s) {
+		wr := []rune(word)
+		// Hard-wrap words that are longer than the line width.
+		for len(wr) > width {
+			flush()
+			lines = append(lines, string(wr[:width]))
+			wr = wr[width:]
+		}
+		switch {
+		case len(current) == 0:
+			current = append(current, wr...)
+		case len(current)+1+len(wr) <= width:
+			current = append(current, ' ')
+			current = append(current, wr...)
+		default:
+			flush()
+			current = append(current, wr...)
+		}
+	}
+	flush()
+	return lines
 }
