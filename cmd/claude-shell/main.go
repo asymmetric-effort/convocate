@@ -11,6 +11,7 @@ import (
 	"github.com/asymmetric-effort/claude-shell/internal/capacity"
 	"github.com/asymmetric-effort/claude-shell/internal/config"
 	"github.com/asymmetric-effort/claude-shell/internal/container"
+	"github.com/asymmetric-effort/claude-shell/internal/dns"
 	"github.com/asymmetric-effort/claude-shell/internal/install"
 	"github.com/asymmetric-effort/claude-shell/internal/logging"
 	"github.com/asymmetric-effort/claude-shell/internal/menu"
@@ -91,13 +92,21 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			RestartSession: func(id string) error {
 				return restartSessionDetached(mgr, id, userInfo, paths, log)
 			},
-			SaveSessionEdit: func(id, name, protocol string, port int) error {
-				_, err := mgr.Update(id, name, port, protocol)
+			SaveSessionEdit: func(id, name, protocol, dnsName string, port int) error {
+				_, err := mgr.UpdateWithOptions(id, session.UpdateOptions{
+					Name:     name,
+					Port:     port,
+					Protocol: protocol,
+					DNSName:  dnsName,
+				})
 				if err != nil {
 					return err
 				}
 				if log != nil {
-					log.Infof("updated session %s: name=%q port=%d/%s", id, name, port, protocol)
+					log.Infof("updated session %s: name=%q port=%d/%s dns=%q", id, name, port, protocol, dnsName)
+				}
+				if err := syncDNSRecords(mgr, log); err != nil && log != nil {
+					log.Warningf("failed to sync dnsmasq hosts after edit: %v", err)
 				}
 				return nil
 			},
@@ -111,7 +120,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			fmt.Println("Goodbye!")
 			return nil
 		case menu.ActionNewSession:
-			if err := handleNewSession(mgr, sel.Name, sel.Port, sel.Protocol, userInfo, paths, log); err != nil {
+			if err := handleNewSession(mgr, sel.Name, sel.Port, sel.Protocol, sel.DNSName, userInfo, paths, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
@@ -125,6 +134,9 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 				fmt.Fprintf(os.Stderr, "delete error: %v\n", err)
 			} else {
 				fmt.Printf("Deleted session %q (%s)\n", sel.Name, sel.SessionID[:8])
+				if err := syncDNSRecords(mgr, log); err != nil && log != nil {
+					log.Warningf("failed to sync dnsmasq hosts after delete: %v", err)
+				}
 			}
 			continue
 		default:
@@ -137,22 +149,59 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 	}
 }
 
-func handleNewSession(mgr *session.Manager, name string, port int, protocol string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
-	meta, err := mgr.CreateWithPortProtocol(name, port, protocol)
+func handleNewSession(mgr *session.Manager, name string, port int, protocol, dnsName string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+	meta, err := mgr.CreateWithOptions(name, session.CreateOptions{
+		Port:     port,
+		Protocol: protocol,
+		DNSName:  dnsName,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}
 
 	if log != nil {
-		log.Infof("created session %s (%s) port=%d/%s", meta.UUID, meta.Name, meta.Port, meta.EffectiveProtocol())
+		log.Infof("created session %s (%s) port=%d/%s dns=%q", meta.UUID, meta.Name, meta.Port, meta.EffectiveProtocol(), meta.DNSName)
 	}
 	if meta.Port > 0 {
 		fmt.Printf("Created session %q (%s) on port %d/%s\n", meta.Name, meta.UUID[:8], meta.Port, meta.EffectiveProtocol())
 	} else {
 		fmt.Printf("Created session %q (%s)\n", meta.Name, meta.UUID[:8])
 	}
+	if meta.DNSName != "" {
+		fmt.Printf("Registered DNS name %q\n", meta.DNSName)
+	}
+
+	if err := syncDNSRecords(mgr, log); err != nil && log != nil {
+		log.Warningf("failed to sync dnsmasq hosts after create: %v", err)
+	}
 
 	return launchSession(mgr, meta.UUID, meta.Port, meta.EffectiveProtocol(), userInfo, paths, log)
+}
+
+// syncDNSRecords rewrites the dnsmasq-hosts file claude-shell manages from
+// the current session metadata. If the install hasn't set up the dnsmasq
+// integration (parent directory missing) the call is a no-op so stock
+// claude-shell users aren't blocked.
+func syncDNSRecords(mgr *session.Manager, log *logging.Logger) error {
+	if !dns.HostsFileExists(dns.DefaultHostsFile) {
+		return nil
+	}
+	sessions, err := mgr.List()
+	if err != nil {
+		return err
+	}
+	hostIP := dns.DetectHostIP()
+	var records []dns.Record
+	for _, s := range sessions {
+		if s.DNSName == "" {
+			continue
+		}
+		records = append(records, dns.Record{Name: s.DNSName, IP: hostIP})
+	}
+	if log != nil {
+		log.Infof("syncing %d dnsmasq records -> %s", len(records), dns.DefaultHostsFile)
+	}
+	return dns.WriteHostsFile(dns.DefaultHostsFile, records)
 }
 
 func handleCloneSession(mgr *session.Manager, sourceID, name string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {

@@ -27,6 +27,9 @@ type Metadata struct {
 	// Protocol is "tcp" or "udp" — the protocol used for the published port.
 	// An empty value is treated as "tcp" for backward compatibility.
 	Protocol string `json:"protocol,omitempty"`
+	// DNSName is the optional hostname registered with the local dnsmasq
+	// service. Empty means no DNS record is published.
+	DNSName string `json:"dns_name,omitempty"`
 }
 
 // EffectiveProtocol returns the session's protocol, defaulting to "tcp" when
@@ -66,6 +69,54 @@ func ValidateProtocol(s string) (string, error) {
 	}
 }
 
+// ValidateDNSName checks that s is a valid DNS hostname suitable for
+// registration with the local dnsmasq. Empty is allowed (no DNS record).
+// Otherwise:
+//   - ASCII letters, digits, hyphens, and dots only
+//   - Each label (between dots) is 1-63 chars, must not start or end with '-'
+//   - Total length <= 253 chars
+// The returned string is the lowercased canonical form.
+func ValidateDNSName(s string) (string, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return "", nil
+	}
+	if len(s) > 253 {
+		return "", fmt.Errorf("DNS name too long (max 253 chars)")
+	}
+	labels := strings.Split(s, ".")
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 {
+			return "", fmt.Errorf("DNS label length must be 1-63 chars")
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return "", fmt.Errorf("DNS label cannot start or end with '-'")
+		}
+		for _, r := range label {
+			if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+				return "", fmt.Errorf("DNS name contains invalid character %q (only a-z, 0-9, -, . allowed)", r)
+			}
+		}
+	}
+	return s, nil
+}
+
+// CreateOptions holds all configurable parameters for creating a session.
+type CreateOptions struct {
+	Port     int
+	Protocol string
+	DNSName  string
+}
+
+// UpdateOptions holds the fields that can be edited after creation.
+// Each field is interpreted verbatim; empty Protocol resolves to "tcp".
+type UpdateOptions struct {
+	Name     string
+	Port     int
+	Protocol string
+	DNSName  string
+}
+
 // Manager handles session lifecycle operations.
 type Manager struct {
 	basePath string
@@ -94,33 +145,52 @@ func (m *Manager) CreateWithPort(name string, port int) (Metadata, error) {
 }
 
 // CreateWithPortProtocol creates a new session with the given name, port, and
-// protocol ("tcp" or "udp"; empty string treated as "tcp"). Port semantics:
-// 0 means no port is published; PortAuto (-1) requests auto-selection of the
-// first available port at or above PortAutoMin; any positive value is used
-// verbatim after checking that no other session uses it with the same
-// protocol.
+// protocol (legacy wrapper — new code should use CreateWithOptions).
 func (m *Manager) CreateWithPortProtocol(name string, port int, protocol string) (Metadata, error) {
+	return m.CreateWithOptions(name, CreateOptions{Port: port, Protocol: protocol})
+}
+
+// CreateWithOptions creates a new session. Port semantics: 0 means no port is
+// published; PortAuto (-1) requests auto-selection of the first available
+// port at or above PortAutoMin; any positive value is used verbatim after
+// checking no other session uses it with the same protocol.
+func (m *Manager) CreateWithOptions(name string, opts CreateOptions) (Metadata, error) {
 	id := uuid.New().String()
-	return m.CreateWithUUIDProtocol(id, name, port, protocol)
+	return m.createWithUUIDOptions(id, name, opts)
 }
 
 // CreateWithUUID is the legacy test helper that creates a session with a
 // specific UUID and defaults protocol to TCP.
 func (m *Manager) CreateWithUUID(id, name string, port int) (Metadata, error) {
-	return m.CreateWithUUIDProtocol(id, name, port, ProtocolTCP)
+	return m.createWithUUIDOptions(id, name, CreateOptions{Port: port, Protocol: ProtocolTCP})
 }
 
 // CreateWithUUIDProtocol creates a new session with a specific UUID, port,
-// and protocol.
+// and protocol (legacy wrapper).
 func (m *Manager) CreateWithUUIDProtocol(id, name string, port int, protocol string) (Metadata, error) {
-	proto, err := ValidateProtocol(protocol)
+	return m.createWithUUIDOptions(id, name, CreateOptions{Port: port, Protocol: protocol})
+}
+
+// createWithUUIDOptions is the canonical implementation. It validates inputs,
+// resolves collisions, writes the session directory, and persists metadata.
+func (m *Manager) createWithUUIDOptions(id, name string, opts CreateOptions) (Metadata, error) {
+	proto, err := ValidateProtocol(opts.Protocol)
 	if err != nil {
 		return Metadata{}, err
 	}
 
-	resolvedPort, err := m.resolvePort(port, proto)
+	dnsName, err := ValidateDNSName(opts.DNSName)
 	if err != nil {
 		return Metadata{}, err
+	}
+
+	resolvedPort, err := m.resolvePort(opts.Port, proto)
+	if err != nil {
+		return Metadata{}, err
+	}
+
+	if dnsName != "" && m.isDNSNameUsedByOther(id, dnsName) {
+		return Metadata{}, fmt.Errorf("DNS name %q is already assigned to another session", dnsName)
 	}
 
 	sessionDir := filepath.Join(m.basePath, id)
@@ -141,6 +211,7 @@ func (m *Manager) CreateWithUUIDProtocol(id, name string, port int, protocol str
 		LastAccessed: now,
 		Port:         resolvedPort,
 		Protocol:     proto,
+		DNSName:      dnsName,
 	}
 
 	if err := m.writeMetadata(sessionDir, meta); err != nil {
@@ -149,6 +220,27 @@ func (m *Manager) CreateWithUUIDProtocol(id, name string, port int, protocol str
 	}
 
 	return meta, nil
+}
+
+// isDNSNameUsedByOther reports whether the given DNS name is registered by
+// any session other than excludeID.
+func (m *Manager) isDNSNameUsedByOther(excludeID, dnsName string) bool {
+	if dnsName == "" {
+		return false
+	}
+	sessions, err := m.List()
+	if err != nil {
+		return false
+	}
+	for _, s := range sessions {
+		if s.UUID == excludeID {
+			continue
+		}
+		if strings.EqualFold(s.DNSName, dnsName) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolvePort translates a caller-supplied port value into the port actually
@@ -292,22 +384,39 @@ func (m *Manager) Delete(id string) error {
 	return os.RemoveAll(sessionDir)
 }
 
-// Update applies edited fields (name, port, protocol) to the given session
-// and persists them to session.json. UUID, CreatedAt, and LastAccessed are
-// preserved. An empty protocol is treated as "tcp". Collisions are checked
-// per-protocol: tcp:53 and udp:53 can coexist in different sessions.
+// Update applies edited fields to the given session and persists them to
+// session.json. Legacy wrapper around UpdateWithOptions; new code should use
+// UpdateWithOptions directly.
 func (m *Manager) Update(id, newName string, newPort int, newProtocol string) (Metadata, error) {
+	return m.UpdateWithOptions(id, UpdateOptions{
+		Name:     newName,
+		Port:     newPort,
+		Protocol: newProtocol,
+	})
+}
+
+// UpdateWithOptions applies the fields in opts to the session identified by
+// id. UUID, CreatedAt, and LastAccessed are preserved. An empty Protocol is
+// treated as "tcp". Collisions are checked per-protocol: tcp:53 and udp:53
+// can coexist in different sessions. An empty DNSName clears any existing
+// record.
+func (m *Manager) UpdateWithOptions(id string, opts UpdateOptions) (Metadata, error) {
 	sessionDir := filepath.Join(m.basePath, id)
 	current, err := m.readMetadata(sessionDir)
 	if err != nil {
 		return Metadata{}, err
 	}
 
-	if err := ValidateName(newName); err != nil {
+	if err := ValidateName(opts.Name); err != nil {
 		return Metadata{}, err
 	}
 
-	proto, err := ValidateProtocol(newProtocol)
+	proto, err := ValidateProtocol(opts.Protocol)
+	if err != nil {
+		return Metadata{}, err
+	}
+
+	dnsName, err := ValidateDNSName(opts.DNSName)
 	if err != nil {
 		return Metadata{}, err
 	}
@@ -316,29 +425,34 @@ func (m *Manager) Update(id, newName string, newPort int, newProtocol string) (M
 	// Re-resolve the port when either the number OR the protocol changed —
 	// a collision may exist against the new (port, protocol) tuple even if
 	// only the protocol differs.
-	if newPort != current.Port || proto != current.EffectiveProtocol() {
+	if opts.Port != current.Port || proto != current.EffectiveProtocol() {
 		switch {
-		case newPort == 0:
+		case opts.Port == 0:
 			resolvedPort = 0
-		case newPort == PortAuto:
+		case opts.Port == PortAuto:
 			rp, err := m.FindAvailablePort(PortAutoMin)
 			if err != nil {
 				return Metadata{}, err
 			}
 			resolvedPort = rp
-		case newPort > 0 && newPort <= 65535:
-			if m.isPortUsedByOther(id, newPort, proto) {
-				return Metadata{}, fmt.Errorf("port %d/%s is already assigned to another session", newPort, proto)
+		case opts.Port > 0 && opts.Port <= 65535:
+			if m.isPortUsedByOther(id, opts.Port, proto) {
+				return Metadata{}, fmt.Errorf("port %d/%s is already assigned to another session", opts.Port, proto)
 			}
-			resolvedPort = newPort
+			resolvedPort = opts.Port
 		default:
-			return Metadata{}, fmt.Errorf("invalid port: %d", newPort)
+			return Metadata{}, fmt.Errorf("invalid port: %d", opts.Port)
 		}
 	}
 
-	current.Name = newName
+	if dnsName != "" && !strings.EqualFold(dnsName, current.DNSName) && m.isDNSNameUsedByOther(id, dnsName) {
+		return Metadata{}, fmt.Errorf("DNS name %q is already assigned to another session", dnsName)
+	}
+
+	current.Name = opts.Name
 	current.Port = resolvedPort
 	current.Protocol = proto
+	current.DNSName = dnsName
 	if err := m.writeMetadata(sessionDir, current); err != nil {
 		return Metadata{}, err
 	}

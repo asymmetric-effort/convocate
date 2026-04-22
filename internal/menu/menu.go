@@ -45,6 +45,9 @@ type Selection struct {
 	// Protocol is the transport protocol for the published port: "tcp" or
 	// "udp". Empty is treated as "tcp" by callers.
 	Protocol string
+	// DNSName is the optional hostname to register with local dnsmasq.
+	// Empty means no DNS record is requested.
+	DNSName string
 }
 
 // parsePortInput validates the raw port field entered by the user in the

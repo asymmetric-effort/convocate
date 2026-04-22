@@ -60,6 +60,7 @@ func (inst *Installer) Run() error {
 		{"Installing claude-shell binary", inst.installBinary},
 		{"Building Docker image", inst.buildImage},
 		{"Configuring login shell", inst.configureLoginShell},
+		{"Setting up dnsmasq integration", inst.setupDnsmasqIntegration},
 	}
 
 	for _, step := range steps {
@@ -302,4 +303,64 @@ func chownRecursive(path string, uid, gid int) error {
 		}
 		return os.Chown(p, uid, gid)
 	})
+}
+
+// dnsmasqHostsFile is the file claude-shell rewrites with DNS records for
+// sessions that specify a DNS name. It is exposed as a package variable so
+// tests can redirect it to a tmpdir.
+var dnsmasqHostsFile = "/var/lib/claude-shell/dnsmasq-hosts"
+
+// dnsmasqConfDir is where dnsmasq looks for drop-in config files. When
+// present, installer writes a config snippet there to pick up the managed
+// hosts file.
+var dnsmasqConfDir = "/etc/dnsmasq.d"
+
+// dnsmasqConfFile is the drop-in config installer writes.
+var dnsmasqConfFile = "/etc/dnsmasq.d/claude-shell.conf"
+
+// setupDnsmasqIntegration provisions the managed dnsmasq hosts file so
+// claude-shell can register session DNS names with the local resolver. When
+// /etc/dnsmasq.d exists, it also writes a drop-in that points dnsmasq at the
+// managed file via addn-hosts. Missing dnsmasq is not an error — it simply
+// skips the drop-in step.
+func (inst *Installer) setupDnsmasqIntegration() error {
+	u, err := user.Lookup(config.ClaudeUser)
+	if err != nil {
+		return fmt.Errorf("cannot find user %q: %w", config.ClaudeUser, err)
+	}
+	uid, _ := strconv.Atoi(u.Uid)
+	gid, _ := strconv.Atoi(u.Gid)
+
+	dir := filepath.Dir(dnsmasqHostsFile)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	if err := os.Chown(dir, uid, gid); err != nil {
+		return fmt.Errorf("chown %s: %w", dir, err)
+	}
+
+	// Touch the file (create if missing, preserve contents otherwise) and set
+	// ownership to claude so runtime rewrites work without elevated privilege.
+	if _, err := os.Stat(dnsmasqHostsFile); os.IsNotExist(err) {
+		if err := os.WriteFile(dnsmasqHostsFile, []byte("# Managed by claude-shell.\n"), 0644); err != nil {
+			return fmt.Errorf("create %s: %w", dnsmasqHostsFile, err)
+		}
+	}
+	if err := os.Chown(dnsmasqHostsFile, uid, gid); err != nil {
+		return fmt.Errorf("chown %s: %w", dnsmasqHostsFile, err)
+	}
+	fmt.Printf("[install]   Managed DNS hosts file: %s\n", dnsmasqHostsFile)
+
+	// Wire dnsmasq up if the system looks like it uses dnsmasq.
+	if info, err := os.Stat(dnsmasqConfDir); err == nil && info.IsDir() {
+		snippet := fmt.Sprintf("# Managed by claude-shell. Do not edit.\naddn-hosts=%s\n", dnsmasqHostsFile)
+		if err := os.WriteFile(dnsmasqConfFile, []byte(snippet), 0644); err != nil {
+			return fmt.Errorf("write %s: %w", dnsmasqConfFile, err)
+		}
+		fmt.Printf("[install]   Wrote dnsmasq drop-in: %s\n", dnsmasqConfFile)
+		fmt.Println("[install]   Restart dnsmasq to pick up the new conf file (e.g. 'systemctl restart dnsmasq').")
+	} else {
+		fmt.Println("[install]   dnsmasq.d not found; skipping drop-in. Add 'addn-hosts=" + dnsmasqHostsFile + "' to your dnsmasq config manually to enable DNS registration.")
+	}
+	return nil
 }

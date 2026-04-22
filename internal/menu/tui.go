@@ -71,8 +71,9 @@ type tui struct {
 	mode           tuiMode
 	inputBuf       []rune
 	inputBufPort   []rune
+	inputBufDNS    []rune
 	inputProtocol  string // "tcp" or "udp"
-	activeField    int    // 0=Name, 1=Protocol, 2=Port
+	activeField    int    // 0=Name, 1=Protocol, 2=Port, 3=DNSName
 	dialogErr      string
 	isLockedFunc     func(id string) bool
 	isRunningFunc    func(id string) bool
@@ -81,7 +82,7 @@ type tui struct {
 	killFunc         func(id string) error
 	backgroundFunc   func(id string) error
 	restartFunc      func(id string) error
-	editSaveFunc     func(id, name, protocol string, port int) error
+	editSaveFunc     func(id, name, protocol, dnsName string, port int) error
 }
 
 func (t *tui) isLocked(id string) bool {
@@ -129,8 +130,8 @@ type DisplayOptions struct {
 	RestartSession    func(string) error
 	// SaveSessionEdit persists edited session metadata fields to disk. It is
 	// called with the session ID, the new name, the new protocol ("tcp" or
-	// "udp"), and the new port.
-	SaveSessionEdit func(id, name, protocol string, port int) error
+	// "udp"), the new DNS name (may be empty), and the new port.
+	SaveSessionEdit func(id, name, protocol, dnsName string, port int) error
 }
 
 // Display renders the TUI session menu and returns the user's selection.
@@ -403,13 +404,13 @@ func (t *tui) drawCreateDialog(width, height int) {
 
 // drawSessionFormDialog renders the shared session form used for both create
 // and edit flows. The only visible difference between the two is the title.
-// Layout: Name, Protocol, Port fields + wrapped error + hint row.
+// Layout: Name, Protocol, Port, DNS Name + wrapped error + hint row.
 func (t *tui) drawSessionFormDialog(width, height int, titleText string) {
-	dialogWidth := sizeDialogForError(64, 64, t.dialogErr, width)
+	dialogWidth := sizeDialogForError(68, 68, t.dialogErr, width)
 	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
 	// rows: title(0), blank(1), name(2), blank(3), protocol(4), blank(5),
-	// port(6), blank(7), errors..., blank, hint
-	baseHeight := 10
+	// port(6), blank(7), dns(8), blank(9), errors..., blank, hint
+	baseHeight := 12
 	dialogHeight := baseHeight
 	if len(errLines) > 0 {
 		dialogHeight = baseHeight - 1 + len(errLines) + 1
@@ -455,9 +456,15 @@ func (t *tui) drawSessionFormDialog(width, height int, titleText string) {
 	t.drawInputField(portX, y0+6, portW, t.inputBufPort, t.activeField == 2)
 	drawString(t.screen, portX+portW+2, y0+6, "(blank=none, 0=auto)", dialogStyle)
 
+	// DNS Name field (optional)
+	drawString(t.screen, x0+2, y0+8, "DNS Name:", dialogStyle)
+	dnsX := x0 + 12
+	dnsW := dialogWidth - 14
+	t.drawInputField(dnsX, y0+8, dnsW, t.inputBufDNS, t.activeField == 3)
+
 	// Error message (wrapped)
 	for i, line := range errLines {
-		drawString(t.screen, x0+2, y0+8+i, line, dialogErrStyle)
+		drawString(t.screen, x0+2, y0+10+i, line, dialogErrStyle)
 	}
 
 	hint := "Tab=Next  Enter=Save  Esc=Cancel"
@@ -1427,6 +1434,7 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 			t.mode = modeCreateDialog
 			t.inputBuf = nil
 			t.inputBufPort = nil
+			t.inputBufDNS = nil
 			t.inputProtocol = session.ProtocolTCP
 			t.activeField = 0
 			t.dialogErr = ""
@@ -1459,6 +1467,7 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 					t.inputBufPort = nil
 				}
 				t.inputProtocol = s.EffectiveProtocol()
+				t.inputBufDNS = []rune(s.DNSName)
 				t.activeField = 0
 				t.dialogErr = ""
 			}
@@ -1511,13 +1520,15 @@ func (t *tui) handleCreateDialogKey(ev *tcell.EventKey) (Selection, bool) {
 }
 
 // handleSessionFormKey drives both the create and edit dialogs. Fields are
-// indexed: Name=0, Protocol=1, Port=2. On Enter, the form is validated and
-// either a Selection (for Create) or a call to editSaveFunc (for Edit) is
-// emitted.
+// indexed: Name=0, Protocol=1, Port=2, DNSName=3. On Enter, the form is
+// validated and either a Selection (for Create) or a call to editSaveFunc
+// (for Edit) is emitted.
 func (t *tui) handleSessionFormKey(ev *tcell.EventKey, isEdit bool) (Selection, bool) {
+	const numFields = 4
 	resetForm := func() {
 		t.inputBuf = nil
 		t.inputBufPort = nil
+		t.inputBufDNS = nil
 		t.inputProtocol = ""
 		t.activeField = 0
 		t.dialogErr = ""
@@ -1528,11 +1539,11 @@ func (t *tui) handleSessionFormKey(ev *tcell.EventKey, isEdit bool) (Selection, 
 		resetForm()
 		return Selection{}, false
 	case tcell.KeyTab:
-		t.activeField = (t.activeField + 1) % 3
+		t.activeField = (t.activeField + 1) % numFields
 		t.dialogErr = ""
 		return Selection{}, false
 	case tcell.KeyBacktab:
-		t.activeField = (t.activeField + 2) % 3
+		t.activeField = (t.activeField + numFields - 1) % numFields
 		t.dialogErr = ""
 		return Selection{}, false
 	case tcell.KeyEnter:
@@ -1554,6 +1565,12 @@ func (t *tui) handleSessionFormKey(ev *tcell.EventKey, isEdit bool) (Selection, 
 			t.activeField = 2
 			return Selection{}, false
 		}
+		dnsName, err := session.ValidateDNSName(string(t.inputBufDNS))
+		if err != nil {
+			t.dialogErr = err.Error()
+			t.activeField = 3
+			return Selection{}, false
+		}
 		if isEdit {
 			if t.cursor < 0 || t.cursor >= len(t.sessions) {
 				t.mode = modeMenu
@@ -1561,7 +1578,7 @@ func (t *tui) handleSessionFormKey(ev *tcell.EventKey, isEdit bool) (Selection, 
 			}
 			s := t.sessions[t.cursor]
 			if t.editSaveFunc != nil {
-				if err := t.editSaveFunc(s.UUID, name, proto, port); err != nil {
+				if err := t.editSaveFunc(s.UUID, name, proto, dnsName, port); err != nil {
 					t.dialogErr = err.Error()
 					return Selection{}, false
 				}
@@ -1570,7 +1587,7 @@ func (t *tui) handleSessionFormKey(ev *tcell.EventKey, isEdit bool) (Selection, 
 			t.dialogErr = ""
 			return Selection{}, false
 		}
-		return Selection{Action: ActionNewSession, Name: name, Port: port, Protocol: proto}, true
+		return Selection{Action: ActionNewSession, Name: name, Port: port, Protocol: proto, DNSName: dnsName}, true
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		switch t.activeField {
 		case 0:
@@ -1583,7 +1600,12 @@ func (t *tui) handleSessionFormKey(ev *tcell.EventKey, isEdit bool) (Selection, 
 				t.inputBufPort = t.inputBufPort[:len(t.inputBufPort)-1]
 				t.dialogErr = ""
 			}
-			// Protocol field has no backspace — it's a toggle, not a text input.
+		case 3:
+			if len(t.inputBufDNS) > 0 {
+				t.inputBufDNS = t.inputBufDNS[:len(t.inputBufDNS)-1]
+				t.dialogErr = ""
+			}
+			// Protocol field (case 1) has no backspace — it's a toggle.
 		}
 		return Selection{}, false
 	case tcell.KeyRune:
@@ -1614,6 +1636,18 @@ func (t *tui) handleSessionFormKey(ev *tcell.EventKey, isEdit bool) (Selection, 
 		case 2:
 			if r >= '0' && r <= '9' && len(t.inputBufPort) < 5 {
 				t.inputBufPort = append(t.inputBufPort, r)
+				t.dialogErr = ""
+			}
+		case 3:
+			// DNS name: letters/digits/hyphens/periods, lowercase on store.
+			if len(t.inputBufDNS) >= 253 {
+				return Selection{}, false
+			}
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '.' {
+				t.inputBufDNS = append(t.inputBufDNS, r)
+				t.dialogErr = ""
+			} else if r >= 'A' && r <= 'Z' {
+				t.inputBufDNS = append(t.inputBufDNS, r+('a'-'A'))
 				t.dialogErr = ""
 			}
 		}

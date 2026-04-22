@@ -1021,31 +1021,25 @@ func TestTUI_ClockTicker(t *testing.T) {
 
 // --- Create dialog: Name + Protocol + Port field ---
 
-func TestTUI_CreateDialog_TabCyclesThreeFields(t *testing.T) {
+func TestTUI_CreateDialog_TabCyclesFourFields(t *testing.T) {
 	ui := &tui{mode: modeCreateDialog, activeField: 0}
-	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
-	if ui.activeField != 1 {
-		t.Errorf("Tab 1: activeField = %d, want 1 (Protocol)", ui.activeField)
-	}
-	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
-	if ui.activeField != 2 {
-		t.Errorf("Tab 2: activeField = %d, want 2 (Port)", ui.activeField)
-	}
-	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
-	if ui.activeField != 0 {
-		t.Errorf("Tab 3: activeField = %d, want 0 (wrapped to Name)", ui.activeField)
+	want := []int{1, 2, 3, 0}
+	for i, w := range want {
+		_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
+		if ui.activeField != w {
+			t.Errorf("Tab %d: activeField = %d, want %d", i+1, ui.activeField, w)
+		}
 	}
 }
 
 func TestTUI_CreateDialog_ShiftTabCyclesBackward(t *testing.T) {
 	ui := &tui{mode: modeCreateDialog, activeField: 0}
-	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone))
-	if ui.activeField != 2 {
-		t.Errorf("Shift+Tab from Name: activeField = %d, want 2 (Port)", ui.activeField)
-	}
-	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone))
-	if ui.activeField != 1 {
-		t.Errorf("Shift+Tab again: activeField = %d, want 1 (Protocol)", ui.activeField)
+	want := []int{3, 2, 1, 0}
+	for i, w := range want {
+		_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone))
+		if ui.activeField != w {
+			t.Errorf("Shift+Tab %d: activeField = %d, want %d", i+1, ui.activeField, w)
+		}
 	}
 }
 
@@ -2455,7 +2449,7 @@ func TestTUI_EditDialog_EnterCallsSave(t *testing.T) {
 		inputBuf:      []rune("renamed"),
 		inputBufPort:  []rune("8081"),
 		inputProtocol: "udp",
-		editSaveFunc: func(id, name, proto string, port int) error {
+		editSaveFunc: func(id, name, proto, _ string, port int) error {
 			savedID, savedName, savedProto, savedPort = id, name, proto, port
 			return nil
 		},
@@ -2489,7 +2483,7 @@ func TestTUI_EditDialog_EnterSaveError(t *testing.T) {
 		inputBuf:      []rune("ok"),
 		inputBufPort:  []rune("1234"),
 		inputProtocol: "tcp",
-		editSaveFunc:  func(string, string, string, int) error { return errors.New("collide") },
+		editSaveFunc:  func(string, string, string, string, int) error { return errors.New("collide") },
 	}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
 	if ui.mode != modeEditDialog {

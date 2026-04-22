@@ -207,6 +207,167 @@ func TestUpdate_ProtocolCollisionWithOther(t *testing.T) {
 	}
 }
 
+// --- DNS name validation ---
+
+func TestValidateDNSName(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", "", false},
+		{"dns.local", "dns.local", false},
+		{"DNS.Local", "dns.local", false},
+		{"svc-1", "svc-1", false},
+		{"a.b.c.d", "a.b.c.d", false},
+		{"-bad", "", true},
+		{"bad-", "", true},
+		{"bad..dot", "", true},
+		{".leading", "", true},
+		{"trailing.", "", true},
+		{"spaces here", "", true},
+		{"under_score", "", true},
+		{strings.Repeat("a", 64) + ".local", "", true},
+		{strings.Repeat("a.", 130) + "x", "", true},
+	}
+	for _, tc := range tests {
+		got, err := ValidateDNSName(tc.in)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("ValidateDNSName(%q) = %q, want error", tc.in, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("ValidateDNSName(%q) failed: %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("ValidateDNSName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// --- DNS via options ---
+
+func TestCreateWithOptions_PersistsDNSName(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	meta, err := mgr.CreateWithOptions("svc", CreateOptions{
+		Port:     8080,
+		Protocol: "tcp",
+		DNSName:  "svc.claude.local",
+	})
+	if err != nil {
+		t.Fatalf("CreateWithOptions: %v", err)
+	}
+	if meta.DNSName != "svc.claude.local" {
+		t.Errorf("DNSName = %q, want 'svc.claude.local'", meta.DNSName)
+	}
+	data, err := os.ReadFile(filepath.Join(base, meta.UUID, "session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"dns_name": "svc.claude.local"`) {
+		t.Errorf("dns_name not persisted:\n%s", string(data))
+	}
+}
+
+func TestCreateWithOptions_DNSCollision(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	if _, err := mgr.CreateWithOptions("a", CreateOptions{DNSName: "dup.local"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := mgr.CreateWithOptions("b", CreateOptions{DNSName: "dup.local"})
+	if err == nil {
+		t.Error("expected DNS name collision error")
+	}
+}
+
+func TestCreateWithOptions_InvalidDNS(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	_, err := mgr.CreateWithOptions("x", CreateOptions{DNSName: "bad name"})
+	if err == nil {
+		t.Error("expected validation error for bad DNS name")
+	}
+}
+
+func TestUpdateWithOptions_ChangeDNS(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.CreateWithOptions("x", CreateOptions{DNSName: "before.local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := mgr.UpdateWithOptions(meta.UUID, UpdateOptions{
+		Name:    "x",
+		DNSName: "after.local",
+	})
+	if err != nil {
+		t.Fatalf("UpdateWithOptions: %v", err)
+	}
+	if updated.DNSName != "after.local" {
+		t.Errorf("DNSName = %q, want 'after.local'", updated.DNSName)
+	}
+}
+
+func TestUpdateWithOptions_ClearDNS(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.CreateWithOptions("x", CreateOptions{DNSName: "gone.local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := mgr.UpdateWithOptions(meta.UUID, UpdateOptions{Name: "x"})
+	if err != nil {
+		t.Fatalf("UpdateWithOptions: %v", err)
+	}
+	if updated.DNSName != "" {
+		t.Errorf("DNSName = %q, want empty after clear", updated.DNSName)
+	}
+}
+
+func TestUpdateWithOptions_DNSCollision(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	if _, err := mgr.CreateWithOptions("a", CreateOptions{DNSName: "a.local"}); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := mgr.CreateWithOptions("b", CreateOptions{DNSName: "b.local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = mgr.UpdateWithOptions(meta.UUID, UpdateOptions{
+		Name:    "b",
+		DNSName: "a.local",
+	})
+	if err == nil {
+		t.Error("expected DNS collision on Update")
+	}
+}
+
+func TestUpdateWithOptions_KeepSameDNS(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.CreateWithOptions("x", CreateOptions{DNSName: "keep.local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := mgr.UpdateWithOptions(meta.UUID, UpdateOptions{
+		Name:    "x",
+		DNSName: "keep.local",
+	})
+	if err != nil {
+		t.Fatalf("keeping same DNS should not error: %v", err)
+	}
+	if updated.DNSName != "keep.local" {
+		t.Errorf("DNSName = %q, want 'keep.local'", updated.DNSName)
+	}
+}
+
 func TestCreateWithPort_PersistsToSessionJSON(t *testing.T) {
 	base, skelDir := setupTestDir(t)
 	mgr := NewManager(base, skelDir)
