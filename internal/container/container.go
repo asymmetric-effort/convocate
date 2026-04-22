@@ -18,13 +18,20 @@ type Runner struct {
 	userInfo   user.Info
 	paths      config.Paths
 	port       int
+	protocol   string
 	execFn     ExecFunc
 }
 
-// SetPort configures the TCP port to publish from the container. A value of
-// 0 (the default) publishes no port.
+// SetPort configures the port to publish from the container. A value of 0
+// (the default) publishes no port.
 func (r *Runner) SetPort(port int) {
 	r.port = port
+}
+
+// SetProtocol configures the protocol used when publishing the port. An empty
+// string is treated as "tcp".
+func (r *Runner) SetProtocol(proto string) {
+	r.protocol = proto
 }
 
 // ExecFunc abstracts command execution for testing.
@@ -198,9 +205,14 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 	// Claude binary (read-only)
 	args = append(args, "-v", fmt.Sprintf("%s:%s:ro", config.ClaudeBinaryPath, config.ClaudeBinaryPath))
 
-	// Published TCP port (if any)
+	// Published port (if any). Format: "-p HOST:CONTAINER/PROTO" where PROTO
+	// is tcp or udp. Empty protocol is treated as tcp.
 	if r.port > 0 {
-		args = append(args, "-p", fmt.Sprintf("%d:%d", r.port, r.port))
+		proto := r.protocol
+		if proto == "" {
+			proto = "tcp"
+		}
+		args = append(args, "-p", fmt.Sprintf("%d:%d/%s", r.port, r.port, proto))
 	}
 
 	// Environment variables for user setup

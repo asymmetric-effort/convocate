@@ -230,7 +230,7 @@ func TestHandleNewSession_CreateFails(t *testing.T) {
 	_ = mgr // silence linter
 	badMgr := session.NewManager(badBase, filepath.Join(base, "skel"))
 	withRunner(t, func(name string, args ...string) *exec.Cmd { return exec.Command("true") })
-	err := handleNewSession(badMgr, "fails", 0, testUserInfo(), testPaths(base), nil)
+	err := handleNewSession(badMgr, "fails", 0, "tcp", testUserInfo(), testPaths(base), nil)
 	if err == nil {
 		t.Error("expected error when session directory creation fails")
 	}
@@ -270,7 +270,7 @@ func TestLaunchSession_LockHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unlock()
-	err = launchSession(mgr, meta.UUID, 0, testUserInfo(), testPaths(base), nil)
+	err = launchSession(mgr, meta.UUID, 0, "tcp", testUserInfo(), testPaths(base), nil)
 	if err == nil {
 		t.Error("expected lock error on second launchSession")
 	}

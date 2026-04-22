@@ -77,6 +77,136 @@ func TestCreateWithPort_Auto(t *testing.T) {
 	}
 }
 
+func TestValidateProtocol(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", "tcp", false},
+		{"tcp", "tcp", false},
+		{"TCP", "tcp", false},
+		{"udp", "udp", false},
+		{"UDP", "udp", false},
+		{"  tcp  ", "tcp", false},
+		{"sctp", "", true},
+		{"icmp", "", true},
+	}
+	for _, tc := range tests {
+		got, err := ValidateProtocol(tc.in)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("ValidateProtocol(%q) = %q, want error", tc.in, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("ValidateProtocol(%q) failed: %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("ValidateProtocol(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestMetadata_EffectiveProtocol(t *testing.T) {
+	if got := (Metadata{}).EffectiveProtocol(); got != "tcp" {
+		t.Errorf("empty protocol -> %q, want 'tcp'", got)
+	}
+	if got := (Metadata{Protocol: "udp"}).EffectiveProtocol(); got != "udp" {
+		t.Errorf("udp -> %q, want 'udp'", got)
+	}
+}
+
+func TestCreateWithPortProtocol_UDP(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	meta, err := mgr.CreateWithPortProtocol("dns", 53, "udp")
+	if err != nil {
+		t.Fatalf("CreateWithPortProtocol failed: %v", err)
+	}
+	if meta.Port != 53 || meta.Protocol != "udp" {
+		t.Errorf("got port=%d proto=%q, want 53/udp", meta.Port, meta.Protocol)
+	}
+
+	data, err := os.ReadFile(filepath.Join(base, meta.UUID, "session.json"))
+	if err != nil {
+		t.Fatalf("read session.json: %v", err)
+	}
+	if !strings.Contains(string(data), `"protocol": "udp"`) {
+		t.Errorf("session.json does not contain protocol:\n%s", string(data))
+	}
+}
+
+func TestCreateWithPortProtocol_SamePortDifferentProtocolsCoexist(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	if _, err := mgr.CreateWithPortProtocol("dns-tcp", 53, "tcp"); err != nil {
+		t.Fatalf("first create failed: %v", err)
+	}
+	// Same port, different protocol — should NOT collide.
+	if _, err := mgr.CreateWithPortProtocol("dns-udp", 53, "udp"); err != nil {
+		t.Errorf("tcp:53 and udp:53 should coexist, got: %v", err)
+	}
+}
+
+func TestCreateWithPortProtocol_SameTupleCollides(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	if _, err := mgr.CreateWithPortProtocol("a", 53, "udp"); err != nil {
+		t.Fatalf("first create failed: %v", err)
+	}
+	if _, err := mgr.CreateWithPortProtocol("b", 53, "udp"); err == nil {
+		t.Error("udp:53 twice should collide")
+	}
+}
+
+func TestCreateWithPortProtocol_InvalidProtocol(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	_, err := mgr.CreateWithPortProtocol("x", 8080, "sctp")
+	if err == nil {
+		t.Error("expected error for invalid protocol")
+	}
+}
+
+func TestUpdate_ChangeProtocolOnly(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	meta, err := mgr.CreateWithPortProtocol("dns", 53, "tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := mgr.Update(meta.UUID, "dns", 53, "udp")
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if updated.Protocol != "udp" {
+		t.Errorf("protocol = %q, want 'udp'", updated.Protocol)
+	}
+}
+
+func TestUpdate_ProtocolCollisionWithOther(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+	if _, err := mgr.CreateWithPortProtocol("a", 53, "udp"); err != nil {
+		t.Fatal(err)
+	}
+	mb, err := mgr.CreateWithPortProtocol("b", 53, "tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Changing b to udp should collide with a.
+	_, err = mgr.Update(mb.UUID, "b", 53, "udp")
+	if err == nil {
+		t.Error("expected collision when switching to an in-use (port, protocol) tuple")
+	}
+}
+
 func TestCreateWithPort_PersistsToSessionJSON(t *testing.T) {
 	base, skelDir := setupTestDir(t)
 	mgr := NewManager(base, skelDir)
@@ -977,7 +1107,7 @@ func TestUpdate_RenameOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := mgr.Update(meta.UUID, "after", 8080)
+	updated, err := mgr.Update(meta.UUID, "after", 8080, "tcp")
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
@@ -1001,7 +1131,7 @@ func TestUpdate_ChangePortToAuto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := mgr.Update(meta.UUID, "s", PortAuto)
+	updated, err := mgr.Update(meta.UUID, "s", PortAuto, "tcp")
 	if err != nil {
 		t.Fatalf("Update(PortAuto) failed: %v", err)
 	}
@@ -1017,7 +1147,7 @@ func TestUpdate_ChangePortToZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := mgr.Update(meta.UUID, "s", 0)
+	updated, err := mgr.Update(meta.UUID, "s", 0, "tcp")
 	if err != nil {
 		t.Fatalf("Update port->0 failed: %v", err)
 	}
@@ -1033,7 +1163,7 @@ func TestUpdate_ChangePortToSpecific(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := mgr.Update(meta.UUID, "s", 9090)
+	updated, err := mgr.Update(meta.UUID, "s", 9090, "tcp")
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
@@ -1053,7 +1183,7 @@ func TestUpdate_PortCollisionWithOther(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = mgr.Update(meta.UUID, "b", 8080)
+	_, err = mgr.Update(meta.UUID, "b", 8080, "tcp")
 	if err == nil {
 		t.Error("expected collision error when updating to a port held by another session")
 	}
@@ -1067,7 +1197,7 @@ func TestUpdate_KeepSamePort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := mgr.Update(meta.UUID, "s-renamed", 8080)
+	updated, err := mgr.Update(meta.UUID, "s-renamed", 8080, "tcp")
 	if err != nil {
 		t.Fatalf("Update with unchanged port failed: %v", err)
 	}
@@ -1083,7 +1213,7 @@ func TestUpdate_InvalidName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = mgr.Update(meta.UUID, "", 0)
+	_, err = mgr.Update(meta.UUID, "", 0, "tcp")
 	if err == nil {
 		t.Error("expected error for empty name")
 	}
@@ -1096,7 +1226,7 @@ func TestUpdate_InvalidPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = mgr.Update(meta.UUID, "s", -42)
+	_, err = mgr.Update(meta.UUID, "s", -42, "tcp")
 	if err == nil {
 		t.Error("expected error for invalid port")
 	}
@@ -1105,7 +1235,7 @@ func TestUpdate_InvalidPort(t *testing.T) {
 func TestUpdate_Nonexistent(t *testing.T) {
 	base := t.TempDir()
 	mgr := NewManager(base, "")
-	_, err := mgr.Update("missing", "name", 0)
+	_, err := mgr.Update("missing", "name", 0, "tcp")
 	if err == nil {
 		t.Error("expected error updating nonexistent session")
 	}
@@ -1118,7 +1248,7 @@ func TestIsPortUsedByOther_NoMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mgr.isPortUsedByOther("some-id", 9999) {
+	if mgr.isPortUsedByOther("some-id", 9999, "tcp") {
 		t.Error("expected false when no session uses port 9999")
 	}
 }

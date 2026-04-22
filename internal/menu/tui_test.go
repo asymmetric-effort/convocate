@@ -1019,30 +1019,38 @@ func TestTUI_ClockTicker(t *testing.T) {
 	}
 }
 
-// --- Create dialog: Name + Port field ---
+// --- Create dialog: Name + Protocol + Port field ---
 
-func TestTUI_CreateDialog_TabSwitchesFields(t *testing.T) {
+func TestTUI_CreateDialog_TabCyclesThreeFields(t *testing.T) {
 	ui := &tui{mode: modeCreateDialog, activeField: 0}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
 	if ui.activeField != 1 {
-		t.Errorf("Tab should move to Port field, activeField=%d", ui.activeField)
+		t.Errorf("Tab 1: activeField = %d, want 1 (Protocol)", ui.activeField)
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
+	if ui.activeField != 2 {
+		t.Errorf("Tab 2: activeField = %d, want 2 (Port)", ui.activeField)
 	}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
 	if ui.activeField != 0 {
-		t.Errorf("Tab should wrap back to Name field, activeField=%d", ui.activeField)
+		t.Errorf("Tab 3: activeField = %d, want 0 (wrapped to Name)", ui.activeField)
 	}
 }
 
-func TestTUI_CreateDialog_ShiftTabMovesBackward(t *testing.T) {
-	ui := &tui{mode: modeCreateDialog, activeField: 1}
+func TestTUI_CreateDialog_ShiftTabCyclesBackward(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 0}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone))
-	if ui.activeField != 0 {
-		t.Errorf("Shift+Tab should move to Name field, activeField=%d", ui.activeField)
+	if ui.activeField != 2 {
+		t.Errorf("Shift+Tab from Name: activeField = %d, want 2 (Port)", ui.activeField)
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone))
+	if ui.activeField != 1 {
+		t.Errorf("Shift+Tab again: activeField = %d, want 1 (Protocol)", ui.activeField)
 	}
 }
 
 func TestTUI_CreateDialog_PortFieldDigitsOnly(t *testing.T) {
-	ui := &tui{mode: modeCreateDialog, activeField: 1}
+	ui := &tui{mode: modeCreateDialog, activeField: 2}
 	for _, ch := range "80ab80" {
 		_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, ch, tcell.ModNone))
 	}
@@ -1064,6 +1072,9 @@ func TestTUI_CreateDialog_EnterReturnsPort(t *testing.T) {
 			screen.InjectKey(tcell.KeyRune, ch, tcell.ModNone)
 			time.Sleep(2 * time.Millisecond)
 		}
+		time.Sleep(5 * time.Millisecond)
+		// Tab past Protocol onto Port.
+		screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
 		time.Sleep(5 * time.Millisecond)
 		screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
 		time.Sleep(5 * time.Millisecond)
@@ -1088,12 +1099,16 @@ func TestTUI_CreateDialog_EnterReturnsPort(t *testing.T) {
 	if sel.Port != 8080 {
 		t.Errorf("Port = %d, want 8080", sel.Port)
 	}
+	if sel.Protocol != "tcp" {
+		t.Errorf("Protocol = %q, want 'tcp' (default)", sel.Protocol)
+	}
 }
 
 func TestTUI_CreateDialog_InvalidPortShowsError(t *testing.T) {
-	ui := &tui{mode: modeCreateDialog, activeField: 1}
+	ui := &tui{mode: modeCreateDialog, activeField: 2}
 	// Populate name so name validation passes
 	ui.inputBuf = []rune("test")
+	ui.inputProtocol = "tcp"
 	ui.inputBufPort = []rune("70000")
 	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
 	if done {
@@ -1102,7 +1117,7 @@ func TestTUI_CreateDialog_InvalidPortShowsError(t *testing.T) {
 	if ui.dialogErr == "" {
 		t.Error("expected dialog error for out-of-range port")
 	}
-	if ui.activeField != 1 {
+	if ui.activeField != 2 {
 		t.Errorf("expected focus to return to Port field, activeField=%d", ui.activeField)
 	}
 }
@@ -2060,7 +2075,7 @@ func TestTUI_HandleCreateDialog_NameRuneMaxLength(t *testing.T) {
 }
 
 func TestTUI_HandleCreateDialog_PortBackspace(t *testing.T) {
-	ui := &tui{mode: modeCreateDialog, activeField: 1, inputBufPort: []rune("80"), dialogErr: "x"}
+	ui := &tui{mode: modeCreateDialog, activeField: 2, inputBufPort: []rune("80"), dialogErr: "x"}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBackspace2, 0, tcell.ModNone))
 	if string(ui.inputBufPort) != "8" {
 		t.Errorf("port = %q, want '8'", string(ui.inputBufPort))
@@ -2071,15 +2086,111 @@ func TestTUI_HandleCreateDialog_PortBackspace(t *testing.T) {
 }
 
 func TestTUI_HandleCreateDialog_PortMaxLength(t *testing.T) {
-	ui := &tui{mode: modeCreateDialog, activeField: 1, inputBufPort: []rune("12345")}
+	ui := &tui{mode: modeCreateDialog, activeField: 2, inputBufPort: []rune("12345")}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, '6', tcell.ModNone))
 	if string(ui.inputBufPort) != "12345" {
 		t.Errorf("port buffer = %q, want '12345' (max 5 digits)", string(ui.inputBufPort))
 	}
 }
 
+func TestTUI_CreateDialog_ProtocolToggleKeys(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 1, inputProtocol: "tcp"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'u', tcell.ModNone))
+	if ui.inputProtocol != "udp" {
+		t.Errorf("'u' -> %q, want 'udp'", ui.inputProtocol)
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'T', tcell.ModNone))
+	if ui.inputProtocol != "tcp" {
+		t.Errorf("'T' -> %q, want 'tcp'", ui.inputProtocol)
+	}
+	// Space toggles.
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModNone))
+	if ui.inputProtocol != "udp" {
+		t.Errorf("Space from tcp -> %q, want 'udp'", ui.inputProtocol)
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, ' ', tcell.ModNone))
+	if ui.inputProtocol != "tcp" {
+		t.Errorf("Space from udp -> %q, want 'tcp'", ui.inputProtocol)
+	}
+}
+
+func TestTUI_CreateDialog_ProtocolBackspaceNoOp(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 1, inputProtocol: "udp"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBackspace2, 0, tcell.ModNone))
+	if ui.inputProtocol != "udp" {
+		t.Errorf("backspace on Protocol should not change value, got %q", ui.inputProtocol)
+	}
+}
+
+func TestTUI_CreateDialog_ProtocolNonToggleKeyIgnored(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 1, inputProtocol: "tcp"}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'x', tcell.ModNone))
+	if ui.inputProtocol != "tcp" {
+		t.Errorf("'x' on Protocol should be ignored, got %q", ui.inputProtocol)
+	}
+}
+
+func TestTUI_CreateDialog_DefaultsToTCPOnNKey(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeMenu}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'n', tcell.ModNone))
+	if ui.inputProtocol != "tcp" {
+		t.Errorf("N key should seed Protocol=tcp, got %q", ui.inputProtocol)
+	}
+}
+
+func TestTUI_EditDialog_SeedsProtocolFromSession(t *testing.T) {
+	sessions := []session.Metadata{
+		{UUID: "aaaaaaaa-1111-1111-1111-111111111111", Name: "dns", Port: 53, Protocol: "udp"},
+	}
+	ui := &tui{sessions: sessions, cursor: 0, mode: modeMenu}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+	if ui.inputProtocol != "udp" {
+		t.Errorf("E key should seed Protocol from session, got %q", ui.inputProtocol)
+	}
+}
+
+func TestTUI_CreateDialog_ReturnsProtocolWithSelection(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 0}
+	ui.inputBuf = []rune("svc")
+	ui.inputProtocol = "udp"
+	ui.inputBufPort = []rune("53")
+	sel, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if !done {
+		t.Fatal("Enter should finish")
+	}
+	if sel.Protocol != "udp" || sel.Port != 53 || sel.Name != "svc" {
+		t.Errorf("unexpected selection: %+v", sel)
+	}
+}
+
+func TestTUI_SessionTable_ShowsPortAndProtocol(t *testing.T) {
+	sessions := []session.Metadata{
+		{
+			UUID:         "aaaaaaaa-1111-1111-1111-111111111111",
+			Name:         "dns",
+			CreatedAt:    time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC),
+			LastAccessed: time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC),
+			Port:         53,
+			Protocol:     "udp",
+		},
+	}
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+	_, _ = DisplayWithScreen(sessions, screen, DisplayOptions{})
+
+	row := getScreenText(screen, 4, 120)
+	if !strings.Contains(row, "53/udp") {
+		t.Errorf("row missing '53/udp', got: %q", row)
+	}
+}
+
 func TestTUI_HandleCreateDialog_Escape(t *testing.T) {
-	ui := &tui{mode: modeCreateDialog, activeField: 1, inputBuf: []rune("x"), inputBufPort: []rune("1"), dialogErr: "e"}
+	ui := &tui{mode: modeCreateDialog, activeField: 2, inputBuf: []rune("x"), inputBufPort: []rune("1"), dialogErr: "e"}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
 	if ui.mode != modeMenu {
 		t.Errorf("mode = %d, want modeMenu", ui.mode)
@@ -2228,6 +2339,8 @@ func TestTUI_EditDialog_TypeNameAndPort(t *testing.T) {
 	if string(ui.inputBuf) != "my-session" {
 		t.Errorf("name buf = %q, want 'my-session'", string(ui.inputBuf))
 	}
+	// Tab past Protocol onto Port.
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
 	for _, r := range "9090a" { // 'a' filtered
 		_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone))
@@ -2246,7 +2359,7 @@ func TestTUI_EditDialog_Backspace(t *testing.T) {
 	if ui.dialogErr != "" {
 		t.Error("backspace should clear dialogErr")
 	}
-	ui.activeField = 1
+	ui.activeField = 2 // Port field
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBackspace2, 0, tcell.ModNone))
 	if string(ui.inputBufPort) != "8" {
 		t.Errorf("port after backspace = %q, want '8'", string(ui.inputBufPort))
@@ -2262,7 +2375,7 @@ func TestTUI_EditDialog_NameMaxLength(t *testing.T) {
 }
 
 func TestTUI_EditDialog_PortMaxLength(t *testing.T) {
-	ui := &tui{mode: modeEditDialog, activeField: 1, inputBufPort: []rune("12345")}
+	ui := &tui{mode: modeEditDialog, activeField: 2, inputBufPort: []rune("12345")}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, '6', tcell.ModNone))
 	if string(ui.inputBufPort) != "12345" {
 		t.Errorf("port buffer = %q, want '12345' (max 5 digits)", string(ui.inputBufPort))
@@ -2271,29 +2384,31 @@ func TestTUI_EditDialog_PortMaxLength(t *testing.T) {
 
 func TestTUI_EditDialog_Escape(t *testing.T) {
 	ui := &tui{
-		mode:         modeEditDialog,
-		activeField:  1,
-		inputBuf:     []rune("x"),
-		inputBufPort: []rune("80"),
-		dialogErr:    "err",
+		mode:          modeEditDialog,
+		activeField:   2,
+		inputBuf:      []rune("x"),
+		inputBufPort:  []rune("80"),
+		inputProtocol: "udp",
+		dialogErr:     "err",
 	}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
 	if ui.mode != modeMenu {
 		t.Errorf("mode = %d, want modeMenu", ui.mode)
 	}
-	if len(ui.inputBuf) != 0 || len(ui.inputBufPort) != 0 || ui.dialogErr != "" || ui.activeField != 0 {
+	if len(ui.inputBuf) != 0 || len(ui.inputBufPort) != 0 || ui.inputProtocol != "" || ui.dialogErr != "" || ui.activeField != 0 {
 		t.Error("escape did not reset state")
 	}
 }
 
 func TestTUI_EditDialog_EnterInvalidName(t *testing.T) {
 	ui := &tui{
-		sessions:     testSessions(),
-		cursor:       0,
-		mode:         modeEditDialog,
-		activeField:  1,
-		inputBuf:     []rune(""),
-		inputBufPort: []rune("80"),
+		sessions:      testSessions(),
+		cursor:        0,
+		mode:          modeEditDialog,
+		activeField:   2,
+		inputBuf:      []rune(""),
+		inputBufPort:  []rune("80"),
+		inputProtocol: "tcp",
 	}
 	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
 	if done {
@@ -2309,12 +2424,13 @@ func TestTUI_EditDialog_EnterInvalidName(t *testing.T) {
 
 func TestTUI_EditDialog_EnterInvalidPort(t *testing.T) {
 	ui := &tui{
-		sessions:     testSessions(),
-		cursor:       0,
-		mode:         modeEditDialog,
-		activeField:  0,
-		inputBuf:     []rune("good"),
-		inputBufPort: []rune("99999"),
+		sessions:      testSessions(),
+		cursor:        0,
+		mode:          modeEditDialog,
+		activeField:   0,
+		inputBuf:      []rune("good"),
+		inputBufPort:  []rune("99999"),
+		inputProtocol: "tcp",
 	}
 	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
 	if done {
@@ -2323,23 +2439,24 @@ func TestTUI_EditDialog_EnterInvalidPort(t *testing.T) {
 	if ui.dialogErr == "" {
 		t.Error("expected dialogErr for invalid port")
 	}
-	if ui.activeField != 1 {
-		t.Errorf("activeField = %d, want 1 (focus returns to Port)", ui.activeField)
+	if ui.activeField != 2 {
+		t.Errorf("activeField = %d, want 2 (focus returns to Port)", ui.activeField)
 	}
 }
 
 func TestTUI_EditDialog_EnterCallsSave(t *testing.T) {
 	sessions := testSessions()
-	var savedID, savedName string
+	var savedID, savedName, savedProto string
 	var savedPort int
 	ui := &tui{
-		sessions:     sessions,
-		cursor:       0,
-		mode:         modeEditDialog,
-		inputBuf:     []rune("renamed"),
-		inputBufPort: []rune("8081"),
-		editSaveFunc: func(id, name string, port int) error {
-			savedID, savedName, savedPort = id, name, port
+		sessions:      sessions,
+		cursor:        0,
+		mode:          modeEditDialog,
+		inputBuf:      []rune("renamed"),
+		inputBufPort:  []rune("8081"),
+		inputProtocol: "udp",
+		editSaveFunc: func(id, name, proto string, port int) error {
+			savedID, savedName, savedProto, savedPort = id, name, proto, port
 			return nil
 		},
 	}
@@ -2359,16 +2476,20 @@ func TestTUI_EditDialog_EnterCallsSave(t *testing.T) {
 	if savedPort != 8081 {
 		t.Errorf("save called with port %d, want 8081", savedPort)
 	}
+	if savedProto != "udp" {
+		t.Errorf("save called with proto %q, want 'udp'", savedProto)
+	}
 }
 
 func TestTUI_EditDialog_EnterSaveError(t *testing.T) {
 	ui := &tui{
-		sessions:     testSessions(),
-		cursor:       0,
-		mode:         modeEditDialog,
-		inputBuf:     []rune("ok"),
-		inputBufPort: []rune("1234"),
-		editSaveFunc: func(string, string, int) error { return errors.New("collide") },
+		sessions:      testSessions(),
+		cursor:        0,
+		mode:          modeEditDialog,
+		inputBuf:      []rune("ok"),
+		inputBufPort:  []rune("1234"),
+		inputProtocol: "tcp",
+		editSaveFunc:  func(string, string, string, int) error { return errors.New("collide") },
 	}
 	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
 	if ui.mode != modeEditDialog {

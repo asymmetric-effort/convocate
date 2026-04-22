@@ -71,7 +71,8 @@ type tui struct {
 	mode           tuiMode
 	inputBuf       []rune
 	inputBufPort   []rune
-	activeField    int
+	inputProtocol  string // "tcp" or "udp"
+	activeField    int    // 0=Name, 1=Protocol, 2=Port
 	dialogErr      string
 	isLockedFunc     func(id string) bool
 	isRunningFunc    func(id string) bool
@@ -80,7 +81,7 @@ type tui struct {
 	killFunc         func(id string) error
 	backgroundFunc   func(id string) error
 	restartFunc      func(id string) error
-	editSaveFunc     func(id, name string, port int) error
+	editSaveFunc     func(id, name, protocol string, port int) error
 }
 
 func (t *tui) isLocked(id string) bool {
@@ -126,9 +127,10 @@ type DisplayOptions struct {
 	KillSession       func(string) error
 	BackgroundSession func(string) error
 	RestartSession    func(string) error
-	// SaveSessionEdit persists edited session metadata fields to disk.
-	// It is called with the session ID, the new name, and the new port.
-	SaveSessionEdit func(id, name string, port int) error
+	// SaveSessionEdit persists edited session metadata fields to disk. It is
+	// called with the session ID, the new name, the new protocol ("tcp" or
+	// "udp"), and the new port.
+	SaveSessionEdit func(id, name, protocol string, port int) error
 }
 
 // Display renders the TUI session menu and returns the user's selection.
@@ -311,8 +313,8 @@ func (t *tui) drawSessionTable(width, height int) {
 	menuBarRow := height - 1
 
 	// Column header
-	header := fmt.Sprintf("  %-4s| %-20s | %-36s | %-12s | %-13s | %-5s | %s",
-		"#", "Name", "Session ID", "Created", "Last Accessed", "Port", "S")
+	header := fmt.Sprintf("  %-4s| %-20s | %-36s | %-12s | %-13s | %-10s | %s",
+		"#", "Name", "Session ID", "Created", "Last Accessed", "Port/Proto", "S")
 	drawString(t.screen, 0, headerRow, clipToWidth(header, width), headerStyle)
 
 	// Separator
@@ -369,9 +371,9 @@ func (t *tui) drawSessionTable(width, height int) {
 
 		portLabel := "-"
 		if s.Port > 0 {
-			portLabel = strconv.Itoa(s.Port)
+			portLabel = fmt.Sprintf("%d/%s", s.Port, s.EffectiveProtocol())
 		}
-		line := fmt.Sprintf("  %-4s| %-20s | %s | %-12s | %-13s | %-5s | %s",
+		line := fmt.Sprintf("  %-4s| %-20s | %s | %-12s | %-13s | %-10s | %s",
 			strconv.Itoa(idx+1),
 			truncate(s.Name, 20),
 			s.UUID,
@@ -396,11 +398,21 @@ func (t *tui) drawMenuBar(width, height int) {
 }
 
 func (t *tui) drawCreateDialog(width, height int) {
-	dialogWidth := sizeDialogForError(58, 58, t.dialogErr, width)
+	t.drawSessionFormDialog(width, height, "Create New Session")
+}
+
+// drawSessionFormDialog renders the shared session form used for both create
+// and edit flows. The only visible difference between the two is the title.
+// Layout: Name, Protocol, Port fields + wrapped error + hint row.
+func (t *tui) drawSessionFormDialog(width, height int, titleText string) {
+	dialogWidth := sizeDialogForError(64, 64, t.dialogErr, width)
 	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
-	dialogHeight := 9
+	// rows: title(0), blank(1), name(2), blank(3), protocol(4), blank(5),
+	// port(6), blank(7), errors..., blank, hint
+	baseHeight := 10
+	dialogHeight := baseHeight
 	if len(errLines) > 0 {
-		dialogHeight = 7 + len(errLines) + 1
+		dialogHeight = baseHeight - 1 + len(errLines) + 1
 	}
 
 	x0 := (width - dialogWidth) / 2
@@ -413,37 +425,42 @@ func (t *tui) drawCreateDialog(width, height int) {
 		y0 = 0
 	}
 
-	// Draw dialog background
 	for row := y0; row < y0+dialogHeight && row < height; row++ {
 		for col := x0; col < x0+dialogWidth && col < width; col++ {
 			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
 		}
 	}
 
-	// Title
-	title := " Create New Session "
+	title := " " + titleText + " "
 	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
 
 	// Name field
 	drawString(t.screen, x0+2, y0+2, "Name:", dialogStyle)
-	nameX := x0 + 8
-	nameW := dialogWidth - 10
+	nameX := x0 + 12
+	nameW := dialogWidth - 14
 	t.drawInputField(nameX, y0+2, nameW, t.inputBuf, t.activeField == 0)
 
+	// Protocol field (toggle). Use a fixed-width input-style slot showing the
+	// current value; focus is indicated the same way as editable fields.
+	drawString(t.screen, x0+2, y0+4, "Protocol:", dialogStyle)
+	protoX := x0 + 12
+	protoW := 5 // "tcp" / "udp" both fit in <=5 chars
+	t.drawInputField(protoX, y0+4, protoW, []rune(t.inputProtocol), t.activeField == 1)
+	drawString(t.screen, protoX+protoW+2, y0+4, "(t=tcp, u=udp, Space toggles)", dialogStyle)
+
 	// Port field
-	drawString(t.screen, x0+2, y0+4, "Port:", dialogStyle)
-	portX := x0 + 8
-	portW := 10
-	t.drawInputField(portX, y0+4, portW, t.inputBufPort, t.activeField == 1)
-	drawString(t.screen, portX+portW+2, y0+4, "(blank=none, 0=auto)", dialogStyle)
+	drawString(t.screen, x0+2, y0+6, "Port:", dialogStyle)
+	portX := x0 + 12
+	portW := 7
+	t.drawInputField(portX, y0+6, portW, t.inputBufPort, t.activeField == 2)
+	drawString(t.screen, portX+portW+2, y0+6, "(blank=none, 0=auto)", dialogStyle)
 
 	// Error message (wrapped)
 	for i, line := range errLines {
-		drawString(t.screen, x0+2, y0+6+i, line, dialogErrStyle)
+		drawString(t.screen, x0+2, y0+8+i, line, dialogErrStyle)
 	}
 
-	// Hint
-	hint := "Tab=Next  Enter=Create  Esc=Cancel"
+	hint := "Tab=Next  Enter=Save  Esc=Cancel"
 	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
 }
 
@@ -1043,127 +1060,11 @@ func (t *tui) drawEditDialog(width, height int) {
 	if t.cursor < 0 || t.cursor >= len(t.sessions) {
 		return
 	}
-	s := t.sessions[t.cursor]
-
-	dialogWidth := sizeDialogForError(68, 68, t.dialogErr, width)
-	errLines := wrapErrorText(t.dialogErr, dialogWidth-4)
-	dialogHeight := 13
-	if len(errLines) > 0 {
-		dialogHeight = 11 + len(errLines) + 1
-	}
-
-	x0 := (width - dialogWidth) / 2
-	y0 := (height - dialogHeight) / 2
-	if x0 < 0 {
-		x0 = 0
-	}
-	if y0 < 0 {
-		y0 = 0
-	}
-
-	for row := y0; row < y0+dialogHeight && row < height; row++ {
-		for col := x0; col < x0+dialogWidth && col < width; col++ {
-			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
-		}
-	}
-
-	title := " Edit Session "
-	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
-
-	// Read-only metadata.
-	drawString(t.screen, x0+2, y0+2, "Session ID:", dialogStyle)
-	drawString(t.screen, x0+15, y0+2, s.UUID, dialogStyle)
-
-	drawString(t.screen, x0+2, y0+3, "Created:", dialogStyle)
-	drawString(t.screen, x0+15, y0+3, s.CreatedAt.Format("2006-01-02 15:04:05 UTC"), dialogStyle)
-
-	drawString(t.screen, x0+2, y0+4, "Accessed:", dialogStyle)
-	drawString(t.screen, x0+15, y0+4, s.LastAccessed.Format("2006-01-02 15:04:05 UTC"), dialogStyle)
-
-	// Editable fields.
-	drawString(t.screen, x0+2, y0+6, "Name:", dialogStyle)
-	nameX := x0 + 15
-	nameW := dialogWidth - 17
-	t.drawInputField(nameX, y0+6, nameW, t.inputBuf, t.activeField == 0)
-
-	drawString(t.screen, x0+2, y0+8, "Port:", dialogStyle)
-	portX := x0 + 15
-	portW := 10
-	t.drawInputField(portX, y0+8, portW, t.inputBufPort, t.activeField == 1)
-	drawString(t.screen, portX+portW+2, y0+8, "(blank=none, 0=auto)", dialogStyle)
-
-	for i, line := range errLines {
-		drawString(t.screen, x0+2, y0+10+i, line, dialogErrStyle)
-	}
-
-	hint := "Tab=Next  Enter=Save  Esc=Cancel"
-	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+	t.drawSessionFormDialog(width, height, "Edit Session")
 }
 
 func (t *tui) handleEditDialogKey(ev *tcell.EventKey) (Selection, bool) {
-	switch ev.Key() {
-	case tcell.KeyEscape:
-		t.mode = modeMenu
-		t.inputBuf = nil
-		t.inputBufPort = nil
-		t.activeField = 0
-		t.dialogErr = ""
-	case tcell.KeyTab, tcell.KeyBacktab:
-		t.activeField = 1 - t.activeField
-		t.dialogErr = ""
-	case tcell.KeyEnter:
-		if t.cursor < 0 || t.cursor >= len(t.sessions) {
-			t.mode = modeMenu
-			return Selection{}, false
-		}
-		name := strings.TrimSpace(string(t.inputBuf))
-		if err := session.ValidateName(name); err != nil {
-			t.dialogErr = err.Error()
-			t.activeField = 0
-			return Selection{}, false
-		}
-		port, err := parsePortInput(string(t.inputBufPort))
-		if err != nil {
-			t.dialogErr = err.Error()
-			t.activeField = 1
-			return Selection{}, false
-		}
-		s := t.sessions[t.cursor]
-		if t.editSaveFunc != nil {
-			if err := t.editSaveFunc(s.UUID, name, port); err != nil {
-				t.dialogErr = err.Error()
-				return Selection{}, false
-			}
-		}
-		t.mode = modeEditRestartPrompt
-		t.dialogErr = ""
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if t.activeField == 0 {
-			if len(t.inputBuf) > 0 {
-				t.inputBuf = t.inputBuf[:len(t.inputBuf)-1]
-				t.dialogErr = ""
-			}
-		} else {
-			if len(t.inputBufPort) > 0 {
-				t.inputBufPort = t.inputBufPort[:len(t.inputBufPort)-1]
-				t.dialogErr = ""
-			}
-		}
-	case tcell.KeyRune:
-		if t.activeField == 0 {
-			if len(t.inputBuf) < 64 {
-				t.inputBuf = append(t.inputBuf, ev.Rune())
-				t.dialogErr = ""
-			}
-		} else {
-			r := ev.Rune()
-			if r >= '0' && r <= '9' && len(t.inputBufPort) < 5 {
-				t.inputBufPort = append(t.inputBufPort, r)
-				t.dialogErr = ""
-			}
-		}
-	}
-	return Selection{}, false
+	return t.handleSessionFormKey(ev, true)
 }
 
 func (t *tui) drawEditRestartPromptDialog(width, height int) {
@@ -1526,6 +1427,7 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 			t.mode = modeCreateDialog
 			t.inputBuf = nil
 			t.inputBufPort = nil
+			t.inputProtocol = session.ProtocolTCP
 			t.activeField = 0
 			t.dialogErr = ""
 		case 'c', 'C':
@@ -1556,6 +1458,7 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 				} else {
 					t.inputBufPort = nil
 				}
+				t.inputProtocol = s.EffectiveProtocol()
 				t.activeField = 0
 				t.dialogErr = ""
 			}
@@ -1604,16 +1507,34 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 }
 
 func (t *tui) handleCreateDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	return t.handleSessionFormKey(ev, false)
+}
+
+// handleSessionFormKey drives both the create and edit dialogs. Fields are
+// indexed: Name=0, Protocol=1, Port=2. On Enter, the form is validated and
+// either a Selection (for Create) or a call to editSaveFunc (for Edit) is
+// emitted.
+func (t *tui) handleSessionFormKey(ev *tcell.EventKey, isEdit bool) (Selection, bool) {
+	resetForm := func() {
+		t.inputBuf = nil
+		t.inputBufPort = nil
+		t.inputProtocol = ""
+		t.activeField = 0
+		t.dialogErr = ""
+	}
 	switch ev.Key() {
 	case tcell.KeyEscape:
 		t.mode = modeMenu
-		t.inputBuf = nil
-		t.inputBufPort = nil
-		t.activeField = 0
+		resetForm()
+		return Selection{}, false
+	case tcell.KeyTab:
+		t.activeField = (t.activeField + 1) % 3
 		t.dialogErr = ""
-	case tcell.KeyTab, tcell.KeyBacktab:
-		t.activeField = 1 - t.activeField
+		return Selection{}, false
+	case tcell.KeyBacktab:
+		t.activeField = (t.activeField + 2) % 3
 		t.dialogErr = ""
+		return Selection{}, false
 	case tcell.KeyEnter:
 		name := strings.TrimSpace(string(t.inputBuf))
 		if err := session.ValidateName(name); err != nil {
@@ -1621,33 +1542,76 @@ func (t *tui) handleCreateDialogKey(ev *tcell.EventKey) (Selection, bool) {
 			t.activeField = 0
 			return Selection{}, false
 		}
-		port, err := parsePortInput(string(t.inputBufPort))
+		proto, err := session.ValidateProtocol(t.inputProtocol)
 		if err != nil {
 			t.dialogErr = err.Error()
 			t.activeField = 1
 			return Selection{}, false
 		}
-		return Selection{Action: ActionNewSession, Name: name, Port: port}, true
+		port, err := parsePortInput(string(t.inputBufPort))
+		if err != nil {
+			t.dialogErr = err.Error()
+			t.activeField = 2
+			return Selection{}, false
+		}
+		if isEdit {
+			if t.cursor < 0 || t.cursor >= len(t.sessions) {
+				t.mode = modeMenu
+				return Selection{}, false
+			}
+			s := t.sessions[t.cursor]
+			if t.editSaveFunc != nil {
+				if err := t.editSaveFunc(s.UUID, name, proto, port); err != nil {
+					t.dialogErr = err.Error()
+					return Selection{}, false
+				}
+			}
+			t.mode = modeEditRestartPrompt
+			t.dialogErr = ""
+			return Selection{}, false
+		}
+		return Selection{Action: ActionNewSession, Name: name, Port: port, Protocol: proto}, true
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if t.activeField == 0 {
+		switch t.activeField {
+		case 0:
 			if len(t.inputBuf) > 0 {
 				t.inputBuf = t.inputBuf[:len(t.inputBuf)-1]
 				t.dialogErr = ""
 			}
-		} else {
+		case 2:
 			if len(t.inputBufPort) > 0 {
 				t.inputBufPort = t.inputBufPort[:len(t.inputBufPort)-1]
 				t.dialogErr = ""
 			}
+			// Protocol field has no backspace — it's a toggle, not a text input.
 		}
+		return Selection{}, false
 	case tcell.KeyRune:
-		if t.activeField == 0 {
+		r := ev.Rune()
+		switch t.activeField {
+		case 0:
 			if len(t.inputBuf) < 64 {
-				t.inputBuf = append(t.inputBuf, ev.Rune())
+				t.inputBuf = append(t.inputBuf, r)
 				t.dialogErr = ""
 			}
-		} else {
-			r := ev.Rune()
+		case 1:
+			// Protocol toggle: t/T = tcp, u/U = udp, Space cycles.
+			switch r {
+			case 't', 'T':
+				t.inputProtocol = session.ProtocolTCP
+				t.dialogErr = ""
+			case 'u', 'U':
+				t.inputProtocol = session.ProtocolUDP
+				t.dialogErr = ""
+			case ' ':
+				if t.inputProtocol == session.ProtocolUDP {
+					t.inputProtocol = session.ProtocolTCP
+				} else {
+					t.inputProtocol = session.ProtocolUDP
+				}
+				t.dialogErr = ""
+			}
+		case 2:
 			if r >= '0' && r <= '9' && len(t.inputBufPort) < 5 {
 				t.inputBufPort = append(t.inputBufPort, r)
 				t.dialogErr = ""

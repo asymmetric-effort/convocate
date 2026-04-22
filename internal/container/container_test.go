@@ -372,8 +372,33 @@ func TestBuildRunArgs_PortPublished(t *testing.T) {
 	args := r.buildRunArgs("test-container")
 	argStr := strings.Join(args, " ")
 
-	if !strings.Contains(argStr, "-p 8080:8080") {
-		t.Errorf("expected '-p 8080:8080' in args, got: %s", argStr)
+	// Default protocol when unset is tcp.
+	if !strings.Contains(argStr, "-p 8080:8080/tcp") {
+		t.Errorf("expected '-p 8080:8080/tcp' in args, got: %s", argStr)
+	}
+}
+
+func TestBuildRunArgs_UDPProtocol(t *testing.T) {
+	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", "/tmp/session", testUserInfo(), testPaths())
+	r.SetPort(53)
+	r.SetProtocol("udp")
+	args := r.buildRunArgs("test-container")
+	argStr := strings.Join(args, " ")
+
+	if !strings.Contains(argStr, "-p 53:53/udp") {
+		t.Errorf("expected '-p 53:53/udp' in args, got: %s", argStr)
+	}
+}
+
+func TestBuildRunArgs_TCPProtocolExplicit(t *testing.T) {
+	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", "/tmp/session", testUserInfo(), testPaths())
+	r.SetPort(8080)
+	r.SetProtocol("tcp")
+	args := r.buildRunArgs("test-container")
+	argStr := strings.Join(args, " ")
+
+	if !strings.Contains(argStr, "-p 8080:8080/tcp") {
+		t.Errorf("expected '-p 8080:8080/tcp' in args, got: %s", argStr)
 	}
 }
 

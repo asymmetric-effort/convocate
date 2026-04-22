@@ -91,13 +91,13 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			RestartSession: func(id string) error {
 				return restartSessionDetached(mgr, id, userInfo, paths, log)
 			},
-			SaveSessionEdit: func(id, name string, port int) error {
-				_, err := mgr.Update(id, name, port)
+			SaveSessionEdit: func(id, name, protocol string, port int) error {
+				_, err := mgr.Update(id, name, port, protocol)
 				if err != nil {
 					return err
 				}
 				if log != nil {
-					log.Infof("updated session %s: name=%q port=%d", id, name, port)
+					log.Infof("updated session %s: name=%q port=%d/%s", id, name, port, protocol)
 				}
 				return nil
 			},
@@ -111,7 +111,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			fmt.Println("Goodbye!")
 			return nil
 		case menu.ActionNewSession:
-			if err := handleNewSession(mgr, sel.Name, sel.Port, userInfo, paths, log); err != nil {
+			if err := handleNewSession(mgr, sel.Name, sel.Port, sel.Protocol, userInfo, paths, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
@@ -137,22 +137,22 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 	}
 }
 
-func handleNewSession(mgr *session.Manager, name string, port int, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
-	meta, err := mgr.CreateWithPort(name, port)
+func handleNewSession(mgr *session.Manager, name string, port int, protocol string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+	meta, err := mgr.CreateWithPortProtocol(name, port, protocol)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}
 
 	if log != nil {
-		log.Infof("created session %s (%s) port=%d", meta.UUID, meta.Name, meta.Port)
+		log.Infof("created session %s (%s) port=%d/%s", meta.UUID, meta.Name, meta.Port, meta.EffectiveProtocol())
 	}
 	if meta.Port > 0 {
-		fmt.Printf("Created session %q (%s) on port %d\n", meta.Name, meta.UUID[:8], meta.Port)
+		fmt.Printf("Created session %q (%s) on port %d/%s\n", meta.Name, meta.UUID[:8], meta.Port, meta.EffectiveProtocol())
 	} else {
 		fmt.Printf("Created session %q (%s)\n", meta.Name, meta.UUID[:8])
 	}
 
-	return launchSession(mgr, meta.UUID, meta.Port, userInfo, paths, log)
+	return launchSession(mgr, meta.UUID, meta.Port, meta.EffectiveProtocol(), userInfo, paths, log)
 }
 
 func handleCloneSession(mgr *session.Manager, sourceID, name string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
@@ -166,7 +166,7 @@ func handleCloneSession(mgr *session.Manager, sourceID, name string, userInfo us
 	}
 	fmt.Printf("Cloned session %q (%s) from %s\n", meta.Name, meta.UUID[:8], sourceID[:8])
 
-	return launchSession(mgr, meta.UUID, meta.Port, userInfo, paths, log)
+	return launchSession(mgr, meta.UUID, meta.Port, meta.EffectiveProtocol(), userInfo, paths, log)
 }
 
 // newRunner is the package-level factory for container runners. Tests override
@@ -190,6 +190,7 @@ func restartSessionDetached(mgr *session.Manager, sessionID string, userInfo use
 
 	runner := newRunner(sessionID, mgr.SessionDir(sessionID), userInfo, paths)
 	runner.SetPort(meta.Port)
+	runner.SetProtocol(meta.EffectiveProtocol())
 
 	running, err := runner.IsRunning()
 	if err != nil {
@@ -220,10 +221,10 @@ func handleResumeSession(mgr *session.Manager, sessionID string, userInfo user.I
 	}
 	fmt.Printf("Resuming session %q (%s)\n", meta.Name, meta.UUID[:8])
 
-	return launchSession(mgr, sessionID, meta.Port, userInfo, paths, log)
+	return launchSession(mgr, sessionID, meta.Port, meta.EffectiveProtocol(), userInfo, paths, log)
 }
 
-func launchSession(mgr *session.Manager, sessionID string, port int, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+func launchSession(mgr *session.Manager, sessionID string, port int, protocol string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
 	unlock, err := mgr.Lock(sessionID)
 	if err != nil {
 		return err
@@ -238,6 +239,7 @@ func launchSession(mgr *session.Manager, sessionID string, port int, userInfo us
 
 	runner := container.NewRunner(sessionID, mgr.SessionDir(sessionID), userInfo, paths)
 	runner.SetPort(port)
+	runner.SetProtocol(protocol)
 
 	// Check if container is already running
 	running, err := runner.IsRunning()

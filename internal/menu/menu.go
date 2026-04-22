@@ -38,10 +38,13 @@ type Selection struct {
 	Action    string
 	SessionID string
 	Name      string
-	// Port is the TCP port to publish for a new session. 0 means no port,
+	// Port is the port to publish for a new session. 0 means no port,
 	// session.PortAuto (-1) means auto-assign, and any positive value is a
 	// specific port to publish.
 	Port int
+	// Protocol is the transport protocol for the published port: "tcp" or
+	// "udp". Empty is treated as "tcp" by callers.
+	Protocol string
 }
 
 // parsePortInput validates the raw port field entered by the user in the

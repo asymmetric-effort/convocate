@@ -21,9 +21,21 @@ type Metadata struct {
 	Name         string    `json:"name"`
 	CreatedAt    time.Time `json:"created_at"`
 	LastAccessed time.Time `json:"last_accessed"`
-	// Port is the TCP port published by the session's container.
+	// Port is the TCP/UDP port published by the session's container.
 	// A value of 0 means no port is published.
 	Port int `json:"port,omitempty"`
+	// Protocol is "tcp" or "udp" — the protocol used for the published port.
+	// An empty value is treated as "tcp" for backward compatibility.
+	Protocol string `json:"protocol,omitempty"`
+}
+
+// EffectiveProtocol returns the session's protocol, defaulting to "tcp" when
+// the field is empty (older sessions created before protocol support).
+func (m Metadata) EffectiveProtocol() string {
+	if m.Protocol == "" {
+		return ProtocolTCP
+	}
+	return m.Protocol
 }
 
 // PortAuto is the sentinel value passed to CreateWithPort to request that an
@@ -32,6 +44,27 @@ const PortAuto = -1
 
 // PortAutoMin is the lowest port number considered when auto-assigning.
 const PortAutoMin = 1001
+
+// Supported protocols for the published port.
+const (
+	ProtocolTCP = "tcp"
+	ProtocolUDP = "udp"
+)
+
+// ValidateProtocol normalizes a user-provided protocol string. An empty value
+// is treated as "tcp"; otherwise the string is lowercased and must match one
+// of the supported protocols.
+func ValidateProtocol(s string) (string, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	switch s {
+	case "", ProtocolTCP:
+		return ProtocolTCP, nil
+	case ProtocolUDP:
+		return ProtocolUDP, nil
+	default:
+		return "", fmt.Errorf("protocol must be %q or %q, got %q", ProtocolTCP, ProtocolUDP, s)
+	}
+}
 
 // Manager handles session lifecycle operations.
 type Manager struct {
@@ -50,22 +83,42 @@ func NewManager(basePath, skelPath string) *Manager {
 // Create creates a new session with the given name and returns its metadata.
 // No network port is published.
 func (m *Manager) Create(name string) (Metadata, error) {
-	return m.CreateWithPort(name, 0)
+	return m.CreateWithPortProtocol(name, 0, ProtocolTCP)
 }
 
-// CreateWithPort creates a new session with the given name and port. A port
-// value of 0 means no port is published; PortAuto (-1) requests auto-selection
-// of the first available port at or above PortAutoMin; any positive value is
-// used verbatim after checking that no other session already uses it.
+// CreateWithPort creates a new session with the given name and port using the
+// default TCP protocol. Kept for existing callers that don't care about
+// protocol selection.
 func (m *Manager) CreateWithPort(name string, port int) (Metadata, error) {
-	id := uuid.New().String()
-	return m.CreateWithUUID(id, name, port)
+	return m.CreateWithPortProtocol(name, port, ProtocolTCP)
 }
 
-// CreateWithUUID creates a new session with a specific UUID and port (used for
-// testing and by CreateWithPort).
+// CreateWithPortProtocol creates a new session with the given name, port, and
+// protocol ("tcp" or "udp"; empty string treated as "tcp"). Port semantics:
+// 0 means no port is published; PortAuto (-1) requests auto-selection of the
+// first available port at or above PortAutoMin; any positive value is used
+// verbatim after checking that no other session uses it with the same
+// protocol.
+func (m *Manager) CreateWithPortProtocol(name string, port int, protocol string) (Metadata, error) {
+	id := uuid.New().String()
+	return m.CreateWithUUIDProtocol(id, name, port, protocol)
+}
+
+// CreateWithUUID is the legacy test helper that creates a session with a
+// specific UUID and defaults protocol to TCP.
 func (m *Manager) CreateWithUUID(id, name string, port int) (Metadata, error) {
-	resolvedPort, err := m.resolvePort(port)
+	return m.CreateWithUUIDProtocol(id, name, port, ProtocolTCP)
+}
+
+// CreateWithUUIDProtocol creates a new session with a specific UUID, port,
+// and protocol.
+func (m *Manager) CreateWithUUIDProtocol(id, name string, port int, protocol string) (Metadata, error) {
+	proto, err := ValidateProtocol(protocol)
+	if err != nil {
+		return Metadata{}, err
+	}
+
+	resolvedPort, err := m.resolvePort(port, proto)
 	if err != nil {
 		return Metadata{}, err
 	}
@@ -87,6 +140,7 @@ func (m *Manager) CreateWithUUID(id, name string, port int) (Metadata, error) {
 		CreatedAt:    now,
 		LastAccessed: now,
 		Port:         resolvedPort,
+		Protocol:     proto,
 	}
 
 	if err := m.writeMetadata(sessionDir, meta); err != nil {
@@ -98,16 +152,17 @@ func (m *Manager) CreateWithUUID(id, name string, port int) (Metadata, error) {
 }
 
 // resolvePort translates a caller-supplied port value into the port actually
-// written to session metadata.
-func (m *Manager) resolvePort(port int) (int, error) {
+// written to session metadata. Collisions are checked per-protocol, so
+// tcp:53 and udp:53 are allowed to coexist in different sessions.
+func (m *Manager) resolvePort(port int, protocol string) (int, error) {
 	switch {
 	case port == 0:
 		return 0, nil
 	case port == PortAuto:
 		return m.FindAvailablePort(PortAutoMin)
 	case port > 0 && port <= 65535:
-		if m.isPortUsed(port) {
-			return 0, fmt.Errorf("port %d is already assigned to another session", port)
+		if m.isPortUsed(port, protocol) {
+			return 0, fmt.Errorf("port %d/%s is already assigned to another session", port, protocol)
 		}
 		return port, nil
 	default:
@@ -115,13 +170,13 @@ func (m *Manager) resolvePort(port int) (int, error) {
 	}
 }
 
-func (m *Manager) isPortUsed(port int) bool {
+func (m *Manager) isPortUsed(port int, protocol string) bool {
 	sessions, err := m.List()
 	if err != nil {
 		return false
 	}
 	for _, s := range sessions {
-		if s.Port == port {
+		if s.Port == port && s.EffectiveProtocol() == protocol {
 			return true
 		}
 	}
@@ -237,11 +292,11 @@ func (m *Manager) Delete(id string) error {
 	return os.RemoveAll(sessionDir)
 }
 
-// Update applies edited fields (name, port) to the given session and persists
-// them to session.json. UUID, CreatedAt, and LastAccessed are preserved. If
-// the requested port differs from the current one and is already in use by
-// another session, an error is returned and no change is written.
-func (m *Manager) Update(id, newName string, newPort int) (Metadata, error) {
+// Update applies edited fields (name, port, protocol) to the given session
+// and persists them to session.json. UUID, CreatedAt, and LastAccessed are
+// preserved. An empty protocol is treated as "tcp". Collisions are checked
+// per-protocol: tcp:53 and udp:53 can coexist in different sessions.
+func (m *Manager) Update(id, newName string, newPort int, newProtocol string) (Metadata, error) {
 	sessionDir := filepath.Join(m.basePath, id)
 	current, err := m.readMetadata(sessionDir)
 	if err != nil {
@@ -252,10 +307,16 @@ func (m *Manager) Update(id, newName string, newPort int) (Metadata, error) {
 		return Metadata{}, err
 	}
 
+	proto, err := ValidateProtocol(newProtocol)
+	if err != nil {
+		return Metadata{}, err
+	}
+
 	resolvedPort := current.Port
-	if newPort != current.Port {
-		// Temporarily remove our own port from the in-use set so resolvePort
-		// doesn't treat it as a collision when the user re-saves the same port.
+	// Re-resolve the port when either the number OR the protocol changed —
+	// a collision may exist against the new (port, protocol) tuple even if
+	// only the protocol differs.
+	if newPort != current.Port || proto != current.EffectiveProtocol() {
 		switch {
 		case newPort == 0:
 			resolvedPort = 0
@@ -266,8 +327,8 @@ func (m *Manager) Update(id, newName string, newPort int) (Metadata, error) {
 			}
 			resolvedPort = rp
 		case newPort > 0 && newPort <= 65535:
-			if m.isPortUsedByOther(id, newPort) {
-				return Metadata{}, fmt.Errorf("port %d is already assigned to another session", newPort)
+			if m.isPortUsedByOther(id, newPort, proto) {
+				return Metadata{}, fmt.Errorf("port %d/%s is already assigned to another session", newPort, proto)
 			}
 			resolvedPort = newPort
 		default:
@@ -277,15 +338,16 @@ func (m *Manager) Update(id, newName string, newPort int) (Metadata, error) {
 
 	current.Name = newName
 	current.Port = resolvedPort
+	current.Protocol = proto
 	if err := m.writeMetadata(sessionDir, current); err != nil {
 		return Metadata{}, err
 	}
 	return current, nil
 }
 
-// isPortUsedByOther reports whether the given port is held by any session
-// other than the one identified by excludeID.
-func (m *Manager) isPortUsedByOther(excludeID string, port int) bool {
+// isPortUsedByOther reports whether the given (port, protocol) pair is held
+// by any session other than the one identified by excludeID.
+func (m *Manager) isPortUsedByOther(excludeID string, port int, protocol string) bool {
 	sessions, err := m.List()
 	if err != nil {
 		return false
@@ -294,7 +356,7 @@ func (m *Manager) isPortUsedByOther(excludeID string, port int) bool {
 		if s.UUID == excludeID {
 			continue
 		}
-		if s.Port == port {
+		if s.Port == port && s.EffectiveProtocol() == protocol {
 			return true
 		}
 	}
