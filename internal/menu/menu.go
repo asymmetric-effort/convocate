@@ -22,6 +22,9 @@ const (
 	ActionReload = "reload"
 	// ActionOverrideLock indicates the user wants to override a stale session lock.
 	ActionOverrideLock = "override-lock"
+	// ActionBackground indicates the user wants to disconnect an attached
+	// terminal from a connected session while leaving the container running.
+	ActionBackground = "background"
 	// ActionQuit indicates the user wants to quit the shell.
 	ActionQuit = "quit"
 )
@@ -31,6 +34,32 @@ type Selection struct {
 	Action    string
 	SessionID string
 	Name      string
+	// Port is the TCP port to publish for a new session. 0 means no port,
+	// session.PortAuto (-1) means auto-assign, and any positive value is a
+	// specific port to publish.
+	Port int
+}
+
+// parsePortInput validates the raw port field entered by the user in the
+// create dialog. An empty string maps to 0 (no port published); "0" maps to
+// session.PortAuto requesting auto-assignment; anything else must be a
+// decimal integer in the range 1-65535.
+func parsePortInput(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("port must be a number")
+	}
+	if n == 0 {
+		return session.PortAuto, nil
+	}
+	if n < 1 || n > 65535 {
+		return 0, fmt.Errorf("port must be between 0 and 65535")
+	}
+	return n, nil
 }
 
 // PromptSessionName asks the user for a session name.

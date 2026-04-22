@@ -2,6 +2,7 @@ package menu
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -11,9 +12,22 @@ import (
 	"github.com/asymmetric-effort/claude-shell/internal/session"
 )
 
+// loadAverageReader is overridable for tests.
+var loadAverageReader = func() (string, bool) {
+	data, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return "", false
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) < 3 {
+		return "", false
+	}
+	return fmt.Sprintf("%s %s %s", fields[0], fields[1], fields[2]), true
+}
+
 var (
 	titleStyle     = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlue)
-	menuBarStyle   = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack)
+	menuBarStyle   = tcell.StyleDefault.Foreground(tcell.ColorYellow).Background(tcell.ColorBlue)
 	headerStyle    = tcell.StyleDefault.Foreground(tcell.ColorYellow).Bold(true)
 	normalStyle    = tcell.StyleDefault
 	selectedStyle  = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorWhite)
@@ -36,6 +50,10 @@ const (
 	modeKillConfirm
 	modeNotRunningDialog
 	modeKillInitiated
+	modeBackgroundConfirm
+	modeBackgroundInitiated
+	modeNotConnectedDialog
+	modeSettingsDialog
 )
 
 type tui struct {
@@ -47,12 +65,15 @@ type tui struct {
 	reloadInterval time.Duration
 	mode           tuiMode
 	inputBuf       []rune
+	inputBufPort   []rune
+	activeField    int
 	dialogErr      string
 	isLockedFunc     func(id string) bool
 	isRunningFunc    func(id string) bool
 	reloadFunc       func() ([]session.Metadata, error)
 	overrideLockFunc func(id string) error
 	killFunc         func(id string) error
+	backgroundFunc   func(id string) error
 }
 
 func (t *tui) isLocked(id string) bool {
@@ -69,6 +90,14 @@ func (t *tui) isRunning(id string) bool {
 	return t.isRunningFunc(id)
 }
 
+// isConnected reports whether a user terminal is currently attached to a
+// running container for the given session. A connection requires both the
+// container to be running and the session lock to be held (the lock is
+// acquired for the duration of an active attach).
+func (t *tui) isConnected(id string) bool {
+	return t.isRunning(id) && t.isLocked(id)
+}
+
 // screenFactory creates and initializes a tcell.Screen. Override in tests.
 var screenFactory func() (tcell.Screen, error) = func() (tcell.Screen, error) {
 	screen, err := tcell.NewScreen()
@@ -83,11 +112,12 @@ var screenFactory func() (tcell.Screen, error) = func() (tcell.Screen, error) {
 
 // DisplayOptions configures the TUI display.
 type DisplayOptions struct {
-	IsLocked     func(string) bool
-	IsRunning    func(string) bool
-	Reload       func() ([]session.Metadata, error)
-	OverrideLock func(string) error
-	KillSession  func(string) error
+	IsLocked          func(string) bool
+	IsRunning         func(string) bool
+	Reload            func() ([]session.Metadata, error)
+	OverrideLock      func(string) error
+	KillSession       func(string) error
+	BackgroundSession func(string) error
 }
 
 // Display renders the TUI session menu and returns the user's selection.
@@ -130,6 +160,7 @@ func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickIn
 		reloadFunc:       opts.Reload,
 		overrideLockFunc: opts.OverrideLock,
 		killFunc:         opts.KillSession,
+		backgroundFunc:   opts.BackgroundSession,
 	}
 
 	// Tick periodically to keep the clock updated
@@ -224,6 +255,14 @@ func (t *tui) draw() {
 		t.drawNotRunningDialog(width, height)
 	case modeKillInitiated:
 		t.drawKillInitiatedDialog(width, height)
+	case modeBackgroundConfirm:
+		t.drawBackgroundDialog(width, height)
+	case modeBackgroundInitiated:
+		t.drawBackgroundInitiatedDialog(width, height)
+	case modeNotConnectedDialog:
+		t.drawNotConnectedDialog(width, height)
+	case modeSettingsDialog:
+		t.drawSettingsDialog(width, height)
 	}
 }
 
@@ -232,9 +271,13 @@ func (t *tui) drawTitleBar(width int) {
 	drawString(t.screen, 1, 0, "claude-shell", titleStyle)
 
 	clock := time.Now().Format("2006-01-02 15:04:05")
-	x := width - len(clock) - 1
+	right := clock
+	if load, ok := loadAverageReader(); ok {
+		right = load + "  " + clock
+	}
+	x := width - len(right) - 1
 	if x > 13 {
-		drawString(t.screen, x, 0, clock, titleStyle)
+		drawString(t.screen, x, 0, right, titleStyle)
 	}
 }
 
@@ -245,8 +288,8 @@ func (t *tui) drawSessionTable(width, height int) {
 	menuBarRow := height - 1
 
 	// Column header
-	header := fmt.Sprintf("  %-4s| %-20s | %-36s | %-12s | %-13s | %s",
-		"#", "Name", "Session ID", "Created", "Last Accessed", "S")
+	header := fmt.Sprintf("  %-4s| %-20s | %-36s | %-12s | %-13s | %-5s | %s",
+		"#", "Name", "Session ID", "Created", "Last Accessed", "Port", "S")
 	drawString(t.screen, 0, headerRow, clipToWidth(header, width), headerStyle)
 
 	// Separator
@@ -289,19 +332,29 @@ func (t *tui) drawSessionTable(width, height int) {
 			style = selectedStyle
 		}
 
+		running := t.isRunning(s.UUID)
+		locked := t.isLocked(s.UUID)
 		statusIndicator := "-"
-		if t.isRunning(s.UUID) {
+		switch {
+		case running && locked:
+			statusIndicator = "C"
+		case running:
 			statusIndicator = "R"
-		} else if t.isLocked(s.UUID) {
+		case locked:
 			statusIndicator = "L"
 		}
 
-		line := fmt.Sprintf("  %-4s| %-20s | %s | %-12s | %-13s | %s",
+		portLabel := "-"
+		if s.Port > 0 {
+			portLabel = strconv.Itoa(s.Port)
+		}
+		line := fmt.Sprintf("  %-4s| %-20s | %s | %-12s | %-13s | %-5s | %s",
 			strconv.Itoa(idx+1),
 			truncate(s.Name, 20),
 			s.UUID,
 			s.CreatedAt.Format("2006-01-02"),
 			s.LastAccessed.Format("2006-01-02"),
+			portLabel,
 			statusIndicator,
 		)
 
@@ -315,13 +368,13 @@ func (t *tui) drawMenuBar(width, height int) {
 	row := height - 1
 	fillRow(t.screen, row, width, menuBarStyle)
 	drawString(t.screen, 1, row,
-		"(N)ew | (C)lone | (D)elete | (K)ill | (O)verride lock | (R)eload | (Q)uit",
+		"(N)ew | (C)lone | (B)ackground | (D)elete | (K)ill | (O)verride | (S)ettings | (R)eload | (Q)uit",
 		menuBarStyle)
 }
 
 func (t *tui) drawCreateDialog(width, height int) {
-	const dialogWidth = 52
-	const dialogHeight = 7
+	const dialogWidth = 58
+	const dialogHeight = 10
 
 	x0 := (width - dialogWidth) / 2
 	y0 := (height - dialogHeight) / 2
@@ -344,41 +397,49 @@ func (t *tui) drawCreateDialog(width, height int) {
 	title := " Create New Session "
 	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
 
-	// Label
+	// Name field
 	drawString(t.screen, x0+2, y0+2, "Name:", dialogStyle)
+	nameX := x0 + 8
+	nameW := dialogWidth - 10
+	t.drawInputField(nameX, y0+2, nameW, t.inputBuf, t.activeField == 0)
 
-	// Input field background
-	inputX := x0 + 8
-	inputW := dialogWidth - 10
-	for col := inputX; col < inputX+inputW; col++ {
-		t.screen.SetContent(col, y0+2, ' ', nil, inputStyle)
-	}
-
-	// Input text
-	inputText := string(t.inputBuf)
-	if len(inputText) > inputW {
-		inputText = inputText[len(inputText)-inputW:]
-	}
-	drawString(t.screen, inputX, y0+2, inputText, inputStyle)
-
-	// Cursor
-	cursorX := inputX + len(t.inputBuf)
-	if len(t.inputBuf) > inputW {
-		cursorX = inputX + inputW
-	}
-	if cursorX < x0+dialogWidth-2 {
-		t.screen.SetContent(cursorX, y0+2, ' ', nil, inputStyle.Reverse(true))
-	}
+	// Port field
+	drawString(t.screen, x0+2, y0+4, "Port:", dialogStyle)
+	portX := x0 + 8
+	portW := 10
+	t.drawInputField(portX, y0+4, portW, t.inputBufPort, t.activeField == 1)
+	drawString(t.screen, portX+portW+2, y0+4, "(blank=none, 0=auto)", dialogStyle)
 
 	// Error message
 	if t.dialogErr != "" {
 		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
-		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+		drawString(t.screen, x0+2, y0+6, errMsg, dialogErrStyle)
 	}
 
 	// Hint
-	hint := "Enter=Create  Esc=Cancel"
+	hint := "Tab=Next  Enter=Create  Esc=Cancel"
 	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+// drawInputField renders an input field with its text and a cursor when
+// focused. The field visually spans width cells starting at (x, y).
+func (t *tui) drawInputField(x, y, width int, buf []rune, focused bool) {
+	for col := x; col < x+width; col++ {
+		t.screen.SetContent(col, y, ' ', nil, inputStyle)
+	}
+	text := string(buf)
+	if len(text) > width {
+		text = text[len(text)-width:]
+	}
+	drawString(t.screen, x, y, text, inputStyle)
+	if !focused {
+		return
+	}
+	cursorX := x + len(buf)
+	if len(buf) > width {
+		cursorX = x + width
+	}
+	t.screen.SetContent(cursorX, y, ' ', nil, inputStyle.Reverse(true))
 }
 
 func (t *tui) drawCloneDialog(width, height int) {
@@ -625,6 +686,215 @@ func (t *tui) handleKillInitiatedDialogKey(ev *tcell.EventKey) (Selection, bool)
 	return Selection{}, false
 }
 
+func (t *tui) drawBackgroundDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	prompt := fmt.Sprintf("Background session %q?", name)
+	dialogWidth := len(prompt) + 6
+	if dialogWidth < 44 {
+		dialogWidth = 44
+	}
+	dialogHeight := 5
+	if t.dialogErr != "" {
+		dialogHeight = 7
+	}
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	title := " Background Session "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	drawString(t.screen, x0+2, y0+2, prompt, dialogStyle)
+
+	if t.dialogErr != "" {
+		errMsg := clipToWidth(t.dialogErr, dialogWidth-4)
+		drawString(t.screen, x0+2, y0+4, errMsg, dialogErrStyle)
+	}
+
+	hint := "(Y)es  (N)o"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleBackgroundDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+		t.dialogErr = ""
+	case tcell.KeyRune:
+		switch ev.Rune() {
+		case 'y', 'Y':
+			if t.cursor < 0 || t.cursor >= len(t.sessions) {
+				t.mode = modeMenu
+				return Selection{}, false
+			}
+			s := t.sessions[t.cursor]
+			if !t.isConnected(s.UUID) {
+				t.mode = modeNotConnectedDialog
+				t.dialogErr = ""
+				return Selection{}, false
+			}
+			if t.backgroundFunc != nil {
+				if err := t.backgroundFunc(s.UUID); err != nil {
+					t.dialogErr = err.Error()
+					return Selection{}, false
+				}
+			}
+			t.mode = modeBackgroundInitiated
+			t.dialogErr = ""
+		case 'n', 'N':
+			t.mode = modeMenu
+			t.dialogErr = ""
+		}
+	}
+	return Selection{}, false
+}
+
+func (t *tui) drawBackgroundInitiatedDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	msg := fmt.Sprintf("Session %q backgrounded.", name)
+	dialogWidth := len(msg) + 6
+	if dialogWidth < 44 {
+		dialogWidth = 44
+	}
+	const dialogHeight = 5
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	title := " Backgrounded "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	drawString(t.screen, x0+2, y0+2, msg, dialogStyle)
+
+	hint := "Press any key to continue"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleBackgroundInitiatedDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	t.mode = modeMenu
+	return Selection{}, false
+}
+
+func (t *tui) drawNotConnectedDialog(width, height int) {
+	if t.cursor < 0 || t.cursor >= len(t.sessions) {
+		return
+	}
+	s := t.sessions[t.cursor]
+
+	name := truncate(s.Name, 30)
+	msg := fmt.Sprintf("Session %q is not connected.", name)
+	dialogWidth := len(msg) + 6
+	if dialogWidth < 44 {
+		dialogWidth = 44
+	}
+	const dialogHeight = 5
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogWarnStyle)
+		}
+	}
+
+	title := " Not Connected "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogWarnStyle.Bold(true))
+
+	drawString(t.screen, x0+2, y0+2, msg, dialogWarnStyle)
+
+	hint := "Press any key to continue"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogWarnStyle)
+}
+
+func (t *tui) handleNotConnectedDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	t.mode = modeMenu
+	return Selection{}, false
+}
+
+func (t *tui) drawSettingsDialog(width, height int) {
+	const dialogWidth = 64
+	const dialogHeight = 9
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+
+	title := " Settings "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	drawString(t.screen, x0+2, y0+2, "No settings are configurable at this time.", dialogStyle)
+	drawString(t.screen, x0+2, y0+3, "Future options will appear here.", dialogStyle)
+
+	hint := "Tab=Next  Shift+Tab=Prev  Enter=Save  Esc=Cancel"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+func (t *tui) handleSettingsDialogKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+		t.dialogErr = ""
+	case tcell.KeyEnter:
+		t.mode = modeMenu
+		t.dialogErr = ""
+	case tcell.KeyTab, tcell.KeyBacktab:
+		// No fields to cycle yet; navigation is a no-op until settings are added.
+	}
+	return Selection{}, false
+}
+
 func (t *tui) drawOverrideDialog(width, height int) {
 	if t.cursor < 0 || t.cursor >= len(t.sessions) {
 		return
@@ -825,6 +1095,14 @@ func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
 		return t.handleNotRunningDialogKey(ev)
 	case modeKillInitiated:
 		return t.handleKillInitiatedDialogKey(ev)
+	case modeBackgroundConfirm:
+		return t.handleBackgroundDialogKey(ev)
+	case modeBackgroundInitiated:
+		return t.handleBackgroundInitiatedDialogKey(ev)
+	case modeNotConnectedDialog:
+		return t.handleNotConnectedDialogKey(ev)
+	case modeSettingsDialog:
+		return t.handleSettingsDialogKey(ev)
 	default:
 		return t.handleMenuKey(ev)
 	}
@@ -856,6 +1134,8 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 		case 'n', 'N':
 			t.mode = modeCreateDialog
 			t.inputBuf = nil
+			t.inputBufPort = nil
+			t.activeField = 0
 			t.dialogErr = ""
 		case 'c', 'C':
 			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
@@ -880,6 +1160,14 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 				t.mode = modeKillConfirm
 				t.dialogErr = ""
 			}
+		case 'b', 'B':
+			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
+				t.mode = modeBackgroundConfirm
+				t.dialogErr = ""
+			}
+		case 's', 'S':
+			t.mode = modeSettingsDialog
+			t.dialogErr = ""
 		case 'r', 'R':
 			return Selection{Action: ActionReload}, true
 		case 'q', 'Q':
@@ -907,23 +1195,50 @@ func (t *tui) handleCreateDialogKey(ev *tcell.EventKey) (Selection, bool) {
 	case tcell.KeyEscape:
 		t.mode = modeMenu
 		t.inputBuf = nil
+		t.inputBufPort = nil
+		t.activeField = 0
+		t.dialogErr = ""
+	case tcell.KeyTab, tcell.KeyBacktab:
+		t.activeField = 1 - t.activeField
 		t.dialogErr = ""
 	case tcell.KeyEnter:
 		name := strings.TrimSpace(string(t.inputBuf))
 		if err := session.ValidateName(name); err != nil {
 			t.dialogErr = err.Error()
+			t.activeField = 0
 			return Selection{}, false
 		}
-		return Selection{Action: ActionNewSession, Name: name}, true
+		port, err := parsePortInput(string(t.inputBufPort))
+		if err != nil {
+			t.dialogErr = err.Error()
+			t.activeField = 1
+			return Selection{}, false
+		}
+		return Selection{Action: ActionNewSession, Name: name, Port: port}, true
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if len(t.inputBuf) > 0 {
-			t.inputBuf = t.inputBuf[:len(t.inputBuf)-1]
-			t.dialogErr = ""
+		if t.activeField == 0 {
+			if len(t.inputBuf) > 0 {
+				t.inputBuf = t.inputBuf[:len(t.inputBuf)-1]
+				t.dialogErr = ""
+			}
+		} else {
+			if len(t.inputBufPort) > 0 {
+				t.inputBufPort = t.inputBufPort[:len(t.inputBufPort)-1]
+				t.dialogErr = ""
+			}
 		}
 	case tcell.KeyRune:
-		if len(t.inputBuf) < 64 {
-			t.inputBuf = append(t.inputBuf, ev.Rune())
-			t.dialogErr = ""
+		if t.activeField == 0 {
+			if len(t.inputBuf) < 64 {
+				t.inputBuf = append(t.inputBuf, ev.Rune())
+				t.dialogErr = ""
+			}
+		} else {
+			r := ev.Rune()
+			if r >= '0' && r <= '9' && len(t.inputBufPort) < 5 {
+				t.inputBufPort = append(t.inputBufPort, r)
+				t.dialogErr = ""
+			}
 		}
 	}
 	return Selection{}, false

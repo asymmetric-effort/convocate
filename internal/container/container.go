@@ -17,7 +17,14 @@ type Runner struct {
 	sessionDir string
 	userInfo   user.Info
 	paths      config.Paths
+	port       int
 	execFn     ExecFunc
+}
+
+// SetPort configures the TCP port to publish from the container. A value of
+// 0 (the default) publishes no port.
+func (r *Runner) SetPort(port int) {
+	r.port = port
 }
 
 // ExecFunc abstracts command execution for testing.
@@ -119,6 +126,21 @@ func StopContainer(sessionID string) error {
 	return cmd.Run()
 }
 
+// DetachClients detaches all tmux clients attached to the session's tmux
+// server inside the container. The container and tmux session keep running;
+// only the user-facing terminal connections are dropped.
+func DetachClients(sessionID string) error {
+	containerName := config.ContainerName(sessionID)
+	cmd := exec.Command("docker", "exec", containerName,
+		"sudo", "-u", config.ClaudeUser, "--",
+		"tmux", "detach-client", "-s", config.TmuxSessionName,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to detach tmux clients: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // ImageExists checks if the claude-shell Docker image exists.
 func ImageExists(execFn ExecFunc) (bool, error) {
 	if execFn == nil {
@@ -162,6 +184,11 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 
 	// Claude binary (read-only)
 	args = append(args, "-v", fmt.Sprintf("%s:%s:ro", config.ClaudeBinaryPath, config.ClaudeBinaryPath))
+
+	// Published TCP port (if any)
+	if r.port > 0 {
+		args = append(args, "-p", fmt.Sprintf("%d:%d", r.port, r.port))
+	}
 
 	// Environment variables for user setup
 	args = append(args, "-e", fmt.Sprintf("CLAUDE_UID=%d", r.userInfo.UID))

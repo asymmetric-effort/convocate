@@ -21,7 +21,17 @@ type Metadata struct {
 	Name         string    `json:"name"`
 	CreatedAt    time.Time `json:"created_at"`
 	LastAccessed time.Time `json:"last_accessed"`
+	// Port is the TCP port published by the session's container.
+	// A value of 0 means no port is published.
+	Port int `json:"port,omitempty"`
 }
+
+// PortAuto is the sentinel value passed to CreateWithPort to request that an
+// available port above 1000 be selected automatically.
+const PortAuto = -1
+
+// PortAutoMin is the lowest port number considered when auto-assigning.
+const PortAutoMin = 1001
 
 // Manager handles session lifecycle operations.
 type Manager struct {
@@ -38,13 +48,28 @@ func NewManager(basePath, skelPath string) *Manager {
 }
 
 // Create creates a new session with the given name and returns its metadata.
+// No network port is published.
 func (m *Manager) Create(name string) (Metadata, error) {
-	id := uuid.New().String()
-	return m.CreateWithUUID(id, name)
+	return m.CreateWithPort(name, 0)
 }
 
-// CreateWithUUID creates a new session with a specific UUID (used for testing).
-func (m *Manager) CreateWithUUID(id, name string) (Metadata, error) {
+// CreateWithPort creates a new session with the given name and port. A port
+// value of 0 means no port is published; PortAuto (-1) requests auto-selection
+// of the first available port at or above PortAutoMin; any positive value is
+// used verbatim after checking that no other session already uses it.
+func (m *Manager) CreateWithPort(name string, port int) (Metadata, error) {
+	id := uuid.New().String()
+	return m.CreateWithUUID(id, name, port)
+}
+
+// CreateWithUUID creates a new session with a specific UUID and port (used for
+// testing and by CreateWithPort).
+func (m *Manager) CreateWithUUID(id, name string, port int) (Metadata, error) {
+	resolvedPort, err := m.resolvePort(port)
+	if err != nil {
+		return Metadata{}, err
+	}
+
 	sessionDir := filepath.Join(m.basePath, id)
 
 	if err := m.copySkel(sessionDir); err != nil {
@@ -61,6 +86,7 @@ func (m *Manager) CreateWithUUID(id, name string) (Metadata, error) {
 		Name:         name,
 		CreatedAt:    now,
 		LastAccessed: now,
+		Port:         resolvedPort,
 	}
 
 	if err := m.writeMetadata(sessionDir, meta); err != nil {
@@ -69,6 +95,58 @@ func (m *Manager) CreateWithUUID(id, name string) (Metadata, error) {
 	}
 
 	return meta, nil
+}
+
+// resolvePort translates a caller-supplied port value into the port actually
+// written to session metadata.
+func (m *Manager) resolvePort(port int) (int, error) {
+	switch {
+	case port == 0:
+		return 0, nil
+	case port == PortAuto:
+		return m.FindAvailablePort(PortAutoMin)
+	case port > 0 && port <= 65535:
+		if m.isPortUsed(port) {
+			return 0, fmt.Errorf("port %d is already assigned to another session", port)
+		}
+		return port, nil
+	default:
+		return 0, fmt.Errorf("invalid port: %d", port)
+	}
+}
+
+func (m *Manager) isPortUsed(port int) bool {
+	sessions, err := m.List()
+	if err != nil {
+		return false
+	}
+	for _, s := range sessions {
+		if s.Port == port {
+			return true
+		}
+	}
+	return false
+}
+
+// FindAvailablePort returns the lowest port at or above min that is not
+// already assigned to any existing session.
+func (m *Manager) FindAvailablePort(min int) (int, error) {
+	sessions, err := m.List()
+	if err != nil {
+		return 0, fmt.Errorf("failed to list sessions: %w", err)
+	}
+	used := make(map[int]bool, len(sessions))
+	for _, s := range sessions {
+		if s.Port > 0 {
+			used[s.Port] = true
+		}
+	}
+	for p := min; p <= 65535; p++ {
+		if !used[p] {
+			return p, nil
+		}
+	}
+	return 0, fmt.Errorf("no available port at or above %d", min)
 }
 
 // Clone creates a new session whose home directory is a copy of an existing session's.

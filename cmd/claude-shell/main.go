@@ -81,11 +81,12 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 		}
 
 		sel, err := menu.Display(sessions, menu.DisplayOptions{
-			IsLocked:     mgr.IsLocked,
-			IsRunning:    container.IsContainerRunning,
-			Reload:       mgr.List,
-			OverrideLock: mgr.OverrideLock,
-			KillSession:  container.StopContainer,
+			IsLocked:          mgr.IsLocked,
+			IsRunning:         container.IsContainerRunning,
+			Reload:            mgr.List,
+			OverrideLock:      mgr.OverrideLock,
+			KillSession:       container.StopContainer,
+			BackgroundSession: container.DetachClients,
 		})
 		if err != nil {
 			return fmt.Errorf("menu error: %w", err)
@@ -96,7 +97,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			fmt.Println("Goodbye!")
 			return nil
 		case menu.ActionNewSession:
-			if err := handleNewSession(mgr, sel.Name, userInfo, paths, log); err != nil {
+			if err := handleNewSession(mgr, sel.Name, sel.Port, userInfo, paths, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
@@ -124,18 +125,22 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 	}
 }
 
-func handleNewSession(mgr *session.Manager, name string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
-	meta, err := mgr.Create(name)
+func handleNewSession(mgr *session.Manager, name string, port int, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+	meta, err := mgr.CreateWithPort(name, port)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}
 
 	if log != nil {
-		log.Infof("created session %s (%s)", meta.UUID, meta.Name)
+		log.Infof("created session %s (%s) port=%d", meta.UUID, meta.Name, meta.Port)
 	}
-	fmt.Printf("Created session %q (%s)\n", meta.Name, meta.UUID[:8])
+	if meta.Port > 0 {
+		fmt.Printf("Created session %q (%s) on port %d\n", meta.Name, meta.UUID[:8], meta.Port)
+	} else {
+		fmt.Printf("Created session %q (%s)\n", meta.Name, meta.UUID[:8])
+	}
 
-	return launchSession(mgr, meta.UUID, userInfo, paths, log)
+	return launchSession(mgr, meta.UUID, meta.Port, userInfo, paths, log)
 }
 
 func handleCloneSession(mgr *session.Manager, sourceID, name string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
@@ -149,7 +154,7 @@ func handleCloneSession(mgr *session.Manager, sourceID, name string, userInfo us
 	}
 	fmt.Printf("Cloned session %q (%s) from %s\n", meta.Name, meta.UUID[:8], sourceID[:8])
 
-	return launchSession(mgr, meta.UUID, userInfo, paths, log)
+	return launchSession(mgr, meta.UUID, meta.Port, userInfo, paths, log)
 }
 
 func handleResumeSession(mgr *session.Manager, sessionID string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
@@ -163,10 +168,10 @@ func handleResumeSession(mgr *session.Manager, sessionID string, userInfo user.I
 	}
 	fmt.Printf("Resuming session %q (%s)\n", meta.Name, meta.UUID[:8])
 
-	return launchSession(mgr, sessionID, userInfo, paths, log)
+	return launchSession(mgr, sessionID, meta.Port, userInfo, paths, log)
 }
 
-func launchSession(mgr *session.Manager, sessionID string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+func launchSession(mgr *session.Manager, sessionID string, port int, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
 	unlock, err := mgr.Lock(sessionID)
 	if err != nil {
 		return err
@@ -180,6 +185,7 @@ func launchSession(mgr *session.Manager, sessionID string, userInfo user.Info, p
 	}
 
 	runner := container.NewRunner(sessionID, mgr.SessionDir(sessionID), userInfo, paths)
+	runner.SetPort(port)
 
 	// Check if container is already running
 	running, err := runner.IsRunning()

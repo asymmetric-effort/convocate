@@ -22,6 +22,78 @@ func setupTestDir(t *testing.T) (string, string) {
 	return base, skelDir
 }
 
+func TestCreateWithPort_Specific(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	meta, err := mgr.CreateWithPort("svc", 8080)
+	if err != nil {
+		t.Fatalf("CreateWithPort failed: %v", err)
+	}
+	if meta.Port != 8080 {
+		t.Errorf("Port = %d, want 8080", meta.Port)
+	}
+
+	// Second session using the same port should fail
+	_, err = mgr.CreateWithPort("other", 8080)
+	if err == nil {
+		t.Error("expected error when reusing a port assigned to another session")
+	}
+}
+
+func TestCreateWithPort_NoPort(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	meta, err := mgr.CreateWithPort("svc", 0)
+	if err != nil {
+		t.Fatalf("CreateWithPort failed: %v", err)
+	}
+	if meta.Port != 0 {
+		t.Errorf("Port = %d, want 0", meta.Port)
+	}
+}
+
+func TestCreateWithPort_Auto(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	meta, err := mgr.CreateWithPort("svc", PortAuto)
+	if err != nil {
+		t.Fatalf("CreateWithPort(PortAuto) failed: %v", err)
+	}
+	if meta.Port < PortAutoMin {
+		t.Errorf("Port = %d, want >= %d", meta.Port, PortAutoMin)
+	}
+
+	// Next auto pick should land on the next free port
+	meta2, err := mgr.CreateWithPort("svc2", PortAuto)
+	if err != nil {
+		t.Fatalf("second CreateWithPort(PortAuto) failed: %v", err)
+	}
+	if meta2.Port == meta.Port {
+		t.Errorf("two auto-assigned ports collided: %d", meta.Port)
+	}
+}
+
+func TestFindAvailablePort_SkipsUsed(t *testing.T) {
+	base, skelDir := setupTestDir(t)
+	mgr := NewManager(base, skelDir)
+
+	_, err := mgr.CreateWithPort("a", 1001)
+	if err != nil {
+		t.Fatalf("CreateWithPort failed: %v", err)
+	}
+
+	p, err := mgr.FindAvailablePort(1001)
+	if err != nil {
+		t.Fatalf("FindAvailablePort failed: %v", err)
+	}
+	if p != 1002 {
+		t.Errorf("FindAvailablePort = %d, want 1002 (1001 is taken)", p)
+	}
+}
+
 func TestNewManager(t *testing.T) {
 	mgr := NewManager("/tmp/test", "/tmp/skel")
 	if mgr == nil {
@@ -81,7 +153,7 @@ func TestCreateWithUUID(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "12345678-1234-1234-1234-123456789abc"
-	meta, err := mgr.CreateWithUUID(testUUID, "named-session")
+	meta, err := mgr.CreateWithUUID(testUUID, "named-session", 0)
 	if err != nil {
 		t.Fatalf("CreateWithUUID failed: %v", err)
 	}
@@ -122,7 +194,7 @@ func TestList_MultipleSessions(t *testing.T) {
 	base, skelDir := setupTestDir(t)
 	mgr := NewManager(base, skelDir)
 
-	_, err := mgr.CreateWithUUID("aaaaaaaa-1111-1111-1111-111111111111", "first")
+	_, err := mgr.CreateWithUUID("aaaaaaaa-1111-1111-1111-111111111111", "first", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +202,7 @@ func TestList_MultipleSessions(t *testing.T) {
 	// Small delay to ensure different timestamps
 	time.Sleep(10 * time.Millisecond)
 
-	_, err = mgr.CreateWithUUID("bbbbbbbb-2222-2222-2222-222222222222", "second")
+	_, err = mgr.CreateWithUUID("bbbbbbbb-2222-2222-2222-222222222222", "second", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +230,7 @@ func TestList_IgnoresNonUUIDDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := mgr.CreateWithUUID("cccccccc-3333-3333-3333-333333333333", "valid")
+	_, err := mgr.CreateWithUUID("cccccccc-3333-3333-3333-333333333333", "valid", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +249,7 @@ func TestGet_Success(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "dddddddd-4444-4444-4444-444444444444"
-	_, err := mgr.CreateWithUUID(testUUID, "get-test")
+	_, err := mgr.CreateWithUUID(testUUID, "get-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +278,7 @@ func TestDelete_Success(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "eeeeeeee-5555-5555-5555-555555555555"
-	_, err := mgr.CreateWithUUID(testUUID, "delete-test")
+	_, err := mgr.CreateWithUUID(testUUID, "delete-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +308,7 @@ func TestDelete_Locked(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "ffffffff-6666-6666-6666-666666666666"
-	_, err := mgr.CreateWithUUID(testUUID, "locked-test")
+	_, err := mgr.CreateWithUUID(testUUID, "locked-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +330,7 @@ func TestTouch(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	_, err := mgr.CreateWithUUID(testUUID, "touch-test")
+	_, err := mgr.CreateWithUUID(testUUID, "touch-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +356,7 @@ func TestLock_Success(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "22222222-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-	_, err := mgr.CreateWithUUID(testUUID, "lock-test")
+	_, err := mgr.CreateWithUUID(testUUID, "lock-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +386,7 @@ func TestLock_AlreadyLocked(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "33333333-cccc-cccc-cccc-cccccccccccc"
-	_, err := mgr.CreateWithUUID(testUUID, "double-lock-test")
+	_, err := mgr.CreateWithUUID(testUUID, "double-lock-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +408,7 @@ func TestIsLocked_NotLocked(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "44444444-dddd-dddd-dddd-dddddddddddd"
-	_, err := mgr.CreateWithUUID(testUUID, "islocked-test")
+	_, err := mgr.CreateWithUUID(testUUID, "islocked-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +423,7 @@ func TestIsLocked_Locked(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "55555555-eeee-eeee-eeee-eeeeeeeeeeee"
-	_, err := mgr.CreateWithUUID(testUUID, "islocked-locked-test")
+	_, err := mgr.CreateWithUUID(testUUID, "islocked-locked-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +444,7 @@ func TestIsLocked_StaleLock(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "66666666-ffff-ffff-ffff-ffffffffffff"
-	_, err := mgr.CreateWithUUID(testUUID, "stale-lock-test")
+	_, err := mgr.CreateWithUUID(testUUID, "stale-lock-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -655,7 +727,7 @@ func TestIsLocked_InvalidLockContent(t *testing.T) {
 	mgr := NewManager(base, skelDir)
 
 	testUUID := "77777777-aaaa-bbbb-cccc-dddddddddddd"
-	_, err := mgr.CreateWithUUID(testUUID, "bad-lock-test")
+	_, err := mgr.CreateWithUUID(testUUID, "bad-lock-test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

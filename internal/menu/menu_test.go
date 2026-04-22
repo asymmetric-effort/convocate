@@ -309,6 +309,54 @@ func TestConfirmDelete_NoInput(t *testing.T) {
 	}
 }
 
+// --- parsePortInput tests ---
+
+func TestParsePortInput_Blank(t *testing.T) {
+	for _, s := range []string{"", "   "} {
+		got, err := parsePortInput(s)
+		if err != nil {
+			t.Fatalf("parsePortInput(%q) failed: %v", s, err)
+		}
+		if got != 0 {
+			t.Errorf("parsePortInput(%q) = %d, want 0", s, got)
+		}
+	}
+}
+
+func TestParsePortInput_Auto(t *testing.T) {
+	got, err := parsePortInput("0")
+	if err != nil {
+		t.Fatalf("parsePortInput(0) failed: %v", err)
+	}
+	if got != session.PortAuto {
+		t.Errorf("parsePortInput(0) = %d, want PortAuto (%d)", got, session.PortAuto)
+	}
+}
+
+func TestParsePortInput_Specific(t *testing.T) {
+	got, err := parsePortInput("8080")
+	if err != nil {
+		t.Fatalf("parsePortInput(8080) failed: %v", err)
+	}
+	if got != 8080 {
+		t.Errorf("parsePortInput(8080) = %d, want 8080", got)
+	}
+}
+
+func TestParsePortInput_TooLarge(t *testing.T) {
+	_, err := parsePortInput("70000")
+	if err == nil {
+		t.Error("expected error for port > 65535")
+	}
+}
+
+func TestParsePortInput_NonNumeric(t *testing.T) {
+	_, err := parsePortInput("abc")
+	if err == nil {
+		t.Error("expected error for non-numeric input")
+	}
+}
+
 // --- truncate tests ---
 
 func TestTruncate(t *testing.T) {

@@ -366,6 +366,27 @@ func TestAttach_Failure(t *testing.T) {
 	}
 }
 
+func TestBuildRunArgs_PortPublished(t *testing.T) {
+	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", "/tmp/session", testUserInfo(), testPaths())
+	r.SetPort(8080)
+	args := r.buildRunArgs("test-container")
+	argStr := strings.Join(args, " ")
+
+	if !strings.Contains(argStr, "-p 8080:8080") {
+		t.Errorf("expected '-p 8080:8080' in args, got: %s", argStr)
+	}
+}
+
+func TestBuildRunArgs_NoPortByDefault(t *testing.T) {
+	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", "/tmp/session", testUserInfo(), testPaths())
+	args := r.buildRunArgs("test-container")
+	argStr := strings.Join(args, " ")
+
+	if strings.Contains(argStr, " -p ") {
+		t.Errorf("expected no '-p' flag when port not set, got: %s", argStr)
+	}
+}
+
 func TestBuildRunArgs_NoInteractiveTty(t *testing.T) {
 	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", "/tmp/session", testUserInfo(), testPaths())
 	args := r.buildRunArgs("test-container")

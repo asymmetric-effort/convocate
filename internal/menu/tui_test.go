@@ -548,11 +548,11 @@ func TestTUI_MenuBarStyle(t *testing.T) {
 
 	_, _, style, _ := screen.GetContent(1, testScreenHeight-1)
 	fg, bg, _ := style.Decompose()
-	if fg != tcell.ColorWhite {
-		t.Errorf("menu bar fg = %v, want White", fg)
+	if fg != tcell.ColorYellow {
+		t.Errorf("menu bar fg = %v, want Yellow", fg)
 	}
-	if bg != tcell.ColorBlack {
-		t.Errorf("menu bar bg = %v, want Black", bg)
+	if bg != tcell.ColorBlue {
+		t.Errorf("menu bar bg = %v, want Blue", bg)
 	}
 }
 
@@ -1001,6 +1001,428 @@ func TestTUI_ClockTicker(t *testing.T) {
 	}
 	if sel.Action != ActionQuit {
 		t.Errorf("Action = %q, want %q", sel.Action, ActionQuit)
+	}
+}
+
+// --- Create dialog: Name + Port field ---
+
+func TestTUI_CreateDialog_TabSwitchesFields(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 0}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
+	if ui.activeField != 1 {
+		t.Errorf("Tab should move to Port field, activeField=%d", ui.activeField)
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
+	if ui.activeField != 0 {
+		t.Errorf("Tab should wrap back to Name field, activeField=%d", ui.activeField)
+	}
+}
+
+func TestTUI_CreateDialog_ShiftTabMovesBackward(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 1}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone))
+	if ui.activeField != 0 {
+		t.Errorf("Shift+Tab should move to Name field, activeField=%d", ui.activeField)
+	}
+}
+
+func TestTUI_CreateDialog_PortFieldDigitsOnly(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 1}
+	for _, ch := range "80ab80" {
+		_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, ch, tcell.ModNone))
+	}
+	got := string(ui.inputBufPort)
+	if got != "8080" {
+		t.Errorf("port buffer = %q, want %q (non-digits should be ignored)", got, "8080")
+	}
+}
+
+func TestTUI_CreateDialog_EnterReturnsPort(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'n', tcell.ModNone)
+		time.Sleep(10 * time.Millisecond)
+		for _, ch := range "my-session" {
+			screen.InjectKey(tcell.KeyRune, ch, tcell.ModNone)
+			time.Sleep(2 * time.Millisecond)
+		}
+		time.Sleep(5 * time.Millisecond)
+		screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
+		time.Sleep(5 * time.Millisecond)
+		for _, ch := range "8080" {
+			screen.InjectKey(tcell.KeyRune, ch, tcell.ModNone)
+			time.Sleep(2 * time.Millisecond)
+		}
+		time.Sleep(5 * time.Millisecond)
+		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
+	}()
+
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{})
+	if err != nil {
+		t.Fatalf("DisplayWithScreen failed: %v", err)
+	}
+	if sel.Action != ActionNewSession {
+		t.Errorf("Action = %q, want %q", sel.Action, ActionNewSession)
+	}
+	if sel.Name != "my-session" {
+		t.Errorf("Name = %q, want %q", sel.Name, "my-session")
+	}
+	if sel.Port != 8080 {
+		t.Errorf("Port = %d, want 8080", sel.Port)
+	}
+}
+
+func TestTUI_CreateDialog_InvalidPortShowsError(t *testing.T) {
+	ui := &tui{mode: modeCreateDialog, activeField: 1}
+	// Populate name so name validation passes
+	ui.inputBuf = []rune("test")
+	ui.inputBufPort = []rune("70000")
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if done {
+		t.Error("Enter with invalid port should not finish")
+	}
+	if ui.dialogErr == "" {
+		t.Error("expected dialog error for out-of-range port")
+	}
+	if ui.activeField != 1 {
+		t.Errorf("expected focus to return to Port field, activeField=%d", ui.activeField)
+	}
+}
+
+func TestTUI_SessionTable_PortColumn(t *testing.T) {
+	sessions := []session.Metadata{
+		{
+			UUID:         "aaaaaaaa-1111-1111-1111-111111111111",
+			Name:         "with-port",
+			CreatedAt:    time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC),
+			LastAccessed: time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC),
+			Port:         8080,
+		},
+		{
+			UUID:         "bbbbbbbb-2222-2222-2222-222222222222",
+			Name:         "no-port",
+			CreatedAt:    time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
+			LastAccessed: time.Date(2026, 4, 9, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	_, _ = DisplayWithScreen(sessions, screen, DisplayOptions{})
+
+	// Header row must include "Port"
+	header := getScreenText(screen, 2, 120)
+	if !strings.Contains(header, "Port") {
+		t.Errorf("header missing 'Port' column, got: %q", header)
+	}
+
+	// Row 0: 8080 visible
+	row0 := getScreenText(screen, 4, 120)
+	if !strings.Contains(row0, "8080") {
+		t.Errorf("row 0 missing '8080', got: %q", row0)
+	}
+
+	// Row 1: port dash placeholder
+	row1 := getScreenText(screen, 5, 120)
+	if !strings.Contains(row1, " -     ") {
+		t.Errorf("row 1 expected '-' placeholder in port column, got: %q", row1)
+	}
+}
+
+// --- Title bar load averages ---
+
+func TestTUI_TitleBarLoadAverages(t *testing.T) {
+	orig := loadAverageReader
+	defer func() { loadAverageReader = orig }()
+	loadAverageReader = func() (string, bool) { return "0.10 0.20 0.30", true }
+
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
+
+	row := getScreenText(screen, 0, testScreenWidth)
+	if !strings.Contains(row, "0.10 0.20 0.30") {
+		t.Errorf("title bar missing load averages, got: %q", row)
+	}
+	clock := time.Now().Format("2006-01-02 15:04:05")
+	// Two spaces between load averages and the timestamp.
+	idxLoad := strings.Index(row, "0.10 0.20 0.30")
+	idxClock := strings.Index(row, clock[:10]) // match at least the date
+	if idxLoad < 0 || idxClock < 0 {
+		t.Fatalf("load/clock not found in row: %q", row)
+	}
+	gap := row[idxLoad+len("0.10 0.20 0.30") : idxClock]
+	if gap != "  " {
+		t.Errorf("expected two-space gap between load and clock, got: %q", gap)
+	}
+}
+
+func TestTUI_TitleBarLoadAverages_Unavailable(t *testing.T) {
+	orig := loadAverageReader
+	defer func() { loadAverageReader = orig }()
+	loadAverageReader = func() (string, bool) { return "", false }
+
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
+
+	row := getScreenText(screen, 0, testScreenWidth)
+	if !strings.Contains(row, "claude-shell") {
+		t.Errorf("title bar missing app name, got: %q", row)
+	}
+}
+
+// --- Status indicator + (B)ackground tests ---
+
+// newWideTestScreen creates a simulation screen wide enough to include the
+// trailing status column, which gets clipped at the default test width.
+func newWideTestScreen(t *testing.T) tcell.SimulationScreen {
+	t.Helper()
+	screen := tcell.NewSimulationScreen("")
+	if err := screen.Init(); err != nil {
+		t.Fatalf("failed to init simulation screen: %v", err)
+	}
+	screen.SetSize(120, testScreenHeight)
+	return screen
+}
+
+func TestTUI_StatusIndicator_Connected(t *testing.T) {
+	sessions := testSessions()
+	connected := sessions[0].UUID
+	opts := DisplayOptions{
+		IsRunning: func(id string) bool { return id == connected },
+		IsLocked:  func(id string) bool { return id == connected },
+	}
+
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	_, _ = DisplayWithScreen(sessions, screen, opts)
+
+	row := getScreenText(screen, 4, 120)
+	trimmed := strings.TrimRight(row, " ")
+	if !strings.HasSuffix(trimmed, " C") {
+		t.Errorf("expected 'C' status at end of row, got: %q", row)
+	}
+}
+
+func TestTUI_StatusIndicator_RunningNotLocked(t *testing.T) {
+	sessions := testSessions()
+	target := sessions[0].UUID
+	opts := DisplayOptions{
+		IsRunning: func(id string) bool { return id == target },
+		IsLocked:  func(string) bool { return false },
+	}
+
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	_, _ = DisplayWithScreen(sessions, screen, opts)
+
+	row := getScreenText(screen, 4, 120)
+	trimmed := strings.TrimRight(row, " ")
+	if !strings.HasSuffix(trimmed, " R") {
+		t.Errorf("expected 'R' status at end of row, got: %q", row)
+	}
+}
+
+func TestTUI_BackgroundKey_OpensDialog(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'b', tcell.ModNone))
+	if done {
+		t.Error("'b' should not finish (opens dialog)")
+	}
+	if ui.mode != modeBackgroundConfirm {
+		t.Errorf("mode = %d, want modeBackgroundConfirm", ui.mode)
+	}
+}
+
+func TestTUI_BackgroundDialog_ConfirmConnected(t *testing.T) {
+	sessions := testSessions()
+	target := sessions[0].UUID
+	var backgroundCalledWith string
+	ui := &tui{
+		sessions:      sessions,
+		cursor:        0,
+		mode:          modeBackgroundConfirm,
+		isRunningFunc: func(id string) bool { return id == target },
+		isLockedFunc:  func(id string) bool { return id == target },
+		backgroundFunc: func(id string) error {
+			backgroundCalledWith = id
+			return nil
+		},
+	}
+
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if done {
+		t.Error("confirm should not finish the menu loop")
+	}
+	if backgroundCalledWith != target {
+		t.Errorf("backgroundFunc called with %q, want %q", backgroundCalledWith, target)
+	}
+	if ui.mode != modeBackgroundInitiated {
+		t.Errorf("mode = %d, want modeBackgroundInitiated", ui.mode)
+	}
+}
+
+func TestTUI_BackgroundDialog_NotConnected(t *testing.T) {
+	sessions := testSessions()
+	var backgroundCalled bool
+	ui := &tui{
+		sessions:      sessions,
+		cursor:        0,
+		mode:          modeBackgroundConfirm,
+		isRunningFunc: func(string) bool { return false },
+		isLockedFunc:  func(string) bool { return false },
+		backgroundFunc: func(string) error {
+			backgroundCalled = true
+			return nil
+		},
+	}
+
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'y', tcell.ModNone))
+	if done {
+		t.Error("confirm should not finish the menu loop")
+	}
+	if backgroundCalled {
+		t.Error("backgroundFunc should not be called for non-connected session")
+	}
+	if ui.mode != modeNotConnectedDialog {
+		t.Errorf("mode = %d, want modeNotConnectedDialog", ui.mode)
+	}
+}
+
+func TestTUI_BackgroundDialog_Decline(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeBackgroundConfirm}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'n', tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_SettingsKey_OpensDialog(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	if done {
+		t.Error("'s' should not finish (opens dialog)")
+	}
+	if ui.mode != modeSettingsDialog {
+		t.Errorf("mode = %d, want modeSettingsDialog", ui.mode)
+	}
+}
+
+func TestTUI_SettingsKey_UpperS(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'S', tcell.ModNone))
+	if done {
+		t.Error("'S' should not finish (opens dialog)")
+	}
+	if ui.mode != modeSettingsDialog {
+		t.Errorf("mode = %d, want modeSettingsDialog", ui.mode)
+	}
+}
+
+func TestTUI_SettingsKey_NoSessionsOK(t *testing.T) {
+	ui := &tui{sessions: nil, cursor: 0}
+	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	if done {
+		t.Error("'s' with no sessions should not finish")
+	}
+	if ui.mode != modeSettingsDialog {
+		t.Errorf("mode = %d, want modeSettingsDialog (settings should open regardless of sessions)", ui.mode)
+	}
+}
+
+func TestTUI_SettingsDialog_EscClosesDialog(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeSettingsDialog}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_SettingsDialog_EnterClosesDialog(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeSettingsDialog}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("mode = %d, want modeMenu", ui.mode)
+	}
+}
+
+func TestTUI_SettingsDialog_TabIsNoop(t *testing.T) {
+	ui := &tui{sessions: testSessions(), cursor: 0, mode: modeSettingsDialog}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone))
+	if ui.mode != modeSettingsDialog {
+		t.Errorf("mode = %d, want modeSettingsDialog (Tab should not exit dialog)", ui.mode)
+	}
+	_, _ = ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone))
+	if ui.mode != modeSettingsDialog {
+		t.Errorf("mode = %d, want modeSettingsDialog (Shift+Tab should not exit dialog)", ui.mode)
+	}
+}
+
+func TestTUI_MenuBarIncludesSettings(t *testing.T) {
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
+
+	row := getScreenText(screen, testScreenHeight-1, 120)
+	if !strings.Contains(row, "(S)ettings") {
+		t.Errorf("menu bar missing '(S)ettings', got: %q", row)
+	}
+}
+
+func TestTUI_MenuBarIncludesBackground(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{})
+
+	row := getScreenText(screen, testScreenHeight-1, testScreenWidth)
+	if !strings.Contains(row, "(B)ackground") {
+		t.Errorf("menu bar missing '(B)ackground', got: %q", row)
 	}
 }
 
