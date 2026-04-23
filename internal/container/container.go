@@ -19,6 +19,7 @@ type Runner struct {
 	paths      config.Paths
 	port       int
 	protocol   string
+	dnsServer  string
 	execFn     ExecFunc
 }
 
@@ -32,6 +33,18 @@ func (r *Runner) SetPort(port int) {
 // string is treated as "tcp".
 func (r *Runner) SetProtocol(proto string) {
 	r.protocol = proto
+}
+
+// SetDNSServer configures the DNS server the container should use for name
+// resolution. When set to a non-empty IP, docker run is invoked with
+// --dns <ip>, bypassing the default-bridge's auto-generated resolver config.
+// This makes every container query the host's local dnsmasq (so session
+// DNS names, cached lookups, and authoritative zones all resolve the same
+// way a process on the host would).
+//
+// Empty (the default) leaves docker's usual DNS behavior in place.
+func (r *Runner) SetDNSServer(ip string) {
+	r.dnsServer = ip
 }
 
 // ExecFunc abstracts command execution for testing.
@@ -213,6 +226,13 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 			proto = "tcp"
 		}
 		args = append(args, "-p", fmt.Sprintf("%d:%d/%s", r.port, r.port, proto))
+	}
+
+	// Point DNS at the host's local dnsmasq (when a resolver is configured).
+	// Containers on the default bridge otherwise fall back to the daemon's
+	// default resolvers, skipping the session DNS names we register.
+	if r.dnsServer != "" {
+		args = append(args, "--dns", r.dnsServer)
 	}
 
 	// Environment variables for user setup

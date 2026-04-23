@@ -240,6 +240,7 @@ func restartSessionDetached(mgr *session.Manager, sessionID string, userInfo use
 	runner := newRunner(sessionID, mgr.SessionDir(sessionID), userInfo, paths)
 	runner.SetPort(meta.Port)
 	runner.SetProtocol(meta.EffectiveProtocol())
+	runner.SetDNSServer(dns.DetectHostIP())
 
 	running, err := runner.IsRunning()
 	if err != nil {
@@ -289,6 +290,7 @@ func launchSession(mgr *session.Manager, sessionID string, port int, protocol st
 	runner := container.NewRunner(sessionID, mgr.SessionDir(sessionID), userInfo, paths)
 	runner.SetPort(port)
 	runner.SetProtocol(protocol)
+	runner.SetDNSServer(dns.DetectHostIP())
 
 	// Check if container is already running
 	running, err := runner.IsRunning()

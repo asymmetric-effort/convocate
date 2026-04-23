@@ -412,6 +412,25 @@ func TestBuildRunArgs_NoPortByDefault(t *testing.T) {
 	}
 }
 
+func TestBuildRunArgs_DNSServerFlag(t *testing.T) {
+	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", "/tmp/session", testUserInfo(), testPaths())
+	r.SetDNSServer("192.168.3.90")
+	args := r.buildRunArgs("test-container")
+	argStr := strings.Join(args, " ")
+	if !strings.Contains(argStr, "--dns 192.168.3.90") {
+		t.Errorf("expected '--dns 192.168.3.90' in args, got: %s", argStr)
+	}
+}
+
+func TestBuildRunArgs_NoDNSFlagByDefault(t *testing.T) {
+	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", "/tmp/session", testUserInfo(), testPaths())
+	args := r.buildRunArgs("test-container")
+	argStr := strings.Join(args, " ")
+	if strings.Contains(argStr, "--dns") {
+		t.Errorf("expected no --dns flag without SetDNSServer, got: %s", argStr)
+	}
+}
+
 func TestBuildRunArgs_NoInteractiveTty(t *testing.T) {
 	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", "/tmp/session", testUserInfo(), testPaths())
 	args := r.buildRunArgs("test-container")

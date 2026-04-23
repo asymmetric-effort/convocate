@@ -1,11 +1,16 @@
 package agentserver
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 )
+
+// readerFromBytes wraps a byte slice as an io.Reader. Used by decodeStrict
+// so json.NewDecoder can disable unknown-field permissiveness.
+func readerFromBytes(b []byte) io.Reader { return bytes.NewReader(b) }
 
 // Request is the shape of a JSON-RPC request over claude-agent-rpc.
 type Request struct {
