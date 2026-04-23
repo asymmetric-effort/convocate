@@ -31,6 +31,8 @@ func run(args []string) error {
 		switch args[1] {
 		case "install":
 			return install.New().Run()
+		case "status-serve":
+			return cmdStatusServe(args[2:])
 		case "version":
 			fmt.Printf("%s version %s\n", config.AppName, Version)
 			return nil

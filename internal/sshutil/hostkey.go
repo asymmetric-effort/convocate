@@ -1,11 +1,8 @@
-// Package agentserver implements the claude-agent SSH server, subsystem
-// dispatcher, and RPC handlers.
-//
-// Security posture: the server accepts **only** the "claude-agent-rpc" and
-// "claude-agent-attach" subsystems (the latter lands in a later commit).
-// Shell, exec, direct-tcpip, and any other SSH channel/request types are
-// rejected. There is no arbitrary command execution path.
-package agentserver
+// Package sshutil holds SSH server primitives shared across claude-agent
+// and claude-shell: ed25519 host-key management and an authorized_keys
+// allowlist that can be reloaded at runtime. Server plumbing specific to
+// each binary lives in its own package (agentserver, shellserver).
+package sshutil
 
 import (
 	"crypto/ed25519"

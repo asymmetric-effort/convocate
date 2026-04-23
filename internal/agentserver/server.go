@@ -1,3 +1,9 @@
+// Package agentserver implements the claude-agent SSH server, subsystem
+// dispatcher, and RPC handlers.
+//
+// Security posture: the server accepts only the claude-agent-rpc and
+// claude-agent-attach subsystems. Shell, exec, and other SSH channel /
+// request types are rejected. There is no arbitrary command execution path.
 package agentserver
 
 import (
@@ -9,6 +15,8 @@ import (
 	"net"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/asymmetric-effort/claude-shell/internal/sshutil"
 )
 
 // RPCSubsystem is the only subsystem the server accepts on a session
@@ -44,7 +52,7 @@ type Config struct {
 type Server struct {
 	cfg    Config
 	signer ssh.Signer
-	auth   *AuthorizedKeys
+	auth   *sshutil.AuthorizedKeys
 }
 
 // New builds a Server from Config — loads host key, loads authorized keys.
@@ -59,11 +67,11 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.Default()
 	}
-	signer, err := LoadOrCreateHostKey(cfg.HostKeyPath)
+	signer, err := sshutil.LoadOrCreateHostKey(cfg.HostKeyPath)
 	if err != nil {
 		return nil, err
 	}
-	auth, err := NewAuthorizedKeys(cfg.AuthorizedKeysPath)
+	auth, err := sshutil.NewAuthorizedKeys(cfg.AuthorizedKeysPath)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +115,7 @@ func (s *Server) handleConn(ctx context.Context, nconn net.Conn) {
 			if s.auth.IsAuthorized(key) {
 				return &ssh.Permissions{
 					Extensions: map[string]string{
-						"pubkey-fp": keyFingerprint(key),
+						"pubkey-fp": sshutil.KeyFingerprint(key),
 					},
 				}, nil
 			}

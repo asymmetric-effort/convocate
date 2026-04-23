@@ -1,4 +1,4 @@
-package agentserver
+package sshutil
 
 import (
 	"bufio"
@@ -61,7 +61,7 @@ func (a *AuthorizedKeys) swap(keys map[string]ssh.PublicKey) {
 
 // IsAuthorized reports whether key is in the current allowlist.
 func (a *AuthorizedKeys) IsAuthorized(key ssh.PublicKey) bool {
-	fp := keyFingerprint(key)
+	fp := KeyFingerprint(key)
 	a.mu.RLock()
 	_, ok := a.keys[fp]
 	a.mu.RUnlock()
@@ -75,7 +75,7 @@ func (a *AuthorizedKeys) Len() int {
 	return len(a.keys)
 }
 
-func keyFingerprint(key ssh.PublicKey) string {
+func KeyFingerprint(key ssh.PublicKey) string {
 	return ssh.FingerprintSHA256(key)
 }
 
@@ -94,7 +94,7 @@ func parseAuthorized(r io.Reader) (map[string]ssh.PublicKey, error) {
 			// bad entry shouldn't lock out every legitimate shell.
 			continue
 		}
-		keys[keyFingerprint(key)] = key
+		keys[KeyFingerprint(key)] = key
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scan authorized keys: %w", err)
