@@ -1,11 +1,12 @@
-BINARY_NAME := claude-shell
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_DIR := build
 GO := go
 GOFLAGS := -trimpath
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 
-.PHONY: all generate build install clean lint lint-go lint-yaml lint-json test test-unit test-integration test-e2e release release/major release/minor
+BINARIES := claude-shell claude-host claude-agent
+
+.PHONY: all generate build build-claude-shell build-claude-host build-claude-agent install clean lint lint-go lint-yaml lint-json test test-unit test-integration test-e2e release release/major release/minor
 
 all: lint test build
 
@@ -14,15 +15,31 @@ generate:
 	$(GO) generate ./internal/assets/
 	@echo "Assets generated."
 
-build: generate
-	@echo "Building $(BINARY_NAME) $(VERSION)..."
+build: build-claude-shell build-claude-host build-claude-agent
+	@echo "Build complete: $(BINARIES:%=$(BUILD_DIR)/%)"
+
+build-claude-shell: generate
+	@echo "Building claude-shell $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/claude-shell/
-	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/claude-shell ./cmd/claude-shell/
+
+build-claude-host:
+	@echo "Building claude-host $(VERSION)..."
+	@mkdir -p $(BUILD_DIR)
+	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/claude-host ./cmd/claude-host/
+
+build-claude-agent:
+	@echo "Building claude-agent $(VERSION)..."
+	@mkdir -p $(BUILD_DIR)
+	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/claude-agent ./cmd/claude-agent/
 
 install: build
-	@echo "Installing $(BINARY_NAME)..."
-	sudo ./$(BUILD_DIR)/$(BINARY_NAME) install
+	@echo "Installing claude-shell, claude-host, claude-agent to /usr/local/bin..."
+	sudo install -m 0755 $(BUILD_DIR)/claude-shell  /usr/local/bin/claude-shell
+	sudo install -m 0755 $(BUILD_DIR)/claude-host   /usr/local/bin/claude-host
+	sudo install -m 0755 $(BUILD_DIR)/claude-agent  /usr/local/bin/claude-agent
+	@echo "Running 'claude-shell install' to finish setup..."
+	sudo /usr/local/bin/claude-shell install
 
 clean:
 	@echo "Cleaning..."
