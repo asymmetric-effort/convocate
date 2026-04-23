@@ -32,6 +32,10 @@ type Config struct {
 	// Dispatcher routes op names to handlers. Must be non-nil.
 	Dispatcher *Dispatcher
 
+	// AttachTarget resolves claude-agent-attach subsystem requests to a
+	// container PTY. When nil, the attach subsystem is refused.
+	AttachTarget AttachTarget
+
 	// Logger receives diagnostic lines. Nil = log to the standard logger.
 	Logger *log.Logger
 }
@@ -143,26 +147,45 @@ func (s *Server) handleConn(ctx context.Context, nconn net.Conn) {
 // recognized subsystem name is accepted. "shell", "exec", "pty-req", "env",
 // and anything else are all refused.
 func (s *Server) handleSession(ctx context.Context, ch ssh.Channel, reqs <-chan *ssh.Request) {
-	defer ch.Close()
+	// Close is best-effort — individual subsystem handlers may take over and
+	// close the channel themselves.
 	for req := range reqs {
 		switch req.Type {
 		case "subsystem":
 			name := parseStringPayload(req.Payload)
-			if name != RPCSubsystem {
+			switch name {
+			case RPCSubsystem:
+				_ = req.Reply(true, nil)
+				s.cfg.Dispatcher.Handle(ch, ch)
+				_ = ch.CloseWrite()
+				_ = ch.Close()
+				return
+			case AttachSubsystem:
+				if s.cfg.AttachTarget == nil {
+					_ = req.Reply(false, nil)
+					s.cfg.Logger.Printf("claude-agent: attach subsystem requested but no AttachTarget configured")
+					_ = ch.Close()
+					return
+				}
+				_ = req.Reply(true, nil)
+				// Hand over the request stream so attach can forward
+				// window-change events to the PTY.
+				HandleAttach(ctx, ch, reqs, s.cfg.AttachTarget)
+				return
+			default:
 				_ = req.Reply(false, nil)
 				s.cfg.Logger.Printf("claude-agent: rejected subsystem %q", name)
+				_ = ch.Close()
 				return
 			}
-			_ = req.Reply(true, nil)
-			s.cfg.Dispatcher.Handle(ch, ch)
-			_ = ch.CloseWrite()
-			return
 		default:
 			// Shell, exec, pty-req, env, window-change, signal, etc — none of
-			// these are allowed on the agent API.
+			// these are allowed on the agent API outside of the attach
+			// subsystem (where we consume reqs ourselves).
 			_ = req.Reply(false, nil)
 		}
 	}
+	_ = ch.Close()
 }
 
 // parseStringPayload decodes a single length-prefixed string from an SSH

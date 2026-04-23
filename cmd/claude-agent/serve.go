@@ -35,11 +35,22 @@ func cmdServe(_ []string) error {
 	agentserver.RegisterCoreOps(d, agentID, Version)
 	agentserver.RegisterCRUDOps(d, orch)
 
+	// AttachTarget gates attach on "the agent actually owns this session" —
+	// prevents an authenticated client from probing for arbitrary container
+	// names on the host.
+	attachTarget := &agentserver.DockerAttachTarget{
+		ExistsFn: func(id string) bool {
+			_, err := mgr.Get(id)
+			return err == nil
+		},
+	}
+
 	srv, err := agentserver.New(agentserver.Config{
 		HostKeyPath:        defaultHostKeyPath,
 		AuthorizedKeysPath: defaultAuthKeysPath,
 		Listen:             defaultListen,
 		Dispatcher:         d,
+		AttachTarget:       attachTarget,
 	})
 	if err != nil {
 		return fmt.Errorf("init server: %w", err)

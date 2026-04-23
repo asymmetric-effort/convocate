@@ -5,6 +5,7 @@ go 1.26.2
 require github.com/google/uuid v1.6.0
 
 require (
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/gdamore/tcell/v2 v2.13.8 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
