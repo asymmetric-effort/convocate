@@ -8,9 +8,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/asymmetric-effort/claude-shell/internal/hostinstall"
 )
 
 const appName = "claude-host"
@@ -89,7 +94,17 @@ func cmdInstall(args []string) error {
 	if err := requireLocalRoot(t); err != nil {
 		return err
 	}
-	return fmt.Errorf("claude-host install: not yet implemented (target=%s)", describeTarget(t))
+
+	ctx, cancel := signalContext()
+	defer cancel()
+
+	r, sshCfg, err := runnerFor(t)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	return hostinstall.Install(ctx, r, sshCfg, os.Stderr)
 }
 
 func cmdInitShell(args []string) error {
@@ -130,6 +145,39 @@ func describeTarget(t targetFlags) string {
 		return "local"
 	}
 	return fmt.Sprintf("%s@%s", t.user, t.host)
+}
+
+// runnerFor returns a Runner connected to t. For local targets it returns a
+// LocalRunner and a nil SSHConfig; for remote targets it dials SSH and
+// returns both the runner and the SSHConfig so callers can reconnect after
+// a reboot. The caller is responsible for calling Close() on the runner.
+func runnerFor(t targetFlags) (hostinstall.Runner, *hostinstall.SSHConfig, error) {
+	if t.host == "" {
+		return hostinstall.NewLocalRunner(), nil, nil
+	}
+	cfg := hostinstall.SSHConfig{
+		Host: t.host,
+		User: t.user,
+	}
+	r, err := hostinstall.NewSSHRunner(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("connect to %s: %w", describeTarget(t), err)
+	}
+	return r, &cfg, nil
+}
+
+// signalContext returns a context that is canceled on SIGINT or SIGTERM so a
+// Ctrl-C during a long-running step aborts cleanly rather than leaving the
+// remote mid-operation.
+func signalContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-ch
+		cancel()
+	}()
+	return ctx, cancel
 }
 
 func printUsage() {
