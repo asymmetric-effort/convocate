@@ -23,8 +23,9 @@ func run(args []string) error {
 	if len(args) > 1 {
 		switch args[1] {
 		case "install":
-			fmt.Printf("%s: install placeholder — not yet implemented.\n", appName)
-			return nil
+			return cmdInstall(args[2:])
+		case "serve":
+			return cmdServe(args[2:])
 		case "version":
 			fmt.Printf("%s version %s\n", appName, Version)
 			return nil
@@ -40,13 +41,12 @@ func run(args []string) error {
 }
 
 func printUsage() {
-	fmt.Printf(`%s - (skeleton) Claude agent service
+	fmt.Printf(`%s - Claude container-orchestration agent
 
 Usage:
-  %s install      Install and configure the claude-agent service
+  %s install      Install and configure the claude-agent systemd service
+  %s serve        Run the claude-agent SSH server (invoked by systemd)
   %s version      Print version information
   %s help         Show this help message
-
-Note: %s is currently a skeleton. The install step is a placeholder.
 `, appName, appName, appName, appName, appName)
 }

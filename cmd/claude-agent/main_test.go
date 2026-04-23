@@ -67,14 +67,16 @@ func TestRun_NoArgs_ShowsUsage(t *testing.T) {
 	}
 }
 
-func TestRun_Install_Placeholder(t *testing.T) {
-	out := captureStdout(t, func() {
-		if err := run([]string{"claude-agent", "install"}); err != nil {
-			t.Errorf("install should return nil (placeholder), got: %v", err)
-		}
-	})
-	if !strings.Contains(out, "install placeholder") {
-		t.Errorf("unexpected install output: %q", out)
+func TestRun_Install_RequiresRoot(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("non-root path only")
+	}
+	err := run([]string{"claude-agent", "install"})
+	if err == nil {
+		t.Fatal("expected error without root")
+	}
+	if !strings.Contains(err.Error(), "run as root") {
+		t.Errorf("error = %q, want 'run as root'", err.Error())
 	}
 }
 
