@@ -39,7 +39,13 @@ func runWithKey(t *testing.T, sessions []session.Metadata, key tcell.Key, ch run
 		screen.InjectKey(key, ch, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	// Pretend every session is running — item #7 intercepts Enter on
+	// a remote-but-stopped session to show the not-running dialog;
+	// without this stub, tests that press Enter hang in that dialog.
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{
+		Agents:    []string{"test-agent"},
+		IsRunning: func(string) bool { return true },
+	})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -66,7 +72,7 @@ func TestDisplay_ScreenFactoryError(t *testing.T) {
 		return nil, errors.New("no terminal")
 	}
 
-	_, err := Display(testSessions(), DisplayOptions{Agents: []string{"test-agent"}})
+	_, err := Display(testSessions(), DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err == nil {
 		t.Error("expected error when screen factory fails")
 	}
@@ -95,7 +101,7 @@ func TestDisplay_FullPath(t *testing.T) {
 		simScreen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := Display(testSessions(), DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := Display(testSessions(), DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("Display failed: %v", err)
 	}
@@ -143,7 +149,7 @@ func TestTUI_CreateDialog_TypeAndEnter(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone) // confirm
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -171,7 +177,7 @@ func TestTUI_CreateDialog_UpperN(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -196,7 +202,7 @@ func TestTUI_CreateDialog_EscapeCancels(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -220,7 +226,7 @@ func TestTUI_CreateDialog_EmptyNameShowsError(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -246,7 +252,7 @@ func TestTUI_CreateDialog_InvalidCharShowsError(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -272,7 +278,7 @@ func TestTUI_CreateDialog_Backspace(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -293,7 +299,7 @@ func TestTUI_DeleteDialog_ConfirmYes(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'y', tcell.ModNone) // confirm
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -318,7 +324,7 @@ func TestTUI_DeleteDialog_ConfirmNo(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -340,7 +346,7 @@ func TestTUI_DeleteDialog_EscapeCancels(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -360,7 +366,7 @@ func TestTUI_DeleteDialog_EmptySessionsIgnored(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(nil, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(nil, screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -384,7 +390,7 @@ func TestTUI_RestartOnR_OpensDialog(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -422,7 +428,7 @@ func TestTUI_NumberOutOfRange(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone) // quit
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -443,7 +449,7 @@ func TestTUI_ArrowDownThenEnter(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -464,7 +470,7 @@ func TestTUI_ArrowUpClampsAtZero(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -484,7 +490,7 @@ func TestTUI_EmptySessions_EnterIgnored(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(nil, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(nil, screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -504,7 +510,7 @@ func TestTUI_TitleBarContent(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, 0, testScreenWidth)
 	if !strings.Contains(row, "claude-shell") {
@@ -521,7 +527,7 @@ func TestTUI_TitleBarStyle(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	_, _, style, _ := screen.GetContent(1, 0)
 	fg, bg, _ := style.Decompose()
@@ -542,7 +548,7 @@ func TestTUI_MenuBarContent(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, testScreenHeight-1, testScreenWidth)
 	for _, label := range []string{"(N)ew", "(D)elete", "(R)estart", "(Q)uit"} {
@@ -561,7 +567,7 @@ func TestTUI_MenuBarStyle(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	_, _, style, _ := screen.GetContent(1, testScreenHeight-1)
 	fg, bg, _ := style.Decompose()
@@ -582,7 +588,7 @@ func TestTUI_SessionsDisplayed(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	// Check that session names appear in the session area (rows 4+)
 	found := false
@@ -607,7 +613,7 @@ func TestTUI_EmptySessionsMessage(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(nil, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(nil, screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	found := false
 	for row := 4; row < testScreenHeight-1; row++ {
@@ -631,7 +637,7 @@ func TestTUI_ColumnHeaders(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	headerRow := getScreenText(screen, 2, testScreenWidth)
 	for _, col := range []string{"#", "Name", "Session ID", "Created", "Last Accessed"} {
@@ -669,7 +675,7 @@ func TestTUI_ScrollWithManySessions(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -680,7 +686,9 @@ func TestTUI_ScrollWithManySessions(t *testing.T) {
 
 func TestTUI_HandleKeyUnit(t *testing.T) {
 	sessions := testSessions()
-	ui := &tui{sessions: sessions, cursor: 0}
+	// IsRunning=true so the Enter test below doesn't hit the
+	// not-running redirect added for item #7.
+	ui := &tui{sessions: sessions, cursor: 0, isRunningFunc: func(string) bool { return true }}
 
 	// Test Down arrow
 	sel, done := ui.handleKey(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone))
@@ -810,7 +818,7 @@ func TestTUI_ResizeEvent(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -834,7 +842,7 @@ func TestTUI_TinyScreen(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -856,7 +864,7 @@ func TestTUI_NarrowScreen(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -880,7 +888,7 @@ func TestTUI_MinimalHeight(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -940,7 +948,7 @@ func TestTUI_TitleBarNarrowHidesClock(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, 0, 30)
 	if !strings.Contains(row, "claude-shell") {
@@ -1012,7 +1020,7 @@ func TestTUI_ClockTicker(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	sel, err := displayWithOptions(testSessions(), screen, 50*time.Millisecond, 10*time.Second, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := displayWithOptions(testSessions(), screen, 50*time.Millisecond, 10*time.Second, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("displayWithOptions failed: %v", err)
 	}
@@ -1082,7 +1090,7 @@ func TestTUI_CreateDialog_EnterReturnsPort(t *testing.T) {
 		screen.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
 	}()
 
-	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	sel, err := DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 	if err != nil {
 		t.Fatalf("DisplayWithScreen failed: %v", err)
 	}
@@ -1143,7 +1151,7 @@ func TestTUI_SessionTable_PortColumn(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	// Header row must include "Port"
 	header := getScreenText(screen, 2, 120)
@@ -1179,7 +1187,7 @@ func TestTUI_TitleBarLoadAverages(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, 0, testScreenWidth)
 	if !strings.Contains(row, "0.10 0.20 0.30") {
@@ -1211,7 +1219,7 @@ func TestTUI_TitleBarLoadAverages_Unavailable(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, 0, testScreenWidth)
 	if !strings.Contains(row, "claude-shell") {
@@ -1452,7 +1460,7 @@ func TestTUI_MenuBarIncludesSettings(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, testScreenHeight-1, 120)
 	if !strings.Contains(row, "(S)ettings") {
@@ -1469,7 +1477,7 @@ func TestTUI_MenuBarIncludesBackground(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, testScreenHeight-1, testScreenWidth)
 	if !strings.Contains(row, "(B)ackground") {
@@ -1634,7 +1642,7 @@ func TestTUI_MenuBarShowsRestart(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, testScreenHeight-1, 120)
 	if !strings.Contains(row, "(R)estart") {
@@ -2203,7 +2211,7 @@ func TestTUI_SessionTable_ShowsPortAndProtocol(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
-	_, _ = DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(sessions, screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, 4, 120)
 	if !strings.Contains(row, "53/udp") {
@@ -2619,7 +2627,7 @@ func TestTUI_MenuBarIncludesEdit(t *testing.T) {
 		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
 	}()
 
-	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}})
+	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, testScreenHeight-1, 120)
 	if !strings.Contains(row, "(E)dit") {

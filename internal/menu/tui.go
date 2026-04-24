@@ -1586,6 +1586,14 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 				t.mode = modeLockedDialog
 				return Selection{}, false
 			}
+			// Remote attach against a stopped container would dump the
+			// agent's JSON error onto stdout. Intercept here and show
+			// the "not running" dialog instead — operator presses (R)
+			// afterward to restart.
+			if s.IsRemote() && !t.isRunning(s.UUID) {
+				t.mode = modeNotRunningDialog
+				return Selection{}, false
+			}
 			return Selection{Action: s.UUID, SessionID: s.UUID}, true
 		}
 	case tcell.KeyEscape:
