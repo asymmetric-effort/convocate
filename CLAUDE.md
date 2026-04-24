@@ -138,5 +138,17 @@ container to background a connected user without stopping the container.
 ## Current version
 
 See `git describe --tags` at read time. The latest tag at the time this
-file was written is tracked in `cmd/claude-shell/version.go`; `Version` is
-set via `-ldflags "-X main.Version=$(VERSION)"` in the Makefile.
+file was written is **v2.0.0** (2026-04-24). `Version` is set via
+`-ldflags "-X main.Version=$(VERSION)"` in the Makefile and tagged onto
+the built container image (`claude-shell:<semver>`) by
+`claude-shell install`.
+
+Release history:
+- `v1.0.0` — multi-host orchestration arc (claude-host + claude-agent
+  deployed; SSH peering; rsyslog TLS; agent-aware TUI).
+- `v2.0.0` — "shell is pure client" arc. claude-shell no longer runs
+  containers; all sessions live on agents. Image built on shell,
+  pushed to each agent. Orphan migration via
+  `claude-host migrate-session`. `claude-sessions.slice` 90% cgroup
+  cap. See `docs/v2.0.0.md` for the full plan + architectural
+  snapshot + known limitations.
