@@ -7,6 +7,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // systemdUnit is the content installed at defaultSystemdUnit. Kept inline
@@ -48,6 +49,7 @@ func cmdInstall(_ []string) error {
 		{"Generate / assign agent ID", ensureAgentID},
 		{"Ensure /home/claude/.ssh directory", ensureSSHDir},
 		{"Ensure authorized_keys file", ensureAuthKeys},
+		{"Install claude-sessions.slice (90% cgroup cap)", writeSessionsSlice},
 		{"Install systemd unit", writeSystemdUnit},
 		{"Reload systemd + enable claude-agent", enableService},
 	}
@@ -160,6 +162,90 @@ func ensureAuthKeys() error {
 
 func writeSystemdUnit() error {
 	return os.WriteFile(defaultSystemdUnit, []byte(systemdUnit), 0644)
+}
+
+// writeSessionsSlice renders /etc/systemd/system/claude-sessions.slice
+// with CPUQuota and MemoryMax values computed from the host's own
+// resource totals. Containers enroll under this slice via docker run
+// --cgroup-parent so the kernel caps their aggregate usage at ~90% of
+// the box — operator retains 10% headroom to intervene.
+//
+// CPUQuota is expressed as "quota%" where 100% == one full core. We
+// multiply nproc by 90 to cap total CPU at 90% of available cores.
+// MemoryMax is an absolute byte count — 90% of MemTotal from
+// /proc/meminfo. Re-running install recomputes against current host
+// specs (rare unless the host was resized).
+func writeSessionsSlice() error {
+	cores, err := detectHostCores()
+	if err != nil {
+		return fmt.Errorf("detect host cores: %w", err)
+	}
+	memBytes, err := detectHostMemoryBytes()
+	if err != nil {
+		return fmt.Errorf("detect host memory: %w", err)
+	}
+	cpuQuota := cores * 90
+	memMax := memBytes * 90 / 100
+
+	unit := fmt.Sprintf(`[Unit]
+Description=claude-agent session containers (aggregate 90%% cap)
+Documentation=https://github.com/asymmetric-effort/claude-shell
+Before=claude-agent.service
+
+[Slice]
+CPUAccounting=yes
+CPUQuota=%d%%
+MemoryAccounting=yes
+MemoryMax=%d
+`, cpuQuota, memMax)
+
+	if err := os.WriteFile(defaultSessionsSlicePath, []byte(unit), 0644); err != nil {
+		return err
+	}
+	// daemon-reload is done once in enableService, which runs after this
+	// step, so we don't duplicate the reload here.
+	return nil
+}
+
+// detectHostCores returns the number of CPU cores the kernel exposes.
+func detectHostCores() (int, error) {
+	cmd := exec.Command("nproc")
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, fmt.Errorf("parse nproc output %q: %w", string(out), err)
+	}
+	if n < 1 {
+		return 0, fmt.Errorf("nproc returned %d", n)
+	}
+	return n, nil
+}
+
+// detectHostMemoryBytes returns total RAM in bytes from /proc/meminfo.
+func detectHostMemoryBytes() (int64, error) {
+	data, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, "MemTotal:") {
+			continue
+		}
+		fields := strings.Fields(line)
+		// "MemTotal:  16292456 kB"
+		if len(fields) < 3 {
+			return 0, fmt.Errorf("unexpected MemTotal line: %q", line)
+		}
+		kb, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("parse MemTotal kB %q: %w", fields[1], err)
+		}
+		return kb * 1024, nil
+	}
+	return 0, fmt.Errorf("MemTotal not found in /proc/meminfo")
 }
 
 func enableService() error {

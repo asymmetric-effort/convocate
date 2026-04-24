@@ -34,6 +34,11 @@ const (
 	// image arrives. Absent or empty → agent falls back to
 	// config.ContainerImage() (the compile-time default).
 	defaultCurrentImageFile = "/etc/claude-agent/current-image"
+
+	// Systemd slice unit path for the 90%-cap session cgroup.
+	// claude-agent install renders this dynamically from host CPU/memory
+	// totals so the ceiling matches the machine's actual size.
+	defaultSessionsSlicePath = "/etc/systemd/system/claude-sessions.slice"
 )
 
 // Agent ID format: 12 lowercase alphanumeric characters. Generated once and

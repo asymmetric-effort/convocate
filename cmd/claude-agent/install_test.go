@@ -61,6 +61,35 @@ func TestCountAdoptedSessions_EmptyDir(t *testing.T) {
 	}
 }
 
+// TestDetectHostCores_SanityCheck validates nproc returns >= 1 on the
+// test runner. No way to mock the exec without restructuring; the test
+// just makes sure the function path works.
+func TestDetectHostCores_SanityCheck(t *testing.T) {
+	n, err := detectHostCores()
+	if err != nil {
+		t.Fatalf("detectHostCores: %v", err)
+	}
+	if n < 1 {
+		t.Errorf("nproc returned %d, want >=1", n)
+	}
+}
+
+// TestDetectHostMemoryBytes_SanityCheck validates MemTotal parsing on a
+// Linux test runner. On non-Linux the test skips rather than failing.
+func TestDetectHostMemoryBytes_SanityCheck(t *testing.T) {
+	if _, err := os.Stat("/proc/meminfo"); err != nil {
+		t.Skip("no /proc/meminfo on this platform")
+	}
+	b, err := detectHostMemoryBytes()
+	if err != nil {
+		t.Fatalf("detectHostMemoryBytes: %v", err)
+	}
+	// Bottom end: any box we care about has >=256MiB RAM.
+	if b < 256*1024*1024 {
+		t.Errorf("MemTotal = %d bytes, suspicious", b)
+	}
+}
+
 // TestCountAdoptedSessions_FindsSessions stages two session.json files and
 // one directory without one, then runs the same scanning logic to confirm
 // the count matches.

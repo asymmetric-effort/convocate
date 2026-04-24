@@ -11,17 +11,26 @@ import (
 	"github.com/asymmetric-effort/claude-shell/internal/user"
 )
 
+// DefaultCgroupParent is the systemd slice every session container is
+// enrolled under. claude-agent install writes /etc/systemd/system/
+// claude-sessions.slice with CPUQuota + MemoryMax set to ~90% of host
+// totals, giving the kernel an aggregate ceiling across every session
+// on the agent. The 10% headroom is intentional — operators need
+// enough slack to SSH in and intervene when sessions misbehave.
+const DefaultCgroupParent = "claude-sessions.slice"
+
 // Runner executes Docker commands for session containers.
 type Runner struct {
-	sessionID  string
-	sessionDir string
-	userInfo   user.Info
-	paths      config.Paths
-	port       int
-	protocol   string
-	dnsServer  string
-	image      string // overrides config.ContainerImage when set
-	execFn     ExecFunc
+	sessionID    string
+	sessionDir   string
+	userInfo     user.Info
+	paths        config.Paths
+	port         int
+	protocol     string
+	dnsServer    string
+	image        string // overrides config.ContainerImage when set
+	cgroupParent string // overrides DefaultCgroupParent when set
+	execFn       ExecFunc
 }
 
 // SetPort configures the port to publish from the container. A value of 0
@@ -54,6 +63,22 @@ func (r *Runner) SetDNSServer(ip string) {
 // forward session-by-session.
 func (r *Runner) SetImage(tag string) {
 	r.image = tag
+}
+
+// SetCgroupParent overrides the systemd slice every container is enrolled
+// under. Empty (the default) uses DefaultCgroupParent. Tests override
+// this to verify the flag plumbing without needing a real slice unit on
+// the host.
+func (r *Runner) SetCgroupParent(name string) {
+	r.cgroupParent = name
+}
+
+// cgroupRef returns the slice name used for --cgroup-parent.
+func (r *Runner) cgroupRef() string {
+	if r.cgroupParent != "" {
+		return r.cgroupParent
+	}
+	return DefaultCgroupParent
 }
 
 // imageRef is the tag actually passed to docker — the explicit override
@@ -213,6 +238,11 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 		"--name", containerName,
 		"--hostname", fmt.Sprintf("claude-%s", r.sessionID[:8]),
 		"-w", "/home/claude",
+		// Enroll the container under the shared claude-sessions.slice
+		// cgroup so the kernel enforces the aggregate 90% CPU/memory
+		// ceiling across all sessions on this agent. The operator keeps
+		// 10% of host capacity free to intervene when sessions misbehave.
+		"--cgroup-parent", r.cgroupRef(),
 	}
 
 	// Session home directory

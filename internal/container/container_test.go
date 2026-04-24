@@ -577,3 +577,25 @@ func TestRunner_BuildRunArgs_UsesSetImage(t *testing.T) {
 		t.Errorf("last arg = %q, want the configured image tag", last)
 	}
 }
+
+func TestRunner_BuildRunArgs_EmitsCgroupParent(t *testing.T) {
+	r := NewRunner("12345678-aaaa-bbbb-cccc-ddddeeeefffff", "/dir", testUserInfo(), testPaths())
+	args := r.buildRunArgs("claude-session-test")
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--cgroup-parent "+DefaultCgroupParent) {
+		t.Errorf("default cgroup-parent missing from args: %v", args)
+	}
+}
+
+func TestRunner_SetCgroupParentOverrides(t *testing.T) {
+	r := NewRunner("12345678-aaaa-bbbb-cccc-ddddeeeefffff", "/dir", testUserInfo(), testPaths())
+	r.SetCgroupParent("custom.slice")
+	args := r.buildRunArgs("claude-session-test")
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--cgroup-parent custom.slice") {
+		t.Errorf("custom cgroup-parent missing from args: %v", args)
+	}
+	if strings.Contains(joined, "--cgroup-parent "+DefaultCgroupParent) {
+		t.Error("default slice should have been overridden")
+	}
+}
