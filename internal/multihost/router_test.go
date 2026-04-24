@@ -350,3 +350,57 @@ func TestRouter_CreateUnknownAgent_Errors(t *testing.T) {
 		t.Errorf("expected not-registered, got %v", err)
 	}
 }
+
+func TestRouter_AgentFor_Exported(t *testing.T) {
+	local := &fakeLocal{}
+	ag := &fakeAgentClient{sessions: []session.Metadata{{UUID: "r1"}}}
+	r := &Router{Local: local, Agents: []AgentRef{{Record: agentclient.AgentRecord{ID: "A"}, Client: ag}}}
+	_, _ = r.List()
+	if got := r.AgentFor("r1"); got == nil || got.Record.ID != "A" {
+		t.Errorf("AgentFor returned %+v", got)
+	}
+	if got := r.AgentFor("unknown"); got != nil {
+		t.Errorf("AgentFor(unknown) = %+v, want nil", got)
+	}
+}
+
+func TestRouter_Background_Remote(t *testing.T) {
+	local := &fakeLocal{}
+	ag := &fakeAgentClient{sessions: []session.Metadata{{UUID: "r1"}}}
+	r := &Router{Local: local, Agents: []AgentRef{{Record: agentclient.AgentRecord{ID: "A"}, Client: ag}}}
+	_, _ = r.List()
+	if err := r.Background("r1"); err != nil {
+		t.Fatal(err)
+	}
+	if ag.backgrnd != "r1" {
+		t.Errorf("agent.Background not invoked: %q", ag.backgrnd)
+	}
+}
+
+func TestRouter_Create_RegistersInRouting(t *testing.T) {
+	local := &fakeLocal{}
+	ag := &fakeAgentClient{}
+	r := &Router{Local: local, Agents: []AgentRef{{Record: agentclient.AgentRecord{ID: "A", Host: "a-host"}, Client: ag}}}
+	meta, err := r.Create("A", session.CreateOptions{Port: 8080, Protocol: "tcp"}, "svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.AgentID != "A" || meta.AgentHost != "a-host" {
+		t.Errorf("meta stamps wrong: %+v", meta)
+	}
+	// Follow-up op on the new UUID must route to the agent without
+	// needing an explicit List refresh.
+	if err := r.Kill(meta.UUID); err != nil {
+		t.Fatal(err)
+	}
+	if ag.killed != meta.UUID {
+		t.Errorf("Kill didn't route to agent: %q", ag.killed)
+	}
+}
+
+func TestRouter_List_LocalListFails(t *testing.T) {
+	r := &Router{Local: &fakeLocal{listErr: errors.New("disk gone")}}
+	if _, err := r.List(); err == nil || !strings.Contains(err.Error(), "disk gone") {
+		t.Errorf("expected local-list error propagation, got %v", err)
+	}
+}

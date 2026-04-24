@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +107,47 @@ func TestDetectHostIP_OverrideAndDefault(t *testing.T) {
 	DetectHostIP = func() string { return "10.0.0.7" }
 	if got := DetectHostIP(); got != "10.0.0.7" {
 		t.Errorf("got %q, want 10.0.0.7", got)
+	}
+}
+
+// TestDetectHostIP_RealCall invokes the production implementation so
+// its interface-walk + IPv4 filter branches show up in the coverage
+// report. Accepts any non-empty result including the 127.0.0.1
+// fallback on sandboxed runners with no routable interface.
+func TestDetectHostIP_RealCall(t *testing.T) {
+	orig := DetectHostIP
+	defer func() { DetectHostIP = orig }()
+	got := orig()
+	if got == "" {
+		t.Fatal("DetectHostIP returned empty string")
+	}
+	if got != "127.0.0.1" {
+		// Validate the shape of a non-loopback answer.
+		var a, b, c, d int
+		if _, err := fmt.Sscanf(got, "%d.%d.%d.%d", &a, &b, &c, &d); err != nil {
+			t.Errorf("DetectHostIP returned non-IPv4 %q: %v", got, err)
+		}
+	}
+}
+
+// TestWriteHostsFile_RenameFails exercises the rename-error branch by
+// pointing WriteHostsFile at a target path that's actually a non-empty
+// directory. The tmp write succeeds (different inode); the rename then
+// fails with ENOTDIR-equivalent because the kernel refuses to clobber
+// a directory with a plain file.
+func TestWriteHostsFile_RenameFails(t *testing.T) {
+	parent := t.TempDir()
+	dst := filepath.Join(parent, "hosts")
+	// Make dst a non-empty directory — rename into it fails.
+	if err := os.MkdirAll(filepath.Join(dst, "child"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	err := WriteHostsFile(dst, []Record{{Name: "n", IP: "1.1.1.1"}})
+	if err == nil {
+		t.Error("expected rename error when dst is a directory")
+	}
+	if err != nil && !strings.Contains(err.Error(), "rename") {
+		t.Errorf("error = %q, want rename-flavored", err)
 	}
 }
 

@@ -1435,3 +1435,151 @@ func TestSetupClaudeSymlinks_ExistingSymlinks(t *testing.T) {
 		t.Errorf("second setupClaudeSymlinks failed: %v", err)
 	}
 }
+
+// --- cheap single-statement coverage fills ---
+
+func TestMetadata_IsRemote(t *testing.T) {
+	var local Metadata
+	if local.IsRemote() {
+		t.Error("zero Metadata should not be remote")
+	}
+	local.AgentID = "agent-x"
+	if !local.IsRemote() {
+		t.Error("Metadata with AgentID should be remote")
+	}
+}
+
+func TestMetadata_EffectiveProtocol_Defaults(t *testing.T) {
+	var m Metadata
+	if m.EffectiveProtocol() != ProtocolTCP {
+		t.Errorf("empty Protocol should default to tcp, got %q", m.EffectiveProtocol())
+	}
+	m.Protocol = ProtocolUDP
+	if m.EffectiveProtocol() != ProtocolUDP {
+		t.Errorf("explicit udp should be returned, got %q", m.EffectiveProtocol())
+	}
+}
+
+func TestCreateWithUUIDProtocol_LegacyWrapper(t *testing.T) {
+	base, skel := t.TempDir(), filepath.Join(t.TempDir(), "skel")
+	_ = os.MkdirAll(skel, 0750)
+	mgr := NewManager(base, skel)
+	meta, err := mgr.CreateWithUUIDProtocol("uuid-abc", "legacy", 7070, "udp")
+	if err != nil {
+		t.Fatalf("CreateWithUUIDProtocol: %v", err)
+	}
+	if meta.Protocol != "udp" || meta.Port != 7070 || meta.UUID != "uuid-abc" {
+		t.Errorf("meta = %+v", meta)
+	}
+}
+
+// --- error-path fills: make writes fail under a read-only parent ---
+
+func TestCreateWithOptions_WriteMetadataFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses perm checks")
+	}
+	base := t.TempDir()
+	skel := filepath.Join(t.TempDir(), "skel")
+	_ = os.MkdirAll(skel, 0750)
+	mgr := NewManager(base, skel)
+	// Pre-create a UUID dir and make it read-only so writeMetadata fails.
+	// Manager uses google/uuid so we can't predict — instead, make the
+	// whole base chmod 0500 AFTER one session has been created, then
+	// try to create another (which internally tries to create a new
+	// UUID-named subdir and fails on MkdirAll).
+	if _, err := mgr.Create("first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(base, 0500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(base, 0755)
+	_, err := mgr.Create("second-should-fail")
+	if err == nil {
+		t.Error("expected error creating session under read-only base")
+	}
+}
+
+func TestFindAvailablePort_Exhausted(t *testing.T) {
+	// We can't realistically fill 65535-min ports in a test, but we
+	// can exercise the "min > 65535" degenerate case which falls
+	// through the loop and returns the final error.
+	base := t.TempDir()
+	mgr := NewManager(base, "")
+	_, err := mgr.FindAvailablePort(70000)
+	if err == nil {
+		t.Error("expected error when min is above the port range")
+	}
+}
+
+func TestIsDNSNameUsedByOther_EmptyName(t *testing.T) {
+	mgr := NewManager(t.TempDir(), "")
+	if mgr.isDNSNameUsedByOther("any-id", "") {
+		t.Error("empty dns name should always report unused")
+	}
+}
+
+func TestClone_CopyDirFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses perm checks")
+	}
+	base := t.TempDir()
+	skel := filepath.Join(t.TempDir(), "skel")
+	_ = os.MkdirAll(skel, 0750)
+	mgr := NewManager(base, skel)
+	src, err := mgr.Create("src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Revoke write perms on base so Clone's MkdirAll for dst fails.
+	if err := os.Chmod(base, 0500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(base, 0755)
+	_, err = mgr.Clone(src.UUID, "dst")
+	if err == nil {
+		t.Error("expected Clone error when base is read-only")
+	}
+}
+
+func TestCopyFile_SourceMissing(t *testing.T) {
+	dir := t.TempDir()
+	if err := copyFile(filepath.Join(dir, "does-not-exist"), filepath.Join(dir, "dst")); err == nil {
+		t.Error("expected error copying missing source")
+	}
+}
+
+func TestCopyDir_SourceMissing(t *testing.T) {
+	dir := t.TempDir()
+	if err := copyDir(filepath.Join(dir, "nope"), filepath.Join(dir, "dst")); err == nil {
+		t.Error("expected error on missing source dir")
+	}
+}
+
+func TestIsPortUsed_ZeroOrNegative(t *testing.T) {
+	mgr := NewManager(t.TempDir(), "")
+	if mgr.isPortUsed(0, ProtocolTCP) {
+		t.Error("port 0 should report unused")
+	}
+	if mgr.isPortUsed(-1, ProtocolTCP) {
+		t.Error("PortAuto should report unused at the isPortUsed level")
+	}
+}
+
+func TestList_SkipsNonDirectoryEntries(t *testing.T) {
+	base := t.TempDir()
+	mgr := NewManager(base, "")
+	// Put a plain file at the sessions base — List should ignore it,
+	// exercising the `if !entry.IsDir()` continue branch.
+	if err := os.WriteFile(filepath.Join(base, "stray.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := mgr.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions, got %+v", sessions)
+	}
+}

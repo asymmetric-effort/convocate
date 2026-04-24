@@ -1,7 +1,10 @@
 package tlsutil
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
+	"encoding/pem"
 	"strings"
 	"testing"
 )
@@ -125,5 +128,53 @@ func TestParseKeyMaterial_Errors(t *testing.T) {
 		if err == nil {
 			t.Error("expected error")
 		}
+	}
+}
+
+func TestParseKeyMaterial_BadCertPEM(t *testing.T) {
+	// certPEM valid block header but parse failure ([]byte{} isn't a cert).
+	badCert := []byte("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n")
+	if _, err := ParseKeyMaterial(badCert, []byte("not pem either")); err == nil ||
+		!strings.Contains(err.Error(), "parse cert") && !strings.Contains(err.Error(), "no PEM block") {
+		t.Errorf("expected parse-cert or PEM error, got %v", err)
+	}
+}
+
+func TestParseKeyMaterial_PKCS8Key(t *testing.T) {
+	// Mint a CA, re-marshal the key in PKCS8 form, and verify
+	// ParseKeyMaterial still accepts it (fallback path).
+	ca, err := GenerateCA("ca", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(ca.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkcs8PEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	parsed, err := ParseKeyMaterial(ca.CertPEM, pkcs8PEM)
+	if err != nil {
+		t.Fatalf("PKCS8 parse: %v", err)
+	}
+	if parsed.Cert.SerialNumber.Cmp(ca.Cert.SerialNumber) != 0 {
+		t.Error("PKCS8 round-trip lost serial")
+	}
+}
+
+func TestParseKeyMaterial_WrongKeyType(t *testing.T) {
+	// PKCS8-wrapped RSA key — our code expects ECDSA only.
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(rsaKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rsaPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	ca, _ := GenerateCA("ca", 1)
+	if _, err := ParseKeyMaterial(ca.CertPEM, rsaPEM); err == nil ||
+		!strings.Contains(err.Error(), "unsupported key type") {
+		t.Errorf("expected unsupported-key-type, got %v", err)
 	}
 }
