@@ -32,8 +32,14 @@ func run(args []string) error {
 	if len(args) > 1 {
 		switch args[1] {
 		case "install":
+			// install runs as root via sudo; it creates the claude user
+			// and configures the host. Enforcing "must be claude" here
+			// would be a chicken-and-egg problem.
 			return install.New().Run()
 		case "status-serve":
+			// status-serve is the systemd unit for the TLS-authenticated
+			// shell-side listener — runs as root so it can bind tcp/222
+			// and write to /etc/claude-shell.
 			return cmdStatusServe(args[2:])
 		case "version":
 			fmt.Printf("%s version %s\n", config.AppName, Version)
@@ -46,6 +52,13 @@ func run(args []string) error {
 		}
 	}
 
+	// The interactive TUI is claude user only. Every on-disk path
+	// (session metadata, ~/.claude, /etc/claude-shell/agent-keys) is
+	// owned by that user; running the TUI as anyone else would
+	// silently produce broken state.
+	if err := user.EnforceRunningAs(config.ClaudeUser); err != nil {
+		return err
+	}
 	return runSessionManager()
 }
 
