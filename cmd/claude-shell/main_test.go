@@ -12,6 +12,7 @@ import (
 
 	"github.com/asymmetric-effort/claude-shell/internal/config"
 	"github.com/asymmetric-effort/claude-shell/internal/container"
+	"github.com/asymmetric-effort/claude-shell/internal/multihost"
 	"github.com/asymmetric-effort/claude-shell/internal/session"
 	"github.com/asymmetric-effort/claude-shell/internal/user"
 )
@@ -240,7 +241,8 @@ func TestHandleCloneSession_MissingSource(t *testing.T) {
 	base := t.TempDir()
 	mgr := session.NewManager(base, filepath.Join(base, "skel"))
 	withRunner(t, func(name string, args ...string) *exec.Cmd { return exec.Command("true") })
-	err := handleCloneSession(mgr, "missing-uuid", "new", testUserInfo(), testPaths(base), nil)
+	router := &multihost.Router{Local: mgr}
+	err := handleCloneSession(router, mgr, "missing-uuid", "new", testUserInfo(), testPaths(base), nil)
 	if err == nil {
 		t.Error("expected error when cloning missing source")
 	}

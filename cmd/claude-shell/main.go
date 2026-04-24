@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
 	"github.com/asymmetric-effort/claude-shell/internal/capacity"
 	"github.com/asymmetric-effort/claude-shell/internal/config"
 	"github.com/asymmetric-effort/claude-shell/internal/container"
@@ -15,6 +16,7 @@ import (
 	"github.com/asymmetric-effort/claude-shell/internal/install"
 	"github.com/asymmetric-effort/claude-shell/internal/logging"
 	"github.com/asymmetric-effort/claude-shell/internal/menu"
+	"github.com/asymmetric-effort/claude-shell/internal/multihost"
 	"github.com/asymmetric-effort/claude-shell/internal/session"
 	"github.com/asymmetric-effort/claude-shell/internal/user"
 )
@@ -78,30 +80,25 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 
 	mgr := session.NewManager(paths.SessionsBase, paths.SkelDir)
 
+	router, closeAgents := buildRouter(mgr, log)
+	defer closeAgents()
+
 	for {
-		sessions, err := mgr.List()
+		sessions, err := router.List()
 		if err != nil {
 			return fmt.Errorf("failed to list sessions: %w", err)
 		}
 
 		sel, err := menu.Display(sessions, menu.DisplayOptions{
-			IsLocked:          mgr.IsLocked,
-			IsRunning:         container.IsContainerRunning,
-			Reload:            mgr.List,
-			OverrideLock:      mgr.OverrideLock,
-			KillSession:       container.StopContainer,
-			BackgroundSession: container.DetachClients,
-			RestartSession: func(id string) error {
-				return restartSessionDetached(mgr, id, userInfo, paths, log)
-			},
+			IsLocked:          router.IsLocked,
+			IsRunning:         router.IsRunning,
+			Reload:            router.List,
+			OverrideLock:      router.OverrideLock,
+			KillSession:       router.Kill,
+			BackgroundSession: router.Background,
+			RestartSession:    router.Restart,
 			SaveSessionEdit: func(id, name, protocol, dnsName string, port int) error {
-				_, err := mgr.UpdateWithOptions(id, session.UpdateOptions{
-					Name:     name,
-					Port:     port,
-					Protocol: protocol,
-					DNSName:  dnsName,
-				})
-				if err != nil {
+				if err := router.Update(id, name, protocol, dnsName, port); err != nil {
 					return err
 				}
 				if log != nil {
@@ -122,33 +119,115 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			fmt.Println("Goodbye!")
 			return nil
 		case menu.ActionNewSession:
+			// New sessions are always created locally for now. Remote
+			// provisioning happens via 'claude-host init-agent'.
 			if err := handleNewSession(mgr, sel.Name, sel.Port, sel.Protocol, sel.DNSName, userInfo, paths, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
 		case menu.ActionCloneSession:
-			if err := handleCloneSession(mgr, sel.SessionID, sel.Name, userInfo, paths, log); err != nil {
+			if err := handleCloneSession(router, mgr, sel.SessionID, sel.Name, userInfo, paths, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
 		case menu.ActionDeleteSession:
-			if err := mgr.Delete(sel.SessionID); err != nil {
+			if err := router.Delete(sel.SessionID); err != nil {
 				fmt.Fprintf(os.Stderr, "delete error: %v\n", err)
 			} else {
-				fmt.Printf("Deleted session %q (%s)\n", sel.Name, sel.SessionID[:8])
+				fmt.Printf("Deleted session %q (%s)\n", sel.Name, shortID(sel.SessionID))
 				if err := syncDNSRecords(mgr, log); err != nil && log != nil {
 					log.Warningf("failed to sync dnsmasq hosts after delete: %v", err)
 				}
 			}
 			continue
 		default:
-			// Resume existing session
+			// Resume: if the session lives on a remote agent we can't
+			// attach from here yet — tell the operator how to reach it
+			// rather than silently doing nothing.
+			if meta := findInSessions(sessions, sel.SessionID); meta.IsRemote() {
+				fmt.Fprintf(os.Stderr, "remote session attach not yet supported — SSH to %s to attach\n", meta.AgentHost)
+				continue
+			}
 			if err := handleResumeSession(mgr, sel.SessionID, userInfo, paths, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
 		}
 	}
+}
+
+// buildRouter wires a multihost.Router that falls back to local-only when
+// /etc/claude-shell/agent-keys/ is empty or missing (the common case until
+// the operator runs init-agent). Returns a deferred cleanup that closes
+// every agent client.
+func buildRouter(mgr *session.Manager, log *logging.Logger) (*multihost.Router, func()) {
+	router := &multihost.Router{
+		Local:           mgr,
+		LocalKill:       container.StopContainer,
+		LocalBackground: container.DetachClients,
+		LocalIsRunning:  container.IsContainerRunning,
+	}
+	closers := []func(){}
+
+	records, err := agentclient.DiscoverAgents("")
+	if err != nil && log != nil {
+		log.Warningf("agent discovery: %v", err)
+	}
+	for _, rec := range records {
+		client, err := agentclient.NewCRUDClient(agentclient.CRUDConfig{
+			AgentHost:      rec.Host,
+			PrivateKeyPath: rec.PrivateKeyPath,
+		})
+		if err != nil {
+			if log != nil {
+				log.Warningf("dial agent %s (%s): %v", rec.ID, rec.Host, err)
+			}
+			fmt.Fprintf(os.Stderr, "warning: agent %s (%s) unreachable: %v\n", rec.ID, rec.Host, err)
+			continue
+		}
+		closers = append(closers, func() { _ = client.Close() })
+		router.Agents = append(router.Agents, multihost.AgentRef{
+			Record: rec,
+			Client: client,
+		})
+	}
+
+	// LocalRestart needs the session lookup + paths so we bind it after
+	// mgr is in scope.
+	router.LocalRestart = func(id string) error {
+		userInfo, err := user.Lookup(config.ClaudeUser)
+		if err != nil {
+			return err
+		}
+		paths := config.PathsFromHome(userInfo.HomeDir)
+		return restartSessionDetached(mgr, id, userInfo, paths, log)
+	}
+
+	return router, func() {
+		for _, c := range closers {
+			c()
+		}
+	}
+}
+
+// findInSessions returns the first metadata whose UUID matches id. Zero
+// value when not found.
+func findInSessions(sessions []session.Metadata, id string) session.Metadata {
+	for _, s := range sessions {
+		if s.UUID == id {
+			return s
+		}
+	}
+	return session.Metadata{}
+}
+
+// shortID returns the first 8 characters of a session UUID, or the full id
+// if it's already short (e.g. a routing sentinel).
+func shortID(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
 }
 
 func handleNewSession(mgr *session.Manager, name string, port int, protocol, dnsName string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
@@ -206,8 +285,8 @@ func syncDNSRecords(mgr *session.Manager, log *logging.Logger) error {
 	return dns.WriteHostsFile(dns.DefaultHostsFile, records)
 }
 
-func handleCloneSession(mgr *session.Manager, sourceID, name string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
-	meta, err := mgr.Clone(sourceID, name)
+func handleCloneSession(router *multihost.Router, mgr *session.Manager, sourceID, name string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+	meta, err := router.Clone(sourceID, name)
 	if err != nil {
 		return fmt.Errorf("failed to clone session: %w", err)
 	}
@@ -215,8 +294,13 @@ func handleCloneSession(mgr *session.Manager, sourceID, name string, userInfo us
 	if log != nil {
 		log.Infof("cloned session %s from %s (%s)", meta.UUID, sourceID, meta.Name)
 	}
-	fmt.Printf("Cloned session %q (%s) from %s\n", meta.Name, meta.UUID[:8], sourceID[:8])
+	fmt.Printf("Cloned session %q (%s) from %s\n", meta.Name, shortID(meta.UUID), shortID(sourceID))
 
+	// Cloning a remote session produces a remote session — no local attach.
+	if meta.IsRemote() {
+		fmt.Printf("(remote clone on agent %s — SSH to %s to attach)\n", meta.AgentID, meta.AgentHost)
+		return nil
+	}
 	return launchSession(mgr, meta.UUID, meta.Port, meta.EffectiveProtocol(), userInfo, paths, log)
 }
 

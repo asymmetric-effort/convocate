@@ -30,7 +30,19 @@ type Metadata struct {
 	// DNSName is the optional hostname registered with the local dnsmasq
 	// service. Empty means no DNS record is published.
 	DNSName string `json:"dns_name,omitempty"`
+
+	// AgentID and AgentHost are populated when this metadata describes a
+	// session living on a remote claude-agent rather than on the local
+	// host. They are never persisted (json:"-") — the local Manager's
+	// session.json files never carry them, and remote metadata has them
+	// stamped in by the shell-side aggregator after a CRUD list response.
+	AgentID   string `json:"-"`
+	AgentHost string `json:"-"`
 }
+
+// IsRemote reports whether this metadata describes a session owned by a
+// remote agent (AgentID non-empty) rather than the local host.
+func (m Metadata) IsRemote() bool { return m.AgentID != "" }
 
 // EffectiveProtocol returns the session's protocol, defaulting to "tcp" when
 // the field is empty (older sessions created before protocol support).
