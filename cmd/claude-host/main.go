@@ -44,6 +44,8 @@ func run(args []string) error {
 		return cmdInitAgent(rest)
 	case "update":
 		return cmdUpdate(rest)
+	case "migrate-session":
+		return cmdMigrateSession(rest)
 	case "version":
 		fmt.Printf("%s version %s\n", appName, Version)
 		return nil
@@ -167,6 +169,29 @@ func cmdInitAgent(args []string) error {
 	}, os.Stderr)
 }
 
+func cmdMigrateSession(args []string) error {
+	fs := flag.NewFlagSet("migrate-session", flag.ContinueOnError)
+	agent := fs.String("agent", "", "target agent ID (must be registered under /etc/claude-shell/agent-keys/)")
+	session := fs.String("session", "", "session UUID to migrate (directory under /home/claude)")
+	base := fs.String("shell-base", "/home/claude", "local directory holding orphan session dirs")
+	keysDir := fs.String("agent-keys-dir", "/etc/claude-shell/agent-keys", "per-agent key + agent-host directory")
+	deleteSrc := fs.Bool("delete-source", false, "rm the local session dir after a successful transfer")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	ctx, cancel := signalContext()
+	defer cancel()
+
+	return hostinstall.MigrateSession(ctx, hostinstall.MigrateSessionOptions{
+		AgentID:           *agent,
+		SessionUUID:       *session,
+		ShellSessionsBase: *base,
+		AgentKeysDir:      *keysDir,
+		DeleteSource:      *deleteSrc,
+	}, os.Stderr)
+}
+
 func cmdUpdate(args []string) error {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	var t targetFlags
@@ -242,14 +267,15 @@ func printUsage() {
 	fmt.Printf(`%s - Provision a host for claude-shell / claude-agent
 
 Usage:
-  %s install     [--user U --host H]  Prepare a vanilla Ubuntu host.
-  %s init-shell  --host H [--user U]  Deploy claude-shell to target.
-  %s init-agent  --host H [--user U]  Deploy claude-agent to target.
-  %s update      --host H [--user U]  Update installed services on target.
-  %s version                          Print version.
-  %s help                             Show this message.
+  %s install         [--user U --host H]        Prepare a vanilla Ubuntu host.
+  %s init-shell      --host H [--user U]        Deploy claude-shell to target.
+  %s init-agent      --host H [--user U]        Deploy claude-agent to target.
+  %s update          --host H [--user U]        Update installed services on target.
+  %s migrate-session --agent A --session UUID   Move a local orphan session to an agent.
+  %s version                                    Print version.
+  %s help                                       Show this message.
 
 Authentication:
   Local: run with sudo. Remote: connecting user must have NOPASSWD sudo.
-`, appName, appName, appName, appName, appName, appName, appName)
+`, appName, appName, appName, appName, appName, appName, appName, appName)
 }
