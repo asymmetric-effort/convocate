@@ -430,6 +430,52 @@ func TestSessionOrchestrator_List_NilProbe_LeavesRunningFalse(t *testing.T) {
 	}
 }
 
+func TestSessionOrchestrator_AttachCounterDrivesMetadata(t *testing.T) {
+	base, skelDir := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skelDir)
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "test-agent", nil)
+	o.IsRunningFn = func(id string) bool { return true }
+
+	meta, err := o.Create(session.CreateOptions{}, "svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Baseline: not attached.
+	got, _ := o.Get(meta.UUID)
+	if got.Attached {
+		t.Error("pre-track: Attached should be false")
+	}
+
+	// Simulate an attach starting.
+	o.TrackAttach(meta.UUID)
+	got, _ = o.Get(meta.UUID)
+	if !got.Attached {
+		t.Error("after TrackAttach: Attached should be true")
+	}
+
+	// Overlap: second attacher.
+	o.TrackAttach(meta.UUID)
+	o.TrackDetach(meta.UUID)
+	got, _ = o.Get(meta.UUID)
+	if !got.Attached {
+		t.Error("one attach still open: Attached should be true")
+	}
+	o.TrackDetach(meta.UUID)
+	got, _ = o.Get(meta.UUID)
+	if got.Attached {
+		t.Error("after both detached: Attached should be false")
+	}
+
+	// List mirrors Get.
+	o.TrackAttach(meta.UUID)
+	list, _ := o.List()
+	if len(list) != 1 || !list[0].Attached {
+		t.Errorf("list should reflect attach state: %+v", list)
+	}
+	o.TrackDetach(meta.UUID)
+}
+
 func TestSessionOrchestrator_KillBackground_UseHooks(t *testing.T) {
 	var killed, detached string
 	o := &SessionOrchestrator{

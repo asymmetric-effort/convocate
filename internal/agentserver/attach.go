@@ -46,6 +46,14 @@ type AttachRequest struct {
 	Rows uint16 `json:"rows"`
 }
 
+// AttachHooks let the server notify the orchestrator when a pty channel
+// opens or closes so list/get can report Attached state. Nil fields are
+// ignored — tests often don't care.
+type AttachHooks struct {
+	OnAttach func(sessionID string)
+	OnDetach func(sessionID string)
+}
+
 // HandleAttach runs the attach subsystem handshake + byte pump on ch. The
 // reqs channel provides SSH channel-level requests (window-change in
 // particular); anything else is refused.
@@ -55,7 +63,7 @@ type AttachRequest struct {
 //   2. Ask target.Start for a PTY bound to that container.
 //   3. Bridge ch <-> pty until either side closes.
 //   4. Forward window-change requests to the pty resize fn.
-func HandleAttach(ctx context.Context, ch ssh.Channel, reqs <-chan *ssh.Request, target AttachTarget) {
+func HandleAttach(ctx context.Context, ch ssh.Channel, reqs <-chan *ssh.Request, target AttachTarget, hooks AttachHooks) {
 	defer ch.Close()
 
 	req, err := readAttachHeader(ch)
@@ -72,6 +80,13 @@ func HandleAttach(ctx context.Context, ch ssh.Channel, reqs <-chan *ssh.Request,
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	if hooks.OnAttach != nil {
+		hooks.OnAttach(req.ID)
+	}
+	if hooks.OnDetach != nil {
+		defer hooks.OnDetach(req.ID)
+	}
 
 	master, resize, wait, kill, err := target.Start(ctx, req.ID, req.Cols, req.Rows)
 	if err != nil {

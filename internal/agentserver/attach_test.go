@@ -196,7 +196,7 @@ func TestHandleAttach_HappyPath(t *testing.T) {
 	reqs := make(chan *ssh.Request)
 
 	go func() {
-		HandleAttach(context.Background(), ch, reqs, ft)
+		HandleAttach(context.Background(), ch, reqs, ft, AttachHooks{})
 	}()
 
 	// Send header + some client bytes.
@@ -248,7 +248,7 @@ func TestHandleAttach_WindowChange(t *testing.T) {
 	ch, clientIn, _ := newFakeChannel()
 
 	reqs := make(chan *ssh.Request, 1)
-	go HandleAttach(context.Background(), ch, reqs, ft)
+	go HandleAttach(context.Background(), ch, reqs, ft, AttachHooks{})
 
 	_, _ = clientIn.Write([]byte(`{"id":"x","cols":80,"rows":24}` + "\n"))
 
@@ -275,7 +275,7 @@ func TestHandleAttach_BadHeader_SurfaceErrorToClient(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		HandleAttach(context.Background(), ch, make(chan *ssh.Request), ft)
+		HandleAttach(context.Background(), ch, make(chan *ssh.Request), ft, AttachHooks{})
 		close(done)
 	}()
 
@@ -300,7 +300,7 @@ func TestHandleAttach_TargetStartError(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		HandleAttach(context.Background(), ch, make(chan *ssh.Request), ft)
+		HandleAttach(context.Background(), ch, make(chan *ssh.Request), ft, AttachHooks{})
 		close(done)
 	}()
 

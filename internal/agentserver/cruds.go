@@ -3,6 +3,7 @@ package agentserver
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/asymmetric-effort/claude-shell/internal/config"
 	"github.com/asymmetric-effort/claude-shell/internal/container"
@@ -68,6 +69,48 @@ type SessionOrchestrator struct {
 
 	// NewRunner is overridable for tests.
 	NewRunner func(sessionID, sessionDir string, u user.Info, p config.Paths) *container.Runner
+
+	// attachMu + attachCount track how many claude-agent-attach
+	// subsystem channels are currently open per session UUID. List and
+	// Get stamp Metadata.Attached from this map so the shell's TUI can
+	// render a "C" (connected) indicator when another operator is live
+	// on a session.
+	attachMu    sync.Mutex
+	attachCount map[string]int
+}
+
+// TrackAttach is called by the attach subsystem handler when a new pty
+// channel opens. Paired with TrackDetach in a defer — a missed pair
+// leaks the counter for that UUID until the agent restarts.
+func (o *SessionOrchestrator) TrackAttach(sessionID string) {
+	o.attachMu.Lock()
+	defer o.attachMu.Unlock()
+	if o.attachCount == nil {
+		o.attachCount = map[string]int{}
+	}
+	o.attachCount[sessionID]++
+}
+
+// TrackDetach decrements the per-session attach counter and removes the
+// entry when it hits zero. Safe to call more times than TrackAttach —
+// drains to zero and stays there.
+func (o *SessionOrchestrator) TrackDetach(sessionID string) {
+	o.attachMu.Lock()
+	defer o.attachMu.Unlock()
+	if o.attachCount == nil {
+		return
+	}
+	o.attachCount[sessionID]--
+	if o.attachCount[sessionID] <= 0 {
+		delete(o.attachCount, sessionID)
+	}
+}
+
+// isAttached reports whether any attach session is currently open.
+func (o *SessionOrchestrator) isAttached(sessionID string) bool {
+	o.attachMu.Lock()
+	defer o.attachMu.Unlock()
+	return o.attachCount[sessionID] > 0
 }
 
 // NewSessionOrchestrator returns an Orchestrator with production defaults.
@@ -98,10 +141,11 @@ func (o *SessionOrchestrator) List() ([]session.Metadata, error) {
 	if err != nil {
 		return nil, err
 	}
-	if o.IsRunningFn != nil {
-		for i := range metas {
+	for i := range metas {
+		if o.IsRunningFn != nil {
 			metas[i].Running = o.IsRunningFn(metas[i].UUID)
 		}
+		metas[i].Attached = o.isAttached(metas[i].UUID)
 	}
 	return metas, nil
 }
@@ -114,6 +158,7 @@ func (o *SessionOrchestrator) Get(id string) (session.Metadata, error) {
 	if o.IsRunningFn != nil {
 		meta.Running = o.IsRunningFn(meta.UUID)
 	}
+	meta.Attached = o.isAttached(meta.UUID)
 	return meta, nil
 }
 func (o *SessionOrchestrator) Create(opts session.CreateOptions, name string) (session.Metadata, error) {

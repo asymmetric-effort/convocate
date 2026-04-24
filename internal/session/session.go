@@ -45,6 +45,14 @@ type Metadata struct {
 	// records produced by the local session.Manager alone (no docker
 	// probe). Never persisted — it's a snapshot, not metadata.
 	Running bool `json:"running,omitempty"`
+
+	// Attached reports whether any operator currently has an open
+	// claude-agent-attach pty on this session. Set by the agent's
+	// list op from an in-memory attach counter; drives the "C"
+	// indicator in the TUI so operators can see when another user is
+	// live on a session. Always false for sessions the local Manager
+	// alone knows about (orphans + pre-v2).
+	Attached bool `json:"attached,omitempty"`
 }
 
 // IsRemote reports whether this metadata describes a session owned by a
@@ -639,10 +647,12 @@ func (m *Manager) setupClaudeSymlinks(sessionDir string) error {
 }
 
 func (m *Manager) writeMetadata(sessionDir string, meta Metadata) error {
-	// Running is a transient, agent-stamped snapshot — never persist it.
-	// Guarding here catches any caller that accidentally round-trips a
-	// list-response Metadata back into the Manager.
+	// Running and Attached are transient agent-stamped snapshots —
+	// never persist either. This guard catches any caller that
+	// accidentally round-trips a list-response Metadata back into the
+	// Manager.
 	meta.Running = false
+	meta.Attached = false
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err

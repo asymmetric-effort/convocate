@@ -62,9 +62,10 @@ type Router struct {
 	Local  LocalManager
 	Agents []AgentRef
 
-	mu      sync.RWMutex
-	routing map[string]*AgentRef // session UUID -> owning agent; missing = orphan
-	running map[string]bool      // session UUID -> last-known running status from list response
+	mu       sync.RWMutex
+	routing  map[string]*AgentRef // session UUID -> owning agent; missing = orphan
+	running  map[string]bool      // session UUID -> last-known running status from list response
+	attached map[string]bool      // session UUID -> last-known attach state (any operator connected)
 }
 
 // ErrOrphanNeedsMigration is returned by every write op invoked against a
@@ -85,13 +86,16 @@ func (r *Router) List() ([]session.Metadata, error) {
 
 	newRouting := make(map[string]*AgentRef, len(r.Agents)*4)
 	newRunning := make(map[string]bool, len(r.Agents)*4)
+	newAttached := make(map[string]bool, len(r.Agents)*4)
 	all := make([]session.Metadata, 0, len(localSessions))
 	// Local sessions are orphans — the shell no longer runs containers
 	// itself, so Running is always false and write ops are blocked until
 	// the operator migrates them to a claude-agent.
 	for i := range localSessions {
 		localSessions[i].Running = false
+		localSessions[i].Attached = false
 		newRunning[localSessions[i].UUID] = false
+		newAttached[localSessions[i].UUID] = false
 	}
 	all = append(all, localSessions...)
 
@@ -116,6 +120,7 @@ func (r *Router) List() ([]session.Metadata, error) {
 			remote[j].AgentHost = ref.Record.Host
 			newRouting[remote[j].UUID] = ref
 			newRunning[remote[j].UUID] = remote[j].Running
+			newAttached[remote[j].UUID] = remote[j].Attached
 		}
 		all = append(all, remote...)
 	}
@@ -123,6 +128,7 @@ func (r *Router) List() ([]session.Metadata, error) {
 	r.mu.Lock()
 	r.routing = newRouting
 	r.running = newRunning
+	r.attached = newAttached
 	r.mu.Unlock()
 	return all, nil
 }
@@ -140,9 +146,17 @@ func (r *Router) agentFor(id string) *AgentRef {
 // remote attach.
 func (r *Router) AgentFor(id string) *AgentRef { return r.agentFor(id) }
 
-// IsLocked reports lock state. Always false for orphan sessions because
-// the shell no longer holds container-level locks; agents manage their own.
-func (r *Router) IsLocked(id string) bool { return false }
+// IsLocked reports attach state (repurposed from v1 lock semantics):
+// true when any operator is currently connected to the session's
+// container via claude-agent-attach. The TUI reads this to render the
+// "C" (connected) indicator — which now means "someone is attached
+// right now" rather than the old "lockfile exists". Orphans always
+// return false because attach isn't possible on them.
+func (r *Router) IsLocked(id string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.attached[id]
+}
 
 // IsRunning reports the last-known running state recorded on the most
 // recent List response. Orphan sessions always report false.

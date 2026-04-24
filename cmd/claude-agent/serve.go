@@ -74,6 +74,10 @@ func cmdServe(_ []string) error {
 		Listen:             defaultListen,
 		Dispatcher:         d,
 		AttachTarget:       attachTarget,
+		AttachHooks: agentserver.AttachHooks{
+			OnAttach: orch.TrackAttach,
+			OnDetach: orch.TrackDetach,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("init server: %w", err)

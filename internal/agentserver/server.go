@@ -44,6 +44,10 @@ type Config struct {
 	// container PTY. When nil, the attach subsystem is refused.
 	AttachTarget AttachTarget
 
+	// AttachHooks let the server notify the orchestrator when an attach
+	// session opens/closes. Optional — nil fields are skipped.
+	AttachHooks AttachHooks
+
 	// Logger receives diagnostic lines. Nil = log to the standard logger.
 	Logger *log.Logger
 }
@@ -178,7 +182,7 @@ func (s *Server) handleSession(ctx context.Context, ch ssh.Channel, reqs <-chan 
 				_ = req.Reply(true, nil)
 				// Hand over the request stream so attach can forward
 				// window-change events to the PTY.
-				HandleAttach(ctx, ch, reqs, s.cfg.AttachTarget)
+				HandleAttach(ctx, ch, reqs, s.cfg.AttachTarget, s.cfg.AttachHooks)
 				return
 			default:
 				_ = req.Reply(false, nil)
