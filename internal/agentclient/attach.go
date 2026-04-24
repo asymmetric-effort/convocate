@@ -210,5 +210,10 @@ func enableRawAndWinch(stdin io.Reader, sess *ssh.Session) func() {
 // SSHClient exposes the underlying SSH client so callers can use other
 // subsystems (notably attach) without re-dialing. Reusing a single
 // connection per agent is why we keep the CRUD client open in the first
-// place.
-func (c *CRUDClient) SSHClient() *ssh.Client { return c.conn }
+// place. The returned client may be swapped out by a reconnect — take
+// it under the client's lock at call time rather than caching it.
+func (c *CRUDClient) SSHClient() *ssh.Client {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.conn
+}

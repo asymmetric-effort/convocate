@@ -1,10 +1,14 @@
 package agentclient
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -26,14 +30,44 @@ type CRUDConfig struct {
 	PrivateKeyPath string
 	// DialTimeout caps the initial TCP+SSH handshake. Defaults to 10s.
 	DialTimeout time.Duration
+
+	// HeartbeatInterval controls how often the client pings the agent to
+	// prove the SSH connection is alive. Zero disables the heartbeat
+	// (useful for tests and short-lived scripts). Typical production
+	// value is 30s, matching the agent's own status heartbeat so an
+	// asymmetric failure is visible on one side within a single cycle.
+	HeartbeatInterval time.Duration
+
+	// ReconnectBackoff is the initial delay between reconnect attempts
+	// after a heartbeat failure. Doubles up to MaxReconnectBackoff.
+	ReconnectBackoff    time.Duration
+	MaxReconnectBackoff time.Duration
+
+	// Logger receives diagnostic lines. Nil = standard logger.
+	Logger *log.Logger
 }
 
 // CRUDClient wraps an SSH connection to an agent and exposes one method per
 // op the agent implements. A client is safe for concurrent use — each Call
-// opens a fresh session channel, so overlapping calls don't interfere.
+// opens a fresh session channel over the shared connection.
+//
+// When HeartbeatInterval > 0, a background goroutine fires a ping op at
+// the configured cadence. If the ping fails, the client marks itself
+// unhealthy and attempts to re-dial with exponential backoff; follow-up
+// Call invocations wait briefly for the connection to recover before
+// returning an error.
 type CRUDClient struct {
-	conn *ssh.Client
-	cfg  CRUDConfig
+	cfg    CRUDConfig
+	signer ssh.Signer
+	addr   string
+
+	mu      sync.RWMutex
+	conn    *ssh.Client
+	healthy atomic.Bool
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 // NewCRUDClient dials the agent in cfg and returns a connected client.
@@ -51,36 +85,153 @@ func NewCRUDClient(cfg CRUDConfig) (*CRUDClient, error) {
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = 10 * time.Second
 	}
+	if cfg.ReconnectBackoff <= 0 {
+		cfg.ReconnectBackoff = time.Second
+	}
+	if cfg.MaxReconnectBackoff <= 0 {
+		cfg.MaxReconnectBackoff = 30 * time.Second
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = log.Default()
+	}
 	signer, err := loadPrivateKey(cfg.PrivateKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("load shell->agent key: %w", err)
 	}
 	addr := net.JoinHostPort(cfg.AgentHost, fmt.Sprintf("%d", cfg.AgentPort))
-	conn, err := ssh.Dial("tcp", addr, &ssh.ClientConfig{
+	conn, err := dialAgent(addr, cfg, signer)
+	if err != nil {
+		return nil, fmt.Errorf("dial %s: %w", addr, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &CRUDClient{
+		cfg:    cfg,
+		signer: signer,
+		addr:   addr,
+		conn:   conn,
+		ctx:    ctx,
+		cancel: cancel,
+	}
+	c.healthy.Store(true)
+
+	if cfg.HeartbeatInterval > 0 {
+		c.wg.Add(1)
+		go c.runHeartbeat()
+	}
+	return c, nil
+}
+
+// dialAgent is the raw dial used by NewCRUDClient and the reconnect loop.
+// Factored out so both paths share the same auth + host-key settings.
+func dialAgent(addr string, cfg CRUDConfig, signer ssh.Signer) (*ssh.Client, error) {
+	return ssh.Dial("tcp", addr, &ssh.ClientConfig{
 		User:            cfg.User,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         cfg.DialTimeout,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("dial %s: %w", addr, err)
-	}
-	return &CRUDClient{conn: conn, cfg: cfg}, nil
 }
 
-// Close releases the SSH connection.
+// Close cancels the heartbeat goroutine, waits for it to exit, and closes
+// the underlying SSH connection. Safe to call more than once.
 func (c *CRUDClient) Close() error {
-	if c.conn == nil {
+	if c.cancel != nil {
+		c.cancel()
+	}
+	c.wg.Wait()
+	c.mu.Lock()
+	conn := c.conn
+	c.conn = nil
+	c.mu.Unlock()
+	if conn == nil {
 		return nil
 	}
-	return c.conn.Close()
+	return conn.Close()
+}
+
+// Healthy reports whether the last heartbeat succeeded (or no heartbeat
+// has run yet and the initial dial worked). TUI code reads this to
+// render per-agent status without making a probe call of its own.
+func (c *CRUDClient) Healthy() bool { return c.healthy.Load() }
+
+// runHeartbeat fires ping at cfg.HeartbeatInterval. On ping failure the
+// client is marked unhealthy and the goroutine attempts to re-dial with
+// exponential backoff; success flips healthy back on.
+func (c *CRUDClient) runHeartbeat() {
+	defer c.wg.Done()
+	tick := time.NewTicker(c.cfg.HeartbeatInterval)
+	defer tick.Stop()
+	backoff := c.cfg.ReconnectBackoff
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-tick.C:
+			err := c.heartbeatOnce()
+			if err == nil {
+				if !c.healthy.Load() {
+					c.cfg.Logger.Printf("agentclient: heartbeat to %s recovered", c.addr)
+				}
+				c.healthy.Store(true)
+				backoff = c.cfg.ReconnectBackoff
+				continue
+			}
+			c.healthy.Store(false)
+			c.cfg.Logger.Printf("agentclient: heartbeat to %s failed: %v; reconnecting", c.addr, err)
+			if rerr := c.reconnect(); rerr != nil {
+				c.cfg.Logger.Printf("agentclient: reconnect to %s failed: %v (retry in %v)", c.addr, rerr, backoff)
+				select {
+				case <-c.ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
+				backoff = nextBackoff(backoff, c.cfg.MaxReconnectBackoff)
+			} else {
+				c.cfg.Logger.Printf("agentclient: reconnected to %s", c.addr)
+				c.healthy.Store(true)
+				backoff = c.cfg.ReconnectBackoff
+			}
+		}
+	}
+}
+
+// heartbeatOnce sends a ping; its success is the signal that the SSH
+// connection is still good.
+func (c *CRUDClient) heartbeatOnce() error {
+	_, err := c.Ping()
+	return err
+}
+
+// reconnect redials and atomically swaps the connection. The old conn is
+// closed after the swap so any in-flight Call on it fails quickly rather
+// than hanging until TCP timeout.
+func (c *CRUDClient) reconnect() error {
+	conn, err := dialAgent(c.addr, c.cfg, c.signer)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	old := c.conn
+	c.conn = conn
+	c.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	return nil
 }
 
 // Call runs one op against the agent, decoding the result into out (which
 // may be nil for ops that return an empty object). Returns an error if the
 // agent replied with ok=false or the wire format is malformed.
 func (c *CRUDClient) Call(op string, params any, out any) error {
-	sess, err := c.conn.NewSession()
+	c.mu.RLock()
+	conn := c.conn
+	c.mu.RUnlock()
+	if conn == nil {
+		return fmt.Errorf("agent %s: connection closed", c.addr)
+	}
+	sess, err := conn.NewSession()
 	if err != nil {
 		return fmt.Errorf("new session: %w", err)
 	}

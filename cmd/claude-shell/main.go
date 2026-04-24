@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
 	"github.com/asymmetric-effort/claude-shell/internal/config"
@@ -167,8 +168,9 @@ func buildRouter(mgr *session.Manager, log *logging.Logger) (*multihost.Router, 
 	}
 	for _, rec := range records {
 		client, err := agentclient.NewCRUDClient(agentclient.CRUDConfig{
-			AgentHost:      rec.Host,
-			PrivateKeyPath: rec.PrivateKeyPath,
+			AgentHost:         rec.Host,
+			PrivateKeyPath:    rec.PrivateKeyPath,
+			HeartbeatInterval: 30 * time.Second,
 		})
 		if err != nil {
 			if log != nil {

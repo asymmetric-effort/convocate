@@ -240,6 +240,101 @@ func TestCRUDClient_WriteOps(t *testing.T) {
 	}
 }
 
+func TestCRUDClient_HeartbeatKeepsHealthy(t *testing.T) {
+	orch := &fakeOrch{}
+	addr, keyPath, cancel := spinUpAgent(t, orch)
+	defer cancel()
+
+	host, port := splitHostPort(t, addr)
+	c, err := NewCRUDClient(CRUDConfig{
+		AgentHost:         host,
+		AgentPort:         port,
+		PrivateKeyPath:    keyPath,
+		HeartbeatInterval: 80 * time.Millisecond,
+		ReconnectBackoff:  20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Give the heartbeat a couple of ticks to fire.
+	time.Sleep(250 * time.Millisecond)
+	if !c.Healthy() {
+		t.Error("client should be healthy after successful heartbeats")
+	}
+}
+
+func TestCRUDClient_ReconnectRestoresCall(t *testing.T) {
+	// End-to-end: initial conn works, we yank the SSH conn out from
+	// under the client, the heartbeat goroutine detects the breakage
+	// and redials, and follow-up Call invocations start succeeding
+	// again. Doesn't rely on catching the transient unhealthy window —
+	// that's logged but too race-sensitive to poll reliably.
+	orch := &fakeOrch{sessions: []session.Metadata{{UUID: "alive"}}}
+	addr, keyPath, cancel := spinUpAgent(t, orch)
+	defer cancel()
+
+	host, port := splitHostPort(t, addr)
+	c, err := NewCRUDClient(CRUDConfig{
+		AgentHost:           host,
+		AgentPort:           port,
+		PrivateKeyPath:      keyPath,
+		HeartbeatInterval:   60 * time.Millisecond,
+		ReconnectBackoff:    20 * time.Millisecond,
+		MaxReconnectBackoff: 40 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Baseline: ping works.
+	if _, err := c.Ping(); err != nil {
+		t.Fatalf("initial ping: %v", err)
+	}
+
+	// Force-close the connection. Immediate calls will fail; the
+	// background heartbeat picks up the pieces and reconnects.
+	c.mu.RLock()
+	broken := c.conn
+	c.mu.RUnlock()
+	if broken != nil {
+		_ = broken.Close()
+	}
+
+	// Poll until a List call succeeds again — proof the conn was
+	// replaced by the heartbeat's reconnect path.
+	deadline := time.Now().Add(3 * time.Second)
+	var listErr error
+	for time.Now().Before(deadline) {
+		if _, err := c.List(); err == nil {
+			return
+		} else {
+			listErr = err
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatalf("List never recovered after forced conn close; last err=%v", listErr)
+}
+
+func TestCRUDClient_CallAfterCloseFails(t *testing.T) {
+	orch := &fakeOrch{}
+	addr, keyPath, cancel := spinUpAgent(t, orch)
+	defer cancel()
+
+	host, port := splitHostPort(t, addr)
+	c, err := NewCRUDClient(CRUDConfig{AgentHost: host, AgentPort: port, PrivateKeyPath: keyPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = c.Close()
+
+	if _, err := c.Ping(); err == nil {
+		t.Error("Ping after Close should fail")
+	}
+}
+
 func TestCRUDClient_BadKeyRejected(t *testing.T) {
 	orch := &fakeOrch{}
 	addr, _, cancel := spinUpAgent(t, orch)
