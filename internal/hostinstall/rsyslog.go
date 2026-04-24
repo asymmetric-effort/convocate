@@ -51,21 +51,32 @@ template(name="claudeAgentPerHost" type="list") {
     constant(value=".log")
 }
 
-# Route any message arriving on the TLS listener (RemoteAddress non-empty)
-# into the per-agent file and stop further processing so it doesn't also
-# hit /var/log/syslog.
+# Route any message arriving on the TLS listener (imtcp ingress) into the
+# per-agent file and stop further processing so it doesn't also hit
+# /var/log/syslog. Ordering matters: this has to run before the
+# claude-shell programname rule because agent-forwarded messages may be
+# tagged claude-shell too.
 if ($inputname == "imtcp") then {
     action(type="omfile" dynaFile="claudeAgentPerHost"
            dirCreateMode="0755" fileCreateMode="0640")
     stop
 }
+
+# Local claude-shell syslog writes land in /var/log/claude-shell.log
+# rather than /var/log/syslog so operators have one file to tail for
+# shell-side activity.
+if ($programname == "claude-shell") then {
+    action(type="omfile" file="/var/log/claude-shell.log"
+           fileCreateMode="0640" dirCreateMode="0755")
+    stop
+}
 `
 
-// rsyslogLogrotateConfig keeps the per-agent logs bounded — daily rotation,
-// 14-day retention, gzip after one cycle. copytruncate avoids needing
-// to HUP rsyslog on every rotation.
+// rsyslogLogrotateConfig keeps the claude-shell / claude-agent logs bounded
+// — daily rotation, 14-day retention, gzip after one cycle. copytruncate
+// avoids needing to HUP rsyslog on every rotation.
 const rsyslogLogrotateConfig = `# Managed by claude-host init-shell. Do not edit by hand.
-/var/log/claude-agent/*.log {
+/var/log/claude-agent/*.log /var/log/claude-shell.log {
     daily
     rotate 14
     compress

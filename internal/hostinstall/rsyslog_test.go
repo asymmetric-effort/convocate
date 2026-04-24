@@ -45,14 +45,33 @@ func TestRsyslogServerStep_GeneratesCA_WhenMissing(t *testing.T) {
 		t.Errorf("server.key mode = %o, want 0600", srvKey.Mode)
 	}
 
-	// Config + logrotate written.
-	if cfg := findCopy(m.copies, "/etc/rsyslog.d/10-claude-shell-server.conf"); cfg == nil {
-		t.Error("rsyslog server config not uploaded")
-	} else if !bytes.Contains(cfg.Content, []byte("imtcp")) {
-		t.Errorf("rsyslog config missing imtcp module: %q", cfg.Content)
+	// Config + logrotate written. Config must include both the imtcp
+	// ingress block and the local claude-shell programname routing.
+	cfg := findCopy(m.copies, "/etc/rsyslog.d/10-claude-shell-server.conf")
+	if cfg == nil {
+		t.Fatal("rsyslog server config not uploaded")
 	}
-	if lr := findCopy(m.copies, "/etc/logrotate.d/claude-shell-agent-logs"); lr == nil {
-		t.Error("logrotate config not uploaded")
+	for _, want := range []string{
+		"imtcp",
+		"claudeAgentPerHost",
+		`$programname == "claude-shell"`,
+		"/var/log/claude-shell.log",
+	} {
+		if !bytes.Contains(cfg.Content, []byte(want)) {
+			t.Errorf("rsyslog config missing %q", want)
+		}
+	}
+	lr := findCopy(m.copies, "/etc/logrotate.d/claude-shell-agent-logs")
+	if lr == nil {
+		t.Fatal("logrotate config not uploaded")
+	}
+	for _, want := range []string{
+		"/var/log/claude-agent/*.log",
+		"/var/log/claude-shell.log",
+	} {
+		if !bytes.Contains(lr.Content, []byte(want)) {
+			t.Errorf("logrotate config missing %q", want)
+		}
 	}
 
 	// Expected command sequence highlights.
