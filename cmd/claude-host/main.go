@@ -108,14 +108,30 @@ func cmdInstall(args []string) error {
 }
 
 func cmdInitShell(args []string) error {
-	t, err := parseTargetFlags("init-shell", args)
-	if err != nil {
+	fs := flag.NewFlagSet("init-shell", flag.ContinueOnError)
+	var t targetFlags
+	fs.StringVar(&t.host, "host", "", "remote host to target (empty = local)")
+	fs.StringVar(&t.user, "user", os.Getenv("USER"), "remote user to connect as (ignored for local)")
+	binary := fs.String("binary", "", "path to the local claude-shell binary (default: sibling of claude-host)")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if err := requireLocalRoot(t); err != nil {
 		return err
 	}
-	return fmt.Errorf("claude-host init-shell: not yet implemented (target=%s)", describeTarget(t))
+
+	ctx, cancel := signalContext()
+	defer cancel()
+
+	r, sshCfg, err := runnerFor(t)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	return hostinstall.InitShell(ctx, r, sshCfg, hostinstall.InitShellOptions{
+		BinaryPath: *binary,
+	}, os.Stderr)
 }
 
 func cmdInitAgent(args []string) error {
