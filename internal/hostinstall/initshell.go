@@ -50,7 +50,7 @@ const statusAuthKeysHeader = "# claude-shell status listener authorized keys.\n"
 //  2. Run `claude-shell install` remotely (idempotent; creates user, builds image, etc.)
 //  3. Create /etc/claude-shell with an empty status_authorized_keys file
 //  4. Install the claude-shell-status systemd unit
-//  5. ufw allow 222/tcp  (agent->shell status channel)
+//  5. ufw allow 223/tcp  (agent->shell status channel)
 //  6. daemon-reload, enable + start the unit
 //
 // sshCfg is accepted but unused today — init-shell does not reboot, so the
@@ -75,7 +75,7 @@ func InitShell(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitShellO
 		{"Run claude-shell install", stepRunShellInstall},
 		{"Create /etc/claude-shell", stepCreateEtcShellDir},
 		{"Install claude-shell-status systemd unit", stepWriteStatusUnit},
-		{"Allow tcp/222 through ufw", stepUFWAllow222},
+		{"Allow tcp/223 through ufw", stepUFWAllow222},
 		{"Enable + start claude-shell-status", stepEnableStatusService},
 		{"Install rsyslog TLS CA + server", stepInstallRsyslogServer},
 	}
@@ -164,11 +164,13 @@ chmod 0644 /etc/systemd/system/claude-shell-status.service
 }
 
 func stepUFWAllow222(ctx context.Context, r Runner, log io.Writer) error {
-	// `ufw allow` is idempotent — re-running it just prints "Skipping
-	// adding existing rule". Some hosts may not have ufw enabled, in
-	// which case `ufw allow` still records the rule for when it comes
-	// up. `|| true` guards the genuinely-not-installed case.
-	cmd := `command -v ufw >/dev/null 2>&1 && ufw allow 222/tcp || true`
+	// Shell status listener binds :223; agent CRUD owns :222 on combined
+	// hosts. `ufw allow` is idempotent — re-running it just prints
+	// "Skipping adding existing rule". Some hosts may not have ufw
+	// enabled, in which case `ufw allow` still records the rule for
+	// when it comes up. `|| true` guards the genuinely-not-installed
+	// case.
+	cmd := `command -v ufw >/dev/null 2>&1 && ufw allow 223/tcp || true`
 	return r.Run(ctx, cmd, RunOptions{Sudo: true, Stdout: log, Stderr: log})
 }
 

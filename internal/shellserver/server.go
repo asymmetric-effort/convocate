@@ -44,7 +44,8 @@ type Config struct {
 	// events. Missing file = empty allowlist = no agent can connect.
 	AuthorizedKeysPath string
 
-	// Listen is the tcp address. Empty defaults to ":222".
+	// Listen is the tcp address. Empty defaults to ":223" (the shell's
+	// status listener — agent CRUD owns :222).
 	Listen string
 
 	// Listener receives every decoded status event. Must be non-nil.
@@ -68,7 +69,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("shellserver: Listener is required")
 	}
 	if cfg.Listen == "" {
-		cfg.Listen = ":222"
+		cfg.Listen = ":223"
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = log.Default()

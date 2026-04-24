@@ -165,8 +165,8 @@ func TestNew_DefaultsApplied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.cfg.ShellPort != 222 {
-		t.Errorf("ShellPort default = %d, want 222", e.cfg.ShellPort)
+	if e.cfg.ShellPort != 223 {
+		t.Errorf("ShellPort default = %d, want 223", e.cfg.ShellPort)
 	}
 	if e.cfg.User != "claude" {
 		t.Errorf("User default = %q, want claude", e.cfg.User)

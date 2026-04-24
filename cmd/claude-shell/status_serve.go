@@ -15,11 +15,16 @@ import (
 // conventions set by init-shell (CA + host key co-located; agent-side
 // public keys delivered by init-agent and appended to the allowlist).
 const (
-	defaultStatusHostKeyPath    = "/etc/claude-shell/status_host_ed25519_key"
-	defaultStatusAuthKeysPath   = "/etc/claude-shell/status_authorized_keys"
-	defaultStatusListen         = ":222"
-	defaultStatusLogDir         = "/var/log/claude-agent"
-	defaultStatusShellLogFile   = "/var/log/claude-shell.log"
+	defaultStatusHostKeyPath  = "/etc/claude-shell/status_host_ed25519_key"
+	defaultStatusAuthKeysPath = "/etc/claude-shell/status_authorized_keys"
+	// :223 not :222 — claude-agent owns :222 for its CRUD listener.
+	// A combined host (agent + shell on one machine) needs the two SSH
+	// servers on different ports or the second to bind fails. Agent keeps
+	// the well-known slot because shell→agent dials happen on every CRUD
+	// op while shell's inbound status is lower-frequency.
+	defaultStatusListen       = ":223"
+	defaultStatusLogDir       = "/var/log/claude-agent"
+	defaultStatusShellLogFile = "/var/log/claude-shell.log"
 )
 
 // cmdStatusServe runs the shell-side SSH listener that receives status

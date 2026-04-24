@@ -37,7 +37,9 @@ import (
 // Config configures a StatusEmitter.
 type Config struct {
 	// ShellHost is the hostname/IP of the claude-shell host's status
-	// listener. Port defaults to 222 if ShellPort is 0.
+	// listener. Port defaults to 223 when ShellPort is 0 — the shell's
+	// status listener binds :223 so a combined host can run both shell
+	// and agent without a port clash (agent keeps :222).
 	ShellHost string
 	ShellPort int
 
@@ -95,7 +97,7 @@ func NewStatusEmitter(cfg Config) (*StatusEmitter, error) {
 		return nil, fmt.Errorf("agentclient: ShellHost is required")
 	}
 	if cfg.ShellPort == 0 {
-		cfg.ShellPort = 222
+		cfg.ShellPort = 223
 	}
 	if cfg.User == "" {
 		cfg.User = "claude"

@@ -344,8 +344,8 @@ func TestNew_DefaultsListenPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if srv.cfg.Listen != ":222" {
-		t.Errorf("default Listen = %q, want :222", srv.cfg.Listen)
+	if srv.cfg.Listen != ":223" {
+		t.Errorf("default Listen = %q, want :223", srv.cfg.Listen)
 	}
 }
 

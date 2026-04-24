@@ -119,7 +119,7 @@ func maybeStartEmitter(ctx context.Context, agentID string) (*agentclient.Status
 	}
 	emitter, err := agentclient.NewStatusEmitter(agentclient.Config{
 		ShellHost:         host,
-		ShellPort:         222,
+		ShellPort:         223,
 		User:              "claude",
 		PrivateKeyPath:    defaultShellPrivateKeyPath,
 		AgentID:           agentID,

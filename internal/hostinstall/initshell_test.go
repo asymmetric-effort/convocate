@@ -57,7 +57,7 @@ func TestInitShell_HappyPath(t *testing.T) {
 		"claude-shell install",
 		"/etc/claude-shell/status_authorized_keys",
 		"/etc/systemd/system/claude-shell-status.service",
-		"ufw allow 222/tcp",
+		"ufw allow 223/tcp",
 		"systemctl enable claude-shell-status.service",
 	}
 	for i, want := range wants {
