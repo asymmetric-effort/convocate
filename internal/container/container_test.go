@@ -556,3 +556,24 @@ func TestRunner_StartDetached_Failure(t *testing.T) {
 		t.Error("expected StartDetached error when docker run fails")
 	}
 }
+
+func TestRunner_SetImageOverridesDefault(t *testing.T) {
+	r := NewRunner("12345678-aaaa-bbbb-cccc-ddddeeeefffff", "/dir", testUserInfo(), testPaths())
+	if got := r.imageRef(); got == "" {
+		t.Error("default image should not be empty")
+	}
+	r.SetImage("claude-shell:v2.1.0")
+	if got := r.imageRef(); got != "claude-shell:v2.1.0" {
+		t.Errorf("imageRef after SetImage = %q", got)
+	}
+}
+
+func TestRunner_BuildRunArgs_UsesSetImage(t *testing.T) {
+	r := NewRunner("12345678-aaaa-bbbb-cccc-ddddeeeefffff", "/dir", testUserInfo(), testPaths())
+	r.SetImage("claude-shell:v2.3.4")
+	args := r.buildRunArgs("claude-session-test")
+	last := args[len(args)-1]
+	if last != "claude-shell:v2.3.4" {
+		t.Errorf("last arg = %q, want the configured image tag", last)
+	}
+}

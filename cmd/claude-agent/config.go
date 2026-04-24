@@ -27,6 +27,13 @@ const (
 	// init-agent can drop them in during provisioning.
 	defaultShellHostFile       = "/etc/claude-agent/shell-host"
 	defaultShellPrivateKeyPath = "/etc/claude-agent/agent_to_shell_ed25519_key"
+
+	// Current-image pointer: a single line naming the image tag the
+	// agent should invoke at docker-run time, e.g. "claude-shell:v2.0.0".
+	// init-agent + claude-host update rewrite this file when a new
+	// image arrives. Absent or empty → agent falls back to
+	// config.ContainerImage() (the compile-time default).
+	defaultCurrentImageFile = "/etc/claude-agent/current-image"
 )
 
 // Agent ID format: 12 lowercase alphanumeric characters. Generated once and

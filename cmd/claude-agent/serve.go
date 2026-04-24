@@ -49,6 +49,10 @@ func cmdServe(_ []string) error {
 		pub = emitter
 	}
 	orch := agentserver.NewSessionOrchestrator(mgr, u, paths, dns.DetectHostIP(), agentID, pub)
+	orch.ImageRef = readCurrentImage(defaultCurrentImageFile)
+	if orch.ImageRef != "" {
+		fmt.Fprintf(os.Stderr, "claude-agent: sessions will use image %q\n", orch.ImageRef)
+	}
 
 	d := agentserver.NewDispatcher()
 	agentserver.RegisterCoreOps(d, agentID, Version)
@@ -83,6 +87,18 @@ func cmdServe(_ []string) error {
 	}()
 
 	return srv.Serve(ctx)
+}
+
+// readCurrentImage returns the trimmed content of path or an empty
+// string if the file is missing / unreadable / empty. A blank return
+// tells the orchestrator "use the compile-time default" — useful before
+// init-agent has pushed an image pointer.
+func readCurrentImage(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // maybeStartEmitter reads the shell-host address and key path from

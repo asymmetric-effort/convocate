@@ -18,21 +18,22 @@ import (
 	"github.com/asymmetric-effort/claude-shell/internal/sshutil"
 )
 
-// pipeAttachTarget is an AttachTarget that relays to in-memory pipes
-// instead of launching docker+pty. Tests can drive the remote end
-// directly and read back what the client wrote / wrote back.
+// pipeAttachTarget is an AttachTarget that uses io.Pipe to relay between
+// the test's "container" side and the SSH channel. Real pipes block
+// properly on empty reads, so io.Copy doesn't spin and the test runs
+// reliably under load.
 type pipeAttachTarget struct {
-	// received* collect what the "container" end observes; reply is
-	// what the container writes back to the client.
 	receivedID string
 
-	// serverToClient is what the remote end writes; clientToServer is
-	// what the remote end reads.
-	serverToClient *bytes.Buffer
-	clientToServer *bytes.Buffer
+	// Bytes the server writes end up readable through the rwc (master
+	// side of HandleAttach). clientSink collects what the client sent
+	// to us via the same rwc's Write.
+	serverOut  *io.PipeWriter // server writes here — propagates to rwc.Read
+	serverOutR *io.PipeReader
+	clientSink *bytes.Buffer
+	sinkMu     sync.Mutex
 
-	// cols/rows capture the initial size + latest resize.
-	initCols, initRows uint16
+	initCols, initRows     uint16
 	resizeCols, resizeRows uint16
 
 	closeOnce sync.Once
@@ -40,62 +41,62 @@ type pipeAttachTarget struct {
 }
 
 func newPipeAttachTarget() *pipeAttachTarget {
+	r, w := io.Pipe()
 	return &pipeAttachTarget{
-		serverToClient: &bytes.Buffer{},
-		clientToServer: &bytes.Buffer{},
-		done:           make(chan struct{}),
+		serverOut:  w,
+		serverOutR: r,
+		clientSink: &bytes.Buffer{},
+		done:       make(chan struct{}),
 	}
 }
 
-type testRWC struct {
-	readFrom io.Reader
-	writeTo  io.Writer
-	closed   chan struct{}
+// writeToClient queues bytes that the server will "produce" — the SSH
+// channel pushes them to the client's stdout.
+func (p *pipeAttachTarget) writeToClient(s string) {
+	_, _ = p.serverOut.Write([]byte(s))
 }
 
-func (t *testRWC) Read(p []byte) (int, error) {
-	select {
-	case <-t.closed:
-		return 0, io.EOF
-	default:
-	}
-	// Block-waiting read is inconvenient for our test purposes; we use
-	// a reader that has bytes already queued. When empty, return EOF so
-	// io.Copy unblocks — the test fills the buffer before calling attach.
-	n, err := t.readFrom.Read(p)
-	if err == io.EOF {
-		select {
-		case <-t.closed:
-			return 0, io.EOF
-		case <-time.After(10 * time.Millisecond):
-			return 0, nil // busy-ish; io.Copy retries
-		}
-	}
-	return n, err
+// clientSent returns everything the client has sent to the server so far.
+func (p *pipeAttachTarget) clientSent() string {
+	p.sinkMu.Lock()
+	defer p.sinkMu.Unlock()
+	return p.clientSink.String()
 }
 
-func (t *testRWC) Write(p []byte) (int, error) {
-	return t.writeTo.Write(p)
+type attachRWC struct {
+	reads  *io.PipeReader
+	writes *bytes.Buffer
+	mu     *sync.Mutex
+	closed chan struct{}
 }
 
-func (t *testRWC) Close() error {
+func (t *attachRWC) Read(p []byte) (int, error) { return t.reads.Read(p) }
+
+func (t *attachRWC) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.writes.Write(p)
+}
+
+func (t *attachRWC) Close() error {
 	select {
 	case <-t.closed:
 	default:
 		close(t.closed)
+		_ = t.reads.Close()
 	}
 	return nil
 }
 
-func (p *pipeAttachTarget) Start(ctx context.Context, sessionID string, cols, rows uint16) (io.ReadWriteCloser, func(uint16, uint16), func() error, func(), error) {
+func (p *pipeAttachTarget) Start(_ context.Context, sessionID string, cols, rows uint16) (io.ReadWriteCloser, func(uint16, uint16), func() error, func(), error) {
 	p.receivedID = sessionID
 	p.initCols = cols
 	p.initRows = rows
-
-	rwc := &testRWC{
-		readFrom: p.serverToClient, // what the server writes, the client reads
-		writeTo:  p.clientToServer, // what the client writes, the server records
-		closed:   make(chan struct{}),
+	rwc := &attachRWC{
+		reads:  p.serverOutR,
+		writes: p.clientSink,
+		mu:     &p.sinkMu,
+		closed: make(chan struct{}),
 	}
 	resize := func(c, r uint16) { p.resizeCols = c; p.resizeRows = r }
 	wait := func() error {
@@ -103,7 +104,10 @@ func (p *pipeAttachTarget) Start(ctx context.Context, sessionID string, cols, ro
 		return nil
 	}
 	kill := func() {
-		p.closeOnce.Do(func() { close(p.done) })
+		p.closeOnce.Do(func() {
+			close(p.done)
+			_ = p.serverOut.Close()
+		})
 	}
 	return rwc, resize, wait, kill, nil
 }
@@ -152,12 +156,17 @@ func spinUpAgentWithAttach(t *testing.T, target agentserver.AttachTarget) (addr,
 
 func TestAttach_ServerReceivesHeaderAndData(t *testing.T) {
 	target := newPipeAttachTarget()
-	// Pre-load bytes the server will "send" to the client.
-	target.serverToClient.WriteString("hello from container\n")
-	// Schedule the target to finish after a short time so attach unblocks.
+	// io.Pipe is synchronous so writeToClient blocks until the server
+	// side drains. Run it in a goroutine so the test's Attach call can
+	// make progress. Once the byte is through, close the pipe so the
+	// client's stdout copy hits EOF and attach unblocks cleanly.
 	go func() {
-		time.Sleep(150 * time.Millisecond)
-		target.closeOnce.Do(func() { close(target.done) })
+		target.writeToClient("hello from container\n")
+		time.Sleep(100 * time.Millisecond)
+		target.closeOnce.Do(func() {
+			close(target.done)
+			_ = target.serverOut.Close()
+		})
 	}()
 
 	addr, keyPath, cancel := spinUpAgentWithAttach(t, target)
@@ -191,9 +200,16 @@ func TestAttach_ServerReceivesHeaderAndData(t *testing.T) {
 	if !strings.Contains(got.String(), "hello from container") {
 		t.Errorf("client stdout missing server output: %q", got.String())
 	}
-	if !strings.Contains(target.clientToServer.String(), "echo one") {
-		t.Errorf("server didn't receive client stdin: %q", target.clientToServer.String())
+	// Under -race the server-side stdin copy can race with the wait()
+	// return. Poll briefly so we don't assert on a half-drained sink.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if strings.Contains(target.clientSent(), "echo one") {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
+	t.Errorf("server didn't receive client stdin: %q", target.clientSent())
 }
 
 func TestAttach_RequiresSessionID(t *testing.T) {

@@ -45,6 +45,12 @@ type SessionOrchestrator struct {
 	DNSServer string
 	AgentID   string
 
+	// ImageRef is the docker image tag every new/restarted container
+	// should use. Populated by the serve entry point from
+	// /etc/claude-agent/current-image. Empty falls back to the
+	// compile-time default via container.Runner's own logic.
+	ImageRef string
+
 	// Publisher receives a status event for each lifecycle action. nil = no
 	// emission (useful in tests that don't care about events).
 	Publisher StatusPublisher
@@ -165,6 +171,9 @@ func (o *SessionOrchestrator) Restart(id string) error {
 	r.SetPort(meta.Port)
 	r.SetProtocol(meta.EffectiveProtocol())
 	r.SetDNSServer(o.DNSServer)
+	if o.ImageRef != "" {
+		r.SetImage(o.ImageRef)
+	}
 
 	running, err := r.IsRunning()
 	if err != nil {

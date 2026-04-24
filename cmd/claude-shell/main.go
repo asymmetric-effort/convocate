@@ -29,8 +29,10 @@ func run(args []string) error {
 		case "install":
 			// install runs as root via sudo; it creates the claude user
 			// and configures the host. Enforcing "must be claude" here
-			// would be a chicken-and-egg problem.
-			return install.New().Run()
+			// would be a chicken-and-egg problem. Version is threaded
+			// through so the image build tag matches this binary's
+			// semver — agents pull the same versioned image later.
+			return install.New(Version).Run()
 		case "status-serve":
 			// status-serve is the systemd unit for the TLS-authenticated
 			// shell-side listener — runs as root so it can bind tcp/222

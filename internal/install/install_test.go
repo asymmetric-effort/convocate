@@ -37,14 +37,14 @@ func recordingExecFunc(inner ExecFunc) (ExecFunc, *[]execRecord) {
 }
 
 func TestNew(t *testing.T) {
-	inst := New()
+	inst := New("")
 	if inst == nil {
 		t.Fatal("New returned nil")
 	}
 }
 
 func TestNewWithExec(t *testing.T) {
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	if inst == nil {
 		t.Fatal("NewWithExec returned nil")
 	}
@@ -54,7 +54,7 @@ func TestRun_AsRoot(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("test requires root")
 	}
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.Run()
 	if err != nil {
 		t.Logf("Run error (may be expected if claude user missing): %v", err)
@@ -66,7 +66,7 @@ func TestRun_NotRoot(t *testing.T) {
 		t.Skip("test must run as non-root")
 	}
 
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.Run()
 	if err == nil {
 		t.Error("expected error when not running as root")
@@ -74,7 +74,7 @@ func TestRun_NotRoot(t *testing.T) {
 }
 
 func TestCheckPlatform_Success(t *testing.T) {
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.checkPlatform()
 	if err != nil {
 		t.Errorf("checkPlatform failed on linux: %v", err)
@@ -82,7 +82,7 @@ func TestCheckPlatform_Success(t *testing.T) {
 }
 
 func TestCheckDocker_Success(t *testing.T) {
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.checkDocker()
 	if err != nil {
 		t.Errorf("checkDocker failed: %v", err)
@@ -90,7 +90,7 @@ func TestCheckDocker_Success(t *testing.T) {
 }
 
 func TestCheckDocker_Failure(t *testing.T) {
-	inst := NewWithExec(mockExecFailure)
+	inst := NewWithExec(mockExecFailure, "")
 	err := inst.checkDocker()
 	if err == nil {
 		t.Error("expected error when docker is not available")
@@ -98,7 +98,7 @@ func TestCheckDocker_Failure(t *testing.T) {
 }
 
 func TestCheckClaudeCLI_Found(t *testing.T) {
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.checkClaudeCLI()
 	if _, statErr := os.Stat("/usr/local/bin/claude"); statErr == nil {
 		if err != nil {
@@ -115,7 +115,7 @@ func TestSetupSkel(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("setupSkel requires root (to chown)")
 	}
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.setupSkel()
 	if err != nil {
 		t.Logf("setupSkel error (may be expected): %v", err)
@@ -123,7 +123,7 @@ func TestSetupSkel(t *testing.T) {
 }
 
 func TestBuildImage_Success(t *testing.T) {
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.buildImage()
 	if err != nil {
 		t.Errorf("buildImage failed: %v", err)
@@ -131,7 +131,7 @@ func TestBuildImage_Success(t *testing.T) {
 }
 
 func TestBuildImage_DockerFails(t *testing.T) {
-	inst := NewWithExec(mockExecFailure)
+	inst := NewWithExec(mockExecFailure, "")
 	err := inst.buildImage()
 	if err == nil {
 		t.Error("expected error when docker build fails")
@@ -166,7 +166,7 @@ func TestChownRecursive_InvalidPath(t *testing.T) {
 }
 
 func TestCreateUser_AlreadyExists(t *testing.T) {
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.createUser()
 	if err != nil {
 		t.Logf("createUser note: %v", err)
@@ -465,7 +465,7 @@ func TestConfigureLoginShell_CallsUsermod(t *testing.T) {
 	}
 
 	recFn, records := recordingExecFunc(mockExecSuccess)
-	inst := NewWithExec(recFn)
+	inst := NewWithExec(recFn, "")
 
 	err := inst.configureLoginShell()
 	if err != nil {
@@ -503,7 +503,7 @@ func TestConfigureLoginShell_FailsWhenBinaryMissing(t *testing.T) {
 		t.Skip("claude-shell binary exists; cannot test missing-binary path")
 	}
 
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.configureLoginShell()
 	if err == nil {
 		t.Error("expected error when claude-shell binary is missing")
@@ -518,7 +518,7 @@ func TestConfigureLoginShell_FailsWhenUsermodFails(t *testing.T) {
 		t.Skip("claude-shell binary not installed at /usr/local/bin/claude-shell")
 	}
 
-	inst := NewWithExec(mockExecFailure)
+	inst := NewWithExec(mockExecFailure, "")
 	err := inst.configureLoginShell()
 	if err == nil {
 		t.Error("expected error when usermod fails")
@@ -536,7 +536,7 @@ func TestInstallBinary_RequiresRoot(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("installBinary requires root")
 	}
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.installBinary()
 	if err != nil {
 		t.Logf("installBinary error (may be expected): %v", err)
@@ -556,7 +556,7 @@ func TestRun_StepOrder(t *testing.T) {
 		t.Skip("this test verifies non-root error path")
 	}
 
-	inst := NewWithExec(mockExecSuccess)
+	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.Run()
 	if err == nil {
 		t.Fatal("expected error when not root")
@@ -572,7 +572,7 @@ func TestRun_StepOrder(t *testing.T) {
 
 func TestCreateUser_RecordsUsermod(t *testing.T) {
 	recFn, records := recordingExecFunc(mockExecSuccess)
-	inst := NewWithExec(recFn)
+	inst := NewWithExec(recFn, "")
 
 	err := inst.createUser()
 	if err != nil {

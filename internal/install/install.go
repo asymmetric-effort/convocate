@@ -21,7 +21,8 @@ import (
 
 // Installer performs installation tasks for claude-shell.
 type Installer struct {
-	execFn ExecFunc
+	execFn  ExecFunc
+	version string // binary semver; used as the image tag during build
 }
 
 // ExecFunc abstracts command execution for testing.
@@ -32,14 +33,27 @@ func DefaultExecFunc(name string, args ...string) *exec.Cmd {
 	return exec.Command(name, args...)
 }
 
-// New creates a new Installer with the default exec function.
-func New() *Installer {
-	return &Installer{execFn: DefaultExecFunc}
+// New creates a new Installer with the default exec function. version is
+// the claude-shell binary's semver string (passed in from main via
+// ldflags) — used verbatim as the image tag during build so agents that
+// pull this image later can reason about versions.
+func New(version string) *Installer {
+	return &Installer{execFn: DefaultExecFunc, version: version}
 }
 
 // NewWithExec creates a new Installer with a custom exec function.
-func NewWithExec(execFn ExecFunc) *Installer {
-	return &Installer{execFn: execFn}
+func NewWithExec(execFn ExecFunc, version string) *Installer {
+	return &Installer{execFn: execFn, version: version}
+}
+
+// ImageTag returns the tag this installer builds under — either
+// "claude-shell:<semver>" when a version was supplied, or
+// "claude-shell:latest" as the legacy fallback for tests.
+func (inst *Installer) ImageTag() string {
+	if inst.version == "" {
+		return config.ContainerImage()
+	}
+	return config.ContainerImageWithTag(inst.version)
 }
 
 // Run executes all installation steps.
@@ -171,7 +185,7 @@ func (inst *Installer) buildImage() error {
 	}
 
 	cmd := inst.execFn("docker", "build",
-		"-t", config.ContainerImage(),
+		"-t", inst.ImageTag(),
 		buildCtx,
 	)
 	cmd.Stdout = os.Stdout

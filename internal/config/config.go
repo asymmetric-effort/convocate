@@ -82,9 +82,22 @@ func PathsFromHome(home string) Paths {
 	}
 }
 
-// ContainerImage returns the full image reference.
+// ContainerImage returns the full image reference with the legacy
+// :latest tag. Kept for tests and for callers that have no version
+// context; production code on both shell and agent should prefer
+// ContainerImageWithTag with the concrete semver.
 func ContainerImage() string {
-	return fmt.Sprintf("%s:%s", ContainerImageName, ContainerImageTag)
+	return ContainerImageWithTag(ContainerImageTag)
+}
+
+// ContainerImageWithTag returns "claude-shell:<tag>". When tag is empty
+// it defaults to ContainerImageTag so callers can pass a user-supplied
+// version without null-checking.
+func ContainerImageWithTag(tag string) string {
+	if tag == "" {
+		tag = ContainerImageTag
+	}
+	return fmt.Sprintf("%s:%s", ContainerImageName, tag)
 }
 
 // ContainerName returns the container name for a given session UUID.

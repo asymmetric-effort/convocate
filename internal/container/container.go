@@ -20,6 +20,7 @@ type Runner struct {
 	port       int
 	protocol   string
 	dnsServer  string
+	image      string // overrides config.ContainerImage when set
 	execFn     ExecFunc
 }
 
@@ -45,6 +46,24 @@ func (r *Runner) SetProtocol(proto string) {
 // Empty (the default) leaves docker's usual DNS behavior in place.
 func (r *Runner) SetDNSServer(ip string) {
 	r.dnsServer = ip
+}
+
+// SetImage overrides the image tag docker run uses for this session.
+// Empty (the default) falls back to config.ContainerImage(). Agents read
+// /etc/claude-agent/current-image and propagate it here so upgrades roll
+// forward session-by-session.
+func (r *Runner) SetImage(tag string) {
+	r.image = tag
+}
+
+// imageRef is the tag actually passed to docker — the explicit override
+// when set, otherwise the compile-time default. Used internally by both
+// the IsRunning / run / exec / inspect paths.
+func (r *Runner) imageRef() string {
+	if r.image != "" {
+		return r.image
+	}
+	return config.ContainerImage()
 }
 
 // ExecFunc abstracts command execution for testing.
@@ -240,7 +259,7 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 	args = append(args, "-e", fmt.Sprintf("CLAUDE_GID=%d", r.userInfo.GID))
 
 	// Image and entrypoint
-	args = append(args, config.ContainerImage())
+	args = append(args, r.imageRef())
 
 	return args
 }
