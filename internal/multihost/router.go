@@ -136,6 +136,11 @@ func (r *Router) agentFor(id string) *AgentRef {
 	return r.routing[id]
 }
 
+// AgentFor exposes agentFor to callers outside the package. Used by the
+// claude-shell TUI to reach the right SSH connection when starting a
+// remote attach.
+func (r *Router) AgentFor(id string) *AgentRef { return r.agentFor(id) }
+
 // IsLocked reports lock state. Remote sessions always report false — the
 // agent manages its own locks and we don't surface them to the TUI today.
 func (r *Router) IsLocked(id string) bool {

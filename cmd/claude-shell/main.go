@@ -154,11 +154,12 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			}
 			continue
 		default:
-			// Resume: if the session lives on a remote agent we can't
-			// attach from here yet — tell the operator how to reach it
-			// rather than silently doing nothing.
+			// Resume: route to remote attach if the session lives on an
+			// agent; otherwise fall back to the local docker-exec path.
 			if meta := findInSessions(sessions, sel.SessionID); meta.IsRemote() {
-				fmt.Fprintf(os.Stderr, "remote session attach not yet supported — SSH to %s to attach\n", meta.AgentHost)
+				if err := handleRemoteAttach(router, meta, log); err != nil {
+					fmt.Fprintf(os.Stderr, "remote attach error: %v\n", err)
+				}
 				continue
 			}
 			if err := handleResumeSession(mgr, sel.SessionID, userInfo, paths, log); err != nil {
@@ -221,6 +222,33 @@ func buildRouter(mgr *session.Manager, log *logging.Logger) (*multihost.Router, 
 			c()
 		}
 	}
+}
+
+// handleRemoteAttach runs an interactive attach against the remote agent
+// that owns meta. It reuses the per-agent SSH connection the router holds
+// open so attach doesn't re-handshake; the local TUI has already Fini'd
+// the tcell screen by the time menu.Display returned, so os.Stdin/Stdout
+// are safe to hand off to the pty relay.
+func handleRemoteAttach(router *multihost.Router, meta session.Metadata, log *logging.Logger) error {
+	ref := router.AgentFor(meta.UUID)
+	if ref == nil {
+		return fmt.Errorf("no agent registered for session %s", shortID(meta.UUID))
+	}
+	client, ok := ref.Client.(*agentclient.CRUDClient)
+	if !ok {
+		return fmt.Errorf("agent client does not support attach (test stub?)")
+	}
+	if log != nil {
+		log.Infof("remote attach: session=%s agent=%s host=%s", meta.UUID, meta.AgentID, meta.AgentHost)
+	}
+	fmt.Printf("Attaching to %q on agent %s (Ctrl-B d to detach)...\n", meta.Name, meta.AgentID)
+	return agentclient.Attach(client.SSHClient(), agentclient.AttachOptions{
+		SessionID:         meta.UUID,
+		Stdin:             os.Stdin,
+		Stdout:            os.Stdout,
+		Stderr:            os.Stderr,
+		EnableRawTerminal: true,
+	})
 }
 
 // findInSessions returns the first metadata whose UUID matches id. Zero
