@@ -59,11 +59,56 @@ func cmdInstall(_ []string) error {
 		}
 		fmt.Printf("[%s] %s... done\n", appName, s.name)
 	}
+
+	// If claude-shell was previously installed on this host, its session
+	// directory is co-owned with us (same uid) — our serve process will
+	// pick up any existing session.json files automatically. Surface the
+	// count so operators know what's been adopted without having to go
+	// find the directory themselves.
+	if n, err := countAdoptedSessions(); err == nil && n > 0 {
+		fmt.Printf("\n[%s] adopted %d pre-existing session(s) from this host\n", appName, n)
+		fmt.Printf("[%s] any containers still running under docker continue to run and will be\n", appName)
+		fmt.Printf("[%s] reported by 'claude-agent list' once the service is up.\n", appName)
+	}
+
 	fmt.Printf("\n[%s] install complete.\n", appName)
 	fmt.Printf("[%s] host key: %s\n", appName, defaultHostKeyPath)
 	fmt.Printf("[%s] agent-id: %s\n", appName, defaultAgentIDPath)
 	fmt.Printf("[%s] authorized keys: %s (empty until init-agent populates)\n", appName, defaultAuthKeysPath)
 	return nil
+}
+
+// countAdoptedSessions returns the number of session.json files under the
+// claude user's home dir — these are pre-existing claude-shell sessions
+// that this agent now manages because both services run as the same uid
+// and read/write the same directory layout.
+//
+// Session dirs live directly under /home/claude/ with UUID names. We use
+// "has a session.json inside" as the detection heuristic rather than
+// parsing the directory name, since that's the file session.Manager
+// itself treats as authoritative.
+func countAdoptedSessions() (int, error) {
+	u, err := user.Lookup(defaultClaudeUsername)
+	if err != nil {
+		return 0, err
+	}
+	entries, err := os.ReadDir(u.HomeDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	count := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(u.HomeDir, e.Name(), "session.json")); err == nil {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func ensureClaudeUser() error {
