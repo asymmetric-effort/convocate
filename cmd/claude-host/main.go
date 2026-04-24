@@ -166,14 +166,32 @@ func cmdInitAgent(args []string) error {
 }
 
 func cmdUpdate(args []string) error {
-	t, err := parseTargetFlags("update", args)
-	if err != nil {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	var t targetFlags
+	fs.StringVar(&t.host, "host", "", "remote host to update (empty = local)")
+	fs.StringVar(&t.user, "user", os.Getenv("USER"), "remote user to connect as (ignored for local)")
+	shellBin := fs.String("shell-binary", "", "path to new claude-shell binary (default: sibling of claude-host)")
+	agentBin := fs.String("agent-binary", "", "path to new claude-agent binary (default: sibling of claude-host)")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if err := requireLocalRoot(t); err != nil {
 		return err
 	}
-	return fmt.Errorf("claude-host update: not yet implemented (target=%s)", describeTarget(t))
+
+	ctx, cancel := signalContext()
+	defer cancel()
+
+	r, sshCfg, err := runnerFor(t)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	return hostinstall.Update(ctx, r, sshCfg, hostinstall.UpdateOptions{
+		ShellBinaryPath: *shellBin,
+		AgentBinaryPath: *agentBin,
+	}, os.Stderr)
 }
 
 func describeTarget(t targetFlags) string {
