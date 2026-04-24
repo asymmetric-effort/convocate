@@ -238,6 +238,54 @@ func (r *Router) Update(id, name, protocol, dnsName string, port int) error {
 	return err
 }
 
+// Create routes a new-session request to the agent identified by agentID
+// (or the local Manager when agentID is empty / unknown). Returns the new
+// session's metadata with AgentID/AgentHost stamped when it lives on an
+// agent so the caller can route follow-up operations correctly.
+func (r *Router) Create(agentID string, opts session.CreateOptions, name string) (session.Metadata, error) {
+	if agentID != "" {
+		for i := range r.Agents {
+			a := &r.Agents[i]
+			if a.Record.ID != agentID {
+				continue
+			}
+			meta, err := a.Client.Create(agentserver.CreateRequest{
+				Name:     name,
+				Port:     opts.Port,
+				Protocol: opts.Protocol,
+				DNSName:  opts.DNSName,
+			})
+			if err != nil {
+				return meta, err
+			}
+			meta.AgentID = a.Record.ID
+			meta.AgentHost = a.Record.Host
+			// Register the new UUID in the routing map so subsequent ops
+			// route here without waiting for the next List refresh.
+			r.mu.Lock()
+			if r.routing == nil {
+				r.routing = map[string]*AgentRef{}
+			}
+			r.routing[meta.UUID] = a
+			r.mu.Unlock()
+			return meta, nil
+		}
+		return session.Metadata{}, fmt.Errorf("agent %q not registered", agentID)
+	}
+	return r.Local.CreateWithOptions(name, opts)
+}
+
+// AgentIDs returns the IDs of every registered agent in the order they
+// were registered. Useful for UI dropdowns that need a stable,
+// human-pickable list.
+func (r *Router) AgentIDs() []string {
+	out := make([]string, 0, len(r.Agents))
+	for i := range r.Agents {
+		out = append(out, r.Agents[i].Record.ID)
+	}
+	return out
+}
+
 // Clone always creates the new session on the same host as the source. A
 // remote clone invokes the agent's Clone op; the result stays on that
 // agent. Cross-host clones aren't supported — they'd require copying

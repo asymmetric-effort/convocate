@@ -110,6 +110,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			KillSession:       router.Kill,
 			BackgroundSession: router.Background,
 			RestartSession:    router.Restart,
+			Agents:            router.AgentIDs(),
 			SaveSessionEdit: func(id, name, protocol, dnsName string, port int) error {
 				if err := router.Update(id, name, protocol, dnsName, port); err != nil {
 					return err
@@ -132,9 +133,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			fmt.Println("Goodbye!")
 			return nil
 		case menu.ActionNewSession:
-			// New sessions are always created locally for now. Remote
-			// provisioning happens via 'claude-host init-agent'.
-			if err := handleNewSession(mgr, sel.Name, sel.Port, sel.Protocol, sel.DNSName, userInfo, paths, log); err != nil {
+			if err := handleNewSession(router, mgr, sel.AgentID, sel.Name, sel.Port, sel.Protocol, sel.DNSName, userInfo, paths, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
@@ -271,26 +270,32 @@ func shortID(id string) string {
 	return id[:8]
 }
 
-func handleNewSession(mgr *session.Manager, name string, port int, protocol, dnsName string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
-	meta, err := mgr.CreateWithOptions(name, session.CreateOptions{
+func handleNewSession(router *multihost.Router, mgr *session.Manager, agentID, name string, port int, protocol, dnsName string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+	meta, err := router.Create(agentID, session.CreateOptions{
 		Port:     port,
 		Protocol: protocol,
 		DNSName:  dnsName,
-	})
+	}, name)
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}
 
 	if log != nil {
-		log.Infof("created session %s (%s) port=%d/%s dns=%q", meta.UUID, meta.Name, meta.Port, meta.EffectiveProtocol(), meta.DNSName)
+		log.Infof("created session %s (%s) agent=%s port=%d/%s dns=%q",
+			meta.UUID, meta.Name, meta.AgentID, meta.Port, meta.EffectiveProtocol(), meta.DNSName)
 	}
 	if meta.Port > 0 {
-		fmt.Printf("Created session %q (%s) on port %d/%s\n", meta.Name, meta.UUID[:8], meta.Port, meta.EffectiveProtocol())
+		fmt.Printf("Created session %q (%s) on port %d/%s\n", meta.Name, shortID(meta.UUID), meta.Port, meta.EffectiveProtocol())
 	} else {
-		fmt.Printf("Created session %q (%s)\n", meta.Name, meta.UUID[:8])
+		fmt.Printf("Created session %q (%s)\n", meta.Name, shortID(meta.UUID))
 	}
 	if meta.DNSName != "" {
 		fmt.Printf("Registered DNS name %q\n", meta.DNSName)
+	}
+
+	if meta.IsRemote() {
+		fmt.Printf("Provisioned on agent %s (%s). Use Enter from the list to attach.\n", meta.AgentID, meta.AgentHost)
+		return nil
 	}
 
 	if err := syncDNSRecords(mgr, log); err != nil && log != nil {

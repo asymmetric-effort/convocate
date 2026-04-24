@@ -48,6 +48,10 @@ type Selection struct {
 	// DNSName is the optional hostname to register with local dnsmasq.
 	// Empty means no DNS record is requested.
 	DNSName string
+	// AgentID is populated for ActionNewSession when the user picked a
+	// target agent via the agent-selector dialog. Empty means "local"
+	// — still a valid target until E removes local creates entirely.
+	AgentID string
 }
 
 // parsePortInput validates the raw port field entered by the user in the

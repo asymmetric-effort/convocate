@@ -231,7 +231,8 @@ func TestHandleNewSession_CreateFails(t *testing.T) {
 	_ = mgr // silence linter
 	badMgr := session.NewManager(badBase, filepath.Join(base, "skel"))
 	withRunner(t, func(name string, args ...string) *exec.Cmd { return exec.Command("true") })
-	err := handleNewSession(badMgr, "fails", 0, "tcp", "", testUserInfo(), testPaths(base), nil)
+	router := &multihost.Router{Local: badMgr}
+	err := handleNewSession(router, badMgr, "", "fails", 0, "tcp", "", testUserInfo(), testPaths(base), nil)
 	if err == nil {
 		t.Error("expected error when session directory creation fails")
 	}

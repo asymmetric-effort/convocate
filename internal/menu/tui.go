@@ -59,6 +59,8 @@ const (
 	modeAlreadyRunningDialog
 	modeEditDialog
 	modeEditRestartPrompt
+	modeSelectAgent
+	modeNoAgents
 )
 
 type tui struct {
@@ -75,6 +77,16 @@ type tui struct {
 	inputProtocol  string // "tcp" or "udp"
 	activeField    int    // 0=Name, 1=Protocol, 2=Port, 3=DNSName
 	dialogErr      string
+
+	// agents + selectedAgent are the state for the "pick an agent to
+	// host the new session" dialog. agents is populated from
+	// DisplayOptions.Agents on each Display call; selectedAgent is the
+	// index into that slice that's currently highlighted. Carried into
+	// the Selection as AgentID when the Create dialog saves.
+	agents        []string
+	selectedAgent int
+	chosenAgent   string // locked in after modeSelectAgent → modeCreateDialog
+
 	isLockedFunc     func(id string) bool
 	isRunningFunc    func(id string) bool
 	reloadFunc       func() ([]session.Metadata, error)
@@ -132,6 +144,11 @@ type DisplayOptions struct {
 	// called with the session ID, the new name, the new protocol ("tcp" or
 	// "udp"), the new DNS name (may be empty), and the new port.
 	SaveSessionEdit func(id, name, protocol, dnsName string, port int) error
+
+	// Agents is the list of registered claude-agent IDs the user can
+	// target when creating a new session. When empty, pressing 'N' shows
+	// a "no agents registered" dialog instead of the create form.
+	Agents []string
 }
 
 // Display renders the TUI session menu and returns the user's selection.
@@ -177,6 +194,7 @@ func displayWithOptions(sessions []session.Metadata, screen tcell.Screen, tickIn
 		backgroundFunc:   opts.BackgroundSession,
 		restartFunc:      opts.RestartSession,
 		editSaveFunc:     opts.SaveSessionEdit,
+		agents:           opts.Agents,
 	}
 
 	// Tick periodically to keep the clock updated
@@ -289,6 +307,10 @@ func (t *tui) draw() {
 		t.drawEditDialog(width, height)
 	case modeEditRestartPrompt:
 		t.drawEditRestartPromptDialog(width, height)
+	case modeSelectAgent:
+		t.drawSelectAgentDialog(width, height)
+	case modeNoAgents:
+		t.drawNoAgentsDialog(width, height)
 	}
 }
 
@@ -399,7 +421,134 @@ func (t *tui) drawMenuBar(width, height int) {
 }
 
 func (t *tui) drawCreateDialog(width, height int) {
-	t.drawSessionFormDialog(width, height, "Create New Session")
+	title := "Create New Session"
+	if t.chosenAgent != "" {
+		title = "Create on agent " + t.chosenAgent
+	}
+	t.drawSessionFormDialog(width, height, title)
+}
+
+// startCreateDialog transitions from the agent picker (or the single-agent
+// shortcut) into the form, resetting inputs. chosenAgent must already be
+// populated by the caller.
+func (t *tui) startCreateDialog() {
+	t.mode = modeCreateDialog
+	t.inputBuf = nil
+	t.inputBufPort = nil
+	t.inputBufDNS = nil
+	t.inputProtocol = session.ProtocolTCP
+	t.activeField = 0
+	t.dialogErr = ""
+}
+
+// drawSelectAgentDialog renders a compact picker showing every registered
+// claude-agent. Up/Down moves the highlight, Enter commits the choice,
+// Esc cancels back to the menu.
+func (t *tui) drawSelectAgentDialog(width, height int) {
+	const minW = 48
+	dialogWidth := minW
+	// Widen for long agent IDs.
+	for _, id := range t.agents {
+		if n := len(id) + 6; n > dialogWidth {
+			dialogWidth = n
+		}
+	}
+	if dialogWidth > width-2 {
+		dialogWidth = width - 2
+	}
+	// Height: title + blank + N agent rows + blank + hint.
+	rows := len(t.agents)
+	if rows < 1 {
+		rows = 1
+	}
+	dialogHeight := 4 + rows
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	for row := y0; row < y0+dialogHeight && row < height; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+	title := " Select Agent for New Session "
+	drawString(t.screen, x0+(dialogWidth-len(title))/2, y0, title, dialogStyle.Bold(true))
+
+	for i, id := range t.agents {
+		style := dialogStyle
+		prefix := "  "
+		if i == t.selectedAgent {
+			style = dialogStyle.Reverse(true)
+			prefix = "> "
+		}
+		drawString(t.screen, x0+2, y0+2+i, prefix+id, style)
+	}
+	hint := "Up/Down=Move  Enter=Select  Esc=Cancel"
+	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
+}
+
+// drawNoAgentsDialog warns that no claude-agents are registered — session
+// creation requires one.
+func (t *tui) drawNoAgentsDialog(width, height int) {
+	msg := "No claude-agent hosts are registered."
+	hint := "Run 'claude-host init-agent' to add one. Press any key."
+	dialogWidth := len(hint) + 4
+	dialogHeight := 5
+
+	x0 := (width - dialogWidth) / 2
+	y0 := (height - dialogHeight) / 2
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	for row := y0; row < y0+dialogHeight; row++ {
+		for col := x0; col < x0+dialogWidth && col < width; col++ {
+			t.screen.SetContent(col, row, ' ', nil, dialogStyle)
+		}
+	}
+	drawString(t.screen, x0+(dialogWidth-len(" No Agents "))/2, y0, " No Agents ", dialogStyle.Bold(true))
+	drawString(t.screen, x0+2, y0+2, msg, dialogErrStyle)
+	drawString(t.screen, x0+2, y0+4, hint, dialogStyle)
+}
+
+// handleSelectAgentKey is the key handler for modeSelectAgent. Returns
+// (selection, done) — selection is ignored by callers; done=true only
+// when the user Esc'd out (Quit is never returned here because this
+// dialog is purely navigational).
+func (t *tui) handleSelectAgentKey(ev *tcell.EventKey) (Selection, bool) {
+	switch ev.Key() {
+	case tcell.KeyUp:
+		if t.selectedAgent > 0 {
+			t.selectedAgent--
+		}
+	case tcell.KeyDown:
+		if t.selectedAgent < len(t.agents)-1 {
+			t.selectedAgent++
+		}
+	case tcell.KeyEnter:
+		if len(t.agents) == 0 {
+			t.mode = modeMenu
+			return Selection{}, false
+		}
+		t.chosenAgent = t.agents[t.selectedAgent]
+		t.startCreateDialog()
+	case tcell.KeyEscape:
+		t.mode = modeMenu
+	}
+	return Selection{}, false
+}
+
+// handleNoAgentsKey dismisses the "no agents" notice on any key.
+func (t *tui) handleNoAgentsKey(_ *tcell.EventKey) (Selection, bool) {
+	t.mode = modeMenu
+	return Selection{}, false
 }
 
 // drawSessionFormDialog renders the shared session form used for both create
@@ -1402,6 +1551,10 @@ func (t *tui) handleKey(ev *tcell.EventKey) (Selection, bool) {
 		return t.handleEditDialogKey(ev)
 	case modeEditRestartPrompt:
 		return t.handleEditRestartPromptKey(ev)
+	case modeSelectAgent:
+		return t.handleSelectAgentKey(ev)
+	case modeNoAgents:
+		return t.handleNoAgentsKey(ev)
 	default:
 		return t.handleMenuKey(ev)
 	}
@@ -1431,13 +1584,18 @@ func (t *tui) handleMenuKey(ev *tcell.EventKey) (Selection, bool) {
 	case tcell.KeyRune:
 		switch ev.Rune() {
 		case 'n', 'N':
-			t.mode = modeCreateDialog
-			t.inputBuf = nil
-			t.inputBufPort = nil
-			t.inputBufDNS = nil
-			t.inputProtocol = session.ProtocolTCP
-			t.activeField = 0
-			t.dialogErr = ""
+			// Route to the agent picker first; the create form only
+			// opens once we know which host will run the session.
+			switch len(t.agents) {
+			case 0:
+				t.mode = modeNoAgents
+			case 1:
+				t.chosenAgent = t.agents[0]
+				t.startCreateDialog()
+			default:
+				t.mode = modeSelectAgent
+				t.selectedAgent = 0
+			}
 		case 'c', 'C':
 			if len(t.sessions) > 0 && t.cursor >= 0 && t.cursor < len(t.sessions) {
 				t.mode = modeCloneDialog
@@ -1587,7 +1745,7 @@ func (t *tui) handleSessionFormKey(ev *tcell.EventKey, isEdit bool) (Selection, 
 			t.dialogErr = ""
 			return Selection{}, false
 		}
-		return Selection{Action: ActionNewSession, Name: name, Port: port, Protocol: proto, DNSName: dnsName}, true
+		return Selection{Action: ActionNewSession, Name: name, Port: port, Protocol: proto, DNSName: dnsName, AgentID: t.chosenAgent}, true
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		switch t.activeField {
 		case 0:
