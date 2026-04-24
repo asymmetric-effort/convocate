@@ -174,6 +174,7 @@ func cmdUpdate(args []string) error {
 	fs.StringVar(&t.user, "user", os.Getenv("USER"), "remote user to connect as (ignored for local)")
 	shellBin := fs.String("shell-binary", "", "path to new claude-shell binary (default: sibling of claude-host)")
 	agentBin := fs.String("agent-binary", "", "path to new claude-agent binary (default: sibling of claude-host)")
+	imageTag := fs.String("image-tag", "claude-shell:"+Version, "container image to push to the agent (empty disables the push)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -193,6 +194,7 @@ func cmdUpdate(args []string) error {
 	return hostinstall.Update(ctx, r, sshCfg, hostinstall.UpdateOptions{
 		ShellBinaryPath: *shellBin,
 		AgentBinaryPath: *agentBin,
+		ImageTag:        *imageTag,
 	}, os.Stderr)
 }
 

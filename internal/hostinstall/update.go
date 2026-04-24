@@ -17,6 +17,13 @@ type UpdateOptions struct {
 	// AgentBinaryPath is the local path to the new claude-agent binary.
 	// Empty = auto-discover (sibling of claude-host, then ./build/claude-agent).
 	AgentBinaryPath string
+
+	// ImageTag is the container image tag to push to the agent after
+	// the binary update. Empty skips the image push — useful when you
+	// only want to roll the binary and leave the image alone (e.g. a
+	// quick CLI-only hotfix). Ignored entirely when claude-agent is
+	// not installed on the target.
+	ImageTag string
 }
 
 // updateTarget describes one of the binaries we know how to update on a
@@ -60,6 +67,7 @@ func Update(ctx context.Context, r Runner, sshCfg *SSHConfig, opts UpdateOptions
 	}
 
 	anyUpdated := false
+	agentUpdated := false
 	for _, t := range targets {
 		installed, err := remoteFileExists(ctx, r, t.RemotePath, log)
 		if err != nil {
@@ -78,13 +86,54 @@ func Update(ctx context.Context, r Runner, sshCfg *SSHConfig, opts UpdateOptions
 			return err
 		}
 		anyUpdated = true
+		if t.Name == "claude-agent" {
+			agentUpdated = true
+		}
 	}
 	if !anyUpdated {
 		return fmt.Errorf("no claude-* binaries found on %s; run init-shell or init-agent first", r.Target())
 	}
 
+	// Push the current container image to the agent (if any) and
+	// rewrite /etc/claude-agent/current-image so fresh Restart ops
+	// use the new tag. Existing containers keep the tag they started
+	// with until Restart — that's the graceful-cutover invariant.
+	if agentUpdated && strings.TrimSpace(opts.ImageTag) != "" {
+		if err := pushImageUpdate(ctx, r, opts.ImageTag, log); err != nil {
+			return err
+		}
+	} else if agentUpdated {
+		fmt.Fprintln(log, "[claude-host] --image-tag not set; skipping container image push")
+	}
+
 	fmt.Fprintln(log, "")
 	fmt.Fprintln(log, "[claude-host] update complete.")
+	return nil
+}
+
+// pushImageUpdate ships the given image tag to the agent, rewrites
+// /etc/claude-agent/current-image, and bounces the service so the new
+// pointer is live immediately.
+func pushImageUpdate(ctx context.Context, r Runner, tag string, log io.Writer) error {
+	steps := []step{
+		{"Push container image", func(ctx context.Context, r Runner, log io.Writer) error {
+			return TransferImage(ctx, r, tag, log)
+		}},
+		{"Rewrite /etc/claude-agent/current-image", func(ctx context.Context, r Runner, log io.Writer) error {
+			return writeRemoteContent(ctx, r, log,
+				[]byte(tag+"\n"),
+				"/etc/claude-agent/current-image", 0644, "root:root")
+		}},
+		{"Restart claude-agent for new image", func(ctx context.Context, r Runner, log io.Writer) error {
+			return r.Run(ctx, "systemctl restart claude-agent.service",
+				RunOptions{Sudo: true, Stdout: log, Stderr: log})
+		}},
+	}
+	for _, s := range steps {
+		if err := runStep(ctx, r, log, s); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

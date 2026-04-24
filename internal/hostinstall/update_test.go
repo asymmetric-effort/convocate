@@ -130,6 +130,70 @@ func TestUpdate_MissingLocalBinary_Errors(t *testing.T) {
 	}
 }
 
+func TestUpdate_WithImageTag_PushesToAgent(t *testing.T) {
+	// Stub docker on PATH so TransferImage can run.
+	stubDir := t.TempDir()
+	stub := filepath.Join(stubDir, "docker")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\ncase \"$1\" in save) printf 'x\\n' ;; *) exit 1 ;; esac\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", stubDir)
+
+	m := newUpdateMockRunner([]string{"/usr/local/bin/claude-agent"})
+	shellBin := tempBin(t, "claude-shell")
+	agentBin := tempBin(t, "claude-agent")
+	err := Update(context.Background(), m, nil, UpdateOptions{
+		ShellBinaryPath: shellBin,
+		AgentBinaryPath: agentBin,
+		ImageTag:        "claude-shell:v3.3.3",
+	}, bytes.NewBuffer(nil))
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	// Expect the image tarball + current-image pointer + agent binary.
+	found := map[string]bool{}
+	for _, c := range m.copies {
+		if strings.HasPrefix(c.Dst, "/tmp/claude-image-") {
+			found["tarball"] = true
+		}
+		if c.Dst == "/etc/claude-agent/current-image" {
+			if !bytes.Contains(c.Content, []byte("claude-shell:v3.3.3")) {
+				t.Errorf("current-image body = %q", c.Content)
+			}
+			found["pointer"] = true
+		}
+	}
+	if !found["tarball"] {
+		t.Error("image tarball not copied during update")
+	}
+	if !found["pointer"] {
+		t.Error("current-image pointer not rewritten during update")
+	}
+	joined := allCmds(m.cmds)
+	if !strings.Contains(joined, "systemctl restart claude-agent.service") {
+		t.Error("agent service not restarted after image push")
+	}
+}
+
+func TestUpdate_EmptyImageTag_SkipsImagePush(t *testing.T) {
+	m := newUpdateMockRunner([]string{"/usr/local/bin/claude-agent"})
+	shellBin := tempBin(t, "claude-shell")
+	agentBin := tempBin(t, "claude-agent")
+	err := Update(context.Background(), m, nil, UpdateOptions{
+		ShellBinaryPath: shellBin,
+		AgentBinaryPath: agentBin,
+		ImageTag:        "",
+	}, bytes.NewBuffer(nil))
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	for _, c := range m.copies {
+		if strings.HasPrefix(c.Dst, "/tmp/claude-image-") {
+			t.Error("image should not be pushed when ImageTag is empty")
+		}
+	}
+}
+
 func TestRemoteFileExists(t *testing.T) {
 	yes := newUpdateMockRunner([]string{"/some/path"})
 	ok, err := remoteFileExists(context.Background(), yes, "/some/path", io.Discard)
