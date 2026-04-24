@@ -1283,6 +1283,31 @@ func TestTUI_StatusIndicator_RunningNotLocked(t *testing.T) {
 	}
 }
 
+func TestTUI_StatusIndicator_OrphanMarker(t *testing.T) {
+	orphan := []session.Metadata{{
+		UUID:         "orphan11-1111-1111-1111-111111111111",
+		Name:         "orphan-session",
+		CreatedAt:    time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC),
+		LastAccessed: time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC),
+	}}
+	opts := DisplayOptions{
+		IsRunning: func(string) bool { return true },
+		IsLocked:  func(string) bool { return true },
+	}
+	screen := newWideTestScreen(t)
+	defer screen.Fini()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		screen.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	}()
+	_, _ = DisplayWithScreen(orphan, screen, opts)
+	row := getScreenText(screen, 4, 120)
+	trimmed := strings.TrimRight(row, " ")
+	if !strings.HasSuffix(trimmed, " O") {
+		t.Errorf("expected 'O' orphan status, got: %q", row)
+	}
+}
+
 func TestTUI_BackgroundKey_OpensDialog(t *testing.T) {
 	ui := &tui{sessions: testSessions(), cursor: 0}
 	_, done := ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'b', tcell.ModNone))

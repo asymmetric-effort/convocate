@@ -382,8 +382,17 @@ func (t *tui) drawSessionTable(width, height int) {
 
 		running := t.isRunning(s.UUID)
 		locked := t.isLocked(s.UUID)
+		// A session with no AgentID is a local orphan (pre-v2 leftover
+		// whose container isn't managed by any registered agent). It
+		// can't be attached / killed / restarted until the operator
+		// runs `claude-host migrate-session`. The O marker makes this
+		// visually distinct from remote sessions so "Enter does
+		// nothing" isn't a surprise.
+		orphan := s.AgentID == "" && s.UUID != ""
 		statusIndicator := "-"
 		switch {
+		case orphan:
+			statusIndicator = "O"
 		case running && locked:
 			statusIndicator = "C"
 		case running:

@@ -22,16 +22,23 @@ func (e *errReader) Read([]byte) (int, error) {
 var _ io.Reader = (*errReader)(nil)
 
 func testSessions() []session.Metadata {
+	// Both sessions have AgentID set so they aren't flagged as orphans
+	// by the TUI — tests that exercise C/R/L status semantics would
+	// otherwise all see the O (orphan) indicator first.
 	return []session.Metadata{
 		{
 			UUID:         "aaaaaaaa-1111-1111-1111-111111111111",
 			Name:         "first-session",
+			AgentID:      "test-agent",
+			AgentHost:    "test.local",
 			CreatedAt:    time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC),
 			LastAccessed: time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			UUID:         "bbbbbbbb-2222-2222-2222-222222222222",
 			Name:         "second-session",
+			AgentID:      "test-agent",
+			AgentHost:    "test.local",
 			CreatedAt:    time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 			LastAccessed: time.Date(2026, 4, 9, 0, 0, 0, 0, time.UTC),
 		},
