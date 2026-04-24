@@ -3,11 +3,13 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"time"
 
 	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
 	"github.com/asymmetric-effort/claude-shell/internal/config"
+	"github.com/asymmetric-effort/claude-shell/internal/dns"
 	"github.com/asymmetric-effort/claude-shell/internal/install"
 	"github.com/asymmetric-effort/claude-shell/internal/logging"
 	"github.com/asymmetric-effort/claude-shell/internal/menu"
@@ -108,6 +110,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 				if log != nil {
 					log.Infof("updated session %s: name=%q port=%d/%s dns=%q", id, name, port, protocol, dnsName)
 				}
+				syncDNSRecords(router, log)
 				return nil
 			},
 		})
@@ -123,17 +126,20 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			if err := handleNewSession(router, sel.AgentID, sel.Name, sel.Port, sel.Protocol, sel.DNSName, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
+			syncDNSRecords(router, log)
 			continue
 		case menu.ActionCloneSession:
 			if err := handleCloneSession(router, sel.SessionID, sel.Name, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
+			syncDNSRecords(router, log)
 			continue
 		case menu.ActionDeleteSession:
 			if err := router.Delete(sel.SessionID); err != nil {
 				fmt.Fprintf(os.Stderr, "delete error: %v\n", err)
 			} else {
 				fmt.Printf("Deleted session %q (%s)\n", sel.Name, shortID(sel.SessionID))
+				syncDNSRecords(router, log)
 			}
 			continue
 		default:
@@ -220,6 +226,75 @@ func handleRemoteAttach(router *multihost.Router, meta session.Metadata, log *lo
 		Stderr:            os.Stderr,
 		EnableRawTerminal: true,
 	})
+}
+
+// syncDNSRecords rewrites /var/lib/claude-shell/dnsmasq-hosts with one
+// entry per remote session that has a DNSName set. The record points at
+// the agent's host IP since that's where the container runs + publishes
+// ports. Orphan (local) sessions are intentionally excluded — the shell
+// host no longer runs containers post-v2, so any DNS name on an orphan
+// is stale until the session migrates.
+//
+// Failures are logged at warning level, not returned — the shell must
+// keep working if dnsmasq isn't installed, the hosts dir isn't
+// writable, or DNS lookups time out.
+func syncDNSRecords(router *multihost.Router, log *logging.Logger) {
+	if !dns.HostsFileExists(dns.DefaultHostsFile) {
+		return
+	}
+	sessions, err := router.List()
+	if err != nil {
+		if log != nil {
+			log.Warningf("dns sync: list failed: %v", err)
+		}
+		return
+	}
+	var records []dns.Record
+	for _, s := range sessions {
+		if s.DNSName == "" || s.AgentHost == "" {
+			continue
+		}
+		ip, err := resolveAgentIP(s.AgentHost)
+		if err != nil {
+			if log != nil {
+				log.Warningf("dns sync: resolve %s: %v", s.AgentHost, err)
+			}
+			continue
+		}
+		records = append(records, dns.Record{Name: s.DNSName, IP: ip})
+	}
+	if err := dns.WriteHostsFile(dns.DefaultHostsFile, records); err != nil {
+		if log != nil {
+			log.Warningf("dns sync: write %s: %v", dns.DefaultHostsFile, err)
+		}
+		return
+	}
+	if log != nil {
+		log.Infof("dns sync: wrote %d records to %s", len(records), dns.DefaultHostsFile)
+	}
+}
+
+// resolveAgentIP takes the stored agent-host string (which may be an IP
+// or a hostname) and returns an IPv4 address suitable for dnsmasq's
+// hosts file. A hostname falls through to net.LookupHost and returns
+// the first IPv4 match.
+func resolveAgentIP(host string) (string, error) {
+	if ip := net.ParseIP(host); ip != nil {
+		return host, nil
+	}
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return "", err
+	}
+	for _, s := range ips {
+		if ip := net.ParseIP(s); ip != nil && ip.To4() != nil {
+			return s, nil
+		}
+	}
+	if len(ips) > 0 {
+		return ips[0], nil // IPv6 fallback
+	}
+	return "", fmt.Errorf("no IPs for %s", host)
 }
 
 // findInSessions returns the first metadata whose UUID matches id. Zero
