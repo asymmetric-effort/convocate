@@ -50,6 +50,7 @@ func cmdInstall(_ []string) error {
 		{"Ensure /home/claude/.ssh directory", ensureSSHDir},
 		{"Ensure authorized_keys file", ensureAuthKeys},
 		{"Install claude-sessions.slice (90% cgroup cap)", writeSessionsSlice},
+		{"Install daily image-prune cron", writeImagePruneCron},
 		{"Install systemd unit", writeSystemdUnit},
 		{"Reload systemd + enable claude-agent", enableService},
 	}
@@ -205,6 +206,52 @@ MemoryMax=%d
 	// daemon-reload is done once in enableService, which runs after this
 	// step, so we don't duplicate the reload here.
 	return nil
+}
+
+// imagePruneScript is what claude-agent install drops at
+// /etc/cron.daily/claude-shell-image-prune. Retention policy (per
+// project decision): keep every image tag currently referenced by any
+// container (running OR stopped) plus whatever /etc/claude-agent/
+// current-image points at. Everything else tagged claude-shell:* is
+// removed so disk use doesn't creep up over many releases.
+//
+// docker rmi errors are tolerated (|| true) because a concurrent
+// container start could grab an image between our decision to prune
+// and the rmi call.
+const imagePruneScript = `#!/bin/sh
+# Managed by claude-agent install. Do not edit by hand.
+set -e
+
+# Every image referenced by any container (running + stopped).
+in_use=$(docker ps -a --format '{{.Image}}' | sort -u || true)
+
+# Plus whatever is flagged as current.
+if [ -f /etc/claude-agent/current-image ]; then
+    current=$(tr -d '[:space:]' </etc/claude-agent/current-image)
+else
+    current=""
+fi
+
+# Enumerate all local claude-shell images (skip dangling <none>).
+all=$(docker images claude-shell --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -v '<none>' || true)
+
+for img in $all; do
+    if echo "$in_use" | grep -qF -x "$img"; then
+        continue
+    fi
+    if [ "$img" = "$current" ]; then
+        continue
+    fi
+    echo "claude-shell-image-prune: removing $img"
+    docker rmi "$img" || true
+done
+`
+
+func writeImagePruneCron() error {
+	// cron.daily requires the script be executable AND that the name
+	// contain no dots (run-parts semantics). The chosen path
+	// /etc/cron.daily/claude-shell-image-prune satisfies both.
+	return os.WriteFile(defaultImagePruneScript, []byte(imagePruneScript), 0755)
 }
 
 // detectHostCores returns the number of CPU cores the kernel exposes.

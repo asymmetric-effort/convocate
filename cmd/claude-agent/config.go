@@ -39,6 +39,10 @@ const (
 	// claude-agent install renders this dynamically from host CPU/memory
 	// totals so the ceiling matches the machine's actual size.
 	defaultSessionsSlicePath = "/etc/systemd/system/claude-sessions.slice"
+
+	// Daily cron that deletes claude-shell images neither referenced
+	// by a live/exited container nor the current-image pointer.
+	defaultImagePruneScript = "/etc/cron.daily/claude-shell-image-prune"
 )
 
 // Agent ID format: 12 lowercase alphanumeric characters. Generated once and

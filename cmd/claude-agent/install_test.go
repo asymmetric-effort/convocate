@@ -2,8 +2,10 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -58,6 +60,39 @@ func TestCountAdoptedSessions_EmptyDir(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("expected 0, got %d", count)
+	}
+}
+
+// TestImagePruneScript_ShapeIsShellLegit sanity-checks the embedded
+// prune script: it must be a POSIX sh script (not bash-ism heavy),
+// must reference both in-use + current-image retention sources, and
+// must actually call docker rmi so it can do work.
+func TestImagePruneScript_ShapeIsShellLegit(t *testing.T) {
+	body := imagePruneScript
+	for _, want := range []string{
+		"#!/bin/sh",
+		"docker ps -a",
+		"/etc/claude-agent/current-image",
+		"docker images claude-shell",
+		"docker rmi",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("prune script missing %q", want)
+		}
+	}
+}
+
+// TestImagePruneScript_SyntaxChecksOut runs `sh -n` over the script
+// if /bin/sh is available so a typo during editing wouldn't ship a
+// broken cron.
+func TestImagePruneScript_SyntaxChecksOut(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh for syntax check")
+	}
+	cmd := exec.Command("sh", "-n")
+	cmd.Stdin = strings.NewReader(imagePruneScript)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("sh -n failed: %v\n%s", err, out)
 	}
 }
 
