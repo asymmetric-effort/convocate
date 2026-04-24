@@ -77,6 +77,7 @@ func InitShell(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitShellO
 		{"Install claude-shell-status systemd unit", stepWriteStatusUnit},
 		{"Allow tcp/222 through ufw", stepUFWAllow222},
 		{"Enable + start claude-shell-status", stepEnableStatusService},
+		{"Install rsyslog TLS CA + server", stepInstallRsyslogServer},
 	}
 	for _, s := range steps {
 		if err := runStep(ctx, r, log, s); err != nil {
