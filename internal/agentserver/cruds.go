@@ -7,8 +7,16 @@ import (
 	"github.com/asymmetric-effort/claude-shell/internal/config"
 	"github.com/asymmetric-effort/claude-shell/internal/container"
 	"github.com/asymmetric-effort/claude-shell/internal/session"
+	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
 	"github.com/asymmetric-effort/claude-shell/internal/user"
 )
+
+// StatusPublisher is a minimal hook interface so the orchestrator can emit
+// status events to the shell without importing agentclient directly. Nil
+// publishers are fine — the orchestrator no-ops emission.
+type StatusPublisher interface {
+	Publish(statusproto.Event)
+}
 
 // Orchestrator is the agent's grip on the host's container lifecycle. It
 // wraps the session Manager plus the deps needed to construct a Runner when
@@ -35,6 +43,11 @@ type SessionOrchestrator struct {
 	User      user.Info
 	Paths     config.Paths
 	DNSServer string
+	AgentID   string
+
+	// Publisher receives a status event for each lifecycle action. nil = no
+	// emission (useful in tests that don't care about events).
+	Publisher StatusPublisher
 
 	// Stop / DetachClients are overridable for tests; default to the
 	// production docker-shelling helpers.
@@ -46,12 +59,17 @@ type SessionOrchestrator struct {
 }
 
 // NewSessionOrchestrator returns an Orchestrator with production defaults.
-func NewSessionOrchestrator(mgr *session.Manager, u user.Info, p config.Paths, dnsServer string) *SessionOrchestrator {
+// Publisher can be nil — when unset, CRUD ops run identically but emit no
+// status events. AgentID is embedded in every event so the shell can route
+// to the right per-agent log file.
+func NewSessionOrchestrator(mgr *session.Manager, u user.Info, p config.Paths, dnsServer, agentID string, pub StatusPublisher) *SessionOrchestrator {
 	return &SessionOrchestrator{
 		Mgr:       mgr,
 		User:      u,
 		Paths:     p,
 		DNSServer: dnsServer,
+		AgentID:   agentID,
+		Publisher: pub,
 		StopFn:    container.StopContainer,
 		DetachFn:  container.DetachClients,
 		NewRunner: container.NewRunner,
@@ -63,18 +81,42 @@ func (o *SessionOrchestrator) Get(id string) (session.Metadata, error) {
 	return o.Mgr.Get(id)
 }
 func (o *SessionOrchestrator) Create(opts session.CreateOptions, name string) (session.Metadata, error) {
-	return o.Mgr.CreateWithOptions(name, opts)
+	meta, err := o.Mgr.CreateWithOptions(name, opts)
+	if err == nil {
+		o.emit(statusproto.TypeContainerCreated, meta.UUID, metaData(meta))
+	}
+	return meta, err
 }
 func (o *SessionOrchestrator) Update(id string, opts session.UpdateOptions) (session.Metadata, error) {
-	return o.Mgr.UpdateWithOptions(id, opts)
+	meta, err := o.Mgr.UpdateWithOptions(id, opts)
+	if err == nil {
+		o.emit(statusproto.TypeContainerEdited, id, metaData(meta))
+	}
+	return meta, err
 }
 func (o *SessionOrchestrator) Clone(sourceID, newName string) (session.Metadata, error) {
-	return o.Mgr.Clone(sourceID, newName)
+	meta, err := o.Mgr.Clone(sourceID, newName)
+	if err == nil {
+		o.emit(statusproto.TypeContainerCreated, meta.UUID, metaData(meta))
+	}
+	return meta, err
 }
-func (o *SessionOrchestrator) Delete(id string) error        { return o.Mgr.Delete(id) }
-func (o *SessionOrchestrator) OverrideLock(id string) error  { return o.Mgr.OverrideLock(id) }
-func (o *SessionOrchestrator) Kill(id string) error          { return o.StopFn(id) }
-func (o *SessionOrchestrator) Background(id string) error    { return o.DetachFn(id) }
+func (o *SessionOrchestrator) Delete(id string) error {
+	err := o.Mgr.Delete(id)
+	if err == nil {
+		o.emit(statusproto.TypeContainerDeleted, id, nil)
+	}
+	return err
+}
+func (o *SessionOrchestrator) OverrideLock(id string) error { return o.Mgr.OverrideLock(id) }
+func (o *SessionOrchestrator) Kill(id string) error {
+	err := o.StopFn(id)
+	if err == nil {
+		o.emit(statusproto.TypeContainerStopped, id, nil)
+	}
+	return err
+}
+func (o *SessionOrchestrator) Background(id string) error { return o.DetachFn(id) }
 
 // Restart starts the container in detached mode without attaching a
 // terminal. Mirrors the claude-host-side restartSessionDetached flow: refuse
@@ -101,7 +143,34 @@ func (o *SessionOrchestrator) Restart(id string) error {
 	if running {
 		return fmt.Errorf("session %q already running", meta.Name)
 	}
-	return r.StartDetached()
+	if err := r.StartDetached(); err != nil {
+		return err
+	}
+	o.emit(statusproto.TypeContainerStarted, id, metaData(meta))
+	return nil
+}
+
+// emit is the central hook: no-op when no publisher is wired, otherwise
+// stamps the agent ID and publishes.
+func (o *SessionOrchestrator) emit(typ, sessionID string, data json.RawMessage) {
+	if o.Publisher == nil {
+		return
+	}
+	ev := statusproto.NewEvent(typ, o.AgentID, sessionID)
+	ev.Data = data
+	o.Publisher.Publish(ev)
+}
+
+// metaData is a tiny convenience: json-encode a Metadata value for the
+// Event.Data field. Returns nil on failure because Data is optional —
+// emitting a status update with a missing data body still beats dropping
+// the notification entirely.
+func metaData(m session.Metadata) json.RawMessage {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // --- RPC request / response types ------------------------------------------

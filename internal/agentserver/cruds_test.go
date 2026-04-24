@@ -7,12 +7,36 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/asymmetric-effort/claude-shell/internal/config"
 	"github.com/asymmetric-effort/claude-shell/internal/session"
+	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
 	"github.com/asymmetric-effort/claude-shell/internal/user"
 )
+
+// recordingPublisher captures every Event the orchestrator emits so assertions
+// can walk the sequence. Concurrency-safe because CRUD ops can fan out via
+// RPC goroutines in other tests that share this helper.
+type recordingPublisher struct {
+	mu     sync.Mutex
+	events []statusproto.Event
+}
+
+func (p *recordingPublisher) Publish(ev statusproto.Event) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.events = append(p.events, ev)
+}
+
+func (p *recordingPublisher) snapshot() []statusproto.Event {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]statusproto.Event, len(p.events))
+	copy(out, p.events)
+	return out
+}
 
 // newTestSessionsDir returns (base, skel) paths for a session.Manager that
 // works in a temp dir — enough for CRUD ops that don't actually start docker.
@@ -285,7 +309,7 @@ func TestCRUD_SettingsPlaceholders(t *testing.T) {
 func TestSessionOrchestrator_CRUDRoundTrip(t *testing.T) {
 	base, skelDir := newTestSessionsDir(t)
 	mgr := session.NewManager(base, skelDir)
-	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "")
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "test-agent", nil)
 
 	// Create
 	meta, err := o.Create(session.CreateOptions{Port: 8080, Protocol: "tcp"}, "svc")
@@ -361,10 +385,197 @@ func TestSessionOrchestrator_KillBackground_UseHooks(t *testing.T) {
 func TestSessionOrchestrator_Restart_MissingSession(t *testing.T) {
 	base, skelDir := newTestSessionsDir(t)
 	mgr := session.NewManager(base, skelDir)
-	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "")
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "test-agent", nil)
 	err := o.Restart("missing-uuid")
 	if err == nil {
 		t.Error("expected error restarting missing session")
+	}
+}
+
+// --- emit hook tests -------------------------------------------------------
+//
+// These verify that each CRUD op fires the right status event when a
+// publisher is wired. The AgentID in every event must match the orchestrator's
+// configured AgentID so the shell can route per-agent.
+
+func TestEmit_NilPublisherIsNoOp(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	// Explicitly nil publisher — must not panic, must be a silent no-op.
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "agent-x", nil)
+	if _, err := o.Create(session.CreateOptions{Port: 0, Protocol: "tcp"}, "no-pub"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+}
+
+func TestEmit_CreateEmitsContainerCreated(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	pub := &recordingPublisher{}
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "agent-1", pub)
+
+	meta, err := o.Create(session.CreateOptions{Port: 7070, Protocol: "tcp"}, "svc")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	events := pub.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+	ev := events[0]
+	if ev.Type != statusproto.TypeContainerCreated {
+		t.Errorf("Type = %q, want %q", ev.Type, statusproto.TypeContainerCreated)
+	}
+	if ev.AgentID != "agent-1" {
+		t.Errorf("AgentID = %q", ev.AgentID)
+	}
+	if ev.SessionID != meta.UUID {
+		t.Errorf("SessionID = %q, want %q", ev.SessionID, meta.UUID)
+	}
+	if len(ev.Data) == 0 {
+		t.Error("expected Data payload (encoded Metadata)")
+	}
+	// Decode the data back — should round-trip to the same metadata.
+	var got session.Metadata
+	if err := json.Unmarshal(ev.Data, &got); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if got.Port != 7070 || got.Name != "svc" {
+		t.Errorf("data = %+v", got)
+	}
+}
+
+func TestEmit_UpdateEmitsContainerEdited(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	pub := &recordingPublisher{}
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "agent-1", pub)
+
+	meta, err := o.Create(session.CreateOptions{Port: 8080, Protocol: "tcp"}, "orig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.Update(meta.UUID, session.UpdateOptions{Name: "renamed", Port: 8081, Protocol: "tcp"}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	events := pub.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("got %d events, want 2 (created+edited)", len(events))
+	}
+	if events[1].Type != statusproto.TypeContainerEdited {
+		t.Errorf("events[1].Type = %q, want %q", events[1].Type, statusproto.TypeContainerEdited)
+	}
+	if events[1].SessionID != meta.UUID {
+		t.Errorf("SessionID = %q", events[1].SessionID)
+	}
+}
+
+func TestEmit_CloneEmitsContainerCreated(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	pub := &recordingPublisher{}
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "agent-1", pub)
+
+	src, err := o.Create(session.CreateOptions{Port: 0, Protocol: "tcp"}, "src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloned, err := o.Clone(src.UUID, "dup")
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	events := pub.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("got %d events, want 2", len(events))
+	}
+	if events[1].Type != statusproto.TypeContainerCreated {
+		t.Errorf("events[1].Type = %q, want %q", events[1].Type, statusproto.TypeContainerCreated)
+	}
+	if events[1].SessionID != cloned.UUID {
+		t.Errorf("SessionID = %q, want %q", events[1].SessionID, cloned.UUID)
+	}
+}
+
+func TestEmit_DeleteEmitsContainerDeleted(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	pub := &recordingPublisher{}
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "agent-1", pub)
+
+	meta, err := o.Create(session.CreateOptions{Port: 0, Protocol: "tcp"}, "gone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Delete(meta.UUID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	events := pub.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("got %d events, want 2", len(events))
+	}
+	if events[1].Type != statusproto.TypeContainerDeleted {
+		t.Errorf("events[1].Type = %q", events[1].Type)
+	}
+	if events[1].SessionID != meta.UUID {
+		t.Errorf("SessionID = %q", events[1].SessionID)
+	}
+	// container.deleted has no payload — Data should be empty/null.
+	if len(events[1].Data) != 0 {
+		t.Errorf("expected empty Data for delete, got %q", events[1].Data)
+	}
+}
+
+func TestEmit_KillEmitsContainerStopped(t *testing.T) {
+	pub := &recordingPublisher{}
+	o := &SessionOrchestrator{
+		AgentID:   "agent-k",
+		Publisher: pub,
+		StopFn:    func(id string) error { return nil },
+	}
+	if err := o.Kill("target-id"); err != nil {
+		t.Fatal(err)
+	}
+	events := pub.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+	if events[0].Type != statusproto.TypeContainerStopped {
+		t.Errorf("Type = %q", events[0].Type)
+	}
+	if events[0].SessionID != "target-id" {
+		t.Errorf("SessionID = %q", events[0].SessionID)
+	}
+	if events[0].AgentID != "agent-k" {
+		t.Errorf("AgentID = %q", events[0].AgentID)
+	}
+}
+
+func TestEmit_KillFailureDoesNotEmit(t *testing.T) {
+	pub := &recordingPublisher{}
+	o := &SessionOrchestrator{
+		AgentID:   "agent-k",
+		Publisher: pub,
+		StopFn:    func(id string) error { return errors.New("no such container") },
+	}
+	if err := o.Kill("x"); err == nil {
+		t.Fatal("expected error")
+	}
+	if len(pub.snapshot()) != 0 {
+		t.Errorf("expected no events on failure, got %d", len(pub.snapshot()))
+	}
+}
+
+func TestEmit_DeleteFailureDoesNotEmit(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	pub := &recordingPublisher{}
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "agent-1", pub)
+	if err := o.Delete("does-not-exist"); err == nil {
+		t.Fatal("expected error")
+	}
+	if len(pub.snapshot()) != 0 {
+		t.Errorf("expected no events, got %d", len(pub.snapshot()))
 	}
 }
 

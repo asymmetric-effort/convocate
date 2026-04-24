@@ -21,6 +21,12 @@ const (
 	defaultClaudeHomeDir  = "/home/claude"
 	defaultClaudeUsername = "claude"
 	defaultListen         = ":222"
+
+	// Shell-peering paths. The agent→shell SSH private key and the shell
+	// host's address live in the /etc/claude-agent config area so
+	// init-agent can drop them in during provisioning.
+	defaultShellHostFile       = "/etc/claude-agent/shell-host"
+	defaultShellPrivateKeyPath = "/etc/claude-agent/agent_to_shell_ed25519_key"
 )
 
 // Agent ID format: 12 lowercase alphanumeric characters. Generated once and

@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
+	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
 	"github.com/asymmetric-effort/claude-shell/internal/agentserver"
 	"github.com/asymmetric-effort/claude-shell/internal/config"
 	"github.com/asymmetric-effort/claude-shell/internal/dns"
@@ -29,7 +32,23 @@ func cmdServe(_ []string) error {
 	}
 	paths := config.PathsFromHome(u.HomeDir)
 	mgr := session.NewManager(paths.SessionsBase, paths.SkelDir)
-	orch := agentserver.NewSessionOrchestrator(mgr, u, paths, dns.DetectHostIP())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Try to bring up the status emitter. init-agent writes the shell host +
+	// private key to /etc/claude-agent during provisioning; if either is
+	// missing we run without emission so the agent is still usable
+	// standalone.
+	emitter, emitterErr := maybeStartEmitter(ctx, agentID)
+	if emitterErr != nil {
+		fmt.Fprintf(os.Stderr, "claude-agent: status emitter disabled: %v\n", emitterErr)
+	}
+	var pub agentserver.StatusPublisher
+	if emitter != nil {
+		pub = emitter
+	}
+	orch := agentserver.NewSessionOrchestrator(mgr, u, paths, dns.DetectHostIP(), agentID, pub)
 
 	d := agentserver.NewDispatcher()
 	agentserver.RegisterCoreOps(d, agentID, Version)
@@ -56,9 +75,6 @@ func cmdServe(_ []string) error {
 		return fmt.Errorf("init server: %w", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -67,4 +83,35 @@ func cmdServe(_ []string) error {
 	}()
 
 	return srv.Serve(ctx)
+}
+
+// maybeStartEmitter reads the shell-host address and key path from
+// /etc/claude-agent. If either is missing, the function returns (nil, err)
+// and the caller continues without the status plane. The emitter's Run
+// goroutine stays alive until ctx is canceled.
+func maybeStartEmitter(ctx context.Context, agentID string) (*agentclient.StatusEmitter, error) {
+	hostBytes, err := os.ReadFile(defaultShellHostFile)
+	if err != nil {
+		return nil, fmt.Errorf("read shell host file: %w", err)
+	}
+	host := strings.TrimSpace(string(hostBytes))
+	if host == "" {
+		return nil, fmt.Errorf("shell host file is empty")
+	}
+	if _, err := os.Stat(defaultShellPrivateKeyPath); err != nil {
+		return nil, fmt.Errorf("stat agent->shell key: %w", err)
+	}
+	emitter, err := agentclient.NewStatusEmitter(agentclient.Config{
+		ShellHost:         host,
+		ShellPort:         222,
+		User:              "claude",
+		PrivateKeyPath:    defaultShellPrivateKeyPath,
+		AgentID:           agentID,
+		HeartbeatInterval: 30 * time.Second,
+	})
+	if err != nil {
+		return nil, err
+	}
+	go emitter.Run(ctx)
+	return emitter, nil
 }
