@@ -156,13 +156,23 @@ func spinUpAgentWithAttach(t *testing.T, target agentserver.AttachTarget) (addr,
 
 func TestAttach_ServerReceivesHeaderAndData(t *testing.T) {
 	target := newPipeAttachTarget()
-	// io.Pipe is synchronous so writeToClient blocks until the server
-	// side drains. Run it in a goroutine so the test's Attach call can
-	// make progress. Once the byte is through, close the pipe so the
-	// client's stdout copy hits EOF and attach unblocks cleanly.
+	// Driver goroutine:
+	//   1. Emit the server→client bytes.
+	//   2. Poll clientSent for "echo one" so we only tear down the
+	//      attach after the server-side stdin copy has observed the
+	//      payload. This eliminates a race where closing target.done
+	//      too early makes the server close its master before the
+	//      client's stdin made it through.
+	//   3. Close the pipe + done so the attach unblocks cleanly.
 	go func() {
 		target.writeToClient("hello from container\n")
-		time.Sleep(100 * time.Millisecond)
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if strings.Contains(target.clientSent(), "echo one") {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 		target.closeOnce.Do(func() {
 			close(target.done)
 			_ = target.serverOut.Close()
@@ -200,16 +210,9 @@ func TestAttach_ServerReceivesHeaderAndData(t *testing.T) {
 	if !strings.Contains(got.String(), "hello from container") {
 		t.Errorf("client stdout missing server output: %q", got.String())
 	}
-	// Under -race the server-side stdin copy can race with the wait()
-	// return. Poll briefly so we don't assert on a half-drained sink.
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if strings.Contains(target.clientSent(), "echo one") {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !strings.Contains(target.clientSent(), "echo one") {
+		t.Errorf("server didn't receive client stdin: %q", target.clientSent())
 	}
-	t.Errorf("server didn't receive client stdin: %q", target.clientSent())
 }
 
 func TestAttach_RequiresSessionID(t *testing.T) {
