@@ -257,9 +257,14 @@ func TestRouter_LocalHandlersRequired(t *testing.T) {
 	}
 }
 
-func TestRouter_IsRunningIsRemoteReturnsFalse(t *testing.T) {
+func TestRouter_IsRunningReflectsSources(t *testing.T) {
 	local := &fakeLocal{sessions: []session.Metadata{{UUID: "l1"}}, locked: map[string]bool{"l1": true}}
-	ag := &fakeAgentClient{sessions: []session.Metadata{{UUID: "r1"}}}
+	// r1 is running on the remote agent; r2 is not. The agent's list
+	// op stamps Running per entry before the router aggregates.
+	ag := &fakeAgentClient{sessions: []session.Metadata{
+		{UUID: "r1", Running: true},
+		{UUID: "r2", Running: false},
+	}}
 	r := &Router{
 		Local: local,
 		LocalIsRunning: func(id string) bool {
@@ -275,13 +280,42 @@ func TestRouter_IsRunningIsRemoteReturnsFalse(t *testing.T) {
 	if !r.IsRunning("l1") {
 		t.Error("local running should be true")
 	}
-	if r.IsRunning("r1") {
-		t.Error("remote running should default to false for now")
+	if !r.IsRunning("r1") {
+		t.Error("remote r1 should be running (agent stamped it)")
+	}
+	if r.IsRunning("r2") {
+		t.Error("remote r2 should not be running")
 	}
 	if !r.IsLocked("l1") {
 		t.Error("local lock should pass through")
 	}
 	if r.IsLocked("r1") {
 		t.Error("remote lock should be false")
+	}
+}
+
+func TestRouter_ListStampsRunningOnAggregatedMetadata(t *testing.T) {
+	// The session.Metadata entries returned by List must carry Running,
+	// not just have it in the router's internal map — the TUI reads
+	// Running off the Metadata directly to render status columns.
+	local := &fakeLocal{sessions: []session.Metadata{{UUID: "l1"}}}
+	ag := &fakeAgentClient{sessions: []session.Metadata{{UUID: "r1", Running: true}}}
+	r := &Router{
+		Local:          local,
+		LocalIsRunning: func(id string) bool { return false },
+		Agents:         []AgentRef{{Record: agentclient.AgentRecord{ID: "A"}, Client: ag}},
+	}
+	got, err := r.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var remote session.Metadata
+	for _, s := range got {
+		if s.UUID == "r1" {
+			remote = s
+		}
+	}
+	if !remote.Running {
+		t.Errorf("remote Metadata.Running = false, want true")
 	}
 }

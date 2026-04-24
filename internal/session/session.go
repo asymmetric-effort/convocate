@@ -38,6 +38,13 @@ type Metadata struct {
 	// stamped in by the shell-side aggregator after a CRUD list response.
 	AgentID   string `json:"-"`
 	AgentHost string `json:"-"`
+
+	// Running is the live container state at the moment of the list
+	// response: true = the session's docker container is running,
+	// false = stopped. Set by the agent's list op; always false in
+	// records produced by the local session.Manager alone (no docker
+	// probe). Never persisted — it's a snapshot, not metadata.
+	Running bool `json:"running,omitempty"`
 }
 
 // IsRemote reports whether this metadata describes a session owned by a
@@ -632,6 +639,10 @@ func (m *Manager) setupClaudeSymlinks(sessionDir string) error {
 }
 
 func (m *Manager) writeMetadata(sessionDir string, meta Metadata) error {
+	// Running is a transient, agent-stamped snapshot — never persist it.
+	// Guarding here catches any caller that accidentally round-trips a
+	// list-response Metadata back into the Manager.
+	meta.Running = false
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err

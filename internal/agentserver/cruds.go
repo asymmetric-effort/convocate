@@ -54,6 +54,12 @@ type SessionOrchestrator struct {
 	StopFn   func(sessionID string) error
 	DetachFn func(sessionID string) error
 
+	// IsRunningFn probes the container runtime for live status of a
+	// session. Overridable for tests; defaults to container.IsContainerRunning.
+	// Errors are treated as "not running" so a flaky docker daemon
+	// doesn't make the agent's list op return an error.
+	IsRunningFn func(sessionID string) bool
+
 	// NewRunner is overridable for tests.
 	NewRunner func(sessionID, sessionDir string, u user.Info, p config.Paths) *container.Runner
 }
@@ -64,21 +70,45 @@ type SessionOrchestrator struct {
 // to the right per-agent log file.
 func NewSessionOrchestrator(mgr *session.Manager, u user.Info, p config.Paths, dnsServer, agentID string, pub StatusPublisher) *SessionOrchestrator {
 	return &SessionOrchestrator{
-		Mgr:       mgr,
-		User:      u,
-		Paths:     p,
-		DNSServer: dnsServer,
-		AgentID:   agentID,
-		Publisher: pub,
-		StopFn:    container.StopContainer,
-		DetachFn:  container.DetachClients,
-		NewRunner: container.NewRunner,
+		Mgr:         mgr,
+		User:        u,
+		Paths:       p,
+		DNSServer:   dnsServer,
+		AgentID:     agentID,
+		Publisher:   pub,
+		StopFn:      container.StopContainer,
+		DetachFn:    container.DetachClients,
+		IsRunningFn: container.IsContainerRunning,
+		NewRunner:   container.NewRunner,
 	}
 }
 
-func (o *SessionOrchestrator) List() ([]session.Metadata, error) { return o.Mgr.List() }
+// List returns every session on this agent, with Running stamped per
+// entry from the container runtime. A nil IsRunningFn means we skip the
+// probe and leave Running=false — defensive for tests and for agents that
+// temporarily can't reach docker.
+func (o *SessionOrchestrator) List() ([]session.Metadata, error) {
+	metas, err := o.Mgr.List()
+	if err != nil {
+		return nil, err
+	}
+	if o.IsRunningFn != nil {
+		for i := range metas {
+			metas[i].Running = o.IsRunningFn(metas[i].UUID)
+		}
+	}
+	return metas, nil
+}
+
 func (o *SessionOrchestrator) Get(id string) (session.Metadata, error) {
-	return o.Mgr.Get(id)
+	meta, err := o.Mgr.Get(id)
+	if err != nil {
+		return meta, err
+	}
+	if o.IsRunningFn != nil {
+		meta.Running = o.IsRunningFn(meta.UUID)
+	}
+	return meta, nil
 }
 func (o *SessionOrchestrator) Create(opts session.CreateOptions, name string) (session.Metadata, error) {
 	meta, err := o.Mgr.CreateWithOptions(name, opts)

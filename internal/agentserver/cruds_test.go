@@ -365,6 +365,71 @@ func TestSessionOrchestrator_CRUDRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSessionOrchestrator_List_StampsRunningFromProbe(t *testing.T) {
+	base, skelDir := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skelDir)
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "test-agent", nil)
+	// Replace the default probe with a deterministic stub.
+	o.IsRunningFn = func(id string) bool { return id == "running-id" }
+
+	// Create two sessions — the probe will flag only one.
+	m1, err := o.Create(session.CreateOptions{}, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Rename the UUID of the second "running" session by hand is awkward;
+	// instead, override the probe based on the real UUID after Create.
+	m2, err := o.Create(session.CreateOptions{}, "two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.IsRunningFn = func(id string) bool { return id == m2.UUID }
+
+	list, err := o.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("got %d sessions, want 2", len(list))
+	}
+	for _, meta := range list {
+		want := meta.UUID == m2.UUID
+		if meta.Running != want {
+			t.Errorf("%s: Running = %v, want %v", meta.UUID[:8], meta.Running, want)
+		}
+	}
+
+	// Get should stamp Running too.
+	g1, err := o.Get(m1.UUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g1.Running {
+		t.Error("Get(m1) Running = true, want false")
+	}
+	g2, err := o.Get(m2.UUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !g2.Running {
+		t.Error("Get(m2) Running = false, want true")
+	}
+}
+
+func TestSessionOrchestrator_List_NilProbe_LeavesRunningFalse(t *testing.T) {
+	base, skelDir := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skelDir)
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "test-agent", nil)
+	o.IsRunningFn = nil
+	if _, err := o.Create(session.CreateOptions{}, "x"); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := o.List()
+	if list[0].Running {
+		t.Error("with nil probe, Running should be false")
+	}
+}
+
 func TestSessionOrchestrator_KillBackground_UseHooks(t *testing.T) {
 	var killed, detached string
 	o := &SessionOrchestrator{

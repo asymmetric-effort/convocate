@@ -71,7 +71,8 @@ type Router struct {
 	LocalIsRunning  func(id string) bool
 
 	mu      sync.RWMutex
-	routing map[string]*AgentRef // session UUID -> owning agent; missing = local
+	routing map[string]*AgentRef         // session UUID -> owning agent; missing = local
+	running map[string]bool              // session UUID -> last-known running status from list response
 }
 
 // List returns the combined metadata for every local and remote session.
@@ -84,7 +85,15 @@ func (r *Router) List() ([]session.Metadata, error) {
 	}
 
 	newRouting := make(map[string]*AgentRef, len(r.Agents)*4)
+	newRunning := make(map[string]bool, len(r.Agents)*4)
 	all := make([]session.Metadata, 0, len(localSessions))
+	// Stamp local Running by probing the local container runtime.
+	for i := range localSessions {
+		if r.LocalIsRunning != nil {
+			localSessions[i].Running = r.LocalIsRunning(localSessions[i].UUID)
+		}
+		newRunning[localSessions[i].UUID] = localSessions[i].Running
+	}
 	all = append(all, localSessions...)
 
 	for i := range r.Agents {
@@ -107,12 +116,14 @@ func (r *Router) List() ([]session.Metadata, error) {
 			remote[j].AgentID = ref.Record.ID
 			remote[j].AgentHost = ref.Record.Host
 			newRouting[remote[j].UUID] = ref
+			newRunning[remote[j].UUID] = remote[j].Running
 		}
 		all = append(all, remote...)
 	}
 
 	r.mu.Lock()
 	r.routing = newRouting
+	r.running = newRunning
 	r.mu.Unlock()
 	return all, nil
 }
@@ -134,14 +145,16 @@ func (r *Router) IsLocked(id string) bool {
 	return r.Local.IsLocked(id)
 }
 
-// IsRunning delegates to the local container runtime for local sessions.
-// Remote sessions return false because the shell has no direct view of the
-// agent's docker daemon today; the status emitter will eventually feed a
-// shell-side cache.
+// IsRunning reports live container state. For remote sessions we read
+// the last-list snapshot (agents stamp Running in their list response);
+// for local sessions we probe the runtime directly so a container that
+// came up between list calls still registers as running.
 func (r *Router) IsRunning(id string) bool {
 	if a := r.agentFor(id); a != nil {
 		_ = a
-		return false
+		r.mu.RLock()
+		defer r.mu.RUnlock()
+		return r.running[id]
 	}
 	if r.LocalIsRunning != nil {
 		return r.LocalIsRunning(id)
