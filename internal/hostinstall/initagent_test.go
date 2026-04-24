@@ -45,10 +45,21 @@ func testInitAgentOpts(t *testing.T) (InitAgentOptions, string) {
 		t.Fatal(err)
 	}
 	etcDir := t.TempDir()
+	// Provide a stub `docker` on PATH so TransferImage (now part of
+	// init-agent) can run `docker save` without a real daemon. Each
+	// test gets its own PATH so parallel execution is safe.
+	stubDir := t.TempDir()
+	stub := filepath.Join(stubDir, "docker")
+	script := "#!/bin/sh\ncase \"$1\" in\n  save) printf 'fake-image-bytes\\n' ;;\n  *) exit 1 ;;\nesac\n"
+	if err := os.WriteFile(stub, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", stubDir)
 	return InitAgentOptions{
 		BinaryPath:       bin,
 		ShellHost:        "shell.example.com",
 		LocalShellEtcDir: etcDir,
+		ImageTag:         "claude-shell:v9.9.9",
 	}, etcDir
 }
 
@@ -75,11 +86,22 @@ func TestInitAgent_MissingBinary(t *testing.T) {
 	opts := InitAgentOptions{
 		BinaryPath: "/does/not/exist/claude-agent",
 		ShellHost:  "shell.example.com",
+		ImageTag:   "claude-shell:v0",
 	}
 	m := newAgentMockRunner("x")
 	err := InitAgent(context.Background(), m, nil, opts, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "locate claude-agent") {
 		t.Errorf("expected locate error, got %v", err)
+	}
+}
+
+func TestInitAgent_RequiresImageTag(t *testing.T) {
+	opts, _ := testInitAgentOpts(t)
+	opts.ImageTag = ""
+	m := newAgentMockRunner("whatever")
+	err := InitAgent(context.Background(), m, nil, opts, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "--image-tag") {
+		t.Errorf("expected image-tag-required error, got %v", err)
 	}
 }
 
@@ -92,23 +114,31 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 		t.Fatalf("InitAgent failed: %v\nlog:\n%s", err, log.String())
 	}
 
-	// One binary upload + three peering writeRemoteContent calls + four
-	// rsyslog writeRemoteContent calls (ca.crt, client.crt, client.key,
-	// /etc/rsyslog.d config) = 8 copies.
-	if len(m.copies) != 8 {
-		t.Fatalf("expected 8 copies, got %d: %+v", len(m.copies), copyDsts(m.copies))
+	// Binary upload + three peering + four rsyslog + one image tarball
+	// + one current-image pointer = 10 copies.
+	if len(m.copies) != 10 {
+		t.Fatalf("expected 10 copies, got %d: %+v", len(m.copies), copyDsts(m.copies))
 	}
 	wantDests := map[string]os.FileMode{
-		"/usr/local/bin/claude-agent":                    0755,
-		"/home/claude/.ssh/authorized_keys":              0600,
-		"/etc/claude-agent/agent_to_shell_ed25519_key":   0600,
-		"/etc/claude-agent/shell-host":                   0644,
-		"/etc/claude-agent/rsyslog-tls/ca.crt":           0644,
-		"/etc/claude-agent/rsyslog-tls/client.crt":       0644,
-		"/etc/claude-agent/rsyslog-tls/client.key":       0600,
-		"/etc/rsyslog.d/10-claude-shell-client.conf":     0644,
+		"/usr/local/bin/claude-agent":                  0755,
+		"/home/claude/.ssh/authorized_keys":            0600,
+		"/etc/claude-agent/agent_to_shell_ed25519_key": 0600,
+		"/etc/claude-agent/shell-host":                 0644,
+		"/etc/claude-agent/rsyslog-tls/ca.crt":         0644,
+		"/etc/claude-agent/rsyslog-tls/client.crt":     0644,
+		"/etc/claude-agent/rsyslog-tls/client.key":     0600,
+		"/etc/rsyslog.d/10-claude-shell-client.conf":   0644,
+		"/etc/claude-agent/current-image":              0644,
 	}
 	for _, c := range m.copies {
+		// The image tarball lands at /tmp/claude-image-<digest>.tar.gz;
+		// digest varies per run so match by prefix instead of exact.
+		if strings.HasPrefix(c.Dst, "/tmp/claude-image-") {
+			if c.Mode != 0600 {
+				t.Errorf("image tarball mode = %o, want 0600", c.Mode)
+			}
+			continue
+		}
 		mode, ok := wantDests[c.Dst]
 		if !ok {
 			t.Errorf("unexpected copy dest %q", c.Dst)
@@ -117,6 +147,15 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 		if c.Mode != mode {
 			t.Errorf("%s: mode = %o, want %o", c.Dst, c.Mode, mode)
 		}
+	}
+
+	// current-image must carry the tag we asked init-agent to push.
+	ci := findCopy(m.copies, "/etc/claude-agent/current-image")
+	if ci == nil {
+		t.Fatal("current-image pointer not written")
+	}
+	if strings.TrimSpace(string(ci.Content)) != "claude-shell:v9.9.9" {
+		t.Errorf("current-image content = %q", ci.Content)
 	}
 
 	// The rsyslog client config must embed the agent-id + shell-host.

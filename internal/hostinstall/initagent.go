@@ -28,6 +28,12 @@ type InitAgentOptions struct {
 	//   <dir>/agent-keys/<id>/...          (per-agent material)
 	// Empty defaults to /etc/claude-shell.
 	LocalShellEtcDir string
+
+	// ImageTag is the full image reference (e.g. "claude-shell:v2.0.0")
+	// init-agent will push to the new agent and stamp as
+	// /etc/claude-agent/current-image. Required — the agent has no
+	// image until init-agent runs, and we don't want to ship :latest.
+	ImageTag string
 }
 
 // InitAgent deploys claude-agent to r and wires up the bi-directional
@@ -55,6 +61,9 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 	}
 	if strings.TrimSpace(opts.ShellHost) == "" {
 		return fmt.Errorf("init-agent: --shell-host is required")
+	}
+	if strings.TrimSpace(opts.ImageTag) == "" {
+		return fmt.Errorf("init-agent: --image-tag is required (agent has no image until pushed)")
 	}
 	if opts.LocalShellEtcDir == "" {
 		opts.LocalShellEtcDir = "/etc/claude-shell"
@@ -139,6 +148,29 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 	// so SSH is already provably working.
 	if err := runStep(ctx, r, log, step{"Configure rsyslog TLS client", func(ctx context.Context, r Runner, log io.Writer) error {
 		return configureAgentRsyslogClient(ctx, r, opts.LocalShellEtcDir, agentID, opts.ShellHost, log)
+	}}); err != nil {
+		return err
+	}
+
+	// Push the container image to the agent + stamp the pointer file
+	// so subsequent docker runs on the agent use the versioned tag.
+	// This must happen after install so /etc/claude-agent exists, and
+	// before the agent is expected to accept any Create op.
+	if err := runStep(ctx, r, log, step{"Push container image", func(ctx context.Context, r Runner, log io.Writer) error {
+		return TransferImage(ctx, r, opts.ImageTag, log)
+	}}); err != nil {
+		return err
+	}
+	if err := runStep(ctx, r, log, step{"Write /etc/claude-agent/current-image", func(ctx context.Context, r Runner, log io.Writer) error {
+		return writeRemoteContent(ctx, r, log,
+			[]byte(opts.ImageTag+"\n"),
+			"/etc/claude-agent/current-image", 0644, "root:root")
+	}}); err != nil {
+		return err
+	}
+	if err := runStep(ctx, r, log, step{"Restart claude-agent for current-image", func(ctx context.Context, r Runner, log io.Writer) error {
+		return r.Run(ctx, "systemctl restart claude-agent.service",
+			RunOptions{Sudo: true, Stdout: log, Stderr: log})
 	}}); err != nil {
 		return err
 	}

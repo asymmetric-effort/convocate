@@ -142,6 +142,7 @@ func cmdInitAgent(args []string) error {
 	binary := fs.String("binary", "", "path to the local claude-agent binary (default: sibling of claude-host)")
 	shellHost := fs.String("shell-host", "", "address of the claude-shell status listener (required)")
 	etcDir := fs.String("shell-etc-dir", "/etc/claude-shell", "local path to the claude-shell peering directory")
+	imageTag := fs.String("image-tag", "claude-shell:"+Version, "container image tag to push to the agent")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -162,6 +163,7 @@ func cmdInitAgent(args []string) error {
 		BinaryPath:       *binary,
 		ShellHost:        *shellHost,
 		LocalShellEtcDir: *etcDir,
+		ImageTag:         *imageTag,
 	}, os.Stderr)
 }
 
