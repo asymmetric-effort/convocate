@@ -98,187 +98,39 @@ func TestPrintUsageIncludesAppName(t *testing.T) {
 	}
 }
 
-// --- restartSessionDetached tests ---
+// --- handleNewSession + handleCloneSession: v2.x (router-only) paths ---
 
-func testUserInfo() user.Info {
-	return user.Info{UID: 1337, GID: 1337, Username: "claude", HomeDir: "/home/claude"}
-}
-
-func testPaths(home string) config.Paths {
-	return config.Paths{
-		ClaudeHome:   home,
-		SessionsBase: home,
-		SkelDir:      filepath.Join(home, ".skel"),
-		ClaudeConfig: filepath.Join(home, ".claude"),
-		SSHDir:       filepath.Join(home, ".ssh"),
-		GitConfig:    filepath.Join(home, ".gitconfig"),
-	}
-}
-
-// withRunner swaps the package-level newRunner factory for the duration of a
-// test so restartSessionDetached uses an injectable exec function.
-func withRunner(t *testing.T, execFn container.ExecFunc) {
-	t.Helper()
-	orig := newRunner
-	newRunner = func(sessionID, sessionDir string, userInfo user.Info, paths config.Paths) *container.Runner {
-		return container.NewRunnerWithExec(sessionID, sessionDir, userInfo, paths, execFn)
-	}
-	t.Cleanup(func() { newRunner = orig })
-}
-
-func TestRestartSessionDetached_Success(t *testing.T) {
+func TestHandleNewSession_RequiresAgentID(t *testing.T) {
 	base := t.TempDir()
 	mgr := session.NewManager(base, filepath.Join(base, "skel"))
-	meta, err := mgr.CreateWithPort("proj", 8080)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var calls []string
-	withRunner(t, func(name string, args ...string) *exec.Cmd {
-		calls = append(calls, strings.Join(append([]string{name}, args...), " "))
-		// IsRunning inspects state; return "false" so restart proceeds.
-		if len(args) > 0 && args[0] == "inspect" {
-			return exec.Command("echo", "false")
-		}
-		return exec.Command("true")
-	})
-
-	if err := restartSessionDetached(mgr, meta.UUID, testUserInfo(), testPaths(base), nil); err != nil {
-		t.Fatalf("restartSessionDetached failed: %v", err)
-	}
-
-	// Expect the docker run --detach call to include our port flag.
-	joined := strings.Join(calls, "\n")
-	if !strings.Contains(joined, "run") || !strings.Contains(joined, "--detach") {
-		t.Errorf("expected docker run --detach invocation, got:\n%s", joined)
-	}
-	if !strings.Contains(joined, "-p 8080:8080") {
-		t.Errorf("expected -p 8080:8080 from session.json port, got:\n%s", joined)
-	}
-}
-
-func TestRestartSessionDetached_MissingSession(t *testing.T) {
-	base := t.TempDir()
-	mgr := session.NewManager(base, "")
-	withRunner(t, func(name string, args ...string) *exec.Cmd { return exec.Command("true") })
-	err := restartSessionDetached(mgr, "missing-uuid", testUserInfo(), testPaths(base), nil)
-	if err == nil {
-		t.Error("expected error for missing session")
-	}
-}
-
-func TestRestartSessionDetached_AlreadyRunning(t *testing.T) {
-	base := t.TempDir()
-	mgr := session.NewManager(base, filepath.Join(base, "skel"))
-	meta, err := mgr.Create("running")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	withRunner(t, func(name string, args ...string) *exec.Cmd {
-		if len(args) > 0 && args[0] == "inspect" {
-			return exec.Command("echo", "true")
-		}
-		return exec.Command("true")
-	})
-
-	err = restartSessionDetached(mgr, meta.UUID, testUserInfo(), testPaths(base), nil)
-	if err == nil {
-		t.Error("expected error when container is already running")
-	}
-	if !strings.Contains(err.Error(), "already running") {
-		t.Errorf("error = %q, want 'already running'", err.Error())
-	}
-}
-
-func TestRestartSessionDetached_StartFails(t *testing.T) {
-	base := t.TempDir()
-	mgr := session.NewManager(base, filepath.Join(base, "skel"))
-	meta, err := mgr.Create("s")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	withRunner(t, func(name string, args ...string) *exec.Cmd {
-		if len(args) > 0 && args[0] == "inspect" {
-			return exec.Command("echo", "false")
-		}
-		return exec.Command("false")
-	})
-
-	err = restartSessionDetached(mgr, meta.UUID, testUserInfo(), testPaths(base), nil)
-	if err == nil {
-		t.Error("expected error when docker run fails")
-	}
-}
-
-// --- handleNewSession, handleCloneSession, handleResumeSession: error branch only ---
-
-func TestHandleNewSession_CreateFails(t *testing.T) {
-	base := t.TempDir()
-	// Use a skel dir we can't copy from (nonexistent is fine — Create allows it).
-	// Force a name validation error by passing an invalid name.
-	mgr := session.NewManager(base, filepath.Join(base, "skel"))
-
-	// A name over 64 chars trips ValidateName inside CreateWithPort? No — Create
-	// does not call ValidateName; but it still succeeds for any string. To force
-	// an error, create the session dir with no write perms first.
-	badBase := filepath.Join(base, "noperm")
-	if err := os.MkdirAll(badBase, 0500); err != nil {
-		t.Fatal(err)
-	}
-	_ = mgr // silence linter
-	badMgr := session.NewManager(badBase, filepath.Join(base, "skel"))
-	withRunner(t, func(name string, args ...string) *exec.Cmd { return exec.Command("true") })
-	router := &multihost.Router{Local: badMgr}
-	err := handleNewSession(router, badMgr, "", "fails", 0, "tcp", "", testUserInfo(), testPaths(base), nil)
-	if err == nil {
-		t.Error("expected error when session directory creation fails")
-	}
-}
-
-func TestHandleCloneSession_MissingSource(t *testing.T) {
-	base := t.TempDir()
-	mgr := session.NewManager(base, filepath.Join(base, "skel"))
-	withRunner(t, func(name string, args ...string) *exec.Cmd { return exec.Command("true") })
 	router := &multihost.Router{Local: mgr}
-	err := handleCloneSession(router, mgr, "missing-uuid", "new", testUserInfo(), testPaths(base), nil)
-	if err == nil {
-		t.Error("expected error when cloning missing source")
+	err := handleNewSession(router, "", "no-agent", 0, "tcp", "", nil)
+	if err == nil || !strings.Contains(err.Error(), "agent-id required") {
+		t.Errorf("expected agent-id-required error, got %v", err)
 	}
 }
 
-func TestHandleResumeSession_Missing(t *testing.T) {
-	base := t.TempDir()
-	mgr := session.NewManager(base, "")
-	err := handleResumeSession(mgr, "missing-uuid", testUserInfo(), testPaths(base), nil)
-	if err == nil {
-		t.Error("expected error when resuming missing session")
-	}
-}
-
-// --- launchSession: locked session error ---
-
-func TestLaunchSession_LockHeld(t *testing.T) {
+func TestHandleCloneSession_LocalSourceReturnsOrphanError(t *testing.T) {
 	base := t.TempDir()
 	mgr := session.NewManager(base, filepath.Join(base, "skel"))
-	meta, err := mgr.Create("s")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Acquire the lock so the second attempt fails.
-	unlock, err := mgr.Lock(meta.UUID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unlock()
-	err = launchSession(mgr, meta.UUID, 0, "tcp", testUserInfo(), testPaths(base), nil)
-	if err == nil {
-		t.Error("expected lock error on second launchSession")
+	router := &multihost.Router{Local: mgr}
+	// No agents registered → every session is treated as a local orphan.
+	err := handleCloneSession(router, "some-uuid", "new", nil)
+	if err == nil || !strings.Contains(err.Error(), "orphan") {
+		t.Errorf("expected orphan error, got %v", err)
 	}
 }
 
-// --- Compile-time assertion: errReader is unused by now; keep to satisfy unused-check ---
-
-var _ = errors.New
+// Compile-time assertions: silence "unused import" noise after the
+// strip-local-docker cleanup.
+var (
+	_ = errors.New
+	_ = user.Info{}
+	_ = config.AppName
+	_ = exec.Command
+	_ = session.PortAuto
+	_ = filepath.Join
+	_ = io.Copy
+	_ = bytes.NewBufferString
+	_ = container.NewRunner
+)

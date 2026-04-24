@@ -138,10 +138,7 @@ func TestRouter_OpsRouteByID(t *testing.T) {
 	local := &fakeLocal{sessions: []session.Metadata{{UUID: "l1"}}}
 	ag := &fakeAgentClient{sessions: []session.Metadata{{UUID: "r1"}}}
 	r := &Router{
-		Local:           local,
-		LocalKill:       func(id string) error { return nil },
-		LocalBackground: func(id string) error { return nil },
-		LocalRestart:    func(id string) error { return nil },
+		Local: local,
 		Agents: []AgentRef{{
 			Record: agentclient.AgentRecord{ID: "A", Host: "h"},
 			Client: ag,
@@ -160,7 +157,7 @@ func TestRouter_OpsRouteByID(t *testing.T) {
 		t.Errorf("delete routing wrong: agent=%q local=%q", ag.deleted, local.deleted)
 	}
 
-	// Delete local → goes to Manager.
+	// Delete local → goes to Manager (still allowed as orphan cleanup).
 	if err := r.Delete("l1"); err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +171,10 @@ func TestRouter_OpsRouteByID(t *testing.T) {
 	}
 	if ag.killed != "r1" {
 		t.Errorf("agent kill not invoked: %q", ag.killed)
+	}
+	// Kill local orphan → migration error.
+	if err := r.Kill("l1"); err == nil || !strings.Contains(err.Error(), "orphan") {
+		t.Errorf("kill on orphan should return orphan error, got %v", err)
 	}
 
 	// Override remote → agent.Override.
@@ -250,13 +251,6 @@ func TestRouter_UnreachableAgent_SurfacesInList(t *testing.T) {
 	}
 }
 
-func TestRouter_LocalHandlersRequired(t *testing.T) {
-	r := &Router{Local: &fakeLocal{}}
-	if err := r.Kill("id"); err == nil || !strings.Contains(err.Error(), "local kill") {
-		t.Errorf("expected local-kill-missing error, got %v", err)
-	}
-}
-
 func TestRouter_IsRunningReflectsSources(t *testing.T) {
 	local := &fakeLocal{sessions: []session.Metadata{{UUID: "l1"}}, locked: map[string]bool{"l1": true}}
 	// r1 is running on the remote agent; r2 is not. The agent's list
@@ -267,9 +261,6 @@ func TestRouter_IsRunningReflectsSources(t *testing.T) {
 	}}
 	r := &Router{
 		Local: local,
-		LocalIsRunning: func(id string) bool {
-			return id == "l1"
-		},
 		Agents: []AgentRef{{
 			Record: agentclient.AgentRecord{ID: "A"},
 			Client: ag,
@@ -277,8 +268,9 @@ func TestRouter_IsRunningReflectsSources(t *testing.T) {
 	}
 	_, _ = r.List()
 
-	if !r.IsRunning("l1") {
-		t.Error("local running should be true")
+	// Local orphans always report false under v2.x — no docker probing.
+	if r.IsRunning("l1") {
+		t.Error("local orphan should report Running=false")
 	}
 	if !r.IsRunning("r1") {
 		t.Error("remote r1 should be running (agent stamped it)")
@@ -286,8 +278,9 @@ func TestRouter_IsRunningReflectsSources(t *testing.T) {
 	if r.IsRunning("r2") {
 		t.Error("remote r2 should not be running")
 	}
-	if !r.IsLocked("l1") {
-		t.Error("local lock should pass through")
+	// Orphan lock state collapses to false — no more local-lock semantics.
+	if r.IsLocked("l1") {
+		t.Error("orphan lock should be false in v2.x")
 	}
 	if r.IsLocked("r1") {
 		t.Error("remote lock should be false")
@@ -301,9 +294,8 @@ func TestRouter_ListStampsRunningOnAggregatedMetadata(t *testing.T) {
 	local := &fakeLocal{sessions: []session.Metadata{{UUID: "l1"}}}
 	ag := &fakeAgentClient{sessions: []session.Metadata{{UUID: "r1", Running: true}}}
 	r := &Router{
-		Local:          local,
-		LocalIsRunning: func(id string) bool { return false },
-		Agents:         []AgentRef{{Record: agentclient.AgentRecord{ID: "A"}, Client: ag}},
+		Local:  local,
+		Agents: []AgentRef{{Record: agentclient.AgentRecord{ID: "A"}, Client: ag}},
 	}
 	got, err := r.List()
 	if err != nil {
@@ -317,5 +309,44 @@ func TestRouter_ListStampsRunningOnAggregatedMetadata(t *testing.T) {
 	}
 	if !remote.Running {
 		t.Errorf("remote Metadata.Running = false, want true")
+	}
+}
+
+func TestRouter_OrphanWritesRejected(t *testing.T) {
+	local := &fakeLocal{sessions: []session.Metadata{{UUID: "orphan-1"}}}
+	r := &Router{Local: local}
+	if _, err := r.List(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		call func() error
+	}{
+		{"Kill", func() error { return r.Kill("orphan-1") }},
+		{"Background", func() error { return r.Background("orphan-1") }},
+		{"Restart", func() error { return r.Restart("orphan-1") }},
+		{"OverrideLock", func() error { return r.OverrideLock("orphan-1") }},
+		{"Update", func() error { return r.Update("orphan-1", "x", "tcp", "", 0) }},
+		{"Clone", func() error { _, err := r.Clone("orphan-1", "x"); return err }},
+	} {
+		if err := tc.call(); err == nil || !strings.Contains(err.Error(), "orphan") {
+			t.Errorf("%s on orphan: got %v, want orphan error", tc.name, err)
+		}
+	}
+}
+
+func TestRouter_CreateRequiresAgentID(t *testing.T) {
+	r := &Router{Local: &fakeLocal{}}
+	_, err := r.Create("", session.CreateOptions{}, "name")
+	if err == nil || !strings.Contains(err.Error(), "agent-id required") {
+		t.Errorf("expected agent-id required, got %v", err)
+	}
+}
+
+func TestRouter_CreateUnknownAgent_Errors(t *testing.T) {
+	r := &Router{Local: &fakeLocal{}}
+	_, err := r.Create("nonexistent", session.CreateOptions{}, "x")
+	if err == nil || !strings.Contains(err.Error(), "not registered") {
+		t.Errorf("expected not-registered, got %v", err)
 	}
 }

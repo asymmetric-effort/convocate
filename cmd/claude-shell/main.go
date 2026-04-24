@@ -4,15 +4,9 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/signal"
-	"strings"
-	"syscall"
 
 	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
-	"github.com/asymmetric-effort/claude-shell/internal/capacity"
 	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/container"
-	"github.com/asymmetric-effort/claude-shell/internal/dns"
 	"github.com/asymmetric-effort/claude-shell/internal/install"
 	"github.com/asymmetric-effort/claude-shell/internal/logging"
 	"github.com/asymmetric-effort/claude-shell/internal/menu"
@@ -74,23 +68,16 @@ func runSessionManager() error {
 }
 
 func runSessionManagerWithLog(log *logging.Logger) error {
-	// Check Docker image exists
-	exists, err := container.ImageExists(nil)
-	if err != nil {
-		return fmt.Errorf("failed to check Docker image: %w", err)
-	}
-	if !exists {
-		return fmt.Errorf("Docker image %q not found; run 'claude-shell install' first", config.ContainerImage())
-	}
-
-	// Lookup claude user
+	// Lookup claude user for path resolution only. The shell no longer
+	// runs containers locally — no docker image check — so agent
+	// discovery is the only prerequisite beyond the user existing.
 	userInfo, err := user.Lookup(config.ClaudeUser)
 	if err != nil {
 		return fmt.Errorf("failed to lookup claude user: %w", err)
 	}
+	_ = userInfo
 
 	paths := config.PathsFromHome(userInfo.HomeDir)
-
 	mgr := session.NewManager(paths.SessionsBase, paths.SkelDir)
 
 	router, closeAgents := buildRouter(mgr, log)
@@ -118,9 +105,6 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 				if log != nil {
 					log.Infof("updated session %s: name=%q port=%d/%s dns=%q", id, name, port, protocol, dnsName)
 				}
-				if err := syncDNSRecords(mgr, log); err != nil && log != nil {
-					log.Warningf("failed to sync dnsmasq hosts after edit: %v", err)
-				}
 				return nil
 			},
 		})
@@ -133,12 +117,12 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 			fmt.Println("Goodbye!")
 			return nil
 		case menu.ActionNewSession:
-			if err := handleNewSession(router, mgr, sel.AgentID, sel.Name, sel.Port, sel.Protocol, sel.DNSName, userInfo, paths, log); err != nil {
+			if err := handleNewSession(router, sel.AgentID, sel.Name, sel.Port, sel.Protocol, sel.DNSName, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
 		case menu.ActionCloneSession:
-			if err := handleCloneSession(router, mgr, sel.SessionID, sel.Name, userInfo, paths, log); err != nil {
+			if err := handleCloneSession(router, sel.SessionID, sel.Name, log); err != nil {
 				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
 			}
 			continue
@@ -147,23 +131,20 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 				fmt.Fprintf(os.Stderr, "delete error: %v\n", err)
 			} else {
 				fmt.Printf("Deleted session %q (%s)\n", sel.Name, shortID(sel.SessionID))
-				if err := syncDNSRecords(mgr, log); err != nil && log != nil {
-					log.Warningf("failed to sync dnsmasq hosts after delete: %v", err)
-				}
 			}
 			continue
 		default:
-			// Resume: route to remote attach if the session lives on an
-			// agent; otherwise fall back to the local docker-exec path.
-			if meta := findInSessions(sessions, sel.SessionID); meta.IsRemote() {
+			// Resume: only remote attach is supported. Orphan (local)
+			// sessions print a migration notice instead of launching a
+			// local container.
+			meta := findInSessions(sessions, sel.SessionID)
+			if meta.IsRemote() {
 				if err := handleRemoteAttach(router, meta, log); err != nil {
 					fmt.Fprintf(os.Stderr, "remote attach error: %v\n", err)
 				}
 				continue
 			}
-			if err := handleResumeSession(mgr, sel.SessionID, userInfo, paths, log); err != nil {
-				fmt.Fprintf(os.Stderr, "session error: %v\n", err)
-			}
+			fmt.Fprintf(os.Stderr, "session %q is a local orphan (shell host no longer runs containers); migrate it to a claude-agent to resume\n", meta.Name)
 			continue
 		}
 	}
@@ -173,13 +154,11 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 // /etc/claude-shell/agent-keys/ is empty or missing (the common case until
 // the operator runs init-agent). Returns a deferred cleanup that closes
 // every agent client.
+// buildRouter wires a multihost.Router against every registered agent.
+// Local sessions come through as read-only orphans (pending migration) —
+// the shell no longer runs containers itself.
 func buildRouter(mgr *session.Manager, log *logging.Logger) (*multihost.Router, func()) {
-	router := &multihost.Router{
-		Local:           mgr,
-		LocalKill:       container.StopContainer,
-		LocalBackground: container.DetachClients,
-		LocalIsRunning:  container.IsContainerRunning,
-	}
+	router := &multihost.Router{Local: mgr}
 	closers := []func(){}
 
 	records, err := agentclient.DiscoverAgents("")
@@ -203,17 +182,6 @@ func buildRouter(mgr *session.Manager, log *logging.Logger) (*multihost.Router, 
 			Record: rec,
 			Client: client,
 		})
-	}
-
-	// LocalRestart needs the session lookup + paths so we bind it after
-	// mgr is in scope.
-	router.LocalRestart = func(id string) error {
-		userInfo, err := user.Lookup(config.ClaudeUser)
-		if err != nil {
-			return err
-		}
-		paths := config.PathsFromHome(userInfo.HomeDir)
-		return restartSessionDetached(mgr, id, userInfo, paths, log)
 	}
 
 	return router, func() {
@@ -270,7 +238,9 @@ func shortID(id string) string {
 	return id[:8]
 }
 
-func handleNewSession(router *multihost.Router, mgr *session.Manager, agentID, name string, port int, protocol, dnsName string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+// handleNewSession routes a Create through the Router to the chosen
+// agent. Local creates were removed in v2.x; agentID must be non-empty.
+func handleNewSession(router *multihost.Router, agentID, name string, port int, protocol, dnsName string, log *logging.Logger) error {
 	meta, err := router.Create(agentID, session.CreateOptions{
 		Port:     port,
 		Protocol: protocol,
@@ -279,206 +249,36 @@ func handleNewSession(router *multihost.Router, mgr *session.Manager, agentID, n
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}
-
 	if log != nil {
 		log.Infof("created session %s (%s) agent=%s port=%d/%s dns=%q",
 			meta.UUID, meta.Name, meta.AgentID, meta.Port, meta.EffectiveProtocol(), meta.DNSName)
 	}
+	fmt.Printf("Created session %q (%s) on agent %s (%s)\n",
+		meta.Name, shortID(meta.UUID), meta.AgentID, meta.AgentHost)
 	if meta.Port > 0 {
-		fmt.Printf("Created session %q (%s) on port %d/%s\n", meta.Name, shortID(meta.UUID), meta.Port, meta.EffectiveProtocol())
-	} else {
-		fmt.Printf("Created session %q (%s)\n", meta.Name, shortID(meta.UUID))
+		fmt.Printf("  published port %d/%s\n", meta.Port, meta.EffectiveProtocol())
 	}
 	if meta.DNSName != "" {
-		fmt.Printf("Registered DNS name %q\n", meta.DNSName)
+		fmt.Printf("  DNS name %q registered on agent\n", meta.DNSName)
 	}
-
-	if meta.IsRemote() {
-		fmt.Printf("Provisioned on agent %s (%s). Use Enter from the list to attach.\n", meta.AgentID, meta.AgentHost)
-		return nil
-	}
-
-	if err := syncDNSRecords(mgr, log); err != nil && log != nil {
-		log.Warningf("failed to sync dnsmasq hosts after create: %v", err)
-	}
-
-	return launchSession(mgr, meta.UUID, meta.Port, meta.EffectiveProtocol(), userInfo, paths, log)
+	fmt.Println("  press Enter on the session from the menu to attach.")
+	return nil
 }
 
-// syncDNSRecords rewrites the dnsmasq-hosts file claude-shell manages from
-// the current session metadata. If the install hasn't set up the dnsmasq
-// integration (parent directory missing) the call is a no-op so stock
-// claude-shell users aren't blocked.
-func syncDNSRecords(mgr *session.Manager, log *logging.Logger) error {
-	if !dns.HostsFileExists(dns.DefaultHostsFile) {
-		return nil
-	}
-	sessions, err := mgr.List()
-	if err != nil {
-		return err
-	}
-	hostIP := dns.DetectHostIP()
-	var records []dns.Record
-	for _, s := range sessions {
-		if s.DNSName == "" {
-			continue
-		}
-		records = append(records, dns.Record{Name: s.DNSName, IP: hostIP})
-	}
-	if log != nil {
-		log.Infof("syncing %d dnsmasq records -> %s", len(records), dns.DefaultHostsFile)
-	}
-	return dns.WriteHostsFile(dns.DefaultHostsFile, records)
-}
-
-func handleCloneSession(router *multihost.Router, mgr *session.Manager, sourceID, name string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
+// handleCloneSession clones a remote session on its owning agent. Local
+// (orphan) sessions cannot be cloned — the Router returns
+// ErrOrphanNeedsMigration which surfaces here.
+func handleCloneSession(router *multihost.Router, sourceID, name string, log *logging.Logger) error {
 	meta, err := router.Clone(sourceID, name)
 	if err != nil {
 		return fmt.Errorf("failed to clone session: %w", err)
 	}
-
 	if log != nil {
 		log.Infof("cloned session %s from %s (%s)", meta.UUID, sourceID, meta.Name)
 	}
-	fmt.Printf("Cloned session %q (%s) from %s\n", meta.Name, shortID(meta.UUID), shortID(sourceID))
-
-	// Cloning a remote session produces a remote session — no local attach.
-	if meta.IsRemote() {
-		fmt.Printf("(remote clone on agent %s — SSH to %s to attach)\n", meta.AgentID, meta.AgentHost)
-		return nil
-	}
-	return launchSession(mgr, meta.UUID, meta.Port, meta.EffectiveProtocol(), userInfo, paths, log)
-}
-
-// newRunner is the package-level factory for container runners. Tests override
-// it to substitute a runner backed by a mock exec function.
-var newRunner = container.NewRunner
-
-// restartSessionDetached launches the session's container in background mode
-// without attaching a user terminal. The container runs autonomously until the
-// user attaches (via Enter on a running session) or kills it.
-func restartSessionDetached(mgr *session.Manager, sessionID string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
-	meta, err := mgr.Get(sessionID)
-	if err != nil {
-		return err
-	}
-
-	if err := mgr.Touch(sessionID); err != nil {
-		if log != nil {
-			log.Warningf("failed to update last accessed time: %v", err)
-		}
-	}
-
-	runner := newRunner(sessionID, mgr.SessionDir(sessionID), userInfo, paths)
-	runner.SetPort(meta.Port)
-	runner.SetProtocol(meta.EffectiveProtocol())
-	runner.SetDNSServer(dns.DetectHostIP())
-
-	running, err := runner.IsRunning()
-	if err != nil {
-		return fmt.Errorf("failed to check container status: %w", err)
-	}
-	if running {
-		return fmt.Errorf("session %q is already running", meta.Name)
-	}
-
-	if err := capacity.Check(capacity.DefaultThreshold); err != nil {
-		return err
-	}
-
-	if log != nil {
-		log.Infof("restarting session %s (%s) in background", meta.UUID, meta.Name)
-	}
-	return runner.StartDetached()
-}
-
-func handleResumeSession(mgr *session.Manager, sessionID string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
-	meta, err := mgr.Get(sessionID)
-	if err != nil {
-		return err
-	}
-
-	if log != nil {
-		log.Infof("resuming session %s (%s)", meta.UUID, meta.Name)
-	}
-	fmt.Printf("Resuming session %q (%s)\n", meta.Name, meta.UUID[:8])
-
-	return launchSession(mgr, sessionID, meta.Port, meta.EffectiveProtocol(), userInfo, paths, log)
-}
-
-func launchSession(mgr *session.Manager, sessionID string, port int, protocol string, userInfo user.Info, paths config.Paths, log *logging.Logger) error {
-	unlock, err := mgr.Lock(sessionID)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-
-	if err := mgr.Touch(sessionID); err != nil {
-		if log != nil {
-			log.Warningf("failed to update last accessed time: %v", err)
-		}
-	}
-
-	runner := container.NewRunner(sessionID, mgr.SessionDir(sessionID), userInfo, paths)
-	runner.SetPort(port)
-	runner.SetProtocol(protocol)
-	runner.SetDNSServer(dns.DetectHostIP())
-
-	// Check if container is already running
-	running, err := runner.IsRunning()
-	if err != nil {
-		return fmt.Errorf("failed to check container status: %w", err)
-	}
-	if running {
-		if log != nil {
-			log.Infof("attaching to running container for session %s", sessionID)
-		}
-		if err := runner.Attach(); err != nil {
-			// Ignore normal exit status from tmux detach
-			if !strings.Contains(err.Error(), "exit status") {
-				return fmt.Errorf("attach error: %w", err)
-			}
-		}
-		return nil
-	}
-
-	// Refuse to start new containers when the host is already saturated.
-	if err := capacity.Check(capacity.DefaultThreshold); err != nil {
-		return err
-	}
-
-	// Set up signal handling for graceful termination
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
-
-	done := make(chan error, 1)
-	go func() {
-		done <- runner.Start()
-	}()
-
-	select {
-	case sig := <-sigCh:
-		if log != nil {
-			log.Infof("received signal %v, stopping session %s", sig, sessionID)
-		}
-		fmt.Printf("\n\nReceived %v. Gracefully stopping session...\n", sig)
-		if err := runner.Stop(); err != nil {
-			if log != nil {
-				log.Errorf("failed to stop container: %v", err)
-			}
-		}
-		return nil
-	case err := <-done:
-		if err != nil {
-			// Don't report error if it was just the container exiting normally
-			if strings.Contains(err.Error(), "exit status") {
-				return nil
-			}
-			return fmt.Errorf("session error: %w", err)
-		}
-		return nil
-	}
+	fmt.Printf("Cloned session %q (%s) from %s on agent %s\n",
+		meta.Name, shortID(meta.UUID), shortID(sourceID), meta.AgentID)
+	return nil
 }
 
 func printUsage() {

@@ -54,26 +54,25 @@ type LocalManager interface {
 }
 
 // Router dispatches session CRUD ops across the local Manager and any
-// registered agents. An empty Agents slice reduces the Router to a thin
-// forwarder around the local Manager — safe default when no multi-host
-// peering has been set up yet.
+// registered agents. As of v2.x, the Router no longer runs containers on
+// the claude-shell host; Local's session metadata files are surfaced as
+// read-only "orphan" entries pending migration to an agent, and every
+// write op that targets an orphan returns ErrOrphanNeedsMigration.
 type Router struct {
 	Local  LocalManager
 	Agents []AgentRef
 
-	// LocalKill/Background/Restart run local docker operations and must be
-	// supplied by the caller (they live in the container package, which
-	// this package deliberately avoids importing to keep compilation
-	// lightweight).
-	LocalKill       func(id string) error
-	LocalBackground func(id string) error
-	LocalRestart    func(id string) error
-	LocalIsRunning  func(id string) bool
-
 	mu      sync.RWMutex
-	routing map[string]*AgentRef         // session UUID -> owning agent; missing = local
-	running map[string]bool              // session UUID -> last-known running status from list response
+	routing map[string]*AgentRef // session UUID -> owning agent; missing = orphan
+	running map[string]bool      // session UUID -> last-known running status from list response
 }
+
+// ErrOrphanNeedsMigration is returned by every write op invoked against a
+// session that lives in the local session.Manager but not on any
+// registered agent. Operators see it in the TUI when they try to kill,
+// restart, edit, clone, etc. a leftover local session from the pre-v2.0
+// world.
+var errOrphanNeedsMigration = fmt.Errorf("session is a local orphan; migrate it to a claude-agent before operating on it")
 
 // List returns the combined metadata for every local and remote session.
 // Remote entries have AgentID + AgentHost stamped in so the TUI can
@@ -87,12 +86,12 @@ func (r *Router) List() ([]session.Metadata, error) {
 	newRouting := make(map[string]*AgentRef, len(r.Agents)*4)
 	newRunning := make(map[string]bool, len(r.Agents)*4)
 	all := make([]session.Metadata, 0, len(localSessions))
-	// Stamp local Running by probing the local container runtime.
+	// Local sessions are orphans — the shell no longer runs containers
+	// itself, so Running is always false and write ops are blocked until
+	// the operator migrates them to a claude-agent.
 	for i := range localSessions {
-		if r.LocalIsRunning != nil {
-			localSessions[i].Running = r.LocalIsRunning(localSessions[i].UUID)
-		}
-		newRunning[localSessions[i].UUID] = localSessions[i].Running
+		localSessions[i].Running = false
+		newRunning[localSessions[i].UUID] = false
 	}
 	all = append(all, localSessions...)
 
@@ -141,74 +140,56 @@ func (r *Router) agentFor(id string) *AgentRef {
 // remote attach.
 func (r *Router) AgentFor(id string) *AgentRef { return r.agentFor(id) }
 
-// IsLocked reports lock state. Remote sessions always report false — the
-// agent manages its own locks and we don't surface them to the TUI today.
-func (r *Router) IsLocked(id string) bool {
-	if a := r.agentFor(id); a != nil {
-		return false
-	}
-	return r.Local.IsLocked(id)
-}
+// IsLocked reports lock state. Always false for orphan sessions because
+// the shell no longer holds container-level locks; agents manage their own.
+func (r *Router) IsLocked(id string) bool { return false }
 
-// IsRunning reports live container state. For remote sessions we read
-// the last-list snapshot (agents stamp Running in their list response);
-// for local sessions we probe the runtime directly so a container that
-// came up between list calls still registers as running.
+// IsRunning reports the last-known running state recorded on the most
+// recent List response. Orphan sessions always report false.
 func (r *Router) IsRunning(id string) bool {
-	if a := r.agentFor(id); a != nil {
-		_ = a
-		r.mu.RLock()
-		defer r.mu.RUnlock()
-		return r.running[id]
-	}
-	if r.LocalIsRunning != nil {
-		return r.LocalIsRunning(id)
-	}
-	return false
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.running[id]
 }
 
-// OverrideLock works for local sessions; remote override is an explicit
-// no-op (agents manage their own locks).
+// OverrideLock: remote sessions route to the agent's Override op;
+// orphans reject (no local lock to override).
 func (r *Router) OverrideLock(id string) error {
 	if a := r.agentFor(id); a != nil {
 		return a.Client.Override(id)
 	}
-	return r.Local.OverrideLock(id)
+	return errOrphanNeedsMigration
 }
 
-// Kill routes via the agent for remote sessions; falls back to the
-// container helper for local.
+// Kill routes via the agent for remote sessions; orphans reject.
 func (r *Router) Kill(id string) error {
 	if a := r.agentFor(id); a != nil {
 		return a.Client.Kill(id)
 	}
-	if r.LocalKill == nil {
-		return fmt.Errorf("local kill handler not configured")
-	}
-	return r.LocalKill(id)
+	return errOrphanNeedsMigration
 }
 
+// Background detaches the user's attachment on the remote agent.
+// Orphan sessions reject (no attachment exists to detach).
 func (r *Router) Background(id string) error {
 	if a := r.agentFor(id); a != nil {
 		return a.Client.Background(id)
 	}
-	if r.LocalBackground == nil {
-		return fmt.Errorf("local background handler not configured")
-	}
-	return r.LocalBackground(id)
+	return errOrphanNeedsMigration
 }
 
+// Restart routes via the agent for remote sessions; orphans reject.
 func (r *Router) Restart(id string) error {
 	if a := r.agentFor(id); a != nil {
 		return a.Client.Restart(id)
 	}
-	if r.LocalRestart == nil {
-		return fmt.Errorf("local restart handler not configured")
-	}
-	return r.LocalRestart(id)
+	return errOrphanNeedsMigration
 }
 
-// Delete routes by ID; remote deletes go through the agent's CRUD op.
+// Delete routes remote deletes through the agent. Orphan deletes go
+// through the local Manager so the user can clean up stale metadata
+// after migrating the container off the shell host — this is the one
+// local write we still permit.
 func (r *Router) Delete(id string) error {
 	if a := r.agentFor(id); a != nil {
 		return a.Client.Delete(id)
@@ -216,8 +197,8 @@ func (r *Router) Delete(id string) error {
 	return r.Local.Delete(id)
 }
 
-// Update routes edit ops. For remote sessions the shell uses agentserver's
-// EditRequest shape; for local it updates via the Manager.
+// Update routes edit ops for remote sessions. Orphan edits are blocked —
+// there's no point renaming a session that can't be operated on.
 func (r *Router) Update(id, name, protocol, dnsName string, port int) error {
 	if a := r.agentFor(id); a != nil {
 		_, err := a.Client.Edit(agentserver.EditRequest{
@@ -229,50 +210,43 @@ func (r *Router) Update(id, name, protocol, dnsName string, port int) error {
 		})
 		return err
 	}
-	_, err := r.Local.UpdateWithOptions(id, session.UpdateOptions{
-		Name:     name,
-		Port:     port,
-		Protocol: protocol,
-		DNSName:  dnsName,
-	})
-	return err
+	return errOrphanNeedsMigration
 }
 
-// Create routes a new-session request to the agent identified by agentID
-// (or the local Manager when agentID is empty / unknown). Returns the new
-// session's metadata with AgentID/AgentHost stamped when it lives on an
-// agent so the caller can route follow-up operations correctly.
+// Create routes a new-session request to the agent identified by agentID.
+// agentID is required — v2.x removed the local-create fallback because the
+// shell host no longer runs containers.
 func (r *Router) Create(agentID string, opts session.CreateOptions, name string) (session.Metadata, error) {
-	if agentID != "" {
-		for i := range r.Agents {
-			a := &r.Agents[i]
-			if a.Record.ID != agentID {
-				continue
-			}
-			meta, err := a.Client.Create(agentserver.CreateRequest{
-				Name:     name,
-				Port:     opts.Port,
-				Protocol: opts.Protocol,
-				DNSName:  opts.DNSName,
-			})
-			if err != nil {
-				return meta, err
-			}
-			meta.AgentID = a.Record.ID
-			meta.AgentHost = a.Record.Host
-			// Register the new UUID in the routing map so subsequent ops
-			// route here without waiting for the next List refresh.
-			r.mu.Lock()
-			if r.routing == nil {
-				r.routing = map[string]*AgentRef{}
-			}
-			r.routing[meta.UUID] = a
-			r.mu.Unlock()
-			return meta, nil
-		}
-		return session.Metadata{}, fmt.Errorf("agent %q not registered", agentID)
+	if agentID == "" {
+		return session.Metadata{}, fmt.Errorf("agent-id required: pick a target agent (create was removed from the shell host)")
 	}
-	return r.Local.CreateWithOptions(name, opts)
+	for i := range r.Agents {
+		a := &r.Agents[i]
+		if a.Record.ID != agentID {
+			continue
+		}
+		meta, err := a.Client.Create(agentserver.CreateRequest{
+			Name:     name,
+			Port:     opts.Port,
+			Protocol: opts.Protocol,
+			DNSName:  opts.DNSName,
+		})
+		if err != nil {
+			return meta, err
+		}
+		meta.AgentID = a.Record.ID
+		meta.AgentHost = a.Record.Host
+		// Register the new UUID in the routing map so subsequent ops
+		// route here without waiting for the next List refresh.
+		r.mu.Lock()
+		if r.routing == nil {
+			r.routing = map[string]*AgentRef{}
+		}
+		r.routing[meta.UUID] = a
+		r.mu.Unlock()
+		return meta, nil
+	}
+	return session.Metadata{}, fmt.Errorf("agent %q not registered", agentID)
 }
 
 // AgentIDs returns the IDs of every registered agent in the order they
@@ -286,10 +260,9 @@ func (r *Router) AgentIDs() []string {
 	return out
 }
 
-// Clone always creates the new session on the same host as the source. A
-// remote clone invokes the agent's Clone op; the result stays on that
-// agent. Cross-host clones aren't supported — they'd require copying
-// session state between hosts, which isn't in scope for v1.0.0.
+// Clone duplicates a session on the agent that hosts the source. Cloning
+// a local orphan is rejected — you can't clone something that isn't
+// under active management.
 func (r *Router) Clone(sourceID, name string) (session.Metadata, error) {
 	if a := r.agentFor(sourceID); a != nil {
 		meta, err := a.Client.Clone(sourceID, name)
@@ -300,5 +273,5 @@ func (r *Router) Clone(sourceID, name string) (session.Metadata, error) {
 		meta.AgentHost = a.Record.Host
 		return meta, nil
 	}
-	return r.Local.Clone(sourceID, name)
+	return session.Metadata{}, errOrphanNeedsMigration
 }
