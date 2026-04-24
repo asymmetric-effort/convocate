@@ -145,6 +145,8 @@ func cmdInitAgent(args []string) error {
 	shellHost := fs.String("shell-host", "", "address of the claude-shell status listener (required)")
 	etcDir := fs.String("shell-etc-dir", "/etc/claude-shell", "local path to the claude-shell peering directory")
 	imageTag := fs.String("image-tag", "claude-shell:"+Version, "container image tag to push to the agent")
+	caCert := fs.String("ca-cert", "", "override path to the rsyslog CA cert (default: <shell-etc-dir>/rsyslog-ca/ca.crt)")
+	caKey := fs.String("ca-key", "", "override path to the rsyslog CA key (default: <shell-etc-dir>/rsyslog-ca/ca.key)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -166,6 +168,8 @@ func cmdInitAgent(args []string) error {
 		ShellHost:        *shellHost,
 		LocalShellEtcDir: *etcDir,
 		ImageTag:         *imageTag,
+		CACertPath:       *caCert,
+		CAKeyPath:        *caKey,
 	}, os.Stderr)
 }
 

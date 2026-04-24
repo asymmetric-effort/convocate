@@ -15,7 +15,7 @@ import (
 func TestConfigureAgentRsyslogClient_MissingCA(t *testing.T) {
 	dir := t.TempDir()
 	m := &mockRunner{}
-	err := configureAgentRsyslogClient(context.Background(), m, dir, "agent-x", "shell.example", &bytes.Buffer{})
+	err := configureAgentRsyslogClient(context.Background(), m, dir, "agent-x", "shell.example", "", "", &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "run 'claude-host init-shell' first") {
 		t.Errorf("expected CA-missing guidance, got %v", err)
 	}
@@ -43,7 +43,7 @@ func TestConfigureAgentRsyslogClient_Happy(t *testing.T) {
 	}
 
 	m := &mockRunner{}
-	if err := configureAgentRsyslogClient(context.Background(), m, dir, "agent-yyy", "shell.example.com", &bytes.Buffer{}); err != nil {
+	if err := configureAgentRsyslogClient(context.Background(), m, dir, "agent-yyy", "shell.example.com", "", "", &bytes.Buffer{}); err != nil {
 		t.Fatalf("step: %v", err)
 	}
 

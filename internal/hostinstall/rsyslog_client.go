@@ -54,21 +54,31 @@ action(
 `
 
 // configureAgentRsyslogClient issues a client cert for agentID under the
-// shell's CA (read from the local filesystem), uploads the TLS material +
-// rsyslog config to the agent, installs rsyslog-gnutls, and restarts the
-// daemon so the agent immediately starts shipping logs.
+// shell's CA, uploads the TLS material + rsyslog config to the agent,
+// installs rsyslog-gnutls, and restarts the daemon so the agent
+// immediately starts shipping logs.
 //
-// Returns a clear error if init-shell hasn't run yet (no CA on the local
-// machine) because issuing a client cert without the CA is impossible.
-func configureAgentRsyslogClient(ctx context.Context, r Runner, localShellEtcDir, agentID, shellHost string, log io.Writer) error {
-	caDir := filepath.Join(localShellEtcDir, "rsyslog-ca")
-	caCertPEM, err := os.ReadFile(filepath.Join(caDir, "ca.crt"))
-	if err != nil {
-		return fmt.Errorf("read CA cert from %s (run 'claude-host init-shell' first): %w", caDir, err)
+// CA material is resolved in order:
+//   1. explicit --ca-cert / --ca-key paths passed through the options
+//   2. <localShellEtcDir>/rsyslog-ca/{ca.crt,ca.key} (on-shell default)
+//
+// Path (1) lets an operator run init-agent from a workstation with the
+// CA copied locally; (2) is the common case of "install from the shell
+// host itself".
+func configureAgentRsyslogClient(ctx context.Context, r Runner, localShellEtcDir, agentID, shellHost, caCertPath, caKeyPath string, log io.Writer) error {
+	if caCertPath == "" {
+		caCertPath = filepath.Join(localShellEtcDir, "rsyslog-ca", "ca.crt")
 	}
-	caKeyPEM, err := os.ReadFile(filepath.Join(caDir, "ca.key"))
+	if caKeyPath == "" {
+		caKeyPath = filepath.Join(localShellEtcDir, "rsyslog-ca", "ca.key")
+	}
+	caCertPEM, err := os.ReadFile(caCertPath)
 	if err != nil {
-		return fmt.Errorf("read CA key from %s: %w", caDir, err)
+		return fmt.Errorf("read CA cert from %s (run 'claude-host init-shell' first or pass --ca-cert): %w", caCertPath, err)
+	}
+	caKeyPEM, err := os.ReadFile(caKeyPath)
+	if err != nil {
+		return fmt.Errorf("read CA key from %s: %w", caKeyPath, err)
 	}
 	ca, err := tlsutil.ParseKeyMaterial(caCertPEM, caKeyPEM)
 	if err != nil {

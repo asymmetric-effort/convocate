@@ -34,6 +34,15 @@ type InitAgentOptions struct {
 	// /etc/claude-agent/current-image. Required — the agent has no
 	// image until init-agent runs, and we don't want to ship :latest.
 	ImageTag string
+
+	// CACertPath / CAKeyPath override where we read the rsyslog CA
+	// material from. Empty falls back to
+	// <LocalShellEtcDir>/rsyslog-ca/{ca.crt,ca.key}. Useful when
+	// init-agent runs from a workstation instead of the shell host
+	// itself — the operator copies the CA files locally once, then
+	// points every init-agent run at those paths.
+	CACertPath string
+	CAKeyPath  string
 }
 
 // InitAgent deploys claude-agent to r and wires up the bi-directional
@@ -147,7 +156,7 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 	// forwarder config, restarts rsyslog. Runs after the peering files
 	// so SSH is already provably working.
 	if err := runStep(ctx, r, log, step{"Configure rsyslog TLS client", func(ctx context.Context, r Runner, log io.Writer) error {
-		return configureAgentRsyslogClient(ctx, r, opts.LocalShellEtcDir, agentID, opts.ShellHost, log)
+		return configureAgentRsyslogClient(ctx, r, opts.LocalShellEtcDir, agentID, opts.ShellHost, opts.CACertPath, opts.CAKeyPath, log)
 	}}); err != nil {
 		return err
 	}
