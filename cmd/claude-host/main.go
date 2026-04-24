@@ -135,14 +135,34 @@ func cmdInitShell(args []string) error {
 }
 
 func cmdInitAgent(args []string) error {
-	t, err := parseTargetFlags("init-agent", args)
-	if err != nil {
+	fs := flag.NewFlagSet("init-agent", flag.ContinueOnError)
+	var t targetFlags
+	fs.StringVar(&t.host, "host", "", "remote agent host to provision (empty = local)")
+	fs.StringVar(&t.user, "user", os.Getenv("USER"), "remote user to connect as (ignored for local)")
+	binary := fs.String("binary", "", "path to the local claude-agent binary (default: sibling of claude-host)")
+	shellHost := fs.String("shell-host", "", "address of the claude-shell status listener (required)")
+	etcDir := fs.String("shell-etc-dir", "/etc/claude-shell", "local path to the claude-shell peering directory")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if err := requireLocalRoot(t); err != nil {
 		return err
 	}
-	return fmt.Errorf("claude-host init-agent: not yet implemented (target=%s)", describeTarget(t))
+
+	ctx, cancel := signalContext()
+	defer cancel()
+
+	r, sshCfg, err := runnerFor(t)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	return hostinstall.InitAgent(ctx, r, sshCfg, hostinstall.InitAgentOptions{
+		BinaryPath:       *binary,
+		ShellHost:        *shellHost,
+		LocalShellEtcDir: *etcDir,
+	}, os.Stderr)
 }
 
 func cmdUpdate(args []string) error {

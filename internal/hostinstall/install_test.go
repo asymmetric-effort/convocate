@@ -16,10 +16,15 @@ import (
 type mockRunner struct {
 	cmds       []mockCall
 	copies     []mockCopy
-	failAt     int  // if > 0, Run returns an error on the failAt'th call
+	failAt     int // if > 0, Run returns an error on the failAt'th call
 	callNum    int
 	returnTxt  string
 	closeCount int
+
+	// cmdStdout lets a test inject stdout content for a specific command
+	// prefix (matched with strings.HasPrefix) — used to simulate reading
+	// the agent-id file over SSH.
+	cmdStdout map[string]string
 }
 
 type mockCall struct {
@@ -30,13 +35,21 @@ type mockCall struct {
 type mockCopy struct {
 	Src, Dst string
 	Mode     os.FileMode
+	Content  []byte // contents of Src at the moment of CopyFile
 }
 
 func (m *mockRunner) Run(_ context.Context, cmd string, opts RunOptions) error {
 	m.callNum++
 	m.cmds = append(m.cmds, mockCall{Cmd: cmd, Opts: opts})
-	if opts.Stdout != nil && m.returnTxt != "" {
-		_, _ = io.WriteString(opts.Stdout, m.returnTxt)
+	if opts.Stdout != nil {
+		if m.returnTxt != "" {
+			_, _ = io.WriteString(opts.Stdout, m.returnTxt)
+		}
+		for prefix, out := range m.cmdStdout {
+			if strings.HasPrefix(cmd, prefix) {
+				_, _ = io.WriteString(opts.Stdout, out)
+			}
+		}
 	}
 	if m.failAt > 0 && m.callNum == m.failAt {
 		return errors.New("mock-fail")
@@ -45,7 +58,8 @@ func (m *mockRunner) Run(_ context.Context, cmd string, opts RunOptions) error {
 }
 
 func (m *mockRunner) CopyFile(_ context.Context, src, dst string, mode os.FileMode) error {
-	m.copies = append(m.copies, mockCopy{Src: src, Dst: dst, Mode: mode})
+	content, _ := os.ReadFile(src)
+	m.copies = append(m.copies, mockCopy{Src: src, Dst: dst, Mode: mode, Content: content})
 	return nil
 }
 
