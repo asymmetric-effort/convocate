@@ -1,7 +1,14 @@
-// Package agentclient is the claude-agent-side half of the
-// agent↔shell control plane. It holds a persistent SSH connection to the
-// shell's status listener and publishes statusproto.Event values over the
-// claude-shell-status subsystem.
+// Package agentclient holds the SSH-based client primitives used by both
+// halves of the agent↔shell control plane:
+//
+//   - StatusEmitter (emitter.go): runs on the agent, connects to the shell's
+//     status listener (claude-shell-status subsystem) and publishes
+//     statusproto.Event values.
+//   - CRUDClient (crud.go): runs on the shell, connects to an agent's
+//     claude-agent-rpc subsystem and invokes container-lifecycle ops.
+//
+// Both directions use ssh.Dial with ed25519 key auth; the on-disk key and
+// authorized_keys files are populated by claude-host init-agent.
 //
 // The emitter is designed to be non-blocking from the op-handler's point of
 // view: Publish drops events on the floor when the buffer is full rather
