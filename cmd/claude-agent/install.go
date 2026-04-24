@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/asymmetric-effort/claude-shell/internal/config"
+	"github.com/asymmetric-effort/claude-shell/internal/skel"
 )
 
 // systemdUnit is the content installed at defaultSystemdUnit. Kept inline
@@ -49,6 +52,8 @@ func cmdInstall(_ []string) error {
 		{"Generate / assign agent ID", ensureAgentID},
 		{"Ensure /home/claude/.ssh directory", ensureSSHDir},
 		{"Ensure authorized_keys file", ensureAuthKeys},
+		{"Set up session skeleton directory", ensureSessionSkel},
+		{"Check claude CLI is installed", checkClaudeCLIPresent},
 		{"Install claude-sessions.slice (90% cgroup cap)", writeSessionsSlice},
 		{"Install daily image-prune cron", writeImagePruneCron},
 		{"Install systemd unit", writeSystemdUnit},
@@ -163,6 +168,36 @@ func ensureAuthKeys() error {
 
 func writeSystemdUnit() error {
 	return os.WriteFile(defaultSystemdUnit, []byte(systemdUnit), 0644)
+}
+
+// ensureSessionSkel provisions /home/claude/.skel/ with the embedded
+// starter files (CLAUDE.md etc.) that session.Manager.CreateWithOptions
+// copies into every new session dir. Pre-v2 this was a claude-shell
+// install step; now that sessions only spawn on agents, the agent owns
+// it. Idempotent: skel.Setup only writes missing files.
+func ensureSessionSkel() error {
+	u, err := user.Lookup(defaultClaudeUsername)
+	if err != nil {
+		return fmt.Errorf("lookup %s: %w", defaultClaudeUsername, err)
+	}
+	skelPath := filepath.Join(u.HomeDir, config.SkelDir)
+	if err := skel.Setup(skelPath); err != nil {
+		return err
+	}
+	return chownClaude(skelPath)
+}
+
+// checkClaudeCLIPresent fails the install if /usr/local/bin/claude is
+// missing. Containers mount that binary read-only into each session
+// (via container.Runner.buildRunArgs), so its absence is a genuine
+// blocker for the agent — better to catch it at install than at
+// docker-run time with an unhelpful mount error.
+func checkClaudeCLIPresent() error {
+	if _, err := os.Stat(config.ClaudeBinaryPath); os.IsNotExist(err) {
+		return fmt.Errorf("claude CLI not found at %s; install it before provisioning sessions", config.ClaudeBinaryPath)
+	}
+	fmt.Printf("[%s]   found claude CLI at %s\n", appName, config.ClaudeBinaryPath)
+	return nil
 }
 
 // writeSessionsSlice renders /etc/systemd/system/claude-sessions.slice

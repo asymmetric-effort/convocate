@@ -69,13 +69,15 @@ func (inst *Installer) Run() error {
 		{"Checking platform", inst.checkPlatform},
 		{"Checking Docker", inst.checkDocker},
 		{"Creating claude user", inst.createUser},
-		{"Setting up skeleton directory", inst.setupSkel},
-		{"Checking claude CLI", inst.checkClaudeCLI},
 		{"Installing claude-shell binary", inst.installBinary},
 		{"Building Docker image", inst.buildImage},
 		{"Configuring login shell", inst.configureLoginShell},
 		{"Setting up dnsmasq integration", inst.setupDnsmasqIntegration},
 	}
+	// Post-v2: the shell host no longer runs containers itself, so the
+	// session skeleton (/home/claude/.skel) + claude CLI are only
+	// needed on agent hosts where sessions actually spawn. claude-agent
+	// install provisions both.
 
 	for _, step := range steps {
 		fmt.Printf("[install] %s...\n", step.name)
