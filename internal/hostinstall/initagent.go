@@ -133,11 +133,22 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 		return fmt.Errorf("write shell-side files: %w", err)
 	}
 
+	// Configure the agent's rsyslog TLS client — issues a client cert
+	// under the shell's CA, uploads cert/key, drops /etc/rsyslog.d
+	// forwarder config, restarts rsyslog. Runs after the peering files
+	// so SSH is already provably working.
+	if err := runStep(ctx, r, log, step{"Configure rsyslog TLS client", func(ctx context.Context, r Runner, log io.Writer) error {
+		return configureAgentRsyslogClient(ctx, r, opts.LocalShellEtcDir, agentID, opts.ShellHost, log)
+	}}); err != nil {
+		return err
+	}
+
 	fmt.Fprintln(log, "")
 	fmt.Fprintln(log, "[claude-host] init-agent complete.")
 	fmt.Fprintf(log, "  agent-id: %s\n", agentID)
 	fmt.Fprintf(log, "  shell->agent private key: %s\n", shellToAgentKeyPath(opts.LocalShellEtcDir, agentID))
 	fmt.Fprintf(log, "  agent->shell pubkey appended to: %s\n", filepath.Join(opts.LocalShellEtcDir, "status_authorized_keys"))
+	fmt.Fprintf(log, "  agent now forwarding logs to %s:514 via TLS\n", opts.ShellHost)
 	return nil
 }
 

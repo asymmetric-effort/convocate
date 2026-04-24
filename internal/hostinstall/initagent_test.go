@@ -10,7 +10,30 @@ import (
 	"testing"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/asymmetric-effort/claude-shell/internal/tlsutil"
 )
+
+// seedRsyslogCA stages a CA cert + key at <etcDir>/rsyslog-ca/ so
+// init-agent's client-config step can read it. Returns nothing — the
+// files land in place.
+func seedRsyslogCA(t *testing.T, etcDir string) {
+	t.Helper()
+	ca, err := tlsutil.GenerateCA("test-ca", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caDir := filepath.Join(etcDir, "rsyslog-ca")
+	if err := os.MkdirAll(caDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(caDir, "ca.crt"), ca.CertPEM, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(caDir, "ca.key"), ca.KeyPEM, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // testInitAgentOpts returns options pointed at a temp binary + temp shell
 // etc dir, ready to pass to InitAgent for unit tests.
@@ -62,21 +85,28 @@ func TestInitAgent_MissingBinary(t *testing.T) {
 
 func TestInitAgent_EndToEnd(t *testing.T) {
 	opts, etcDir := testInitAgentOpts(t)
+	seedRsyslogCA(t, etcDir)
 	m := newAgentMockRunner("abcdef012345")
 	var log bytes.Buffer
 	if err := InitAgent(context.Background(), m, nil, opts, &log); err != nil {
 		t.Fatalf("InitAgent failed: %v\nlog:\n%s", err, log.String())
 	}
 
-	// One binary upload + three writeRemoteContent calls = 4 copies.
-	if len(m.copies) != 4 {
-		t.Fatalf("expected 4 copies, got %d: %+v", len(m.copies), copyDsts(m.copies))
+	// One binary upload + three peering writeRemoteContent calls + four
+	// rsyslog writeRemoteContent calls (ca.crt, client.crt, client.key,
+	// /etc/rsyslog.d config) = 8 copies.
+	if len(m.copies) != 8 {
+		t.Fatalf("expected 8 copies, got %d: %+v", len(m.copies), copyDsts(m.copies))
 	}
 	wantDests := map[string]os.FileMode{
-		"/usr/local/bin/claude-agent":                      0755,
-		"/home/claude/.ssh/authorized_keys":                0600,
-		"/etc/claude-agent/agent_to_shell_ed25519_key":     0600,
-		"/etc/claude-agent/shell-host":                     0644,
+		"/usr/local/bin/claude-agent":                    0755,
+		"/home/claude/.ssh/authorized_keys":              0600,
+		"/etc/claude-agent/agent_to_shell_ed25519_key":   0600,
+		"/etc/claude-agent/shell-host":                   0644,
+		"/etc/claude-agent/rsyslog-tls/ca.crt":           0644,
+		"/etc/claude-agent/rsyslog-tls/client.crt":       0644,
+		"/etc/claude-agent/rsyslog-tls/client.key":       0600,
+		"/etc/rsyslog.d/10-claude-shell-client.conf":     0644,
 	}
 	for _, c := range m.copies {
 		mode, ok := wantDests[c.Dst]
@@ -87,6 +117,19 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 		if c.Mode != mode {
 			t.Errorf("%s: mode = %o, want %o", c.Dst, c.Mode, mode)
 		}
+	}
+
+	// The rsyslog client config must embed the agent-id + shell-host.
+	cfg := findCopy(m.copies, "/etc/rsyslog.d/10-claude-shell-client.conf")
+	if cfg == nil {
+		t.Fatal("client rsyslog config not uploaded")
+	}
+	body := string(cfg.Content)
+	if !strings.Contains(body, "$LocalHostName abcdef012345") {
+		t.Errorf("client config missing agent-id stamp:\n%s", body)
+	}
+	if !strings.Contains(body, `target="shell.example.com"`) {
+		t.Errorf("client config missing shell-host target:\n%s", body)
 	}
 
 	// Verify the shell-host file carries the trimmed value.
@@ -122,11 +165,10 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 		t.Errorf("comment %q missing agent id", comment)
 	}
 
-	// Remote Run calls should include the install, a cat for agent-id,
-	// three chowns (one per writeRemoteContent), and a service restart.
-	// Exact ordering: install, cat, chown auth, chown privkey, chown
-	// shell-host, restart.
-	wantSubstrings := []string{
+	// First six commands are the fixed peering sequence; everything after
+	// is the rsyslog step which we check for key phrases rather than
+	// exact ordering (apt-get, mkdir, chowns, restart rsyslog).
+	wantPeering := []string{
 		"/usr/local/bin/claude-agent install",
 		"cat /etc/claude-agent/agent-id",
 		"chown claude:claude '/home/claude/.ssh/authorized_keys'",
@@ -134,12 +176,21 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 		"chown root:root '/etc/claude-agent/shell-host'",
 		"systemctl restart claude-agent.service",
 	}
-	if len(m.cmds) != len(wantSubstrings) {
-		t.Fatalf("cmd count = %d, want %d:\n%v", len(m.cmds), len(wantSubstrings), cmdNames(m.cmds))
-	}
-	for i, want := range wantSubstrings {
+	for i, want := range wantPeering {
 		if !strings.Contains(m.cmds[i].Cmd, want) {
 			t.Errorf("cmd[%d] = %q, want substring %q", i, firstLine(m.cmds[i].Cmd), want)
+		}
+	}
+	rsyslogPhrases := []string{
+		"mkdir -p /etc/claude-agent/rsyslog-tls",
+		"rsyslog-gnutls",
+		"/var/spool/rsyslog",
+		"systemctl restart rsyslog",
+	}
+	joined := allCmds(m.cmds)
+	for _, want := range rsyslogPhrases {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing rsyslog phrase %q", want)
 		}
 	}
 	for i, c := range m.cmds {
@@ -198,6 +249,7 @@ func TestInitAgent_AppendsToExistingAuthorizedKeys(t *testing.T) {
 	// Prepopulate status_authorized_keys with one line, then run init-agent
 	// and verify the file grows rather than being clobbered.
 	opts, etcDir := testInitAgentOpts(t)
+	seedRsyslogCA(t, etcDir)
 	authPath := filepath.Join(etcDir, "status_authorized_keys")
 	existing := []byte("# existing\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGzZxHIT0xU4WIaMDIbj5DD/exxxxxxxxxxxxxxxxxxx existing\n")
 	if err := os.WriteFile(authPath, existing, 0644); err != nil {
