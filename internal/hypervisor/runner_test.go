@@ -13,14 +13,15 @@ import (
 // values. Used across every test in this package; keep field names
 // stable so other test files can grep for them.
 type mockRunner struct {
-	cmds      []mockCall
-	copies    []mockCopy
-	reads     []string
-	readBody  map[string][]byte // path → bytes returned from ReadFile
-	cmdStdout map[string]string // command-prefix → stdout fed to opts.Stdout
-	failOn    map[string]error  // command-prefix → error to return from Run
-	closed    bool
-	target    string
+	cmds       []mockCall
+	copies     []mockCopy
+	reads      []string
+	readBody   map[string][]byte // path → bytes returned from ReadFile
+	cmdStdout  map[string]string // command-prefix → stdout fed to opts.Stdout
+	failOn     map[string]error  // command-prefix → error to return from Run
+	copyFailOn map[string]error  // dst-substring → error to return from CopyFile
+	closed     bool
+	target     string
 }
 
 type mockCall struct {
@@ -56,6 +57,13 @@ func (m *mockRunner) Run(_ context.Context, cmd string, opts RunOptions) error {
 func (m *mockRunner) CopyFile(_ context.Context, src, dst string, mode os.FileMode) error {
 	content, _ := os.ReadFile(src)
 	m.copies = append(m.copies, mockCopy{Src: src, Dst: dst, Mode: mode, Content: content})
+	if m.copyFailOn != nil {
+		for substr, err := range m.copyFailOn {
+			if strings.Contains(dst, substr) {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

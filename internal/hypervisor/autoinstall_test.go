@@ -238,3 +238,19 @@ func TestPushAutoinstallSeed_BuildSeedFails(t *testing.T) {
 		t.Errorf("expected build error, got %v", err)
 	}
 }
+
+func TestPushAutoinstallSeed_UserDataUploadFails(t *testing.T) {
+	m := &mockRunner{copyFailOn: map[string]error{"user-data": errors.New("disk full")}}
+	err := PushAutoinstallSeed(context.Background(), m, validCfg(), "/iso", "seed.iso")
+	if err == nil || !strings.Contains(err.Error(), "upload user-data") {
+		t.Errorf("expected user-data upload error, got %v", err)
+	}
+}
+
+func TestPushAutoinstallSeed_MetaDataUploadFails(t *testing.T) {
+	m := &mockRunner{copyFailOn: map[string]error{"meta-data": errors.New("disk full")}}
+	err := PushAutoinstallSeed(context.Background(), m, validCfg(), "/iso", "seed.iso")
+	if err == nil || !strings.Contains(err.Error(), "upload meta-data") {
+		t.Errorf("expected meta-data upload error, got %v", err)
+	}
+}
