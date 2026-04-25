@@ -348,6 +348,84 @@ func TestHostinstallSSH_CopyFile_MissingSrcErrors(t *testing.T) {
 	}
 }
 
+func TestHostinstallReboot_HappyPath(t *testing.T) {
+	clientPub, _ := setupClientHome(t)
+	srv := newFakeSSHd(t, clientPub, func(_ string, _ io.Reader, _ io.Writer) (uint32, error) {
+		return 0, nil
+	})
+	defer srv.close()
+
+	host, port := splitHostPort(t, srv.addr)
+	cfg := hostinstall.SSHConfig{
+		Host: host, Port: port, User: "u",
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		PasswordPrompt:  func(string, string) (string, error) { return "", errors.New("nope") },
+		Timeout:         3 * time.Second,
+	}
+	r, err := hostinstall.NewSSHRunner(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var progress bytes.Buffer
+	r2, err := hostinstall.RebootAndReconnect(context.Background(), r, cfg, hostinstall.RebootOptions{
+		InitialWait:  10 * time.Millisecond,
+		PollInterval: 10 * time.Millisecond,
+		Timeout:      2 * time.Second,
+		Progress:     &progress,
+	})
+	if err != nil {
+		t.Fatalf("RebootAndReconnect: %v", err)
+	}
+	defer r2.Close()
+	if !strings.Contains(progress.String(), "rebooting") {
+		t.Errorf("progress should mention rebooting, got %q", progress.String())
+	}
+	if !strings.Contains(progress.String(), "reachable again") {
+		t.Errorf("progress should mention reconnect success, got %q", progress.String())
+	}
+	// First two recorded commands: the reboot itself, then the
+	// post-reconnect "true" reachability probe.
+	cmds := srv.recordedCommands()
+	if len(cmds) < 2 {
+		t.Fatalf("expected at least 2 commands, got %v", cmds)
+	}
+	if !strings.Contains(cmds[0], "systemctl reboot") {
+		t.Errorf("first command should be reboot, got %q", cmds[0])
+	}
+}
+
+func TestHostinstallReboot_Timeout(t *testing.T) {
+	clientPub, _ := setupClientHome(t)
+	// Server shuts down before we attempt reconnect — every
+	// NewSSHRunner attempt will fail with connection refused, so
+	// RebootAndReconnect hits its Timeout.
+	srv := newFakeSSHd(t, clientPub, func(_ string, _ io.Reader, _ io.Writer) (uint32, error) {
+		return 0, nil
+	})
+	host, port := splitHostPort(t, srv.addr)
+	cfg := hostinstall.SSHConfig{
+		Host: host, Port: port, User: "u",
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		PasswordPrompt:  func(string, string) (string, error) { return "", errors.New("nope") },
+		Timeout:         200 * time.Millisecond,
+	}
+	r, err := hostinstall.NewSSHRunner(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.close() // kill the listener after the client connects
+
+	_, err = hostinstall.RebootAndReconnect(context.Background(), r, cfg, hostinstall.RebootOptions{
+		InitialWait:  10 * time.Millisecond,
+		PollInterval: 50 * time.Millisecond,
+		Timeout:      300 * time.Millisecond,
+	})
+	if err == nil || !strings.Contains(err.Error(), "did not come back") {
+		t.Errorf("expected did-not-come-back error, got %v", err)
+	}
+}
+
 func TestHostinstallSSH_KeyAuthRejected_FallsBackToPassword(t *testing.T) {
 	// Set up a client key but DON'T authorize it on the server. The
 	// server should reject pubkey auth, the client falls through to the

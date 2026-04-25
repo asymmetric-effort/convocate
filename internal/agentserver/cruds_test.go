@@ -873,6 +873,22 @@ func TestPtyRWC_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestParseStringPayload(t *testing.T) {
+	// uint32 length + string bytes.
+	if got := parseStringPayload([]byte{0, 0, 0, 5, 'h', 'e', 'l', 'l', 'o'}); got != "hello" {
+		t.Errorf("got %q, want hello", got)
+	}
+	if got := parseStringPayload(nil); got != "" {
+		t.Errorf("nil payload should decode to empty, got %q", got)
+	}
+	if got := parseStringPayload([]byte{0, 0, 1}); got != "" {
+		t.Errorf("short header should decode to empty, got %q", got)
+	}
+	if got := parseStringPayload([]byte{0, 0, 0, 99, 'x'}); got != "" {
+		t.Errorf("overflow length should decode to empty, got %q", got)
+	}
+}
+
 func TestServer_Close_NoOp(t *testing.T) {
 	dir := t.TempDir()
 	hostKeyPath := filepath.Join(dir, "host_key")

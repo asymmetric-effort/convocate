@@ -7,8 +7,31 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestSyncWriter_SerializesConcurrentWrites(t *testing.T) {
+	// syncWriter exists to serialize Write across exec.Cmd's internal
+	// goroutines. Hammer it from many goroutines and confirm no bytes
+	// are torn or dropped.
+	var underlying bytes.Buffer
+	w := &syncWriter{w: &underlying}
+
+	var wg sync.WaitGroup
+	const n = 200
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = w.Write([]byte("x"))
+		}()
+	}
+	wg.Wait()
+	if underlying.Len() != n {
+		t.Errorf("got %d bytes, want %d", underlying.Len(), n)
+	}
+}
 
 func TestMigrate_RequiresAgent(t *testing.T) {
 	err := MigrateSession(context.Background(), MigrateSessionOptions{SessionUUID: "x"}, io.Discard)

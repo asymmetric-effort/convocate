@@ -12,6 +12,16 @@ func TestContainerImage(t *testing.T) {
 	}
 }
 
+func TestContainerImageWithTag(t *testing.T) {
+	if got := ContainerImageWithTag("v9.9.9"); got != ContainerImageName+":v9.9.9" {
+		t.Errorf("explicit tag = %q", got)
+	}
+	// Empty tag falls back to the compile-time default.
+	if got := ContainerImageWithTag(""); got != ContainerImageName+":"+ContainerImageTag {
+		t.Errorf("empty tag = %q", got)
+	}
+}
+
 func TestContainerName(t *testing.T) {
 	tests := []struct {
 		name     string
