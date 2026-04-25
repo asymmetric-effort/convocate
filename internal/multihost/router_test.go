@@ -60,6 +60,7 @@ type fakeAgentClient struct {
 	editOpts   agentserver.EditRequest
 	cloneSrc   string
 	cloneName  string
+	cloneErr   error
 }
 
 func (f *fakeAgentClient) List() ([]session.Metadata, error) { return f.sessions, f.listErr }
@@ -74,6 +75,9 @@ func (f *fakeAgentClient) Edit(req agentserver.EditRequest) (session.Metadata, e
 func (f *fakeAgentClient) Clone(src, name string) (session.Metadata, error) {
 	f.cloneSrc = src
 	f.cloneName = name
+	if f.cloneErr != nil {
+		return session.Metadata{}, f.cloneErr
+	}
 	return session.Metadata{UUID: "remote-clone", Name: name}, nil
 }
 func (f *fakeAgentClient) Delete(id string) error     { f.deleted = id; return nil }
@@ -402,5 +406,48 @@ func TestRouter_List_LocalListFails(t *testing.T) {
 	r := &Router{Local: &fakeLocal{listErr: errors.New("disk gone")}}
 	if _, err := r.List(); err == nil || !strings.Contains(err.Error(), "disk gone") {
 		t.Errorf("expected local-list error propagation, got %v", err)
+	}
+}
+
+func TestRouter_AgentIDs(t *testing.T) {
+	r := &Router{Local: &fakeLocal{}}
+	if got := r.AgentIDs(); len(got) != 0 {
+		t.Errorf("empty router AgentIDs = %v, want []", got)
+	}
+
+	r.Agents = []AgentRef{
+		{Record: agentclient.AgentRecord{ID: "alpha"}},
+		{Record: agentclient.AgentRecord{ID: "beta"}},
+		{Record: agentclient.AgentRecord{ID: "gamma"}},
+	}
+	got := r.AgentIDs()
+	if len(got) != 3 || got[0] != "alpha" || got[1] != "beta" || got[2] != "gamma" {
+		t.Errorf("AgentIDs = %v, want [alpha beta gamma] in order", got)
+	}
+}
+
+func TestRouter_Clone_AgentErrorPropagates(t *testing.T) {
+	ag := &fakeAgentClient{
+		sessions: []session.Metadata{{UUID: "r1"}},
+		cloneErr: errors.New("agent disk full"),
+	}
+	r := &Router{Local: &fakeLocal{}, Agents: []AgentRef{
+		{Record: agentclient.AgentRecord{ID: "A"}, Client: ag},
+	}}
+	_, _ = r.List() // populate routing
+
+	_, err := r.Clone("r1", "copy")
+	if err == nil || !strings.Contains(err.Error(), "agent disk full") {
+		t.Errorf("expected agent error to propagate, got %v", err)
+	}
+}
+
+func TestRouter_Clone_OrphanRejected(t *testing.T) {
+	// Local-only session that isn't routed to any agent must be rejected
+	// — the user is expected to migrate it to an agent first.
+	r := &Router{Local: &fakeLocal{sessions: []session.Metadata{{UUID: "orphan"}}}}
+	_, err := r.Clone("orphan", "copy")
+	if err == nil || !strings.Contains(err.Error(), "orphan") {
+		t.Errorf("expected orphan rejection, got %v", err)
 	}
 }

@@ -3086,3 +3086,117 @@ func TestTUI_CreateDialog_CarriesAgentIntoSelection(t *testing.T) {
 		t.Errorf("Selection.Name = %q", sel.Name)
 	}
 }
+
+// fullScreenText concatenates every row of the simulation screen so tests
+// can assert against multi-line dialog content with one Contains check.
+func fullScreenText(screen tcell.SimulationScreen) string {
+	w, h := screen.Size()
+	var sb strings.Builder
+	for row := 0; row < h; row++ {
+		sb.WriteString(getScreenText(screen, row, w))
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
+
+func TestTUI_DrawSelectAgentDialog(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	ui := &tui{
+		screen:        screen,
+		agents:        []string{"alpha-agent", "beta-agent", "gamma-agent"},
+		selectedAgent: 1,
+	}
+	ui.drawSelectAgentDialog(testScreenWidth, testScreenHeight)
+	screen.Show()
+
+	body := fullScreenText(screen)
+	for _, want := range []string{
+		"Select Agent for New Session",
+		"alpha-agent",
+		"> beta-agent", // highlighted row
+		"gamma-agent",
+		"Up/Down=Move",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dialog missing %q\n%s", want, body)
+		}
+	}
+}
+
+func TestTUI_DrawNoAgentsDialog(t *testing.T) {
+	screen := newTestScreen(t)
+	defer screen.Fini()
+
+	ui := &tui{screen: screen}
+	ui.drawNoAgentsDialog(testScreenWidth, testScreenHeight)
+	screen.Show()
+
+	body := fullScreenText(screen)
+	for _, want := range []string{
+		"No Agents",
+		"No claude-agent hosts are registered",
+		"claude-host init-agent",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dialog missing %q\n%s", want, body)
+		}
+	}
+}
+
+func TestTUI_DrawNoAgentsDialog_NarrowScreen(t *testing.T) {
+	// Confirm centering math doesn't index negative on a tiny screen.
+	screen := tcell.NewSimulationScreen("")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer screen.Fini()
+	screen.SetSize(20, 5)
+
+	ui := &tui{screen: screen}
+	ui.drawNoAgentsDialog(20, 5) // intentionally too narrow
+	screen.Show()
+	// Just assert it didn't panic and at least one rune of the title is
+	// somewhere on the screen.
+	body := fullScreenText(screen)
+	if !strings.Contains(body, "N") {
+		t.Errorf("expected some rendering on narrow screen, got %q", body)
+	}
+}
+
+func TestTUI_SelectAgentKey_Navigation(t *testing.T) {
+	// Drive the modeSelectAgent key handler directly so we can assert
+	// Up/Down clamp at the boundaries and Enter commits.
+	ui := &tui{agents: []string{"a", "b", "c"}, selectedAgent: 0}
+	for _, k := range []tcell.Key{tcell.KeyDown, tcell.KeyDown, tcell.KeyDown /* clamp */} {
+		ui.handleSelectAgentKey(tcell.NewEventKey(k, 0, tcell.ModNone))
+	}
+	if ui.selectedAgent != 2 {
+		t.Errorf("after 3 Downs, selectedAgent = %d, want 2 (clamped)", ui.selectedAgent)
+	}
+	for _, k := range []tcell.Key{tcell.KeyUp, tcell.KeyUp, tcell.KeyUp /* clamp */} {
+		ui.handleSelectAgentKey(tcell.NewEventKey(k, 0, tcell.ModNone))
+	}
+	if ui.selectedAgent != 0 {
+		t.Errorf("after 3 Ups, selectedAgent = %d, want 0 (clamped)", ui.selectedAgent)
+	}
+}
+
+func TestTUI_SelectAgentKey_EscapeReturnsToMenu(t *testing.T) {
+	ui := &tui{agents: []string{"a"}, mode: modeSelectAgent}
+	ui.handleSelectAgentKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("Escape should return to menu, got mode %d", ui.mode)
+	}
+}
+
+func TestTUI_SelectAgentKey_EnterEmptyAgentsReturnsToMenu(t *testing.T) {
+	// Defensive: if the dialog is somehow shown with an empty agent list
+	// and Enter is pressed, the handler should bail rather than panic.
+	ui := &tui{agents: nil, mode: modeSelectAgent}
+	ui.handleSelectAgentKey(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if ui.mode != modeMenu {
+		t.Errorf("Enter on empty agents should bounce to menu, got mode %d", ui.mode)
+	}
+}

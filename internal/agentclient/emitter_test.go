@@ -412,3 +412,32 @@ func TestLoadPrivateKey_Errors(t *testing.T) {
 		t.Error("expected parse error")
 	}
 }
+
+func TestEmitter_Close_StopsPublishingAndIsIdempotentOnQueue(t *testing.T) {
+	// Build an emitter without ever calling Run — no goroutines, so wg
+	// is empty and Close returns immediately.
+	keyPath, _ := keyPair(t)
+	e, err := NewStatusEmitter(Config{
+		ShellHost:      "127.0.0.1",
+		ShellPort:      65535, // unreachable; we never connect
+		AgentID:        "agent-x",
+		PrivateKeyPath: keyPath,
+		BufferSize:     4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-Close, Publish enqueues normally.
+	e.Publish(statusproto.Event{Type: "before"})
+
+	e.Close()
+	if !e.closed.Load() {
+		t.Error("Close did not flip closed flag")
+	}
+
+	// Post-Close, Publish becomes a no-op (early-return). If it tried to
+	// send on the closed channel it would panic — the absence of a panic
+	// is the assertion.
+	e.Publish(statusproto.Event{Type: "after"})
+}
