@@ -16,6 +16,7 @@ import (
 	"syscall"
 
 	"github.com/asymmetric-effort/claude-shell/internal/hostinstall"
+	"github.com/asymmetric-effort/claude-shell/internal/hypervisor"
 )
 
 const appName = "claude-host"
@@ -46,6 +47,8 @@ func run(args []string) error {
 		return cmdUpdate(rest)
 	case "migrate-session":
 		return cmdMigrateSession(rest)
+	case "create-vm":
+		return cmdCreateVM(rest)
 	case "version":
 		fmt.Printf("%s version %s\n", appName, Version)
 		return nil
@@ -173,6 +176,33 @@ func cmdInitAgent(args []string) error {
 	}, os.Stderr)
 }
 
+func cmdCreateVM(args []string) error {
+	fs := flag.NewFlagSet("create-vm", flag.ContinueOnError)
+	hyp := fs.String("hypervisor", "", "FQDN or IP of the target hypervisor (required)")
+	user := fs.String("username", "", "SSH user on the hypervisor (required)")
+	domain := fs.String("domain", "", "DNS suffix appended to the new host's random hostname (required)")
+	cpu := fs.Int("cpu", 0, "vCPUs to allocate to the new VM (required)")
+	ram := fs.Int("ram", 0, "RAM in MB to allocate to the new VM (required)")
+	osdisk := fs.Int("osdisk", 0, "OS disk size in GB (required)")
+	datadisk := fs.Int("datadisk", 0, "data disk (/var) size in GB (required)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	ctx, cancel := signalContext()
+	defer cancel()
+
+	return hypervisor.CreateVM(ctx, &hypervisor.CreateVMOptions{
+		Hypervisor: *hyp,
+		Username:   *user,
+		Domain:     *domain,
+		CPU:        *cpu,
+		RAMMB:      *ram,
+		OSDiskGB:   *osdisk,
+		DataDiskGB: *datadisk,
+	})
+}
+
 func cmdMigrateSession(args []string) error {
 	fs := flag.NewFlagSet("migrate-session", flag.ContinueOnError)
 	agent := fs.String("agent", "", "target agent ID (must be registered under /etc/claude-shell/agent-keys/)")
@@ -276,10 +306,14 @@ Usage:
   %s init-agent      --host H [--user U]        Deploy claude-agent to target.
   %s update          --host H [--user U]        Update installed services on target.
   %s migrate-session --agent A --session UUID   Move a local orphan session to an agent.
+  %s create-vm       --hypervisor H --username U --domain D
+                     --cpu N --ram MB --osdisk GB --datadisk GB
+                                                 Provision a vanilla Ubuntu host as a KVM hypervisor
+                                                 and bootstrap a new VM under it.
   %s version                                    Print version.
   %s help                                       Show this message.
 
 Authentication:
   Local: run with sudo. Remote: connecting user must have NOPASSWD sudo.
-`, appName, appName, appName, appName, appName, appName, appName, appName)
+`, appName, appName, appName, appName, appName, appName, appName, appName, appName)
 }
