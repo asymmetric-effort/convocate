@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/asymmetric-effort/claude-shell/internal/config"
+	"github.com/asymmetric-effort/claude-shell/internal/container"
 	"github.com/asymmetric-effort/claude-shell/internal/session"
 	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
 	"github.com/asymmetric-effort/claude-shell/internal/user"
@@ -710,5 +712,186 @@ func TestCRUD_OpListIsStable(t *testing.T) {
 		if !found {
 			t.Errorf("missing op %q in registered set: %v", r, ops)
 		}
+	}
+}
+
+// --- Production SessionOrchestrator: Restart + OverrideLock paths --------
+
+// fakeExecBuilder returns an ExecFunc that scripts the docker calls
+// produced by container.Runner. Maps subcommand → exit-code/output:
+//
+//	"inspect" → echo "<isRunning>"   (no error → IsRunning OK)
+//	"run"     → true / false         (StartDetached success/failure)
+//	"stop"    → true                 (Stop unconditionally succeeds)
+func fakeExecBuilder(isRunning, startOK bool) container.ExecFunc {
+	return func(name string, args ...string) *exec.Cmd {
+		// docker inspect ... → echo true|false
+		for _, a := range args {
+			if a == "inspect" {
+				if isRunning {
+					return exec.Command("echo", "true")
+				}
+				return exec.Command("echo", "false")
+			}
+		}
+		// docker run ... or docker stop ... → success/failure based on startOK
+		if startOK {
+			return exec.Command("true")
+		}
+		return exec.Command("false")
+	}
+}
+
+func TestSessionOrchestrator_Restart_HappyPath(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	pub := &recordingPublisher{}
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "8.8.8.8", "agent-r", pub)
+	// Stub the runner factory so docker isn't required.
+	o.NewRunner = func(id, dir string, u user.Info, p config.Paths) *container.Runner {
+		return container.NewRunnerWithExec(id, dir, u, p, fakeExecBuilder(false, true))
+	}
+
+	meta, err := o.Create(session.CreateOptions{Port: 9090, Protocol: "tcp"}, "rs")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	pub.snapshot() // discard create event
+
+	if err := o.Restart(meta.UUID); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+
+	// Restart must publish ContainerStarted. Find it among events fired
+	// after Create (which already emitted ContainerCreated).
+	events := pub.snapshot()
+	var sawStarted bool
+	for _, ev := range events {
+		if ev.Type == statusproto.TypeContainerStarted && ev.SessionID == meta.UUID {
+			sawStarted = true
+		}
+	}
+	if !sawStarted {
+		t.Errorf("Restart did not publish container.started; events=%+v", events)
+	}
+}
+
+func TestSessionOrchestrator_Restart_RefusesAlreadyRunning(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "agent-r", nil)
+	o.NewRunner = func(id, dir string, u user.Info, p config.Paths) *container.Runner {
+		// Pretend container is already up — Restart must refuse.
+		return container.NewRunnerWithExec(id, dir, u, p, fakeExecBuilder(true, true))
+	}
+
+	meta, err := o.Create(session.CreateOptions{}, "rs2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = o.Restart(meta.UUID)
+	if err == nil || !strings.Contains(err.Error(), "already running") {
+		t.Errorf("expected already-running error, got %v", err)
+	}
+}
+
+func TestSessionOrchestrator_Restart_StartDetachedFails(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "agent-r", nil)
+	o.NewRunner = func(id, dir string, u user.Info, p config.Paths) *container.Runner {
+		return container.NewRunnerWithExec(id, dir, u, p, fakeExecBuilder(false, false))
+	}
+
+	meta, err := o.Create(session.CreateOptions{}, "rs3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Restart(meta.UUID); err == nil {
+		t.Error("expected start-detached error to propagate")
+	}
+}
+
+func TestSessionOrchestrator_OverrideLock_RemovesStaleLock(t *testing.T) {
+	base, skel := newTestSessionsDir(t)
+	mgr := session.NewManager(base, skel)
+	o := NewSessionOrchestrator(mgr, testUserInfo(), testPaths(), "", "agent-o", nil)
+
+	meta, err := o.Create(session.CreateOptions{}, "ovr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Plant a stale lock owned by a definitely-dead PID. Don't call
+	// mgr.IsLocked beforehand — it would drop the stale lock itself
+	// and the test would race the deletion.
+	lockPath := filepath.Join(base, meta.UUID+config.LockFileExtension)
+	if err := os.WriteFile(lockPath, []byte("999999\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.OverrideLock(meta.UUID); err != nil {
+		t.Fatalf("OverrideLock: %v", err)
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Errorf("lock file still present: %v", err)
+	}
+}
+
+// --- ptyRWC + Server.Close trivial wrappers --------------------------------
+
+func TestPtyRWC_RoundTrip(t *testing.T) {
+	// ptyRWC is a thin os.File adapter — give it a temp file and
+	// verify Read/Write/Close pass through.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pty-stub")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rwc := ptyRWC{f: f}
+
+	if _, err := rwc.Write([]byte("hello\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := rwc.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Re-open to verify content (tempfile-based round-trip).
+	r, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	rwc2 := ptyRWC{f: r}
+	buf := make([]byte, 16)
+	n, err := rwc2.Read(buf)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if string(buf[:n]) != "hello\n" {
+		t.Errorf("read = %q, want %q", buf[:n], "hello\n")
+	}
+}
+
+func TestServer_Close_NoOp(t *testing.T) {
+	dir := t.TempDir()
+	hostKeyPath := filepath.Join(dir, "host_key")
+	authPath := filepath.Join(dir, "auth")
+	if err := os.WriteFile(authPath, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	d := NewDispatcher()
+	RegisterCoreOps(d, "x", "v")
+	srv, err := New(Config{
+		HostKeyPath:        hostKeyPath,
+		AuthorizedKeysPath: authPath,
+		Listen:             "127.0.0.1:0",
+		Dispatcher:         d,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Close(); err != nil {
+		t.Errorf("Close should be a no-op, got %v", err)
 	}
 }

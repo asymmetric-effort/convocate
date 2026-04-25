@@ -217,3 +217,29 @@ func TestAttach_RequiresIOStreams(t *testing.T) {
 		t.Errorf("expected streams-required error, got %v", err)
 	}
 }
+
+func TestEnableRawAndWinch_NonFileStdinReturnsNoop(t *testing.T) {
+	// strings.Reader isn't an *os.File — the helper bails out and
+	// returns a no-op cleanup. Calling the cleanup must not panic.
+	restore := enableRawAndWinch(strings.NewReader(""), nil)
+	if restore == nil {
+		t.Fatal("expected non-nil restore func even on bail")
+	}
+	restore() // no panic == pass
+}
+
+func TestEnableRawAndWinch_NonTerminalFileReturnsNoop(t *testing.T) {
+	// A regular file has a valid Fd() but isn't a TTY — IsTerminal
+	// returns false and the helper bails before MakeRaw.
+	dir := t.TempDir()
+	f, err := os.Create(dir + "/notty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	restore := enableRawAndWinch(f, nil)
+	if restore == nil {
+		t.Fatal("expected non-nil restore func even on bail")
+	}
+	restore()
+}

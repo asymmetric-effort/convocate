@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -394,3 +395,20 @@ func TestRunStatusStream_StopsOnEOF(t *testing.T) {
 // newSilentLogger returns a logger that discards output — keeps test noise
 // down when exercising error paths.
 func newSilentLogger() *log.Logger { return log.New(io.Discard, "", 0) }
+
+func TestListenerFunc_HandleEvent(t *testing.T) {
+	var got statusproto.Event
+	wantErr := errors.New("listener says no")
+	lf := ListenerFunc(func(_ context.Context, ev statusproto.Event) error {
+		got = ev
+		return wantErr
+	})
+
+	in := statusproto.Event{Type: "x", AgentID: "a", SessionID: "s"}
+	if err := lf.HandleEvent(context.Background(), in); err != wantErr {
+		t.Errorf("err = %v, want %v", err, wantErr)
+	}
+	if got.Type != in.Type || got.AgentID != in.AgentID {
+		t.Errorf("event not delivered: %+v", got)
+	}
+}
