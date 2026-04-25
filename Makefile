@@ -6,7 +6,7 @@ LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 
 BINARIES := claude-shell claude-host claude-agent
 
-.PHONY: all generate build build-claude-shell build-claude-host build-claude-agent install clean lint lint-go lint-yaml lint-json test test-unit test-integration test-e2e release release/major release/minor
+.PHONY: all generate build build-claude-shell build-claude-host build-claude-agent install clean lint lint-go lint-yaml lint-json lint-vuln test test-unit test-integration test-e2e release release/major release/minor
 
 all: lint test build
 
@@ -48,7 +48,7 @@ clean:
 	@$(GO) clean -testcache
 	@echo "Clean complete."
 
-lint: lint-go lint-yaml
+lint: lint-go lint-yaml lint-vuln
 	@echo "All linters passed."
 
 lint-go:
@@ -58,6 +58,15 @@ lint-go:
 lint-yaml:
 	@echo "Running YAML linter..."
 	@find . -name '*.yml' -o -name '*.yaml' | grep -v vendor | xargs yamllint -s
+
+# lint-vuln scans the call graph against the Go vulnerability database
+# (vuln.go.dev). Auto-installs govulncheck if missing — first run pulls
+# the binary into $(go env GOBIN) (or ~/go/bin); subsequent runs hit the
+# cached binary.
+lint-vuln:
+	@echo "Running govulncheck against vuln.go.dev..."
+	@command -v govulncheck >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
+	@PATH="$$(go env GOBIN):$$(go env GOPATH)/bin:$$PATH" govulncheck ./...
 
 test: test-unit test-integration
 	@echo "All tests passed."

@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(nm *)",
-      "Bash(readelf *)"
+      "Bash(readelf *)",
+      "Bash(make lint)",
+      "Bash(docker info)",
+      "Bash(claude-shell version)",
+      "Bash(systemctl is-active *)",
+      "Bash(go vet *)",
+      "Bash(ip route)",
+      "Bash(go tool cover *)"
     ]
   }
 }

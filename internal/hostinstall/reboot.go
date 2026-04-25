@@ -57,13 +57,16 @@ func RebootAndReconnect(ctx context.Context, current *SSHRunner, cfg SSHConfig, 
 	if progress == nil {
 		progress = io.Discard
 	}
-	fmt.Fprintf(progress, "[claude-host] rebooting %s...\n", current.Target())
+	// Wrap so the SSH stdout/stderr goroutines (x/crypto/ssh spawns one
+	// each) can write to the same destination without racing.
+	syncProgress := &syncWriter{w: progress}
+	fmt.Fprintf(syncProgress, "[claude-host] rebooting %s...\n", current.Target())
 
 	// `shutdown -r +0` or plain `reboot`. We use `systemctl reboot` when
 	// available (graceful) and fall back to `reboot` otherwise. Ignore the
 	// error from the reboot command itself — the SSH session typically dies
 	// mid-reply, which looks like an error on the client side.
-	_ = current.Run(ctx, "systemctl reboot || reboot", RunOptions{Sudo: true, Stdout: progress, Stderr: progress})
+	_ = current.Run(ctx, "systemctl reboot || reboot", RunOptions{Sudo: true, Stdout: syncProgress, Stderr: syncProgress})
 	_ = current.Close()
 
 	select {
