@@ -1,5 +1,7 @@
 site_name: convocate
-site_description: A three-binary system for orchestrating isolated, containerized Claude CLI sessions across one or many Linux hosts.
+site_description: >-
+  A three-binary system for orchestrating isolated, containerized
+  Claude CLI sessions across one or many Linux hosts.
 site_url: https://convocate.asymmetric-effort.com/
 site_author: Sam Caldwell
 

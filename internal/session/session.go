@@ -672,53 +672,63 @@ func (m *Manager) readMetadata(sessionDir string) (Metadata, error) {
 	return meta, nil
 }
 
+// copyDir copies src to dst, preserving directory modes, regular files, and
+// symlinks. Iterative — uses an explicit work-list rather than recursion,
+// per the project-wide no-recursion rule (Go has no TCO; deep trees would
+// otherwise risk stack-overflow panics).
 func copyDir(src, dst string) error {
-	srcInfo, err := os.Stat(src)
+	type pair struct{ s, d string }
+
+	rootInfo, err := os.Stat(src)
 	if err != nil {
 		return err
 	}
-
-	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
+	if err := os.MkdirAll(dst, rootInfo.Mode()); err != nil {
 		return err
 	}
 
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
+	stack := []pair{{src, dst}}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
 
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-
-		info, err := entry.Info()
+		entries, err := os.ReadDir(cur.s)
 		if err != nil {
 			return err
 		}
+		for _, entry := range entries {
+			srcPath := filepath.Join(cur.s, entry.Name())
+			dstPath := filepath.Join(cur.d, entry.Name())
 
-		if info.Mode()&os.ModeSymlink != 0 {
-			link, err := os.Readlink(srcPath)
+			info, err := entry.Info()
 			if err != nil {
 				return err
 			}
-			if err := os.Symlink(link, dstPath); err != nil {
+
+			if info.Mode()&os.ModeSymlink != 0 {
+				link, err := os.Readlink(srcPath)
+				if err != nil {
+					return err
+				}
+				if err := os.Symlink(link, dstPath); err != nil {
+					return err
+				}
+				continue
+			}
+
+			if entry.IsDir() {
+				if err := os.MkdirAll(dstPath, info.Mode()); err != nil {
+					return err
+				}
+				stack = append(stack, pair{srcPath, dstPath})
+				continue
+			}
+
+			if err := copyFile(srcPath, dstPath); err != nil {
 				return err
 			}
-			continue
-		}
-
-		if entry.IsDir() {
-			if err := copyDir(srcPath, dstPath); err != nil {
-				return err
-			}
-			continue
-		}
-
-		if err := copyFile(srcPath, dstPath); err != nil {
-			return err
 		}
 	}
-
 	return nil
 }
 

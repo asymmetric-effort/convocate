@@ -124,6 +124,16 @@ container to background a connected user without stopping the container.
 
 ## Conventions
 
+- **No recursion.** Go has no tail-call optimization, so every recursive
+  call grows the goroutine stack and can panic on adversarial input
+  (deep trees, cyclic data, hostile filesystem layouts). For an
+  orchestrator that holds long-lived session state, that's
+  unacceptable. Use loops, explicit stacks/queues, `filepath.WalkDir`,
+  or work-list patterns instead. Mutual recursion (A → B → A) is also
+  forbidden — same problem. If you find yourself reaching for a
+  helper that calls itself, stop and rewrite as iteration.
+  Reference implementation: `session.copyDir` (uses an explicit
+  work-list slice).
 - **No speculative abstractions.** Fix what's in front of you; the next
   caller will refactor when it actually shows up.
 - **Don't write docstrings explaining what code already says.** Comment
