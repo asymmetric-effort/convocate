@@ -1,7 +1,7 @@
 # convocate
 
-[![CI](https://github.com/sam-caldwell/convocate/actions/workflows/ci.yml/badge.svg)](https://github.com/sam-caldwell/convocate/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/sam-caldwell/convocate/badges/.badges/coverage.json)](https://github.com/sam-caldwell/convocate/actions/workflows/ci.yml)
+[![CI](https://github.com/asymmetric-effort/convocate/actions/workflows/ci.yml/badge.svg)](https://github.com/asymmetric-effort/convocate/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/asymmetric-effort/convocate/badges/.badges/coverage.json)](https://github.com/asymmetric-effort/convocate/actions/workflows/ci.yml)
 
 A three-binary system for orchestrating isolated, containerized Claude CLI
 sessions across one or many Linux hosts.
