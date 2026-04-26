@@ -6,6 +6,8 @@
 A three-binary system for orchestrating isolated, containerized Claude CLI
 sessions across one or many Linux hosts.
 
+📖 **Full documentation: <https://convocate.asymmetric-effort.com>**
+
 ## Overview
 
 As of v2.0.0 convocate ships three cooperating binaries:
@@ -88,7 +90,8 @@ This installs the base apt packages, docker, dnsmasq, creates the
 `claude` user, enables ufw, and sets the timezone to UTC. It runs
 `apt dist-upgrade` and — for remote invocations — reboots the target
 before continuing with the remaining steps. The complete list of
-things it configures is in [TO-DO.md](./TO-DO.md).
+things it configures is in the
+[provisioning checklist](https://convocate.asymmetric-effort.com/getting-started/).
 
 ### 3. Init the shell side
 
@@ -245,8 +248,8 @@ to each agent via `docker save | gzip | ssh | docker load`, verifying
 SHA-256 on both ends. A daily cron on each agent deletes image tags
 no container is still referencing.
 
-See [`docs/v2.0.0.md`](./docs/v2.0.0.md) for the full architectural
-snapshot and known limitations.
+See [`docs/reference/v2.0.0.md`](./docs/reference/v2.0.0.md) for the full
+architectural snapshot and known limitations.
 
 ## Development
 

@@ -1,0 +1,83 @@
+site_name: convocate
+site_description: A three-binary system for orchestrating isolated, containerized Claude CLI sessions across one or many Linux hosts.
+site_url: https://convocate.asymmetric-effort.com/
+site_author: Sam Caldwell
+
+repo_url: https://github.com/asymmetric-effort/convocate
+repo_name: asymmetric-effort/convocate
+edit_uri: edit/main/docs/
+
+copyright: Copyright &copy; 2026 asymmetric effort
+
+theme:
+  name: material
+  language: en
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - toc.follow
+    - content.code.copy
+    - content.action.edit
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Architecture: architecture.md
+  - Guides:
+      - Provision a hypervisor (create-vm): guides/create-vm.md
+  - Reference:
+      - v2.0.0 architectural snapshot: reference/v2.0.0.md
+  - Project:
+      - Contributing: contributing.md
+      - Security policy: security.md
+      - Code of conduct: code-of-conduct.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/asymmetric-effort/convocate
