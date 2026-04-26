@@ -3,6 +3,16 @@
 This file is read by Claude Code at the start of every session in this repo.
 Keep it terse; the goal is to orient you, not to duplicate the source.
 
+## Organization-wide coding standards
+
+**Authoritative reference:** <http://coding-standards.asymmetric-effort.com/>
+
+That site is the source of truth for how code is written across every
+asymmetric-effort project. Read it before touching anything; the
+project-specific Conventions section below augments it but does not
+override it. When this file disagrees with the standards site, the
+standards site wins — fix this file.
+
 ## What this project is
 
 `convocate` is a Go CLI that runs the Claude CLI inside per-session Docker
