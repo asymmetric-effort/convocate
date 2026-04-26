@@ -1,4 +1,4 @@
-// Package tlsutil generates the X.509 CA + leaf certificates the claude-shell
+// Package tlsutil generates the X.509 CA + leaf certificates the convocate
 // rsyslog listener uses to authenticate agents over TLS. It's kept separate
 // from sshutil because the key material has a different shape (x509 chains
 // vs. OpenSSH keys) and a different lifetime profile (10y CA, 1y leaves).
@@ -53,7 +53,7 @@ func GenerateCA(commonName string, validYears int) (*KeyMaterial, error) {
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   commonName,
-			Organization: []string{"claude-shell"},
+			Organization: []string{"convocate"},
 		},
 		NotBefore:             now.Add(-5 * time.Minute),
 		NotAfter:              now.AddDate(validYears, 0, 0),
@@ -123,7 +123,7 @@ func SignCert(ca *KeyMaterial, opts SignOptions) (*KeyMaterial, error) {
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   opts.CommonName,
-			Organization: []string{"claude-shell"},
+			Organization: []string{"convocate"},
 		},
 		NotBefore:   now.Add(-5 * time.Minute),
 		NotAfter:    now.AddDate(opts.ValidYears, 0, 0),

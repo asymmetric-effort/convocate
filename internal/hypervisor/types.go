@@ -1,4 +1,4 @@
-// Package hypervisor implements `claude-host create-vm`: provisions a
+// Package hypervisor implements `convocate-host create-vm`: provisions a
 // vanilla Ubuntu host into a KVM hypervisor (SSH hardening, dnsmasq
 // peering, KVM stack install, machine.slice cgroup cap, capacity
 // admission), then bootstraps a fully-unattended Ubuntu VM under it
@@ -18,7 +18,7 @@ import (
 	"os"
 )
 
-// CreateVMOptions configures a `claude-host create-vm` invocation.
+// CreateVMOptions configures a `convocate-host create-vm` invocation.
 // Required fields are documented inline; unset required fields surface
 // as a clear validation error from CreateVM, before any remote work
 // runs.
@@ -51,7 +51,7 @@ type CreateVMOptions struct {
 	DataDiskGB int
 
 	// IsoCacheDir overrides where the Ubuntu ISO is cached locally.
-	// Empty defaults to ~/.claude-shell/iso/.
+	// Empty defaults to ~/.convocate/iso/.
 	IsoCacheDir string
 
 	// HypervisorISODir overrides where the ISO is staged on the
@@ -61,7 +61,7 @@ type CreateVMOptions struct {
 
 	// SeedISOName is the filename used for the cloud-init NoCloud
 	// seed ISO on the hypervisor. Empty defaults to
-	// "claude-seed-<hostname>.iso".
+	// "convocate-seed-<hostname>.iso".
 	SeedISOName string
 
 	// Stdin is consulted by the password fallback prompt. Defaults to
@@ -119,7 +119,7 @@ func (o *CreateVMOptions) withDefaults() *CreateVMOptions {
 	return &cp
 }
 
-// CreateVM is the top-level entry point invoked by cmd/claude-host. It
+// CreateVM is the top-level entry point invoked by cmd/convocate-host. It
 // runs the full provisioning flow against the host described in opts.
 // Implemented in create.go once every supporting subsystem is in place.
 func CreateVM(ctx context.Context, opts *CreateVMOptions) error {
@@ -134,7 +134,7 @@ func CreateVM(ctx context.Context, opts *CreateVMOptions) error {
 }
 
 // requireShellHost refuses to run create-vm unless this machine looks
-// like a configured claude-shell host: the binary is installed and the
+// like a configured convocate host: the binary is installed and the
 // dnsmasq integration directory exists so we can register the new
 // hypervisor's A record. Any other host running create-vm would silently
 // fail to publish DNS, which is exactly the kind of half-success the
@@ -145,11 +145,11 @@ var requireShellHost = func() error { return shellHostCheck() }
 
 func shellHostCheck() error {
 	for _, p := range []string{
-		"/usr/local/bin/claude-shell",
-		"/var/lib/claude-shell",
+		"/usr/local/bin/convocate",
+		"/var/lib/convocate",
 	} {
 		if _, err := os.Stat(p); err != nil {
-			return errors.New("create-vm: this host is not a configured claude-shell host (missing " + p + "); run claude-host install + claude-shell install first")
+			return errors.New("create-vm: this host is not a configured convocate host (missing " + p + "); run convocate-host install + convocate install first")
 		}
 	}
 	return nil

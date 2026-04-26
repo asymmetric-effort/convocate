@@ -10,7 +10,7 @@ import (
 
 func TestNew_Success(t *testing.T) {
 	// This test requires syslog to be available
-	logger, err := New("test-claude-shell")
+	logger, err := New("test-convocate")
 	if err != nil {
 		t.Skipf("syslog not available: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestNewWithDialer_Success(t *testing.T) {
 		return syslog.New(priority, tag)
 	}
 
-	logger, err := NewWithDialer("test-claude-shell", dialer)
+	logger, err := NewWithDialer("test-convocate", dialer)
 	if err != nil {
 		t.Skipf("syslog not available: %v", err)
 	}

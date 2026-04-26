@@ -1,7 +1,7 @@
 //go:build integration
 
-// Multihost integration: stand up an in-process claude-agent
-// (agentserver + StatusEmitter) and an in-process claude-shell
+// Multihost integration: stand up an in-process convocate-agent
+// (agentserver + StatusEmitter) and an in-process convocate
 // (shellserver + CRUDClient), wire them together with ed25519 keys, and
 // verify that:
 //
@@ -30,15 +30,15 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
-	"github.com/asymmetric-effort/claude-shell/internal/agentserver"
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/container"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
-	"github.com/asymmetric-effort/claude-shell/internal/shellserver"
-	"github.com/asymmetric-effort/claude-shell/internal/sshutil"
-	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
-	"github.com/asymmetric-effort/claude-shell/internal/user"
+	"github.com/asymmetric-effort/convocate/internal/agentclient"
+	"github.com/asymmetric-effort/convocate/internal/agentserver"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/container"
+	"github.com/asymmetric-effort/convocate/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/shellserver"
+	"github.com/asymmetric-effort/convocate/internal/sshutil"
+	"github.com/asymmetric-effort/convocate/internal/statusproto"
+	"github.com/asymmetric-effort/convocate/internal/user"
 )
 
 // captureListener records every status event the shell receives.
@@ -250,7 +250,7 @@ func TestMultihost_EndToEnd(t *testing.T) {
 }
 
 // TestMultihost_AttachThroughSSH boots an agent with a stub AttachTarget
-// and exercises the full claude-agent-attach handshake from agentclient.
+// and exercises the full convocate-agent-attach handshake from agentclient.
 // This wires HandleAttach (server) to Attach (client) over real SSH.
 func TestMultihost_AttachThroughSSH(t *testing.T) {
 	dir := t.TempDir()

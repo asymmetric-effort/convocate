@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-// Install runs the full claude-host install workflow against r. Over SSH, it
+// Install runs the full convocate-host install workflow against r. Over SSH, it
 // reboots the target after the apt upgrade and transparently swaps to a
 // fresh SSH connection for the remaining steps; in local mode, the reboot
 // is skipped with a warning because rebooting the machine running us would
@@ -34,7 +34,7 @@ func Install(ctx context.Context, r Runner, sshCfg *SSHConfig, log io.Writer) er
 		{"Ensure unattended-upgrades enabled", stepUnattendedUpgrades},
 	}
 
-	fmt.Fprintf(log, "[claude-host] target: %s\n", r.Target())
+	fmt.Fprintf(log, "[convocate-host] target: %s\n", r.Target())
 	for _, s := range phase1 {
 		if err := runStep(ctx, r, log, s); err != nil {
 			return err
@@ -53,9 +53,9 @@ func Install(ctx context.Context, r Runner, sshCfg *SSHConfig, log io.Writer) er
 	}
 
 	fmt.Fprintln(log, "")
-	fmt.Fprintln(log, "[claude-host] host is provisioned. Next:")
-	fmt.Fprintln(log, "  claude-host init-shell --host <this-host>   # deploy claude-shell + rsyslog CA")
-	fmt.Fprintln(log, "  claude-host init-agent --host <agent-host>  # deploy claude-agent on another host")
+	fmt.Fprintln(log, "[convocate-host] host is provisioned. Next:")
+	fmt.Fprintln(log, "  convocate-host init-shell --host <this-host>   # deploy convocate + rsyslog CA")
+	fmt.Fprintln(log, "  convocate-host init-agent --host <agent-host>  # deploy convocate-agent on another host")
 	return nil
 }
 
@@ -68,11 +68,11 @@ type step struct {
 }
 
 func runStep(ctx context.Context, r Runner, log io.Writer, s step) error {
-	fmt.Fprintf(log, "\n[claude-host] %s...\n", s.name)
+	fmt.Fprintf(log, "\n[convocate-host] %s...\n", s.name)
 	if err := s.fn(ctx, r, log); err != nil {
 		return fmt.Errorf("%s: %w", s.name, err)
 	}
-	fmt.Fprintf(log, "[claude-host] %s... done\n", s.name)
+	fmt.Fprintf(log, "[convocate-host] %s... done\n", s.name)
 	return nil
 }
 
@@ -84,8 +84,8 @@ func rebootIfRemote(ctx context.Context, r Runner, sshCfg *SSHConfig, log io.Wri
 	ssh, ok := r.(*SSHRunner)
 	if !ok || sshCfg == nil {
 		fmt.Fprintln(log, "")
-		fmt.Fprintln(log, "[claude-host] local mode: skipping automatic reboot.")
-		fmt.Fprintln(log, "[claude-host] If the kernel was upgraded, reboot manually and re-run 'claude-host install'.")
+		fmt.Fprintln(log, "[convocate-host] local mode: skipping automatic reboot.")
+		fmt.Fprintln(log, "[convocate-host] If the kernel was upgraded, reboot manually and re-run 'convocate-host install'.")
 		return r, nil
 	}
 	newSSH, err := RebootAndReconnect(ctx, ssh, *sshCfg, RebootOptions{Progress: log})
@@ -144,8 +144,8 @@ func stepDisableResolvedStub(ctx context.Context, r Runner, log io.Writer) error
 	// without needing a reboot.
 	cmd := `set -e
 mkdir -p /etc/systemd/resolved.conf.d
-cat >/etc/systemd/resolved.conf.d/00-claude-dnsmasq.conf <<'EOF'
-# Managed by claude-host. Frees port 53 for dnsmasq.
+cat >/etc/systemd/resolved.conf.d/00-convocate-dnsmasq.conf <<'EOF'
+# Managed by convocate-host. Frees port 53 for dnsmasq.
 [Resolve]
 DNSStubListener=no
 EOF
@@ -156,7 +156,7 @@ systemctl restart systemd-resolved || true
 
 func stepCreateClaudeUser(ctx context.Context, r Runner, log io.Writer) error {
 	// Idempotent: if the user already exists we just ensure docker group
-	// membership. uid 1337 matches what claude-shell install expects (see
+	// membership. uid 1337 matches what convocate install expects (see
 	// internal/config.ClaudeUser and the skel ownership in session dirs).
 	cmd := `set -e
 if ! id claude >/dev/null 2>&1; then

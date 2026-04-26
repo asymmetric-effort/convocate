@@ -61,7 +61,7 @@ func TestEventConstants_AreStable(t *testing.T) {
 			t.Errorf("constant mismatch: %q != %q", got, want)
 		}
 	}
-	if Subsystem != "claude-shell-status" {
+	if Subsystem != "convocate-status" {
 		t.Errorf("Subsystem = %q", Subsystem)
 	}
 }

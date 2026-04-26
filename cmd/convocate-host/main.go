@@ -1,7 +1,7 @@
-// Package main is the entry point for claude-host.
+// Package main is the entry point for convocate-host.
 //
-// claude-host provisions a vanilla Ubuntu machine to host claude-shell and/or
-// claude-agent. It can run against the local machine (requiring local sudo)
+// convocate-host provisions a vanilla Ubuntu machine to host convocate and/or
+// convocate-agent. It can run against the local machine (requiring local sudo)
 // or against a remote host over SSH (requiring the remote user to have
 // NOPASSWD sudoers privileges). Subcommands scaffolded here are filled in
 // across subsequent commits.
@@ -15,11 +15,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/asymmetric-effort/claude-shell/internal/hostinstall"
-	"github.com/asymmetric-effort/claude-shell/internal/hypervisor"
+	"github.com/asymmetric-effort/convocate/internal/hostinstall"
+	"github.com/asymmetric-effort/convocate/internal/hypervisor"
 )
 
-const appName = "claude-host"
+const appName = "convocate-host"
 
 func main() {
 	if err := run(os.Args); err != nil {
@@ -117,7 +117,7 @@ func cmdInitShell(args []string) error {
 	var t targetFlags
 	fs.StringVar(&t.host, "host", "", "remote host to target (empty = local)")
 	fs.StringVar(&t.user, "user", os.Getenv("USER"), "remote user to connect as (ignored for local)")
-	binary := fs.String("binary", "", "path to the local claude-shell binary (default: sibling of claude-host)")
+	binary := fs.String("binary", "", "path to the local convocate binary (default: sibling of convocate-host)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -144,10 +144,10 @@ func cmdInitAgent(args []string) error {
 	var t targetFlags
 	fs.StringVar(&t.host, "host", "", "remote agent host to provision (empty = local)")
 	fs.StringVar(&t.user, "user", os.Getenv("USER"), "remote user to connect as (ignored for local)")
-	binary := fs.String("binary", "", "path to the local claude-agent binary (default: sibling of claude-host)")
-	shellHost := fs.String("shell-host", "", "address of the claude-shell status listener (required)")
-	etcDir := fs.String("shell-etc-dir", "/etc/claude-shell", "local path to the claude-shell peering directory")
-	imageTag := fs.String("image-tag", "claude-shell:"+Version, "container image tag to push to the agent")
+	binary := fs.String("binary", "", "path to the local convocate-agent binary (default: sibling of convocate-host)")
+	shellHost := fs.String("shell-host", "", "address of the convocate status listener (required)")
+	etcDir := fs.String("shell-etc-dir", "/etc/convocate", "local path to the convocate peering directory")
+	imageTag := fs.String("image-tag", "convocate:"+Version, "container image tag to push to the agent")
 	caCert := fs.String("ca-cert", "", "override path to the rsyslog CA cert (default: <shell-etc-dir>/rsyslog-ca/ca.crt)")
 	caKey := fs.String("ca-key", "", "override path to the rsyslog CA key (default: <shell-etc-dir>/rsyslog-ca/ca.key)")
 	if err := fs.Parse(args); err != nil {
@@ -205,10 +205,10 @@ func cmdCreateVM(args []string) error {
 
 func cmdMigrateSession(args []string) error {
 	fs := flag.NewFlagSet("migrate-session", flag.ContinueOnError)
-	agent := fs.String("agent", "", "target agent ID (must be registered under /etc/claude-shell/agent-keys/)")
+	agent := fs.String("agent", "", "target agent ID (must be registered under /etc/convocate/agent-keys/)")
 	session := fs.String("session", "", "session UUID to migrate (directory under /home/claude)")
 	base := fs.String("shell-base", "/home/claude", "local directory holding orphan session dirs")
-	keysDir := fs.String("agent-keys-dir", "/etc/claude-shell/agent-keys", "per-agent key + agent-host directory")
+	keysDir := fs.String("agent-keys-dir", "/etc/convocate/agent-keys", "per-agent key + agent-host directory")
 	deleteSrc := fs.Bool("delete-source", false, "rm the local session dir after a successful transfer")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -231,9 +231,9 @@ func cmdUpdate(args []string) error {
 	var t targetFlags
 	fs.StringVar(&t.host, "host", "", "remote host to update (empty = local)")
 	fs.StringVar(&t.user, "user", os.Getenv("USER"), "remote user to connect as (ignored for local)")
-	shellBin := fs.String("shell-binary", "", "path to new claude-shell binary (default: sibling of claude-host)")
-	agentBin := fs.String("agent-binary", "", "path to new claude-agent binary (default: sibling of claude-host)")
-	imageTag := fs.String("image-tag", "claude-shell:"+Version, "container image to push to the agent (empty disables the push)")
+	shellBin := fs.String("shell-binary", "", "path to new convocate binary (default: sibling of convocate-host)")
+	agentBin := fs.String("agent-binary", "", "path to new convocate-agent binary (default: sibling of convocate-host)")
+	imageTag := fs.String("image-tag", "convocate:"+Version, "container image to push to the agent (empty disables the push)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -298,12 +298,12 @@ func signalContext() (context.Context, context.CancelFunc) {
 }
 
 func printUsage() {
-	fmt.Printf(`%s - Provision a host for claude-shell / claude-agent
+	fmt.Printf(`%s - Provision a host for convocate / convocate-agent
 
 Usage:
   %s install         [--user U --host H]        Prepare a vanilla Ubuntu host.
-  %s init-shell      --host H [--user U]        Deploy claude-shell to target.
-  %s init-agent      --host H [--user U]        Deploy claude-agent to target.
+  %s init-shell      --host H [--user U]        Deploy convocate to target.
+  %s init-agent      --host H [--user U]        Deploy convocate-agent to target.
   %s update          --host H [--user U]        Update installed services on target.
   %s migrate-session --agent A --session UUID   Move a local orphan session to an agent.
   %s create-vm       --hypervisor H --username U --domain D

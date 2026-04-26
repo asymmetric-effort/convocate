@@ -1,24 +1,24 @@
-# claude-shell
+# convocate
 
-[![CI](https://github.com/sam-caldwell/claude-shell/actions/workflows/ci.yml/badge.svg)](https://github.com/sam-caldwell/claude-shell/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/sam-caldwell/claude-shell/badges/.badges/coverage.json)](https://github.com/sam-caldwell/claude-shell/actions/workflows/ci.yml)
+[![CI](https://github.com/sam-caldwell/convocate/actions/workflows/ci.yml/badge.svg)](https://github.com/sam-caldwell/convocate/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/sam-caldwell/convocate/badges/.badges/coverage.json)](https://github.com/sam-caldwell/convocate/actions/workflows/ci.yml)
 
 A three-binary system for orchestrating isolated, containerized Claude CLI
 sessions across one or many Linux hosts.
 
 ## Overview
 
-As of v2.0.0 claude-shell ships three cooperating binaries:
+As of v2.0.0 convocate ships three cooperating binaries:
 
-- **`claude-shell`** — the interactive TUI. Runs as user `claude`. Lists
+- **`convocate`** — the interactive TUI. Runs as user `claude`. Lists
   sessions across all registered agents, creates sessions on a chosen
   agent, attaches to a session's container over SSH. Doesn't run
   containers itself.
-- **`claude-agent`** — the worker. One per host that actually hosts
+- **`convocate-agent`** — the worker. One per host that actually hosts
   session containers. Listens on `tcp/222` over SSH. Runs `docker run`
-  for sessions. Enrolls every container under `claude-sessions.slice`
+  for sessions. Enrolls every container under `convocate-sessions.slice`
   for a 90% aggregate cgroup cap.
-- **`claude-host`** — the deploy tool. Provisions vanilla Ubuntu hosts,
+- **`convocate-host`** — the deploy tool. Provisions vanilla Ubuntu hosts,
   copies binaries over SSH, wires up SSH peering + TLS-encrypted log
   forwarding, distributes the container image.
 
@@ -38,7 +38,7 @@ Per-host requirements by role:
 | Agent host | Ubuntu 22.04+, docker, systemd (cgroup v2) |
 
 For the simplest topology you can run shell + one agent on the same
-Ubuntu box. `claude-agent` binds `tcp/222` and the shell status
+Ubuntu box. `convocate-agent` binds `tcp/222` and the shell status
 listener binds `tcp/223`, so they coexist cleanly.
 
 ## Getting Started
@@ -52,36 +52,36 @@ hostnames or IPs — they can be the same box.
 On whichever machine will run the TUI (usually your shell host):
 
 ```bash
-git clone https://github.com/asymmetric-effort/claude-shell.git
-cd claude-shell
+git clone https://github.com/asymmetric-effort/convocate.git
+cd convocate
 make build
 sudo make install                # copies all three binaries to /usr/local/bin
-                                  # then runs `claude-shell install`
+                                  # then runs `convocate install`
 ```
 
-`make install` does the source-install + runs `claude-shell install`,
+`make install` does the source-install + runs `convocate install`,
 which:
 
 - checks Docker is present
 - creates the `claude` user (uid 1337) if missing
 - builds the session container image tagged with the binary's version
-  (`claude-shell:v2.0.x`)
-- sets `/usr/local/bin/claude-shell` as `claude`'s login shell
-- provisions `/var/lib/claude-shell/dnsmasq-hosts` so the shell can
+  (`convocate:v2.0.x`)
+- sets `/usr/local/bin/convocate` as `claude`'s login shell
+- provisions `/var/lib/convocate/dnsmasq-hosts` so the shell can
   register per-session DNS names when `dnsmasq` is installed
 
 ### 2. Provision hosts (one-time, per new host)
 
-`claude-host install` turns a fresh Ubuntu 22.04 box into one ready
+`convocate-host install` turns a fresh Ubuntu 22.04 box into one ready
 to host the rest of the stack. Operates locally with `sudo`, or
 remotely via SSH (NOPASSWD sudo required on the remote):
 
 ```bash
 # Local shell host:
-sudo claude-host install
+sudo convocate-host install
 
 # Remote agent host (runs from your workstation):
-claude-host install --host <agent-host>
+convocate-host install --host <agent-host>
 ```
 
 This installs the base apt packages, docker, dnsmasq, creates the
@@ -95,37 +95,37 @@ things it configures is in [TO-DO.md](./TO-DO.md).
 On the shell host:
 
 ```bash
-sudo claude-host init-shell --host <shell-host>
+sudo convocate-host init-shell --host <shell-host>
 ```
 
 This:
 
-- deploys the `claude-shell` binary (already there from step 1) + runs
+- deploys the `convocate` binary (already there from step 1) + runs
   its install subcommand remotely (idempotent)
-- drops the `claude-shell-status` systemd unit that listens on
+- drops the `convocate-status` systemd unit that listens on
   `tcp/223` for agent → shell status pushes
-- mints an ECDSA P-256 CA under `/etc/claude-shell/rsyslog-ca/` and
+- mints an ECDSA P-256 CA under `/etc/convocate/rsyslog-ca/` and
   signs a server cert
-- drops `/etc/rsyslog.d/10-claude-shell-server.conf` with a TLS
+- drops `/etc/rsyslog.d/10-convocate-server.conf` with a TLS
   listener on `tcp/514` that routes per-agent logs into
-  `/var/log/claude-agent/<agent-id>.log`
+  `/var/log/convocate-agent/<agent-id>.log`
 - opens `ufw allow 223/tcp`
-- enables + starts `claude-shell-status.service`
+- enables + starts `convocate-status.service`
 
 ### 4. Init each agent
 
 For every host that will run sessions:
 
 ```bash
-sudo claude-host init-agent \
+sudo convocate-host init-agent \
     --host <agent-host> \
     --shell-host <shell-host>
 ```
 
 This:
 
-- deploys the `claude-agent` binary + runs its install subcommand
-  (creates systemd unit, writes `claude-sessions.slice` with
+- deploys the `convocate-agent` binary + runs its install subcommand
+  (creates systemd unit, writes `convocate-sessions.slice` with
   `CPUQuota = nproc*90%` and `MemoryMax = MemTotal*90%`, drops the
   daily image-prune cron)
 - mints two ed25519 peering keypairs (`shell→agent`, `agent→shell`)
@@ -133,11 +133,11 @@ This:
 - issues a TLS client cert for the agent's rsyslog forwarder, signed
   by the CA from step 3
 - `docker save | gzip | ssh | docker load` transfers the current
-  `claude-shell:v2.0.x` image to the agent, verifying a SHA-256 over
+  `convocate:v2.0.x` image to the agent, verifying a SHA-256 over
   the tarball on both ends
-- writes `/etc/claude-agent/current-image` so the agent knows which
+- writes `/etc/convocate-agent/current-image` so the agent knows which
   tag to `docker run`
-- starts `claude-agent.service`
+- starts `convocate-agent.service`
 
 If you're running init-agent from a workstation rather than the
 shell host, pass `--ca-cert` / `--ca-key` pointing at local copies
@@ -146,7 +146,7 @@ of the rsyslog CA material.
 ### 5. Launch the TUI
 
 SSH into the shell host as the `claude` user (the install step set
-that user's login shell to `claude-shell`):
+that user's login shell to `convocate`):
 
 ```bash
 ssh claude@<shell-host>
@@ -161,14 +161,14 @@ without killing the container.
 
 ```bash
 # On the shell host:
-systemctl status claude-shell-status   # should be active
-ls /etc/claude-shell/agent-keys/       # one subdir per registered agent
+systemctl status convocate-status   # should be active
+ls /etc/convocate/agent-keys/       # one subdir per registered agent
 
 # On each agent:
-systemctl status claude-agent          # active
-cat /etc/claude-agent/current-image    # prints the claude-shell:v2.0.x tag
-docker images claude-shell             # should match that tag
-tail -f /var/log/claude-agent/<id>.log # agent → shell log forwarding
+systemctl status convocate-agent          # active
+cat /etc/convocate-agent/current-image    # prints the convocate:v2.0.x tag
+docker images convocate             # should match that tag
+tail -f /var/log/convocate-agent/<id>.log # agent → shell log forwarding
 ```
 
 ## Day-2 Operations
@@ -177,28 +177,28 @@ tail -f /var/log/claude-agent/<id>.log # agent → shell log forwarding
 on the shell host, then push to every agent:
 
 ```bash
-cd claude-shell && git pull
+cd convocate && git pull
 make build && sudo make install        # rebuilds + retags image
 for agent in agent-a agent-b agent-c; do
-    sudo claude-host update --host "$agent"
+    sudo convocate-host update --host "$agent"
 done
 ```
 
 Update pushes both the fresh binary and the new tagged image to
-each agent and rewrites `/etc/claude-agent/current-image`. Existing
+each agent and rewrites `/etc/convocate-agent/current-image`. Existing
 containers keep running on their original image tag until restart —
 cutover is session-by-session, gated on `(R)estart` in the TUI.
 
 **Migrate a pre-v2 orphan session to an agent.** If you upgraded an
-older claude-shell install, any `/home/claude/<uuid>/` directories
+older convocate install, any `/home/claude/<uuid>/` directories
 from before v2 show up in the TUI with an `O` status and can't be
 acted on directly. Move them onto an agent:
 
 ```bash
 # Stop the old local container first if one is still running:
-docker stop claude-session-<uuid>
+docker stop convocate-session-<uuid>
 
-sudo claude-host migrate-session \
+sudo convocate-host migrate-session \
     --agent <agent-id> \
     --session <uuid>
 ```
@@ -213,8 +213,8 @@ Each session has:
 
 - a unique UUIDv4
 - its own home directory at `/home/claude/<uuid>/` on the **agent** host
-- a dedicated Docker container named `claude-session-<uuid>`,
-  enrolled in `claude-sessions.slice` for kernel-enforced 90%
+- a dedicated Docker container named `convocate-session-<uuid>`,
+  enrolled in `convocate-sessions.slice` for kernel-enforced 90%
   aggregate CPU + memory cap
 
 ### Shared resources (read-only bind mounts, on the agent)
@@ -227,10 +227,10 @@ Each session has:
 ### Control plane
 
 - **Shell → Agent (`tcp/222`)**: SSH subsystems
-  `claude-agent-rpc` (CRUD JSON RPC) and `claude-agent-attach`
+  `convocate-agent-rpc` (CRUD JSON RPC) and `convocate-agent-attach`
   (raw pty relay). Shell holds a persistent connection per agent.
 - **Agent → Shell (`tcp/223`)**: SSH subsystem
-  `claude-shell-status` — newline-JSON event stream
+  `convocate-status` — newline-JSON event stream
   (`agent.started`, `agent.heartbeat`, `container.created/started/
   stopped/deleted`, etc.). Agent holds a persistent connection.
 - **Agent → Shell (`tcp/514`)**: rsyslog TLS-encrypted log forwarding,
@@ -239,8 +239,8 @@ Each session has:
 
 ### Container image distribution
 
-The shell host builds `claude-shell:<semver>` during
-`claude-shell install`. `init-agent` and `update` ship that tarball
+The shell host builds `convocate:<semver>` during
+`convocate install`. `init-agent` and `update` ship that tarball
 to each agent via `docker save | gzip | ssh | docker load`, verifying
 SHA-256 on both ends. A daily cron on each agent deletes image tags
 no container is still referencing.

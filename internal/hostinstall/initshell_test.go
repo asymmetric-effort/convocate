@@ -23,7 +23,7 @@ func tempBinary(t *testing.T, name string) string {
 }
 
 func TestInitShell_HappyPath(t *testing.T) {
-	bin := tempBinary(t, "claude-shell")
+	bin := tempBinary(t, "convocate")
 	m := &mockRunner{cmdStdout: map[string]string{
 		// Rsyslog step queries hostname + probes for existing CA.
 		"hostname -f": "shell.test.example\n",
@@ -40,9 +40,9 @@ func TestInitShell_HappyPath(t *testing.T) {
 	if len(m.copies) < 1 {
 		t.Fatalf("expected at least 1 CopyFile, got %d", len(m.copies))
 	}
-	binCopy := findCopy(m.copies, "/usr/local/bin/claude-shell")
+	binCopy := findCopy(m.copies, "/usr/local/bin/convocate")
 	if binCopy == nil {
-		t.Fatalf("claude-shell binary not copied")
+		t.Fatalf("convocate binary not copied")
 	}
 	if binCopy.Mode != 0755 {
 		t.Errorf("binary mode = %o, want 0755", binCopy.Mode)
@@ -54,11 +54,11 @@ func TestInitShell_HappyPath(t *testing.T) {
 	// Sanity-check the step ordering by keyword — everything up to
 	// rsyslog arrives in a known order.
 	wants := []string{
-		"claude-shell install",
-		"/etc/claude-shell/status_authorized_keys",
-		"/etc/systemd/system/claude-shell-status.service",
+		"convocate install",
+		"/etc/convocate/status_authorized_keys",
+		"/etc/systemd/system/convocate-status.service",
 		"ufw allow 223/tcp",
-		"systemctl enable claude-shell-status.service",
+		"systemctl enable convocate-status.service",
 	}
 	for i, want := range wants {
 		if !strings.Contains(m.cmds[i].Cmd, want) {
@@ -67,12 +67,12 @@ func TestInitShell_HappyPath(t *testing.T) {
 	}
 
 	// Rsyslog step must have written the server-side config + ensured
-	// /var/log/claude-agent exists + restarted the daemon.
+	// /var/log/convocate-agent exists + restarted the daemon.
 	joined := allCmds(m.cmds)
 	for _, want := range []string{
-		"mkdir -p /etc/claude-shell/rsyslog-ca",
+		"mkdir -p /etc/convocate/rsyslog-ca",
 		"rsyslog-gnutls",
-		"mkdir -p /var/log/claude-agent",
+		"mkdir -p /var/log/convocate-agent",
 		"ufw allow 514/tcp",
 		"systemctl restart rsyslog",
 	} {
@@ -81,12 +81,12 @@ func TestInitShell_HappyPath(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"/etc/claude-shell/rsyslog-ca/server.crt",
-		"/etc/claude-shell/rsyslog-ca/server.key",
-		"/etc/claude-shell/rsyslog-ca/ca.crt",
-		"/etc/claude-shell/rsyslog-ca/ca.key",
-		"/etc/rsyslog.d/10-claude-shell-server.conf",
-		"/etc/logrotate.d/claude-shell-agent-logs",
+		"/etc/convocate/rsyslog-ca/server.crt",
+		"/etc/convocate/rsyslog-ca/server.key",
+		"/etc/convocate/rsyslog-ca/ca.crt",
+		"/etc/convocate/rsyslog-ca/ca.key",
+		"/etc/rsyslog.d/10-convocate-server.conf",
+		"/etc/logrotate.d/convocate-agent-logs",
 	} {
 		if findCopy(m.copies, want) == nil {
 			t.Errorf("rsyslog step missing copy to %q", want)
@@ -110,7 +110,7 @@ func TestInitShell_MissingBinaryOverride(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "locate claude-shell binary") {
+	if !strings.Contains(err.Error(), "locate convocate binary") {
 		t.Errorf("error should mention locating the binary: %v", err)
 	}
 	if len(m.cmds) != 0 || len(m.copies) != 0 {
@@ -119,14 +119,14 @@ func TestInitShell_MissingBinaryOverride(t *testing.T) {
 }
 
 func TestInitShell_StopsOnStepFailure(t *testing.T) {
-	bin := tempBinary(t, "claude-shell")
-	// failAt=1 fails the first Run, which is `claude-shell install`.
+	bin := tempBinary(t, "convocate")
+	// failAt=1 fails the first Run, which is `convocate install`.
 	m := &mockRunner{failAt: 1}
 	err := InitShell(context.Background(), m, nil, InitShellOptions{BinaryPath: bin}, io.Discard)
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "Run claude-shell install") {
+	if !strings.Contains(err.Error(), "Run convocate install") {
 		t.Errorf("error should name failing step: %v", err)
 	}
 	// The subsequent Run steps should not have been attempted.
@@ -137,8 +137,8 @@ func TestInitShell_StopsOnStepFailure(t *testing.T) {
 
 func TestInitShell_BinaryUploadFirst(t *testing.T) {
 	// Verify ordering: upload must precede any remote command because every
-	// subsequent step assumes /usr/local/bin/claude-shell exists.
-	bin := tempBinary(t, "claude-shell")
+	// subsequent step assumes /usr/local/bin/convocate exists.
+	bin := tempBinary(t, "convocate")
 	m := &mockRunner{cmdStdout: map[string]string{"hostname -f": "h\n"}}
 	if err := InitShell(context.Background(), m, nil, InitShellOptions{BinaryPath: bin}, io.Discard); err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func allCmds(cs []mockCall) string {
 // --- resolveBinaryPath -----------------------------------------------------
 
 func TestResolveBinaryPath_ExplicitOverride(t *testing.T) {
-	bin := tempBinary(t, "claude-shell")
+	bin := tempBinary(t, "convocate")
 	got, err := resolveBinaryPath(bin)
 	if err != nil {
 		t.Fatal(err)
@@ -194,13 +194,13 @@ func TestResolveBinaryPath_FallbackOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// In production this will also try <exe-dir>/claude-shell, which won't
+	// In production this will also try <exe-dir>/convocate, which won't
 	// exist in the test binary's tempdir either — so this test relies on
 	// both candidate paths missing.
 	got, err := resolveBinaryPath("")
 	if err == nil {
 		// It's legitimate for the exe-sibling lookup to succeed (e.g. if
-		// someone ran `go test` from a tree that has claude-shell next to
+		// someone ran `go test` from a tree that has convocate next to
 		// the test binary). Don't fail in that case — just verify the
 		// returned path exists.
 		if _, serr := os.Stat(got); serr != nil {

@@ -1,5 +1,7 @@
 # Binaries
-/claude-shell
+/convocate
+/convocate-host
+/convocate-agent
 /mock-claude
 *.exe
 *.exe~

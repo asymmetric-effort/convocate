@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// DefaultAgentKeysDir is where claude-host init-agent stows the shell->agent
+// DefaultAgentKeysDir is where convocate-host init-agent stows the shell->agent
 // private key and agent-host metadata for each registered agent.
-const DefaultAgentKeysDir = "/etc/claude-shell/agent-keys"
+const DefaultAgentKeysDir = "/etc/convocate/agent-keys"
 
 // AgentRecord describes one registered agent's connection parameters. The
 // TUI iterates these to build the list of remote hosts to dial.

@@ -1,6 +1,6 @@
 //go:build e2e
 
-// Package e2e provides end-to-end tests for claude-shell using Docker containers.
+// Package e2e provides end-to-end tests for convocate using Docker containers.
 package e2e
 
 import (
@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	testImageName = "claude-shell-e2e-test"
+	testImageName = "convocate-e2e-test"
 	testImageTag  = "latest"
 )
 
@@ -90,7 +90,7 @@ func findProjectRoot() string {
 		dir = parent
 	}
 	// Fallback
-	return "/root/git/claude-shell"
+	return "/root/git/convocate"
 }
 
 // startDetachedContainer starts a container in detached mode and returns its name.

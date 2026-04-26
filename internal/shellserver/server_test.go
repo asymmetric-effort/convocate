@@ -18,7 +18,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
+	"github.com/asymmetric-effort/convocate/internal/statusproto"
 )
 
 func generateKey(t *testing.T) (ssh.Signer, ssh.PublicKey) {

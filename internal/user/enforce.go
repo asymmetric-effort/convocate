@@ -12,7 +12,7 @@ var GetuidFn = os.Getuid
 // EnforceRunningAs refuses to proceed unless the current process runs as the
 // Linux user with the given name. Returns a friendly, self-contained error
 // that tells the operator exactly how to invoke the binary correctly. This
-// is called at the top of main for both claude-shell and claude-agent —
+// is called at the top of main for both convocate and convocate-agent —
 // neither tool is safe to run as any other uid because on-disk paths
 // (~/.claude, /home/claude/.ssh/authorized_keys, session dirs) assume the
 // claude user owns them.

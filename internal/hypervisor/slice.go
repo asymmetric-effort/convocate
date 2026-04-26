@@ -11,7 +11,7 @@ import (
 // admission control: Layer 1 refuses the create call, Layer 2 keeps
 // the kernel honest if VMs were ever created out-of-band.
 //
-// Drop-in path: /etc/systemd/system/machine.slice.d/99-claude-cap.conf
+// Drop-in path: /etc/systemd/system/machine.slice.d/99-convocate-cap.conf
 // — the 99- prefix wins against any other override systemd-machined
 // or virt-install might lay down.
 //
@@ -27,7 +27,7 @@ func CapMachineSlice(ctx context.Context, r Runner, res HypervisorResources) err
 	memBytes := res.RAMMB * 1024 * 1024 * 90 / 100
 
 	unit := fmt.Sprintf(`[Unit]
-Description=Cap libvirt VMs at 90%% of host resources (managed by claude-host create-vm)
+Description=Cap libvirt VMs at 90%% of host resources (managed by convocate-host create-vm)
 
 [Slice]
 CPUAccounting=yes
@@ -38,7 +38,7 @@ MemoryMax=%d
 
 	cmd := fmt.Sprintf(`set -e
 mkdir -p /etc/systemd/system/machine.slice.d
-cat >/etc/systemd/system/machine.slice.d/99-claude-cap.conf <<'CAP_EOF'
+cat >/etc/systemd/system/machine.slice.d/99-convocate-cap.conf <<'CAP_EOF'
 %sCAP_EOF
 systemctl daemon-reload
 # Slice can't be "started" if no VM is in it yet; ignore the error.

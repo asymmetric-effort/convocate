@@ -35,9 +35,9 @@ func tempBin(t *testing.T, name string) string {
 }
 
 func TestUpdate_ShellOnly(t *testing.T) {
-	m := newUpdateMockRunner([]string{"/usr/local/bin/claude-shell"})
-	shellBin := tempBin(t, "claude-shell")
-	agentBin := tempBin(t, "claude-agent") // resolver needs this to exist
+	m := newUpdateMockRunner([]string{"/usr/local/bin/convocate"})
+	shellBin := tempBin(t, "convocate")
+	agentBin := tempBin(t, "convocate-agent") // resolver needs this to exist
 	var log bytes.Buffer
 	err := Update(context.Background(), m, nil, UpdateOptions{
 		ShellBinaryPath: shellBin,
@@ -48,14 +48,14 @@ func TestUpdate_ShellOnly(t *testing.T) {
 	}
 	// Expect: probe shell (YES), upload shell, install shell, restart shell,
 	// probe agent (NO). = 5 Run calls + 1 CopyFile.
-	if len(m.copies) != 1 || m.copies[0].Dst != "/usr/local/bin/claude-shell" {
+	if len(m.copies) != 1 || m.copies[0].Dst != "/usr/local/bin/convocate" {
 		t.Errorf("copies = %+v", m.copies)
 	}
 	wantCmds := []string{
-		"test -f '/usr/local/bin/claude-shell'",
-		"/usr/local/bin/claude-shell install",
-		"systemctl restart claude-shell-status.service",
-		"test -f '/usr/local/bin/claude-agent'",
+		"test -f '/usr/local/bin/convocate'",
+		"/usr/local/bin/convocate install",
+		"systemctl restart convocate-status.service",
+		"test -f '/usr/local/bin/convocate-agent'",
 	}
 	if len(m.cmds) != len(wantCmds) {
 		t.Fatalf("cmd count = %d, want %d: %v", len(m.cmds), len(wantCmds), cmdNames(m.cmds))
@@ -68,9 +68,9 @@ func TestUpdate_ShellOnly(t *testing.T) {
 }
 
 func TestUpdate_AgentOnly(t *testing.T) {
-	m := newUpdateMockRunner([]string{"/usr/local/bin/claude-agent"})
-	shellBin := tempBin(t, "claude-shell")
-	agentBin := tempBin(t, "claude-agent")
+	m := newUpdateMockRunner([]string{"/usr/local/bin/convocate-agent"})
+	shellBin := tempBin(t, "convocate")
+	agentBin := tempBin(t, "convocate-agent")
 	err := Update(context.Background(), m, nil, UpdateOptions{
 		ShellBinaryPath: shellBin,
 		AgentBinaryPath: agentBin,
@@ -78,15 +78,15 @@ func TestUpdate_AgentOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if len(m.copies) != 1 || m.copies[0].Dst != "/usr/local/bin/claude-agent" {
+	if len(m.copies) != 1 || m.copies[0].Dst != "/usr/local/bin/convocate-agent" {
 		t.Errorf("expected single agent copy, got %+v", m.copies)
 	}
 }
 
 func TestUpdate_Both(t *testing.T) {
-	m := newUpdateMockRunner([]string{"/usr/local/bin/claude-shell", "/usr/local/bin/claude-agent"})
-	shellBin := tempBin(t, "claude-shell")
-	agentBin := tempBin(t, "claude-agent")
+	m := newUpdateMockRunner([]string{"/usr/local/bin/convocate", "/usr/local/bin/convocate-agent"})
+	shellBin := tempBin(t, "convocate")
+	agentBin := tempBin(t, "convocate-agent")
 	err := Update(context.Background(), m, nil, UpdateOptions{
 		ShellBinaryPath: shellBin,
 		AgentBinaryPath: agentBin,
@@ -101,15 +101,15 @@ func TestUpdate_Both(t *testing.T) {
 	for _, c := range m.copies {
 		dests[c.Dst] = true
 	}
-	if !dests["/usr/local/bin/claude-shell"] || !dests["/usr/local/bin/claude-agent"] {
+	if !dests["/usr/local/bin/convocate"] || !dests["/usr/local/bin/convocate-agent"] {
 		t.Errorf("missing expected copy dest; got %v", dests)
 	}
 }
 
 func TestUpdate_NoneInstalled_Errors(t *testing.T) {
 	m := newUpdateMockRunner(nil) // nothing installed
-	shellBin := tempBin(t, "claude-shell")
-	agentBin := tempBin(t, "claude-agent")
+	shellBin := tempBin(t, "convocate")
+	agentBin := tempBin(t, "convocate-agent")
 	err := Update(context.Background(), m, nil, UpdateOptions{
 		ShellBinaryPath: shellBin,
 		AgentBinaryPath: agentBin,
@@ -120,12 +120,12 @@ func TestUpdate_NoneInstalled_Errors(t *testing.T) {
 }
 
 func TestUpdate_MissingLocalBinary_Errors(t *testing.T) {
-	m := newUpdateMockRunner([]string{"/usr/local/bin/claude-shell"})
+	m := newUpdateMockRunner([]string{"/usr/local/bin/convocate"})
 	// Provide an override that does not exist.
 	err := Update(context.Background(), m, nil, UpdateOptions{
 		ShellBinaryPath: "/does/not/exist",
 	}, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "locate claude-shell") {
+	if err == nil || !strings.Contains(err.Error(), "locate convocate") {
 		t.Errorf("expected locate error, got %v", err)
 	}
 }
@@ -139,13 +139,13 @@ func TestUpdate_WithImageTag_PushesToAgent(t *testing.T) {
 	}
 	t.Setenv("PATH", stubDir)
 
-	m := newUpdateMockRunner([]string{"/usr/local/bin/claude-agent"})
-	shellBin := tempBin(t, "claude-shell")
-	agentBin := tempBin(t, "claude-agent")
+	m := newUpdateMockRunner([]string{"/usr/local/bin/convocate-agent"})
+	shellBin := tempBin(t, "convocate")
+	agentBin := tempBin(t, "convocate-agent")
 	err := Update(context.Background(), m, nil, UpdateOptions{
 		ShellBinaryPath: shellBin,
 		AgentBinaryPath: agentBin,
-		ImageTag:        "claude-shell:v3.3.3",
+		ImageTag:        "convocate:v3.3.3",
 	}, bytes.NewBuffer(nil))
 	if err != nil {
 		t.Fatalf("Update: %v", err)
@@ -153,11 +153,11 @@ func TestUpdate_WithImageTag_PushesToAgent(t *testing.T) {
 	// Expect the image tarball + current-image pointer + agent binary.
 	found := map[string]bool{}
 	for _, c := range m.copies {
-		if strings.HasPrefix(c.Dst, "/tmp/claude-image-") {
+		if strings.HasPrefix(c.Dst, "/tmp/convocate-image-") {
 			found["tarball"] = true
 		}
-		if c.Dst == "/etc/claude-agent/current-image" {
-			if !bytes.Contains(c.Content, []byte("claude-shell:v3.3.3")) {
+		if c.Dst == "/etc/convocate-agent/current-image" {
+			if !bytes.Contains(c.Content, []byte("convocate:v3.3.3")) {
 				t.Errorf("current-image body = %q", c.Content)
 			}
 			found["pointer"] = true
@@ -170,15 +170,15 @@ func TestUpdate_WithImageTag_PushesToAgent(t *testing.T) {
 		t.Error("current-image pointer not rewritten during update")
 	}
 	joined := allCmds(m.cmds)
-	if !strings.Contains(joined, "systemctl restart claude-agent.service") {
+	if !strings.Contains(joined, "systemctl restart convocate-agent.service") {
 		t.Error("agent service not restarted after image push")
 	}
 }
 
 func TestUpdate_EmptyImageTag_SkipsImagePush(t *testing.T) {
-	m := newUpdateMockRunner([]string{"/usr/local/bin/claude-agent"})
-	shellBin := tempBin(t, "claude-shell")
-	agentBin := tempBin(t, "claude-agent")
+	m := newUpdateMockRunner([]string{"/usr/local/bin/convocate-agent"})
+	shellBin := tempBin(t, "convocate")
+	agentBin := tempBin(t, "convocate-agent")
 	err := Update(context.Background(), m, nil, UpdateOptions{
 		ShellBinaryPath: shellBin,
 		AgentBinaryPath: agentBin,
@@ -188,7 +188,7 @@ func TestUpdate_EmptyImageTag_SkipsImagePush(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 	for _, c := range m.copies {
-		if strings.HasPrefix(c.Dst, "/tmp/claude-image-") {
+		if strings.HasPrefix(c.Dst, "/tmp/convocate-image-") {
 			t.Error("image should not be pushed when ImageTag is empty")
 		}
 	}

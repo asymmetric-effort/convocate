@@ -24,7 +24,7 @@ import (
 //  4. `gunzip -c | docker load` to register the image on the agent.
 //  5. rm the temp file on both ends.
 //
-// The shell host must already have the image present (claude-shell
+// The shell host must already have the image present (convocate
 // install built it). A missing image surfaces as "docker save" failing
 // with a clear error.
 func TransferImage(ctx context.Context, r Runner, tag string, log io.Writer) error {
@@ -35,25 +35,25 @@ func TransferImage(ctx context.Context, r Runner, tag string, log io.Writer) err
 		log = io.Discard
 	}
 
-	localDir, err := os.MkdirTemp("", "claude-image-*")
+	localDir, err := os.MkdirTemp("", "convocate-image-*")
 	if err != nil {
 		return fmt.Errorf("mktemp: %w", err)
 	}
 	defer os.RemoveAll(localDir)
 	localPath := filepath.Join(localDir, "image.tar.gz")
 
-	fmt.Fprintf(log, "[claude-host] saving %s locally + gzipping...\n", tag)
+	fmt.Fprintf(log, "[convocate-host] saving %s locally + gzipping...\n", tag)
 	digest, size, err := saveAndGzip(ctx, tag, localPath)
 	if err != nil {
 		return fmt.Errorf("save+gzip %s: %w", tag, err)
 	}
 	hexDigest := hex.EncodeToString(digest)
-	fmt.Fprintf(log, "[claude-host] local tarball: %d bytes, sha256=%s\n", size, hexDigest)
+	fmt.Fprintf(log, "[convocate-host] local tarball: %d bytes, sha256=%s\n", size, hexDigest)
 
 	// Remote staging path — keyed by digest prefix so repeated transfers
 	// don't stomp on each other if one is interrupted mid-flight.
-	remotePath := fmt.Sprintf("/tmp/claude-image-%s.tar.gz", hexDigest[:16])
-	fmt.Fprintf(log, "[claude-host] uploading to %s...\n", remotePath)
+	remotePath := fmt.Sprintf("/tmp/convocate-image-%s.tar.gz", hexDigest[:16])
+	fmt.Fprintf(log, "[convocate-host] uploading to %s...\n", remotePath)
 	if err := r.CopyFile(ctx, localPath, remotePath, 0600); err != nil {
 		return fmt.Errorf("upload to %s: %w", remotePath, err)
 	}
@@ -71,7 +71,7 @@ gunzip -c %[1]q | docker load
 rm -f %[1]q
 `, remotePath, hexDigest)
 
-	fmt.Fprintln(log, "[claude-host] verifying sha256 + docker load on agent...")
+	fmt.Fprintln(log, "[convocate-host] verifying sha256 + docker load on agent...")
 	return r.Run(ctx, script, RunOptions{Sudo: true, Stdout: log, Stderr: log})
 }
 

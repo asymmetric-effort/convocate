@@ -9,7 +9,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"github.com/asymmetric-effort/claude-shell/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/session"
 )
 
 // loadAverageReader is overridable for tests.
@@ -145,7 +145,7 @@ type DisplayOptions struct {
 	// "udp"), the new DNS name (may be empty), and the new port.
 	SaveSessionEdit func(id, name, protocol, dnsName string, port int) error
 
-	// Agents is the list of registered claude-agent IDs the user can
+	// Agents is the list of registered convocate-agent IDs the user can
 	// target when creating a new session. When empty, pressing 'N' shows
 	// a "no agents registered" dialog instead of the create form.
 	Agents []string
@@ -316,7 +316,7 @@ func (t *tui) draw() {
 
 func (t *tui) drawTitleBar(width int) {
 	fillRow(t.screen, 0, width, titleStyle)
-	drawString(t.screen, 1, 0, "claude-shell", titleStyle)
+	drawString(t.screen, 1, 0, "convocate", titleStyle)
 
 	clock := time.Now().Format("2006-01-02 15:04:05")
 	right := clock
@@ -385,7 +385,7 @@ func (t *tui) drawSessionTable(width, height int) {
 		// A session with no AgentID is a local orphan (pre-v2 leftover
 		// whose container isn't managed by any registered agent). It
 		// can't be attached / killed / restarted until the operator
-		// runs `claude-host migrate-session`. The O marker makes this
+		// runs `convocate-host migrate-session`. The O marker makes this
 		// visually distinct from remote sessions so "Enter does
 		// nothing" isn't a surprise.
 		orphan := s.AgentID == "" && s.UUID != ""
@@ -451,7 +451,7 @@ func (t *tui) startCreateDialog() {
 }
 
 // drawSelectAgentDialog renders a compact picker showing every registered
-// claude-agent. Up/Down moves the highlight, Enter commits the choice,
+// convocate-agent. Up/Down moves the highlight, Enter commits the choice,
 // Esc cancels back to the menu.
 func (t *tui) drawSelectAgentDialog(width, height int) {
 	const minW = 48
@@ -501,11 +501,11 @@ func (t *tui) drawSelectAgentDialog(width, height int) {
 	drawString(t.screen, x0+(dialogWidth-len(hint))/2, y0+dialogHeight-1, hint, dialogStyle)
 }
 
-// drawNoAgentsDialog warns that no claude-agents are registered — session
+// drawNoAgentsDialog warns that no convocate-agents are registered — session
 // creation requires one.
 func (t *tui) drawNoAgentsDialog(width, height int) {
-	msg := "No claude-agent hosts are registered."
-	hint := "Run 'claude-host init-agent' to add one. Press any key."
+	msg := "No convocate-agent hosts are registered."
+	hint := "Run 'convocate-host init-agent' to add one. Press any key."
 	dialogWidth := len(hint) + 4
 	dialogHeight := 5
 

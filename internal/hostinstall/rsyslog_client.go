@@ -8,23 +8,23 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/asymmetric-effort/claude-shell/internal/tlsutil"
+	"github.com/asymmetric-effort/convocate/internal/tlsutil"
 )
 
 // RsyslogAgentTLSDir is where init-agent stashes the CA cert + client
 // cert/key on the agent host. The rsyslog config references these paths
 // verbatim, so changing it means rewriting the config template.
-const RsyslogAgentTLSDir = "/etc/claude-agent/rsyslog-tls"
+const RsyslogAgentTLSDir = "/etc/convocate-agent/rsyslog-tls"
 
 // rsyslogClientConfigTpl is the rsyslog drop-in that forwards every
 // message to the shell host's TLS listener. %s placeholders are, in order:
 //   1. agent-id    — stamped into $LocalHostName so the shell routes to
-//                    /var/log/claude-agent/<agent-id>.log
-//   2. shell-host  — DNS / IP of the claude-shell listener
-const rsyslogClientConfigTpl = `# Managed by claude-host init-agent. Do not edit by hand.
+//                    /var/log/convocate-agent/<agent-id>.log
+//   2. shell-host  — DNS / IP of the convocate listener
+const rsyslogClientConfigTpl = `# Managed by convocate-host init-agent. Do not edit by hand.
 
 # Stamp messages with our agent-id as hostname so the shell receiver
-# routes them to /var/log/claude-agent/<agent-id>.log.
+# routes them to /var/log/convocate-agent/<agent-id>.log.
 $LocalHostName %s
 
 module(load="omfwd")
@@ -47,7 +47,7 @@ action(
     queue.type="LinkedList"
     queue.size="10000"
     queue.spoolDirectory="/var/spool/rsyslog"
-    queue.filename="claude-shell-fwd"
+    queue.filename="convocate-fwd"
     queue.saveOnShutdown="on"
     action.resumeRetryCount="-1"
 )
@@ -74,7 +74,7 @@ func configureAgentRsyslogClient(ctx context.Context, r Runner, localShellEtcDir
 	}
 	caCertPEM, err := os.ReadFile(caCertPath)
 	if err != nil {
-		return fmt.Errorf("read CA cert from %s (run 'claude-host init-shell' first or pass --ca-cert): %w", caCertPath, err)
+		return fmt.Errorf("read CA cert from %s (run 'convocate-host init-shell' first or pass --ca-cert): %w", caCertPath, err)
 	}
 	caKeyPEM, err := os.ReadFile(caKeyPath)
 	if err != nil {
@@ -131,7 +131,7 @@ func configureAgentRsyslogClient(ctx context.Context, r Runner, localShellEtcDir
 		shellHost,
 	)
 	if err := writeRemoteContent(ctx, r, log, []byte(cfg),
-		"/etc/rsyslog.d/10-claude-shell-client.conf", 0644, "root:root"); err != nil {
+		"/etc/rsyslog.d/10-convocate-client.conf", 0644, "root:root"); err != nil {
 		return err
 	}
 

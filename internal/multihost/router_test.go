@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
-	"github.com/asymmetric-effort/claude-shell/internal/agentserver"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/agentclient"
+	"github.com/asymmetric-effort/convocate/internal/agentserver"
+	"github.com/asymmetric-effort/convocate/internal/session"
 )
 
 // --- stubs ------------------------------------------------------------------

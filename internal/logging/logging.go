@@ -1,4 +1,4 @@
-// Package logging provides syslog-based logging for claude-shell.
+// Package logging provides syslog-based logging for convocate.
 package logging
 
 import (

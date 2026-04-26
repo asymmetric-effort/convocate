@@ -14,9 +14,9 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/shellserver"
-	"github.com/asymmetric-effort/claude-shell/internal/sshutil"
-	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
+	"github.com/asymmetric-effort/convocate/internal/shellserver"
+	"github.com/asymmetric-effort/convocate/internal/sshutil"
+	"github.com/asymmetric-effort/convocate/internal/statusproto"
 )
 
 // --- test helpers ----------------------------------------------------------

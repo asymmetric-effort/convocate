@@ -140,7 +140,7 @@ func TestDispatcher_OpsSorted(t *testing.T) {
 
 func TestServer_PingRoundTrip(t *testing.T) {
 	// Spin up a real server on an ephemeral port, connect with a Go SSH
-	// client, request the claude-agent-rpc subsystem, write a ping, assert
+	// client, request the convocate-agent-rpc subsystem, write a ping, assert
 	// the response. This is the canonical "the whole stack works" test.
 	dir := t.TempDir()
 	hostKeyPath := filepath.Join(dir, "host_key")

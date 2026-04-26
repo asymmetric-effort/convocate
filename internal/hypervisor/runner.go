@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/asymmetric-effort/claude-shell/internal/hostinstall"
+	"github.com/asymmetric-effort/convocate/internal/hostinstall"
 )
 
 // Runner is the abstraction the create-vm orchestrator drives. The
@@ -191,7 +191,7 @@ func trimPubKey(b []byte) []byte {
 	return b
 }
 
-// HardenSSHD writes /etc/ssh/sshd_config.d/10-claude-hardening.conf
+// HardenSSHD writes /etc/ssh/sshd_config.d/10-convocate-hardening.conf
 // with directives drawn from the CIS Ubuntu Linux 22.04 LTS Benchmark
 // (sections 5.2.x). The drop-in is chosen because Ubuntu's stock
 // sshd_config.d ordering means our values win over the
@@ -203,7 +203,7 @@ func trimPubKey(b []byte) []byte {
 // keeps PubkeyAuthentication on so we don't lock ourselves out
 // immediately after installing the operator's key.
 func HardenSSHD(ctx context.Context, r Runner) error {
-	const cfg = `# Managed by claude-host create-vm. Aligned with CIS Ubuntu 22.04 v1.0.0
+	const cfg = `# Managed by convocate-host create-vm. Aligned with CIS Ubuntu 22.04 v1.0.0
 # (sections 5.2.x). Do not edit by hand.
 Protocol 2
 PermitRootLogin no
@@ -229,7 +229,7 @@ IgnoreRhosts yes
 GSSAPIAuthentication no
 KerberosAuthentication no
 `
-	const path = "/etc/ssh/sshd_config.d/10-claude-hardening.conf"
+	const path = "/etc/ssh/sshd_config.d/10-convocate-hardening.conf"
 	cmd := fmt.Sprintf(`set -e
 install -D -m 0644 /dev/stdin %s <<'CIS_EOF'
 %sCIS_EOF

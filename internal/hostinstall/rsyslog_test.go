@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asymmetric-effort/claude-shell/internal/tlsutil"
+	"github.com/asymmetric-effort/convocate/internal/tlsutil"
 )
 
 func TestRsyslogServerStep_GeneratesCA_WhenMissing(t *testing.T) {
 	m := &mockRunner{
 		cmdStdout: map[string]string{
 			"hostname -f":                                         "shell.example\n",
-			"test -f '/etc/claude-shell/rsyslog-ca/ca.crt'":       "NO\n",
+			"test -f '/etc/convocate/rsyslog-ca/ca.crt'":       "NO\n",
 		},
 	}
 	var log bytes.Buffer
@@ -23,8 +23,8 @@ func TestRsyslogServerStep_GeneratesCA_WhenMissing(t *testing.T) {
 
 	// CA material must have been uploaded — and must round-trip through
 	// ParseKeyMaterial, proving we wrote real PEM.
-	caCert := findCopy(m.copies, "/etc/claude-shell/rsyslog-ca/ca.crt")
-	caKey := findCopy(m.copies, "/etc/claude-shell/rsyslog-ca/ca.key")
+	caCert := findCopy(m.copies, "/etc/convocate/rsyslog-ca/ca.crt")
+	caKey := findCopy(m.copies, "/etc/convocate/rsyslog-ca/ca.key")
 	if caCert == nil || caKey == nil {
 		t.Fatalf("CA material not uploaded: cert=%v key=%v", caCert != nil, caKey != nil)
 	}
@@ -33,8 +33,8 @@ func TestRsyslogServerStep_GeneratesCA_WhenMissing(t *testing.T) {
 	}
 
 	// Server cert present + signed under the fresh CA (so it chains).
-	srvCert := findCopy(m.copies, "/etc/claude-shell/rsyslog-ca/server.crt")
-	srvKey := findCopy(m.copies, "/etc/claude-shell/rsyslog-ca/server.key")
+	srvCert := findCopy(m.copies, "/etc/convocate/rsyslog-ca/server.crt")
+	srvKey := findCopy(m.copies, "/etc/convocate/rsyslog-ca/server.key")
 	if srvCert == nil || srvKey == nil {
 		t.Fatalf("server material not uploaded")
 	}
@@ -46,28 +46,28 @@ func TestRsyslogServerStep_GeneratesCA_WhenMissing(t *testing.T) {
 	}
 
 	// Config + logrotate written. Config must include both the imtcp
-	// ingress block and the local claude-shell programname routing.
-	cfg := findCopy(m.copies, "/etc/rsyslog.d/10-claude-shell-server.conf")
+	// ingress block and the local convocate programname routing.
+	cfg := findCopy(m.copies, "/etc/rsyslog.d/10-convocate-server.conf")
 	if cfg == nil {
 		t.Fatal("rsyslog server config not uploaded")
 	}
 	for _, want := range []string{
 		"imtcp",
 		"claudeAgentPerHost",
-		`$programname == "claude-shell"`,
-		"/var/log/claude-shell.log",
+		`$programname == "convocate"`,
+		"/var/log/convocate.log",
 	} {
 		if !bytes.Contains(cfg.Content, []byte(want)) {
 			t.Errorf("rsyslog config missing %q", want)
 		}
 	}
-	lr := findCopy(m.copies, "/etc/logrotate.d/claude-shell-agent-logs")
+	lr := findCopy(m.copies, "/etc/logrotate.d/convocate-agent-logs")
 	if lr == nil {
 		t.Fatal("logrotate config not uploaded")
 	}
 	for _, want := range []string{
-		"/var/log/claude-agent/*.log",
-		"/var/log/claude-shell.log",
+		"/var/log/convocate-agent/*.log",
+		"/var/log/convocate.log",
 	} {
 		if !bytes.Contains(lr.Content, []byte(want)) {
 			t.Errorf("logrotate config missing %q", want)
@@ -78,10 +78,10 @@ func TestRsyslogServerStep_GeneratesCA_WhenMissing(t *testing.T) {
 	joined := allCmds(m.cmds)
 	for _, want := range []string{
 		"hostname -f",
-		"test -f '/etc/claude-shell/rsyslog-ca/ca.crt'",
-		"mkdir -p /etc/claude-shell/rsyslog-ca",
+		"test -f '/etc/convocate/rsyslog-ca/ca.crt'",
+		"mkdir -p /etc/convocate/rsyslog-ca",
 		"rsyslog-gnutls",
-		"mkdir -p /var/log/claude-agent",
+		"mkdir -p /var/log/convocate-agent",
 		"ufw allow 514/tcp",
 		"systemctl restart rsyslog",
 	} {
@@ -101,23 +101,23 @@ func TestRsyslogServerStep_ReusesExistingCA(t *testing.T) {
 	m := &mockRunner{
 		cmdStdout: map[string]string{
 			"hostname -f":                                   "shell.example\n",
-			"test -f '/etc/claude-shell/rsyslog-ca/ca.crt'": "YES\n",
-			"cat '/etc/claude-shell/rsyslog-ca/ca.crt'":     string(existing.CertPEM),
-			"cat '/etc/claude-shell/rsyslog-ca/ca.key'":     string(existing.KeyPEM),
+			"test -f '/etc/convocate/rsyslog-ca/ca.crt'": "YES\n",
+			"cat '/etc/convocate/rsyslog-ca/ca.crt'":     string(existing.CertPEM),
+			"cat '/etc/convocate/rsyslog-ca/ca.key'":     string(existing.KeyPEM),
 		},
 	}
 	if err := stepInstallRsyslogServer(context.Background(), m, &bytes.Buffer{}); err != nil {
 		t.Fatalf("step: %v", err)
 	}
 	// CA material must NOT have been re-uploaded.
-	if findCopy(m.copies, "/etc/claude-shell/rsyslog-ca/ca.crt") != nil {
+	if findCopy(m.copies, "/etc/convocate/rsyslog-ca/ca.crt") != nil {
 		t.Error("existing CA was overwritten")
 	}
-	if findCopy(m.copies, "/etc/claude-shell/rsyslog-ca/ca.key") != nil {
+	if findCopy(m.copies, "/etc/convocate/rsyslog-ca/ca.key") != nil {
 		t.Error("existing CA key was overwritten")
 	}
 	// But a new server cert WAS issued.
-	if findCopy(m.copies, "/etc/claude-shell/rsyslog-ca/server.crt") == nil {
+	if findCopy(m.copies, "/etc/convocate/rsyslog-ca/server.crt") == nil {
 		t.Error("server cert should still be regenerated when reusing CA")
 	}
 }

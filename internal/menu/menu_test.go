@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asymmetric-effort/claude-shell/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/session"
 )
 
 // errReader is an io.Reader that always returns an error.

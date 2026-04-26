@@ -1,4 +1,4 @@
-module github.com/asymmetric-effort/claude-shell
+module github.com/asymmetric-effort/convocate
 
 go 1.26.2
 

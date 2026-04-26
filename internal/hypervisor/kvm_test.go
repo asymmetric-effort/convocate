@@ -192,7 +192,7 @@ func TestCapMachineSlice_ScriptShape(t *testing.T) {
 	}
 	body := m.cmds[0].Cmd
 	for _, want := range []string{
-		"/etc/systemd/system/machine.slice.d/99-claude-cap.conf",
+		"/etc/systemd/system/machine.slice.d/99-convocate-cap.conf",
 		"CPUQuota=720%", // 8 * 90
 		"MemoryMax=15461882265", // 16384 * 1024 * 1024 * 90 / 100
 		"systemctl daemon-reload",

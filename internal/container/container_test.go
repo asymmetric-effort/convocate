@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/user"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/user"
 )
 
 func testUserInfo() user.Info {
@@ -82,7 +82,7 @@ func TestBuildRunArgs(t *testing.T) {
 	sessionDir := filepath.Join(tmpDir, "test-session")
 	r := NewRunner("abcdef12-3456-7890-abcd-ef1234567890", sessionDir, testUserInfo(), paths)
 
-	args := r.buildRunArgs("claude-session-test")
+	args := r.buildRunArgs("convocate-session-test")
 
 	argStr := strings.Join(args, " ")
 
@@ -93,8 +93,8 @@ func TestBuildRunArgs(t *testing.T) {
 		{"--rm", "--rm"},
 		{"--detach", "--detach"},
 		{"-w", "-w /home/claude"},
-		{"--name", "--name claude-session-test"},
-		{"--hostname", "--hostname claude-abcdef12"},
+		{"--name", "--name convocate-session-test"},
+		{"--hostname", "--hostname convocate-abcdef12"},
 		{"session home", sessionDir + ":/home/claude"},
 		{"docker socket", config.DockerSocket + ":" + config.DockerSocket},
 		{"SSH mount", sshDir + ":/home/claude/.ssh:ro"},
@@ -562,25 +562,25 @@ func TestRunner_SetImageOverridesDefault(t *testing.T) {
 	if got := r.imageRef(); got == "" {
 		t.Error("default image should not be empty")
 	}
-	r.SetImage("claude-shell:v2.1.0")
-	if got := r.imageRef(); got != "claude-shell:v2.1.0" {
+	r.SetImage("convocate:v2.1.0")
+	if got := r.imageRef(); got != "convocate:v2.1.0" {
 		t.Errorf("imageRef after SetImage = %q", got)
 	}
 }
 
 func TestRunner_BuildRunArgs_UsesSetImage(t *testing.T) {
 	r := NewRunner("12345678-aaaa-bbbb-cccc-ddddeeeefffff", "/dir", testUserInfo(), testPaths())
-	r.SetImage("claude-shell:v2.3.4")
-	args := r.buildRunArgs("claude-session-test")
+	r.SetImage("convocate:v2.3.4")
+	args := r.buildRunArgs("convocate-session-test")
 	last := args[len(args)-1]
-	if last != "claude-shell:v2.3.4" {
+	if last != "convocate:v2.3.4" {
 		t.Errorf("last arg = %q, want the configured image tag", last)
 	}
 }
 
 func TestRunner_BuildRunArgs_EmitsCgroupParent(t *testing.T) {
 	r := NewRunner("12345678-aaaa-bbbb-cccc-ddddeeeefffff", "/dir", testUserInfo(), testPaths())
-	args := r.buildRunArgs("claude-session-test")
+	args := r.buildRunArgs("convocate-session-test")
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--cgroup-parent "+DefaultCgroupParent) {
 		t.Errorf("default cgroup-parent missing from args: %v", args)
@@ -590,7 +590,7 @@ func TestRunner_BuildRunArgs_EmitsCgroupParent(t *testing.T) {
 func TestRunner_SetCgroupParentOverrides(t *testing.T) {
 	r := NewRunner("12345678-aaaa-bbbb-cccc-ddddeeeefffff", "/dir", testUserInfo(), testPaths())
 	r.SetCgroupParent("custom.slice")
-	args := r.buildRunArgs("claude-session-test")
+	args := r.buildRunArgs("convocate-session-test")
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--cgroup-parent custom.slice") {
 		t.Errorf("custom cgroup-parent missing from args: %v", args)

@@ -25,8 +25,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/hostinstall"
-	"github.com/asymmetric-effort/claude-shell/internal/sshutil"
+	"github.com/asymmetric-effort/convocate/internal/hostinstall"
+	"github.com/asymmetric-effort/convocate/internal/sshutil"
 )
 
 // fakeSSHd is a minimal SSH server that accepts public-key auth, accepts

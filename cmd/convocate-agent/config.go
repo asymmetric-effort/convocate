@@ -8,14 +8,14 @@ import (
 	"strings"
 )
 
-// Well-known on-disk paths for claude-agent. Tests can override via package
+// Well-known on-disk paths for convocate-agent. Tests can override via package
 // vars where useful, but the defaults reflect production layout.
 const (
-	defaultEtcDir         = "/etc/claude-agent"
-	defaultHostKeyPath    = "/etc/claude-agent/ssh_host_ed25519_key"
-	defaultAgentIDPath    = "/etc/claude-agent/agent-id"
-	defaultBinaryPath     = "/usr/local/bin/claude-agent"
-	defaultSystemdUnit    = "/etc/systemd/system/claude-agent.service"
+	defaultEtcDir         = "/etc/convocate-agent"
+	defaultHostKeyPath    = "/etc/convocate-agent/ssh_host_ed25519_key"
+	defaultAgentIDPath    = "/etc/convocate-agent/agent-id"
+	defaultBinaryPath     = "/usr/local/bin/convocate-agent"
+	defaultSystemdUnit    = "/etc/systemd/system/convocate-agent.service"
 	defaultAuthKeysPath   = "/home/claude/.ssh/authorized_keys"
 	defaultAuthKeysDir    = "/home/claude/.ssh"
 	defaultClaudeHomeDir  = "/home/claude"
@@ -23,26 +23,26 @@ const (
 	defaultListen         = ":222"
 
 	// Shell-peering paths. The agent→shell SSH private key and the shell
-	// host's address live in the /etc/claude-agent config area so
+	// host's address live in the /etc/convocate-agent config area so
 	// init-agent can drop them in during provisioning.
-	defaultShellHostFile       = "/etc/claude-agent/shell-host"
-	defaultShellPrivateKeyPath = "/etc/claude-agent/agent_to_shell_ed25519_key"
+	defaultShellHostFile       = "/etc/convocate-agent/shell-host"
+	defaultShellPrivateKeyPath = "/etc/convocate-agent/agent_to_shell_ed25519_key"
 
 	// Current-image pointer: a single line naming the image tag the
-	// agent should invoke at docker-run time, e.g. "claude-shell:v2.0.0".
-	// init-agent + claude-host update rewrite this file when a new
+	// agent should invoke at docker-run time, e.g. "convocate:v2.0.0".
+	// init-agent + convocate-host update rewrite this file when a new
 	// image arrives. Absent or empty → agent falls back to
 	// config.ContainerImage() (the compile-time default).
-	defaultCurrentImageFile = "/etc/claude-agent/current-image"
+	defaultCurrentImageFile = "/etc/convocate-agent/current-image"
 
 	// Systemd slice unit path for the 90%-cap session cgroup.
-	// claude-agent install renders this dynamically from host CPU/memory
+	// convocate-agent install renders this dynamically from host CPU/memory
 	// totals so the ceiling matches the machine's actual size.
-	defaultSessionsSlicePath = "/etc/systemd/system/claude-sessions.slice"
+	defaultSessionsSlicePath = "/etc/systemd/system/convocate-sessions.slice"
 
-	// Daily cron that deletes claude-shell images neither referenced
+	// Daily cron that deletes convocate images neither referenced
 	// by a live/exited container nor the current-image pointer.
-	defaultImagePruneScript = "/etc/cron.daily/claude-shell-image-prune"
+	defaultImagePruneScript = "/etc/cron.daily/convocate-image-prune"
 )
 
 // Agent ID format: 12 lowercase alphanumeric characters. Generated once and

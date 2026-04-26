@@ -12,7 +12,7 @@ import (
 // AutoinstallConfig drives the cloud-init NoCloud user-data subiquity
 // will pick up at install time. The fields are deliberately minimal —
 // just enough to produce an SSH-reachable Ubuntu host the operator can
-// then drive with claude-host install / init-agent.
+// then drive with convocate-host install / init-agent.
 type AutoinstallConfig struct {
 	// Hostname is the random 8-char value generated earlier in the flow.
 	Hostname string
@@ -80,7 +80,7 @@ autoinstall:
   apt:
     preserve_sources_list: true
   identity:
-    realname: claude-shell VM
+    realname: convocate VM
     hostname: %s
     username: %s
 %s  ssh:
@@ -110,8 +110,8 @@ autoinstall:
         mkdir -p /target/var
         echo "/dev/vdb /var ext4 defaults 0 2" >> /target/etc/fstab
       fi
-    - echo '%s ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/90-claude-vm
-    - chmod 0440 /target/etc/sudoers.d/90-claude-vm
+    - echo '%s ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/90-convocate-vm
+    - chmod 0440 /target/etc/sudoers.d/90-convocate-vm
 `,
 		cfg.Hostname,
 		cfg.Username,
@@ -162,7 +162,7 @@ func PushAutoinstallSeed(ctx context.Context, r Runner, cfg *AutoinstallConfig, 
 
 	// Stage the two files locally then upload via CopyFile so the
 	// content is identical regardless of operator shell quoting.
-	tmp, err := os.MkdirTemp("", "claude-seed-*")
+	tmp, err := os.MkdirTemp("", "convocate-seed-*")
 	if err != nil {
 		return fmt.Errorf("local mktemp: %w", err)
 	}

@@ -2,13 +2,13 @@
 // halves of the agent↔shell control plane:
 //
 //   - StatusEmitter (emitter.go): runs on the agent, connects to the shell's
-//     status listener (claude-shell-status subsystem) and publishes
+//     status listener (convocate-status subsystem) and publishes
 //     statusproto.Event values.
 //   - CRUDClient (crud.go): runs on the shell, connects to an agent's
-//     claude-agent-rpc subsystem and invokes container-lifecycle ops.
+//     convocate-agent-rpc subsystem and invokes container-lifecycle ops.
 //
 // Both directions use ssh.Dial with ed25519 key auth; the on-disk key and
-// authorized_keys files are populated by claude-host init-agent.
+// authorized_keys files are populated by convocate-host init-agent.
 //
 // The emitter is designed to be non-blocking from the op-handler's point of
 // view: Publish drops events on the floor when the buffer is full rather
@@ -31,12 +31,12 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
+	"github.com/asymmetric-effort/convocate/internal/statusproto"
 )
 
 // Config configures a StatusEmitter.
 type Config struct {
-	// ShellHost is the hostname/IP of the claude-shell host's status
+	// ShellHost is the hostname/IP of the convocate host's status
 	// listener. Port defaults to 223 when ShellPort is 0 — the shell's
 	// status listener binds :223 so a combined host can run both shell
 	// and agent without a port clash (agent keeps :222).
@@ -155,7 +155,7 @@ func (e *StatusEmitter) Run(ctx context.Context) {
 			return
 		}
 		if err := e.sessionOnce(ctx); err != nil {
-			e.cfg.Logger.Printf("claude-agent: status session ended: %v", err)
+			e.cfg.Logger.Printf("convocate-agent: status session ended: %v", err)
 			select {
 			case <-ctx.Done():
 				return
@@ -185,7 +185,7 @@ func (e *StatusEmitter) Publish(ev statusproto.Event) {
 	select {
 	case e.queue <- ev:
 	default:
-		e.cfg.Logger.Printf("claude-agent: status queue full, dropped event %s", ev.Type)
+		e.cfg.Logger.Printf("convocate-agent: status queue full, dropped event %s", ev.Type)
 	}
 }
 
@@ -242,7 +242,7 @@ func (e *StatusEmitter) sessionOnce(ctx context.Context) error {
 		return fmt.Errorf("request subsystem: %w", err)
 	}
 
-	e.cfg.Logger.Printf("claude-agent: status connected to %s", addr)
+	e.cfg.Logger.Printf("convocate-agent: status connected to %s", addr)
 
 	// Opportunistic "I'm here" marker — lets the shell log the connection
 	// alongside the authenticated fingerprint.

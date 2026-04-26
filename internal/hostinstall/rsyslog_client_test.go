@@ -9,14 +9,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asymmetric-effort/claude-shell/internal/tlsutil"
+	"github.com/asymmetric-effort/convocate/internal/tlsutil"
 )
 
 func TestConfigureAgentRsyslogClient_MissingCA(t *testing.T) {
 	dir := t.TempDir()
 	m := &mockRunner{}
 	err := configureAgentRsyslogClient(context.Background(), m, dir, "agent-x", "shell.example", "", "", &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "run 'claude-host init-shell' first") {
+	if err == nil || !strings.Contains(err.Error(), "run 'convocate-host init-shell' first") {
 		t.Errorf("expected CA-missing guidance, got %v", err)
 	}
 	if len(m.copies) != 0 || len(m.cmds) != 0 {
@@ -48,8 +48,8 @@ func TestConfigureAgentRsyslogClient_Happy(t *testing.T) {
 	}
 
 	// Client cert must validate under the CA with ClientAuth usage.
-	clientCopy := findCopy(m.copies, "/etc/claude-agent/rsyslog-tls/client.crt")
-	keyCopy := findCopy(m.copies, "/etc/claude-agent/rsyslog-tls/client.key")
+	clientCopy := findCopy(m.copies, "/etc/convocate-agent/rsyslog-tls/client.crt")
+	keyCopy := findCopy(m.copies, "/etc/convocate-agent/rsyslog-tls/client.key")
 	if clientCopy == nil || keyCopy == nil {
 		t.Fatal("client cert/key not uploaded")
 	}
@@ -70,7 +70,7 @@ func TestConfigureAgentRsyslogClient_Happy(t *testing.T) {
 	}
 
 	// rsyslog config embeds the agent-id and target host.
-	cfg := findCopy(m.copies, "/etc/rsyslog.d/10-claude-shell-client.conf")
+	cfg := findCopy(m.copies, "/etc/rsyslog.d/10-convocate-client.conf")
 	if cfg == nil {
 		t.Fatal("client config not uploaded")
 	}
@@ -90,7 +90,7 @@ func TestConfigureAgentRsyslogClient_Happy(t *testing.T) {
 
 	// CA cert must also have been uploaded to the agent so the daemon
 	// can validate the server end of the TLS handshake.
-	caCopy := findCopy(m.copies, "/etc/claude-agent/rsyslog-tls/ca.crt")
+	caCopy := findCopy(m.copies, "/etc/convocate-agent/rsyslog-tls/ca.crt")
 	if caCopy == nil {
 		t.Fatal("CA cert not uploaded to agent")
 	}

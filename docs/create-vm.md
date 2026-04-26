@@ -1,4 +1,4 @@
-# `claude-host create-vm`
+# `convocate-host create-vm`
 
 Provisions a vanilla Ubuntu 22.04 host into a KVM hypervisor and
 bootstraps a fully-unattended Ubuntu VM under it. Introduced in
@@ -7,7 +7,7 @@ v2.1.0.
 ## Synopsis
 
 ```
-claude-host create-vm \
+convocate-host create-vm \
     --hypervisor <fqdn|ip> \
     --username <ssh-user> \
     --domain <dns-suffix> \
@@ -29,13 +29,13 @@ claude-host create-vm \
 
 ## Prerequisites
 
-`create-vm` runs from a configured **claude-shell host**. The local
+`create-vm` runs from a configured **convocate host**. The local
 machine must have:
 
-- `/usr/local/bin/claude-shell` installed (`make install` from the
+- `/usr/local/bin/convocate` installed (`make install` from the
   project root provides this)
-- `/var/lib/claude-shell/dnsmasq-hosts` writable by the operator
-  (created by `claude-shell install` during the dnsmasq integration
+- `/var/lib/convocate/dnsmasq-hosts` writable by the operator
+  (created by `convocate install` during the dnsmasq integration
   step)
 - An SSH keypair under `~/.ssh/` (id_ed25519 / id_ecdsa / id_rsa) —
   `create-vm` installs the public half on the hypervisor for
@@ -65,7 +65,7 @@ duplicating state.
    `~/.ssh/authorized_keys` (deduped via `grep -F -x` so re-running
    doesn't pile up entries).
 3. Drop a CIS-aligned hardening file at
-   `/etc/ssh/sshd_config.d/10-claude-hardening.conf`. Directives
+   `/etc/ssh/sshd_config.d/10-convocate-hardening.conf`. Directives
    drawn from CIS Ubuntu Linux 22.04 LTS Benchmark §5.2:
 
    ```
@@ -105,7 +105,7 @@ duplicating state.
 6. Resolve the hypervisor's IPv4 (literal IP passes through;
    hostnames go through `net.LookupHost`).
 7. Append `<ip> <fqdn>` to the **shell host's**
-   `/var/lib/claude-shell/dnsmasq-hosts` so the cluster resolves
+   `/var/lib/convocate/dnsmasq-hosts` so the cluster resolves
    the new host via the shell host's dnsmasq. Replaces an existing
    line for the same FQDN — re-runs aren't additive.
 
@@ -125,7 +125,7 @@ duplicating state.
     - amd64: `https://releases.ubuntu.com/22.04/`
     - arm64: `https://cdimage.ubuntu.com/releases/22.04/release/`
 12. Pull the matching `SHA256SUMS` and find the line for our ISO.
-13. If `~/.claude-shell/iso/<file>` already exists with a matching
+13. If `~/.convocate/iso/<file>` already exists with a matching
     sha256, skip. Otherwise stream the ISO down (write to
     `<file>.partial`, rename atomically), verify hash, return path.
 
@@ -134,9 +134,9 @@ duplicating state.
 14. Detect the hypervisor's default gateway (`ip -4 route show
     default`).
 15. Disable systemd-resolved's `:53` stub listener (drops
-    `/etc/systemd/resolved.conf.d/00-claude-dnsmasq.conf`).
+    `/etc/systemd/resolved.conf.d/00-convocate-dnsmasq.conf`).
 16. Install dnsmasq.
-17. Drop `/etc/dnsmasq.d/10-claude-shell.conf`:
+17. Drop `/etc/dnsmasq.d/10-convocate.conf`:
     ```
     server=<shell-host-ip>     # forward queries here first
     server=<default-gateway>   # fallback
@@ -162,7 +162,7 @@ duplicating state.
     - `/proc/meminfo` → MemTotal (KB → MB)
     - `df -B1 /var/lib/libvirt/images` (or `/var` fallback) → DiskGB
 25. **Layer 2 cap.** Drop
-    `/etc/systemd/system/machine.slice.d/99-claude-cap.conf`:
+    `/etc/systemd/system/machine.slice.d/99-convocate-cap.conf`:
     ```
     [Slice]
     CPUAccounting=yes
@@ -189,7 +189,7 @@ duplicating state.
     - direct disk layout on `/dev/vda` for `/`
     - late-command: if `/dev/vdb` exists, `mkfs.ext4 -F /dev/vdb` +
       fstab line mounting it at `/var`
-    - `/etc/sudoers.d/90-claude-vm` granting NOPASSWD for the new
+    - `/etc/sudoers.d/90-convocate-vm` granting NOPASSWD for the new
       user
 29. Build a NoCloud seed ISO via `cloud-localds` (preferred) or
     `genisoimage` fallback.
@@ -241,18 +241,18 @@ kernel keeps everyone honest.
 ## Files written
 
 On the operator's machine (the shell host):
-- `/var/lib/claude-shell/dnsmasq-hosts` — A record appended/replaced
-- `~/.claude-shell/iso/ubuntu-22.04.5-live-server-<arch>.iso` —
+- `/var/lib/convocate/dnsmasq-hosts` — A record appended/replaced
+- `~/.convocate/iso/ubuntu-22.04.5-live-server-<arch>.iso` —
   cached, sha256-verified
 
 On the hypervisor:
-- `/etc/ssh/sshd_config.d/10-claude-hardening.conf`
-- `/etc/systemd/resolved.conf.d/00-claude-dnsmasq.conf`
-- `/etc/dnsmasq.d/10-claude-shell.conf`
-- `/etc/systemd/system/machine.slice.d/99-claude-cap.conf`
+- `/etc/ssh/sshd_config.d/10-convocate-hardening.conf`
+- `/etc/systemd/resolved.conf.d/00-convocate-dnsmasq.conf`
+- `/etc/dnsmasq.d/10-convocate.conf`
+- `/etc/systemd/system/machine.slice.d/99-convocate-cap.conf`
 - `/etc/hosts` (127.0.1.1 line replaced)
 - `/var/lib/libvirt/images/iso/ubuntu-22.04.5-live-server-<arch>.iso`
-- `/var/lib/libvirt/images/iso/claude-seed-<hostname>.iso`
+- `/var/lib/libvirt/images/iso/convocate-seed-<hostname>.iso`
 - `/var/lib/libvirt/images/<hostname>-os.qcow2`
 - `/var/lib/libvirt/images/<hostname>-data.qcow2`
 
@@ -261,10 +261,10 @@ Plus the SSH peering keys in the connecting user's
 
 ## Troubleshooting
 
-**"this host is not a configured claude-shell host"** — run `make
-install` (or `claude-shell install`) on the local machine first.
-The check requires both `/usr/local/bin/claude-shell` and
-`/var/lib/claude-shell/`.
+**"this host is not a configured convocate host"** — run `make
+install` (or `convocate install`) on the local machine first.
+The check requires both `/usr/local/bin/convocate` and
+`/var/lib/convocate/`.
 
 **Password prompt repeats** — keys aren't reaching the hypervisor.
 On Ubuntu cloud images the default `ubuntu` user has key auth set

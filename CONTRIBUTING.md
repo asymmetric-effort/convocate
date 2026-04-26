@@ -1,6 +1,6 @@
-# Contributing to claude-shell
+# Contributing to convocate
 
-Thank you for your interest in contributing to claude-shell.
+Thank you for your interest in contributing to convocate.
 
 ## Getting Started
 

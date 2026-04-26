@@ -1,6 +1,6 @@
 //go:build integration
 
-// Package integration provides integration tests for claude-shell.
+// Package integration provides integration tests for convocate.
 package integration
 
 import (
@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
-	"github.com/asymmetric-effort/claude-shell/internal/skel"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/skel"
 )
 
 func TestSessionLifecycle(t *testing.T) {

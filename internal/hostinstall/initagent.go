@@ -9,29 +9,29 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/asymmetric-effort/claude-shell/internal/sshutil"
+	"github.com/asymmetric-effort/convocate/internal/sshutil"
 )
 
 // InitAgentOptions configures the init-agent deploy flow.
 type InitAgentOptions struct {
-	// BinaryPath is the local path to the claude-agent binary. Empty =
-	// auto-discover (neighbor of claude-host, then ./build/claude-agent).
+	// BinaryPath is the local path to the convocate-agent binary. Empty =
+	// auto-discover (neighbor of convocate-host, then ./build/convocate-agent).
 	BinaryPath string
 
-	// ShellHost is the address agents should use to reach the claude-shell
-	// status listener (tcp/222). Stamped into /etc/claude-agent/shell-host
+	// ShellHost is the address agents should use to reach the convocate
+	// status listener (tcp/222). Stamped into /etc/convocate-agent/shell-host
 	// on the target. Required.
 	ShellHost string
 
 	// LocalShellEtcDir is where to install the shell-side peering material:
 	//   <dir>/status_authorized_keys       (agent->shell pub keys appended)
 	//   <dir>/agent-keys/<id>/...          (per-agent material)
-	// Empty defaults to /etc/claude-shell.
+	// Empty defaults to /etc/convocate.
 	LocalShellEtcDir string
 
-	// ImageTag is the full image reference (e.g. "claude-shell:v2.0.0")
+	// ImageTag is the full image reference (e.g. "convocate:v2.0.0")
 	// init-agent will push to the new agent and stamp as
-	// /etc/claude-agent/current-image. Required — the agent has no
+	// /etc/convocate-agent/current-image. Required — the agent has no
 	// image until init-agent runs, and we don't want to ship :latest.
 	ImageTag string
 
@@ -45,23 +45,23 @@ type InitAgentOptions struct {
 	CAKeyPath  string
 }
 
-// InitAgent deploys claude-agent to r and wires up the bi-directional
-// peering between agent host and claude-shell host.
+// InitAgent deploys convocate-agent to r and wires up the bi-directional
+// peering between agent host and convocate host.
 //
 // Steps:
-//  1. Upload claude-agent binary to /usr/local/bin/claude-agent
-//  2. Run `claude-agent install` remotely (creates user, systemd unit,
+//  1. Upload convocate-agent binary to /usr/local/bin/convocate-agent
+//  2. Run `convocate-agent install` remotely (creates user, systemd unit,
 //     agent-id, etc.)
 //  3. Read the freshly-minted agent-id back
 //  4. Generate two ed25519 keypairs (shell->agent, agent->shell)
 //  5. Push the agent-side files: authorized_keys (shell->agent pub),
 //     agent_to_shell private key, shell-host address
-//  6. Restart claude-agent.service so it picks up the new shell-host +
+//  6. Restart convocate-agent.service so it picks up the new shell-host +
 //     private key and opens the status emitter
 //  7. Locally, append the agent->shell pubkey to
 //     <LocalShellEtcDir>/status_authorized_keys and stash the
 //     shell->agent private key under
-//     <LocalShellEtcDir>/agent-keys/<id>/ so claude-shell can SSH to the
+//     <LocalShellEtcDir>/agent-keys/<id>/ so convocate can SSH to the
 //     agent for CRUD ops later
 func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentOptions, log io.Writer) error {
 	_ = sshCfg
@@ -75,25 +75,25 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 		return fmt.Errorf("init-agent: --image-tag is required (agent has no image until pushed)")
 	}
 	if opts.LocalShellEtcDir == "" {
-		opts.LocalShellEtcDir = "/etc/claude-shell"
+		opts.LocalShellEtcDir = "/etc/convocate"
 	}
 	binary, err := resolveAgentBinaryPath(opts.BinaryPath)
 	if err != nil {
-		return fmt.Errorf("locate claude-agent binary: %w", err)
+		return fmt.Errorf("locate convocate-agent binary: %w", err)
 	}
-	fmt.Fprintf(log, "[claude-host] target: %s\n", r.Target())
-	fmt.Fprintf(log, "[claude-host] local binary: %s\n", binary)
-	fmt.Fprintf(log, "[claude-host] shell host: %s\n", opts.ShellHost)
-	fmt.Fprintf(log, "[claude-host] local shell etc dir: %s\n", opts.LocalShellEtcDir)
+	fmt.Fprintf(log, "[convocate-host] target: %s\n", r.Target())
+	fmt.Fprintf(log, "[convocate-host] local binary: %s\n", binary)
+	fmt.Fprintf(log, "[convocate-host] shell host: %s\n", opts.ShellHost)
+	fmt.Fprintf(log, "[convocate-host] local shell etc dir: %s\n", opts.LocalShellEtcDir)
 
 	// Upload + install.
-	if err := runStep(ctx, r, log, step{"Upload claude-agent binary", func(ctx context.Context, r Runner, log io.Writer) error {
-		return r.CopyFile(ctx, binary, "/usr/local/bin/claude-agent", 0755)
+	if err := runStep(ctx, r, log, step{"Upload convocate-agent binary", func(ctx context.Context, r Runner, log io.Writer) error {
+		return r.CopyFile(ctx, binary, "/usr/local/bin/convocate-agent", 0755)
 	}}); err != nil {
 		return err
 	}
-	if err := runStep(ctx, r, log, step{"Run claude-agent install", func(ctx context.Context, r Runner, log io.Writer) error {
-		return r.Run(ctx, "/usr/local/bin/claude-agent install", RunOptions{Sudo: true, Stdout: log, Stderr: log})
+	if err := runStep(ctx, r, log, step{"Run convocate-agent install", func(ctx context.Context, r Runner, log io.Writer) error {
+		return r.Run(ctx, "/usr/local/bin/convocate-agent install", RunOptions{Sudo: true, Stdout: log, Stderr: log})
 	}}); err != nil {
 		return err
 	}
@@ -104,10 +104,10 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(log, "[claude-host] agent-id: %s\n", agentID)
+	fmt.Fprintf(log, "[convocate-host] agent-id: %s\n", agentID)
 
 	// Generate the two keypairs. Tagging comments by agent-id makes it
-	// possible to audit /etc/claude-shell/status_authorized_keys and
+	// possible to audit /etc/convocate/status_authorized_keys and
 	// /home/claude/.ssh/authorized_keys entries later.
 	shellToAgentKP, err := sshutil.GenerateKeypair(fmt.Sprintf("shell->agent=%s", agentID))
 	if err != nil {
@@ -128,15 +128,15 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 		{"Install agent->shell private key", func(ctx context.Context, r Runner, log io.Writer) error {
 			return writeRemoteContent(ctx, r, log,
 				agentToShellKP.PrivatePEM,
-				"/etc/claude-agent/agent_to_shell_ed25519_key", 0600, "claude:claude")
+				"/etc/convocate-agent/agent_to_shell_ed25519_key", 0600, "claude:claude")
 		}},
 		{"Write shell-host address", func(ctx context.Context, r Runner, log io.Writer) error {
 			return writeRemoteContent(ctx, r, log,
 				[]byte(strings.TrimSpace(opts.ShellHost)+"\n"),
-				"/etc/claude-agent/shell-host", 0644, "root:root")
+				"/etc/convocate-agent/shell-host", 0644, "root:root")
 		}},
-		{"Restart claude-agent.service", func(ctx context.Context, r Runner, log io.Writer) error {
-			return r.Run(ctx, "systemctl restart claude-agent.service",
+		{"Restart convocate-agent.service", func(ctx context.Context, r Runner, log io.Writer) error {
+			return r.Run(ctx, "systemctl restart convocate-agent.service",
 				RunOptions{Sudo: true, Stdout: log, Stderr: log})
 		}},
 	}
@@ -163,29 +163,29 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 
 	// Push the container image to the agent + stamp the pointer file
 	// so subsequent docker runs on the agent use the versioned tag.
-	// This must happen after install so /etc/claude-agent exists, and
+	// This must happen after install so /etc/convocate-agent exists, and
 	// before the agent is expected to accept any Create op.
 	if err := runStep(ctx, r, log, step{"Push container image", func(ctx context.Context, r Runner, log io.Writer) error {
 		return TransferImage(ctx, r, opts.ImageTag, log)
 	}}); err != nil {
 		return err
 	}
-	if err := runStep(ctx, r, log, step{"Write /etc/claude-agent/current-image", func(ctx context.Context, r Runner, log io.Writer) error {
+	if err := runStep(ctx, r, log, step{"Write /etc/convocate-agent/current-image", func(ctx context.Context, r Runner, log io.Writer) error {
 		return writeRemoteContent(ctx, r, log,
 			[]byte(opts.ImageTag+"\n"),
-			"/etc/claude-agent/current-image", 0644, "root:root")
+			"/etc/convocate-agent/current-image", 0644, "root:root")
 	}}); err != nil {
 		return err
 	}
-	if err := runStep(ctx, r, log, step{"Restart claude-agent for current-image", func(ctx context.Context, r Runner, log io.Writer) error {
-		return r.Run(ctx, "systemctl restart claude-agent.service",
+	if err := runStep(ctx, r, log, step{"Restart convocate-agent for current-image", func(ctx context.Context, r Runner, log io.Writer) error {
+		return r.Run(ctx, "systemctl restart convocate-agent.service",
 			RunOptions{Sudo: true, Stdout: log, Stderr: log})
 	}}); err != nil {
 		return err
 	}
 
 	fmt.Fprintln(log, "")
-	fmt.Fprintln(log, "[claude-host] init-agent complete.")
+	fmt.Fprintln(log, "[convocate-host] init-agent complete.")
 	fmt.Fprintf(log, "  agent-id: %s\n", agentID)
 	fmt.Fprintf(log, "  shell->agent private key: %s\n", shellToAgentKeyPath(opts.LocalShellEtcDir, agentID))
 	fmt.Fprintf(log, "  agent->shell pubkey appended to: %s\n", filepath.Join(opts.LocalShellEtcDir, "status_authorized_keys"))
@@ -205,24 +205,24 @@ func resolveAgentBinaryPath(override string) (string, error) {
 		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = resolved
 		}
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "claude-agent"))
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "convocate-agent"))
 	}
-	candidates = append(candidates, "./build/claude-agent")
+	candidates = append(candidates, "./build/convocate-agent")
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
 			return c, nil
 		}
 	}
-	return "", fmt.Errorf("claude-agent binary not found; pass --binary <path> (tried: %s)",
+	return "", fmt.Errorf("convocate-agent binary not found; pass --binary <path> (tried: %s)",
 		strings.Join(candidates, ", "))
 }
 
-// readRemoteAgentID runs `cat /etc/claude-agent/agent-id` on the target and
+// readRemoteAgentID runs `cat /etc/convocate-agent/agent-id` on the target and
 // returns the trimmed content. Fails if the file is missing (which would
-// mean `claude-agent install` didn't complete).
+// mean `convocate-agent install` didn't complete).
 func readRemoteAgentID(ctx context.Context, r Runner, log io.Writer) (string, error) {
 	var buf bytes.Buffer
-	if err := r.Run(ctx, "cat /etc/claude-agent/agent-id", RunOptions{
+	if err := r.Run(ctx, "cat /etc/convocate-agent/agent-id", RunOptions{
 		Sudo:   true,
 		Stdout: &buf,
 		Stderr: log,
@@ -241,7 +241,7 @@ func readRemoteAgentID(ctx context.Context, r Runner, log io.Writer) (string, er
 // target. Keeps callers free of per-destination plumbing.
 func writeRemoteContent(ctx context.Context, r Runner, log io.Writer,
 	content []byte, destPath string, mode os.FileMode, chownSpec string) error {
-	tmpDir, err := os.MkdirTemp("", "claude-host-")
+	tmpDir, err := os.MkdirTemp("", "convocate-host-")
 	if err != nil {
 		return fmt.Errorf("mktemp: %w", err)
 	}
@@ -267,7 +267,7 @@ func writeRemoteContent(ctx context.Context, r Runner, log io.Writer,
 // agent's public half + the shell's private half. This is the only place
 // init-agent touches the local filesystem; everything else runs through r.
 func writeShellSideFiles(etcDir, agentID string, shellToAgent, agentToShell *sshutil.Keypair, target string, log io.Writer) error {
-	fmt.Fprintf(log, "\n[claude-host] Writing shell-side peering files to %s...\n", etcDir)
+	fmt.Fprintf(log, "\n[convocate-host] Writing shell-side peering files to %s...\n", etcDir)
 	if err := os.MkdirAll(etcDir, 0755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", etcDir, err)
 	}
@@ -287,7 +287,7 @@ func writeShellSideFiles(etcDir, agentID string, shellToAgent, agentToShell *ssh
 	}
 	fmt.Fprintf(log, "  wrote shell->agent privkey to %s\n", keyPath)
 
-	// Record the agent's network address alongside the key so claude-shell
+	// Record the agent's network address alongside the key so convocate
 	// knows how to reach it. Future dial code reads this file by agent-id.
 	hostPath := filepath.Join(agentDir, "agent-host")
 	if err := os.WriteFile(hostPath, []byte(target+"\n"), 0644); err != nil {

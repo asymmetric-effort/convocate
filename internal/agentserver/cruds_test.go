@@ -11,11 +11,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/container"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
-	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
-	"github.com/asymmetric-effort/claude-shell/internal/user"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/container"
+	"github.com/asymmetric-effort/convocate/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/statusproto"
+	"github.com/asymmetric-effort/convocate/internal/user"
 )
 
 // recordingPublisher captures every Event the orchestrator emits so assertions

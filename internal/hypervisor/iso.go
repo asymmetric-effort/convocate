@@ -19,10 +19,10 @@ import (
 // override the URL via NewISOFetcher's option struct.
 const DefaultUbuntuVersion = "22.04.5"
 
-// IsoCacheSubdir lives under ~/.claude-shell/ so the cache survives
+// IsoCacheSubdir lives under ~/.convocate/ so the cache survives
 // across project clones / reinstalls and is operator-scoped (root
 // can't race the cache).
-const IsoCacheSubdir = ".claude-shell/iso"
+const IsoCacheSubdir = ".convocate/iso"
 
 // ISOFetcher resolves, caches, and verifies an Ubuntu live-server ISO
 // on the local machine running create-vm. Path is the cached file;
@@ -37,7 +37,7 @@ type ISOFetcher struct {
 	Arch string
 
 	// CacheDir overrides the on-disk cache. Default
-	// ~/.claude-shell/iso/.
+	// ~/.convocate/iso/.
 	CacheDir string
 
 	// HTTPClient lets tests intercept downloads. Default

@@ -1,4 +1,4 @@
-// Package main is the entry point for claude-shell.
+// Package main is the entry point for convocate.
 package main
 
 import (
@@ -7,15 +7,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/dns"
-	"github.com/asymmetric-effort/claude-shell/internal/install"
-	"github.com/asymmetric-effort/claude-shell/internal/logging"
-	"github.com/asymmetric-effort/claude-shell/internal/menu"
-	"github.com/asymmetric-effort/claude-shell/internal/multihost"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
-	"github.com/asymmetric-effort/claude-shell/internal/user"
+	"github.com/asymmetric-effort/convocate/internal/agentclient"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/dns"
+	"github.com/asymmetric-effort/convocate/internal/install"
+	"github.com/asymmetric-effort/convocate/internal/logging"
+	"github.com/asymmetric-effort/convocate/internal/menu"
+	"github.com/asymmetric-effort/convocate/internal/multihost"
+	"github.com/asymmetric-effort/convocate/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/user"
 )
 
 func main() {
@@ -38,7 +38,7 @@ func run(args []string) error {
 		case "status-serve":
 			// status-serve is the systemd unit for the TLS-authenticated
 			// shell-side listener — runs as root so it can bind tcp/222
-			// and write to /etc/claude-shell.
+			// and write to /etc/convocate.
 			return cmdStatusServe(args[2:])
 		case "version":
 			fmt.Printf("%s version %s\n", config.AppName, Version)
@@ -52,7 +52,7 @@ func run(args []string) error {
 	}
 
 	// The interactive TUI is claude user only. Every on-disk path
-	// (session metadata, ~/.claude, /etc/claude-shell/agent-keys) is
+	// (session metadata, ~/.claude, /etc/convocate/agent-keys) is
 	// owned by that user; running the TUI as anyone else would
 	// silently produce broken state.
 	if err := user.EnforceRunningAs(config.ClaudeUser); err != nil {
@@ -153,14 +153,14 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 				}
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "session %q is a local orphan (shell host no longer runs containers); migrate it to a claude-agent to resume\n", meta.Name)
+			fmt.Fprintf(os.Stderr, "session %q is a local orphan (shell host no longer runs containers); migrate it to a convocate-agent to resume\n", meta.Name)
 			continue
 		}
 	}
 }
 
 // buildRouter wires a multihost.Router that falls back to local-only when
-// /etc/claude-shell/agent-keys/ is empty or missing (the common case until
+// /etc/convocate/agent-keys/ is empty or missing (the common case until
 // the operator runs init-agent). Returns a deferred cleanup that closes
 // every agent client.
 // buildRouter wires a multihost.Router against every registered agent.
@@ -228,7 +228,7 @@ func handleRemoteAttach(router *multihost.Router, meta session.Metadata, log *lo
 	})
 }
 
-// syncDNSRecords rewrites /var/lib/claude-shell/dnsmasq-hosts with one
+// syncDNSRecords rewrites /var/lib/convocate/dnsmasq-hosts with one
 // entry per remote session that has a DNSName set. The record points at
 // the agent's host IP since that's where the container runs + publishes
 // ports. Orphan (local) sessions are intentionally excluded — the shell
@@ -365,7 +365,7 @@ func printUsage() {
 
 Usage:
   %s              Launch the session manager
-  %s install      Install and configure claude-shell
+  %s install      Install and configure convocate
   %s version      Print version information
   %s help         Show this help message
 `, config.AppName, config.AppName, config.AppName, config.AppName, config.AppName)

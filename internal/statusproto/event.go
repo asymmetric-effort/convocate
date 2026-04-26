@@ -1,5 +1,5 @@
 // Package statusproto defines the wire format and event types agents use
-// to push status to claude-shell over the claude-shell-status SSH subsystem.
+// to push status to convocate over the convocate-status SSH subsystem.
 //
 // Events travel as single-line JSON objects (one per line); the shell side
 // reads them sequentially without any additional framing. Any unknown event
@@ -15,7 +15,7 @@ import (
 
 // Subsystem is the SSH subsystem name the shell-side server accepts for
 // status push. Any other subsystem on the shell's listener is refused.
-const Subsystem = "claude-shell-status"
+const Subsystem = "convocate-status"
 
 // Event types — agents MUST use these exact strings for the Type field so
 // receivers can route without parsing Data blindly.

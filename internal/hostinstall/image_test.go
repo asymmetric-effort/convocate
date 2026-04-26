@@ -33,7 +33,7 @@ func TestTransferImage_DockerSaveMissing(t *testing.T) {
 	// Fake a PATH with no docker; saveAndGzip will error on exec.
 	t.Setenv("PATH", "/nonexistent")
 	m := &mockRunner{}
-	err := TransferImage(context.Background(), m, "claude-shell:v0.0.0", io.Discard)
+	err := TransferImage(context.Background(), m, "convocate:v0.0.0", io.Discard)
 	if err == nil {
 		t.Error("expected error when docker is unavailable")
 	}
@@ -120,15 +120,15 @@ func TestTransferImage_HappyPath(t *testing.T) {
 	t.Setenv("PATH", binDir)
 
 	m := &mockRunner{}
-	err := TransferImage(context.Background(), m, "claude-shell:v1.2.3", io.Discard)
+	err := TransferImage(context.Background(), m, "convocate:v1.2.3", io.Discard)
 	if err != nil {
 		t.Fatalf("TransferImage: %v", err)
 	}
-	// Expect exactly one copy to /tmp/claude-image-<16 hex>.tar.gz
+	// Expect exactly one copy to /tmp/convocate-image-<16 hex>.tar.gz
 	if len(m.copies) != 1 {
 		t.Fatalf("copies = %d, want 1", len(m.copies))
 	}
-	if !strings.HasPrefix(m.copies[0].Dst, "/tmp/claude-image-") {
+	if !strings.HasPrefix(m.copies[0].Dst, "/tmp/convocate-image-") {
 		t.Errorf("dst = %q", m.copies[0].Dst)
 	}
 	if m.copies[0].Mode != 0600 {

@@ -34,7 +34,7 @@ func TestRun_Version(t *testing.T) {
 	defer func() { Version = origV }()
 
 	out := captureStdout(t, func() {
-		if err := run([]string{"claude-agent", "version"}); err != nil {
+		if err := run([]string{"convocate-agent", "version"}); err != nil {
 			t.Fatalf("run version: %v", err)
 		}
 	})
@@ -46,7 +46,7 @@ func TestRun_Version(t *testing.T) {
 func TestRun_Help(t *testing.T) {
 	for _, arg := range []string{"help", "--help", "-h"} {
 		out := captureStdout(t, func() {
-			if err := run([]string{"claude-agent", arg}); err != nil {
+			if err := run([]string{"convocate-agent", arg}); err != nil {
 				t.Errorf("run %s: %v", arg, err)
 			}
 		})
@@ -58,7 +58,7 @@ func TestRun_Help(t *testing.T) {
 
 func TestRun_NoArgs_ShowsUsage(t *testing.T) {
 	out := captureStdout(t, func() {
-		if err := run([]string{"claude-agent"}); err != nil {
+		if err := run([]string{"convocate-agent"}); err != nil {
 			t.Errorf("run (no args): %v", err)
 		}
 	})
@@ -71,7 +71,7 @@ func TestRun_Install_RequiresRoot(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("non-root path only")
 	}
-	err := run([]string{"claude-agent", "install"})
+	err := run([]string{"convocate-agent", "install"})
 	if err == nil {
 		t.Fatal("expected error without root")
 	}
@@ -81,7 +81,7 @@ func TestRun_Install_RequiresRoot(t *testing.T) {
 }
 
 func TestRun_UnknownCommand(t *testing.T) {
-	err := run([]string{"claude-agent", "bogus"})
+	err := run([]string{"convocate-agent", "bogus"})
 	if err == nil {
 		t.Fatal("expected error for unknown subcommand")
 	}

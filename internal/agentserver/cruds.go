@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/container"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
-	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
-	"github.com/asymmetric-effort/claude-shell/internal/user"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/container"
+	"github.com/asymmetric-effort/convocate/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/statusproto"
+	"github.com/asymmetric-effort/convocate/internal/user"
 )
 
 // StatusPublisher is a minimal hook interface so the orchestrator can emit
@@ -48,7 +48,7 @@ type SessionOrchestrator struct {
 
 	// ImageRef is the docker image tag every new/restarted container
 	// should use. Populated by the serve entry point from
-	// /etc/claude-agent/current-image. Empty falls back to the
+	// /etc/convocate-agent/current-image. Empty falls back to the
 	// compile-time default via container.Runner's own logic.
 	ImageRef string
 
@@ -70,7 +70,7 @@ type SessionOrchestrator struct {
 	// NewRunner is overridable for tests.
 	NewRunner func(sessionID, sessionDir string, u user.Info, p config.Paths) *container.Runner
 
-	// attachMu + attachCount track how many claude-agent-attach
+	// attachMu + attachCount track how many convocate-agent-attach
 	// subsystem channels are currently open per session UUID. List and
 	// Get stamp Metadata.Attached from this map so the shell's TUI can
 	// render a "C" (connected) indicator when another operator is live
@@ -200,7 +200,7 @@ func (o *SessionOrchestrator) Kill(id string) error {
 func (o *SessionOrchestrator) Background(id string) error { return o.DetachFn(id) }
 
 // Restart starts the container in detached mode without attaching a
-// terminal. Mirrors the claude-host-side restartSessionDetached flow: refuse
+// terminal. Mirrors the convocate-host-side restartSessionDetached flow: refuse
 // if the session doesn't exist or is already running, otherwise docker run
 // with the session's persisted port/protocol/dns configuration.
 func (o *SessionOrchestrator) Restart(id string) error {

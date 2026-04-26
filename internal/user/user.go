@@ -1,4 +1,4 @@
-// Package user provides host user detection for claude-shell.
+// Package user provides host user detection for convocate.
 package user
 
 import (

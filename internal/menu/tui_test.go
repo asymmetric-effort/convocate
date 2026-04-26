@@ -8,7 +8,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"github.com/asymmetric-effort/claude-shell/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/session"
 )
 
 const (
@@ -513,8 +513,8 @@ func TestTUI_TitleBarContent(t *testing.T) {
 	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, 0, testScreenWidth)
-	if !strings.Contains(row, "claude-shell") {
-		t.Errorf("title bar missing 'claude-shell', got: %q", row)
+	if !strings.Contains(row, "convocate") {
+		t.Errorf("title bar missing 'convocate', got: %q", row)
 	}
 }
 
@@ -951,8 +951,8 @@ func TestTUI_TitleBarNarrowHidesClock(t *testing.T) {
 	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, 0, 30)
-	if !strings.Contains(row, "claude-shell") {
-		t.Error("title bar should still show 'claude-shell'")
+	if !strings.Contains(row, "convocate") {
+		t.Error("title bar should still show 'convocate'")
 	}
 }
 
@@ -1222,7 +1222,7 @@ func TestTUI_TitleBarLoadAverages_Unavailable(t *testing.T) {
 	_, _ = DisplayWithScreen(testSessions(), screen, DisplayOptions{Agents: []string{"test-agent"}, IsRunning: func(string) bool { return true }})
 
 	row := getScreenText(screen, 0, testScreenWidth)
-	if !strings.Contains(row, "claude-shell") {
+	if !strings.Contains(row, "convocate") {
 		t.Errorf("title bar missing app name, got: %q", row)
 	}
 }
@@ -2921,7 +2921,7 @@ func TestTUI_RestartDialog_LongErrorWraps(t *testing.T) {
 	screen := newWideTestScreen(t)
 	defer screen.Fini()
 
-	longErr := "docker: Error response from daemon: driver failed programming external connectivity on endpoint claude-session-xxx: Bind for 0.0.0.0:53 failed: port is already allocated."
+	longErr := "docker: Error response from daemon: driver failed programming external connectivity on endpoint convocate-session-xxx: Bind for 0.0.0.0:53 failed: port is already allocated."
 	ui := &tui{
 		screen:    screen,
 		sessions:  testSessions(),
@@ -3136,8 +3136,8 @@ func TestTUI_DrawNoAgentsDialog(t *testing.T) {
 	body := fullScreenText(screen)
 	for _, want := range []string{
 		"No Agents",
-		"No claude-agent hosts are registered",
-		"claude-host init-agent",
+		"No convocate-agent hosts are registered",
+		"convocate-host init-agent",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("dialog missing %q\n%s", want, body)

@@ -1,7 +1,7 @@
-// Package main is the entry point for claude-agent.
+// Package main is the entry point for convocate-agent.
 //
-// claude-agent is a skeleton binary scaffolded so claude-host can deploy it
-// alongside claude-shell. The install subcommand is a no-op placeholder; the
+// convocate-agent is a skeleton binary scaffolded so convocate-host can deploy it
+// alongside convocate. The install subcommand is a no-op placeholder; the
 // real implementation will land in a later iteration.
 package main
 
@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/asymmetric-effort/claude-shell/internal/user"
+	"github.com/asymmetric-effort/convocate/internal/user"
 )
 
-const appName = "claude-agent"
+const appName = "convocate-agent"
 
 func main() {
 	if err := run(os.Args); err != nil {
@@ -31,7 +31,7 @@ func run(args []string) error {
 			return cmdInstall(args[2:])
 		case "serve":
 			// Serve must run as the claude user: all on-disk paths
-			// (/etc/claude-agent, session dirs under /home/claude) are
+			// (/etc/convocate-agent, session dirs under /home/claude) are
 			// claude-owned, and running as root would quietly create
 			// root-owned files that the next claude-user invocation
 			// can't read.
@@ -57,8 +57,8 @@ func printUsage() {
 	fmt.Printf(`%s - Claude container-orchestration agent
 
 Usage:
-  %s install      Install and configure the claude-agent systemd service
-  %s serve        Run the claude-agent SSH server (invoked by systemd)
+  %s install      Install and configure the convocate-agent systemd service
+  %s serve        Run the convocate-agent SSH server (invoked by systemd)
   %s version      Print version information
   %s help         Show this help message
 `, appName, appName, appName, appName, appName)

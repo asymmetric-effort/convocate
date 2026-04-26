@@ -5,7 +5,7 @@
       "Bash(readelf *)",
       "Bash(make lint)",
       "Bash(docker info)",
-      "Bash(claude-shell version)",
+      "Bash(convocate version)",
       "Bash(systemctl is-active *)",
       "Bash(go vet *)",
       "Bash(ip route)",

@@ -130,7 +130,7 @@ func (f *orchestrateFixture) overrideDnsmasq() {
 	// patch the package-level constant via a test-only seam:
 	// register through the function directly, post-orchestration.
 	// For the orchestrator test the simplest move is to ensure
-	// /var/lib/claude-shell exists so RegisterDNSName "" path works.
+	// /var/lib/convocate exists so RegisterDNSName "" path works.
 	// Since we can't write to /var in a test, override the function
 	// to no-op.
 	origReg := registerDNSName
@@ -162,10 +162,10 @@ func TestOrchestrate_HappyPath(t *testing.T) {
 	joined := allHypervisorCmds(f.mock.cmds)
 	for _, want := range []string{
 		"hostnamectl set-hostname",
-		"sshd_config.d/10-claude-hardening.conf",
+		"sshd_config.d/10-convocate-hardening.conf",
 		"DEBIAN_FRONTEND=noninteractive apt-get install -y dnsmasq",
 		"qemu-kvm",
-		"machine.slice.d/99-claude-cap.conf",
+		"machine.slice.d/99-convocate-cap.conf",
 		"virsh list --all --name",
 	} {
 		if !strings.Contains(joined, want) {

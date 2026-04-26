@@ -1,4 +1,4 @@
-// Package container manages Docker container lifecycle for claude-shell sessions.
+// Package container manages Docker container lifecycle for convocate sessions.
 package container
 
 import (
@@ -7,17 +7,17 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/user"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/user"
 )
 
 // DefaultCgroupParent is the systemd slice every session container is
-// enrolled under. claude-agent install writes /etc/systemd/system/
-// claude-sessions.slice with CPUQuota + MemoryMax set to ~90% of host
+// enrolled under. convocate-agent install writes /etc/systemd/system/
+// convocate-sessions.slice with CPUQuota + MemoryMax set to ~90% of host
 // totals, giving the kernel an aggregate ceiling across every session
 // on the agent. The 10% headroom is intentional — operators need
 // enough slack to SSH in and intervene when sessions misbehave.
-const DefaultCgroupParent = "claude-sessions.slice"
+const DefaultCgroupParent = "convocate-sessions.slice"
 
 // Runner executes Docker commands for session containers.
 type Runner struct {
@@ -59,7 +59,7 @@ func (r *Runner) SetDNSServer(ip string) {
 
 // SetImage overrides the image tag docker run uses for this session.
 // Empty (the default) falls back to config.ContainerImage(). Agents read
-// /etc/claude-agent/current-image and propagate it here so upgrades roll
+// /etc/convocate-agent/current-image and propagate it here so upgrades roll
 // forward session-by-session.
 func (r *Runner) SetImage(tag string) {
 	r.image = tag
@@ -218,7 +218,7 @@ func DetachClients(sessionID string) error {
 	return nil
 }
 
-// ImageExists checks if the claude-shell Docker image exists.
+// ImageExists checks if the convocate Docker image exists.
 func ImageExists(execFn ExecFunc) (bool, error) {
 	if execFn == nil {
 		execFn = DefaultExecFunc
@@ -236,9 +236,9 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 		"--rm",
 		"--detach",
 		"--name", containerName,
-		"--hostname", fmt.Sprintf("claude-%s", r.sessionID[:8]),
+		"--hostname", fmt.Sprintf("convocate-%s", r.sessionID[:8]),
 		"-w", "/home/claude",
-		// Enroll the container under the shared claude-sessions.slice
+		// Enroll the container under the shared convocate-sessions.slice
 		// cgroup so the kernel enforces the aggregate 90% CPU/memory
 		// ceiling across all sessions on this agent. The operator keeps
 		// 10% of host capacity free to intervene when sessions misbehave.

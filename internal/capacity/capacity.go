@@ -1,5 +1,5 @@
 // Package capacity enforces system-resource limits before starting new
-// claude-shell containers. If the host is already above the configured CPU or
+// convocate containers. If the host is already above the configured CPU or
 // memory usage threshold, new containers are refused so they do not push the
 // system into instability. Already-running containers are not affected.
 package capacity

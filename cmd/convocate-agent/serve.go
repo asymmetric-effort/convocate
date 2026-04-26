@@ -9,15 +9,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
-	"github.com/asymmetric-effort/claude-shell/internal/agentserver"
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/dns"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
-	"github.com/asymmetric-effort/claude-shell/internal/user"
+	"github.com/asymmetric-effort/convocate/internal/agentclient"
+	"github.com/asymmetric-effort/convocate/internal/agentserver"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/dns"
+	"github.com/asymmetric-effort/convocate/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/user"
 )
 
-// cmdServe starts the claude-agent SSH listener in the foreground. Systemd
+// cmdServe starts the convocate-agent SSH listener in the foreground. Systemd
 // invokes this via the unit's ExecStart. It does NOT require root — the
 // service runs as the claude user.
 func cmdServe(_ []string) error {
@@ -37,12 +37,12 @@ func cmdServe(_ []string) error {
 	defer cancel()
 
 	// Try to bring up the status emitter. init-agent writes the shell host +
-	// private key to /etc/claude-agent during provisioning; if either is
+	// private key to /etc/convocate-agent during provisioning; if either is
 	// missing we run without emission so the agent is still usable
 	// standalone.
 	emitter, emitterErr := maybeStartEmitter(ctx, agentID)
 	if emitterErr != nil {
-		fmt.Fprintf(os.Stderr, "claude-agent: status emitter disabled: %v\n", emitterErr)
+		fmt.Fprintf(os.Stderr, "convocate-agent: status emitter disabled: %v\n", emitterErr)
 	}
 	var pub agentserver.StatusPublisher
 	if emitter != nil {
@@ -51,7 +51,7 @@ func cmdServe(_ []string) error {
 	orch := agentserver.NewSessionOrchestrator(mgr, u, paths, dns.DetectHostIP(), agentID, pub)
 	orch.ImageRef = readCurrentImage(defaultCurrentImageFile)
 	if orch.ImageRef != "" {
-		fmt.Fprintf(os.Stderr, "claude-agent: sessions will use image %q\n", orch.ImageRef)
+		fmt.Fprintf(os.Stderr, "convocate-agent: sessions will use image %q\n", orch.ImageRef)
 	}
 
 	d := agentserver.NewDispatcher()
@@ -106,7 +106,7 @@ func readCurrentImage(path string) string {
 }
 
 // maybeStartEmitter reads the shell-host address and key path from
-// /etc/claude-agent. If either is missing, the function returns (nil, err)
+// /etc/convocate-agent. If either is missing, the function returns (nil, err)
 // and the caller continues without the status plane. The emitter's Run
 // goroutine stays alive until ctx is canceled.
 func maybeStartEmitter(ctx context.Context, agentID string) (*agentclient.StatusEmitter, error) {

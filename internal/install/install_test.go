@@ -337,7 +337,7 @@ func TestEnsureInEtcShells_AddsNewEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ensureInEtcShells(tmpFile, "/usr/local/bin/claude-shell"); err != nil {
+	if err := ensureInEtcShells(tmpFile, "/usr/local/bin/convocate"); err != nil {
 		t.Fatalf("ensureInEtcShells failed: %v", err)
 	}
 
@@ -346,7 +346,7 @@ func TestEnsureInEtcShells_AddsNewEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := initial + "/usr/local/bin/claude-shell\n"
+	want := initial + "/usr/local/bin/convocate\n"
 	if string(got) != want {
 		t.Errorf("file content = %q, want %q", got, want)
 	}
@@ -354,12 +354,12 @@ func TestEnsureInEtcShells_AddsNewEntry(t *testing.T) {
 
 func TestEnsureInEtcShells_SkipsIfAlreadyPresent(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "shells")
-	initial := "/bin/bash\n/usr/local/bin/claude-shell\n/bin/sh\n"
+	initial := "/bin/bash\n/usr/local/bin/convocate\n/bin/sh\n"
 	if err := os.WriteFile(tmpFile, []byte(initial), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := ensureInEtcShells(tmpFile, "/usr/local/bin/claude-shell"); err != nil {
+	if err := ensureInEtcShells(tmpFile, "/usr/local/bin/convocate"); err != nil {
 		t.Fatalf("ensureInEtcShells failed: %v", err)
 	}
 
@@ -380,7 +380,7 @@ func TestEnsureInEtcShells_Idempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	shellPath := "/usr/local/bin/claude-shell"
+	shellPath := "/usr/local/bin/convocate"
 
 	// Call twice.
 	if err := ensureInEtcShells(tmpFile, shellPath); err != nil {
@@ -408,7 +408,7 @@ func TestEnsureInEtcShells_EmptyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ensureInEtcShells(tmpFile, "/usr/local/bin/claude-shell"); err != nil {
+	if err := ensureInEtcShells(tmpFile, "/usr/local/bin/convocate"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -417,7 +417,7 @@ func TestEnsureInEtcShells_EmptyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if string(got) != "/usr/local/bin/claude-shell\n" {
+	if string(got) != "/usr/local/bin/convocate\n" {
 		t.Errorf("unexpected content: %q", got)
 	}
 }
@@ -425,12 +425,12 @@ func TestEnsureInEtcShells_EmptyFile(t *testing.T) {
 func TestEnsureInEtcShells_HandlesWhitespace(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "shells")
 	// Entry with leading/trailing spaces should still match.
-	initial := "/bin/bash\n  /usr/local/bin/claude-shell  \n"
+	initial := "/bin/bash\n  /usr/local/bin/convocate  \n"
 	if err := os.WriteFile(tmpFile, []byte(initial), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := ensureInEtcShells(tmpFile, "/usr/local/bin/claude-shell"); err != nil {
+	if err := ensureInEtcShells(tmpFile, "/usr/local/bin/convocate"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -446,7 +446,7 @@ func TestEnsureInEtcShells_HandlesWhitespace(t *testing.T) {
 }
 
 func TestEnsureInEtcShells_FileNotFound(t *testing.T) {
-	err := ensureInEtcShells(filepath.Join(t.TempDir(), "nonexistent"), "/usr/local/bin/claude-shell")
+	err := ensureInEtcShells(filepath.Join(t.TempDir(), "nonexistent"), "/usr/local/bin/convocate")
 	if err == nil {
 		t.Error("expected error when shells file does not exist")
 	}
@@ -457,11 +457,11 @@ func TestEnsureInEtcShells_FileNotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestConfigureLoginShell_CallsUsermod(t *testing.T) {
-	// configureLoginShell checks os.Stat on config.ClaudeShellBinaryPath.
+	// configureLoginShell checks os.Stat on config.ConvocateBinaryPath.
 	// If it doesn't exist, the function returns early with an error.
 	// We can only fully test this when the binary is installed.
-	if _, err := os.Stat("/usr/local/bin/claude-shell"); os.IsNotExist(err) {
-		t.Skip("claude-shell binary not installed at /usr/local/bin/claude-shell")
+	if _, err := os.Stat("/usr/local/bin/convocate"); os.IsNotExist(err) {
+		t.Skip("convocate binary not installed at /usr/local/bin/convocate")
 	}
 
 	recFn, records := recordingExecFunc(mockExecSuccess)
@@ -483,8 +483,8 @@ func TestConfigureLoginShell_CallsUsermod(t *testing.T) {
 			if r.Args[0] != "--shell" {
 				t.Errorf("usermod args[0] = %q, want --shell", r.Args[0])
 			}
-			if r.Args[1] != "/usr/local/bin/claude-shell" {
-				t.Errorf("usermod args[1] = %q, want /usr/local/bin/claude-shell", r.Args[1])
+			if r.Args[1] != "/usr/local/bin/convocate" {
+				t.Errorf("usermod args[1] = %q, want /usr/local/bin/convocate", r.Args[1])
 			}
 			if r.Args[2] != "claude" {
 				t.Errorf("usermod args[2] = %q, want claude", r.Args[2])
@@ -499,14 +499,14 @@ func TestConfigureLoginShell_CallsUsermod(t *testing.T) {
 func TestConfigureLoginShell_FailsWhenBinaryMissing(t *testing.T) {
 	// Temporarily ensure the binary is NOT at the expected path.
 	// Since we're not root, it likely isn't there, but be explicit.
-	if _, err := os.Stat("/usr/local/bin/claude-shell"); err == nil {
-		t.Skip("claude-shell binary exists; cannot test missing-binary path")
+	if _, err := os.Stat("/usr/local/bin/convocate"); err == nil {
+		t.Skip("convocate binary exists; cannot test missing-binary path")
 	}
 
 	inst := NewWithExec(mockExecSuccess, "")
 	err := inst.configureLoginShell()
 	if err == nil {
-		t.Error("expected error when claude-shell binary is missing")
+		t.Error("expected error when convocate binary is missing")
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Errorf("unexpected error message: %v", err)
@@ -514,8 +514,8 @@ func TestConfigureLoginShell_FailsWhenBinaryMissing(t *testing.T) {
 }
 
 func TestConfigureLoginShell_FailsWhenUsermodFails(t *testing.T) {
-	if _, err := os.Stat("/usr/local/bin/claude-shell"); os.IsNotExist(err) {
-		t.Skip("claude-shell binary not installed at /usr/local/bin/claude-shell")
+	if _, err := os.Stat("/usr/local/bin/convocate"); os.IsNotExist(err) {
+		t.Skip("convocate binary not installed at /usr/local/bin/convocate")
 	}
 
 	inst := NewWithExec(mockExecFailure, "")

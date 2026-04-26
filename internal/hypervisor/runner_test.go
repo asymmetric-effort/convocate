@@ -237,7 +237,7 @@ func TestHardenSSHD_WritesDropInAndReloads(t *testing.T) {
 	}
 	body := m.cmds[0].Cmd
 	for _, want := range []string{
-		"/etc/ssh/sshd_config.d/10-claude-hardening.conf",
+		"/etc/ssh/sshd_config.d/10-convocate-hardening.conf",
 		"PermitRootLogin no",
 		"PasswordAuthentication no",
 		"X11Forwarding no",

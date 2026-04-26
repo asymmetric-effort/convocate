@@ -72,7 +72,7 @@ fi
 	return r.Run(ctx, cmd, RunOptions{Sudo: true})
 }
 
-// ResolveHypervisorIP figures out the IPv4 address claude-shell's
+// ResolveHypervisorIP figures out the IPv4 address convocate's
 // dnsmasq should publish for the new hypervisor. If hypervisor is
 // already an IP literal it's returned verbatim; otherwise we
 // net.LookupHost it and pick the first IPv4 answer.
@@ -102,10 +102,10 @@ func ResolveHypervisorIP(hypervisor string) (string, error) {
 // real network calls (or being subject to CI network flakes).
 var lookupHost = net.LookupHost
 
-// DefaultDnsmasqHostsFile is where claude-shell publishes records for
-// the cluster. claude-host create-vm appends a record per new
+// DefaultDnsmasqHostsFile is where convocate publishes records for
+// the cluster. convocate-host create-vm appends a record per new
 // hypervisor so it resolves cluster-wide as <hostname>.<domain>.
-const DefaultDnsmasqHostsFile = "/var/lib/claude-shell/dnsmasq-hosts"
+const DefaultDnsmasqHostsFile = "/var/lib/convocate/dnsmasq-hosts"
 
 // RegisterDNSName appends an A record (ip → fqdn) to the shell host's
 // dnsmasq-hosts file. Idempotent: the function reads the file, looks
@@ -148,7 +148,7 @@ func RegisterDNSName(hostsFile, fqdn, ip string) error {
 		out = append(out, want)
 	}
 
-	header := "# Managed by claude-shell. Do not edit by hand.\n"
+	header := "# Managed by convocate. Do not edit by hand.\n"
 	body := strings.Join(stripHeader(out), "\n") + "\n"
 
 	tmp := hostsFile + ".tmp"

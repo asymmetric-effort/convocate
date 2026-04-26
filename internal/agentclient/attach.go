@@ -12,7 +12,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 
-	"github.com/asymmetric-effort/claude-shell/internal/agentserver"
+	"github.com/asymmetric-effort/convocate/internal/agentserver"
 )
 
 // AttachOptions configures one remote-attach session.
@@ -40,7 +40,7 @@ type AttachOptions struct {
 	EnableRawTerminal bool
 }
 
-// Attach opens the claude-agent-attach subsystem on conn, sends the
+// Attach opens the convocate-agent-attach subsystem on conn, sends the
 // AttachRequest header for cfg.SessionID, and bridges stdin/stdout to the
 // remote pty until either side closes. Blocks for the duration of the
 // interactive session.

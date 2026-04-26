@@ -35,7 +35,7 @@ func TestConfigureHypervisorDnsmasq_WiresShellAndGateway(t *testing.T) {
 	// Find the dnsmasq config write — should embed both server lines.
 	confSeen := false
 	for _, c := range m.cmds {
-		if strings.Contains(c.Cmd, "/etc/dnsmasq.d/10-claude-shell.conf") {
+		if strings.Contains(c.Cmd, "/etc/dnsmasq.d/10-convocate.conf") {
 			confSeen = true
 			for _, want := range []string{
 				"server=192.168.3.90",

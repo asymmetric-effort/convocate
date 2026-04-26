@@ -60,7 +60,7 @@ func RebootAndReconnect(ctx context.Context, current *SSHRunner, cfg SSHConfig, 
 	// Wrap so the SSH stdout/stderr goroutines (x/crypto/ssh spawns one
 	// each) can write to the same destination without racing.
 	syncProgress := &syncWriter{w: progress}
-	fmt.Fprintf(syncProgress, "[claude-host] rebooting %s...\n", current.Target())
+	fmt.Fprintf(syncProgress, "[convocate-host] rebooting %s...\n", current.Target())
 
 	// `shutdown -r +0` or plain `reboot`. We use `systemctl reboot` when
 	// available (graceful) and fall back to `reboot` otherwise. Ignore the
@@ -80,12 +80,12 @@ func RebootAndReconnect(ctx context.Context, current *SSHRunner, cfg SSHConfig, 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		fmt.Fprintf(progress, "[claude-host] reconnect attempt %d...\n", attempt)
+		fmt.Fprintf(progress, "[convocate-host] reconnect attempt %d...\n", attempt)
 		r, err := NewSSHRunner(cfg)
 		if err == nil {
 			// One more check: the host is up enough to accept a trivial cmd.
 			if runErr := r.Run(ctx, "true", RunOptions{}); runErr == nil {
-				fmt.Fprintf(progress, "[claude-host] target reachable again.\n")
+				fmt.Fprintf(progress, "[convocate-host] target reachable again.\n")
 				return r, nil
 			}
 			_ = r.Close()

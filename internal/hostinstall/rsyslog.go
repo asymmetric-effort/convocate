@@ -8,13 +8,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/asymmetric-effort/claude-shell/internal/tlsutil"
+	"github.com/asymmetric-effort/convocate/internal/tlsutil"
 )
 
 // RsyslogCADir is the on-host directory where init-shell stores the CA +
 // server material. init-agent reads the CA cert/key back out of here when
 // issuing client certs for a new agent.
-const RsyslogCADir = "/etc/claude-shell/rsyslog-ca"
+const RsyslogCADir = "/etc/convocate/rsyslog-ca"
 
 // File names inside RsyslogCADir. Kept separate from the path so tests can
 // exercise them without dragging in the full dir prefix.
@@ -27,10 +27,10 @@ const (
 
 // rsyslogServerConfig is the /etc/rsyslog.d drop-in that turns on a TLS
 // imtcp listener on 514 and routes incoming messages to per-agent log
-// files under /var/log/claude-agent/. The template keys off the authenticated
+// files under /var/log/convocate-agent/. The template keys off the authenticated
 // hostname so an agent's forward-config ($LocalHostName <agent-id>) lands
 // its messages under <agent-id>.log.
-const rsyslogServerConfig = `# Managed by claude-host init-shell. Do not edit by hand.
+const rsyslogServerConfig = `# Managed by convocate-host init-shell. Do not edit by hand.
 module(load="imtcp"
        StreamDriver.Name="gtls"
        StreamDriver.Mode="1"
@@ -38,15 +38,15 @@ module(load="imtcp"
 
 global(
     DefaultNetstreamDriver="gtls"
-    DefaultNetstreamDriverCAFile="/etc/claude-shell/rsyslog-ca/ca.crt"
-    DefaultNetstreamDriverCertFile="/etc/claude-shell/rsyslog-ca/server.crt"
-    DefaultNetstreamDriverKeyFile="/etc/claude-shell/rsyslog-ca/server.key"
+    DefaultNetstreamDriverCAFile="/etc/convocate/rsyslog-ca/ca.crt"
+    DefaultNetstreamDriverCertFile="/etc/convocate/rsyslog-ca/server.crt"
+    DefaultNetstreamDriverKeyFile="/etc/convocate/rsyslog-ca/server.key"
 )
 
 input(type="imtcp" port="514")
 
 template(name="claudeAgentPerHost" type="list") {
-    constant(value="/var/log/claude-agent/")
+    constant(value="/var/log/convocate-agent/")
     property(name="hostname")
     constant(value=".log")
 }
@@ -54,29 +54,29 @@ template(name="claudeAgentPerHost" type="list") {
 # Route any message arriving on the TLS listener (imtcp ingress) into the
 # per-agent file and stop further processing so it doesn't also hit
 # /var/log/syslog. Ordering matters: this has to run before the
-# claude-shell programname rule because agent-forwarded messages may be
-# tagged claude-shell too.
+# convocate programname rule because agent-forwarded messages may be
+# tagged convocate too.
 if ($inputname == "imtcp") then {
     action(type="omfile" dynaFile="claudeAgentPerHost"
            dirCreateMode="0755" fileCreateMode="0640")
     stop
 }
 
-# Local claude-shell syslog writes land in /var/log/claude-shell.log
+# Local convocate syslog writes land in /var/log/convocate.log
 # rather than /var/log/syslog so operators have one file to tail for
 # shell-side activity.
-if ($programname == "claude-shell") then {
-    action(type="omfile" file="/var/log/claude-shell.log"
+if ($programname == "convocate") then {
+    action(type="omfile" file="/var/log/convocate.log"
            fileCreateMode="0640" dirCreateMode="0755")
     stop
 }
 `
 
-// rsyslogLogrotateConfig keeps the claude-shell / claude-agent logs bounded
+// rsyslogLogrotateConfig keeps the convocate / convocate-agent logs bounded
 // — daily rotation, 14-day retention, gzip after one cycle. copytruncate
 // avoids needing to HUP rsyslog on every rotation.
-const rsyslogLogrotateConfig = `# Managed by claude-host init-shell. Do not edit by hand.
-/var/log/claude-agent/*.log /var/log/claude-shell.log {
+const rsyslogLogrotateConfig = `# Managed by convocate-host init-shell. Do not edit by hand.
+/var/log/convocate-agent/*.log /var/log/convocate.log {
     daily
     rotate 14
     compress
@@ -141,15 +141,15 @@ func stepInstallRsyslogServer(ctx context.Context, r Runner, log io.Writer) erro
 	// Config + logrotate + log dir.
 	if err := writeRemoteContent(ctx, r, log,
 		[]byte(rsyslogServerConfig),
-		"/etc/rsyslog.d/10-claude-shell-server.conf", 0644, "root:root"); err != nil {
+		"/etc/rsyslog.d/10-convocate-server.conf", 0644, "root:root"); err != nil {
 		return err
 	}
 	if err := writeRemoteContent(ctx, r, log,
 		[]byte(rsyslogLogrotateConfig),
-		"/etc/logrotate.d/claude-shell-agent-logs", 0644, "root:root"); err != nil {
+		"/etc/logrotate.d/convocate-agent-logs", 0644, "root:root"); err != nil {
 		return err
 	}
-	if err := r.Run(ctx, "mkdir -p /var/log/claude-agent && chmod 0755 /var/log/claude-agent",
+	if err := r.Run(ctx, "mkdir -p /var/log/convocate-agent && chmod 0755 /var/log/convocate-agent",
 		RunOptions{Sudo: true, Stdout: log, Stderr: log}); err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func loadOrGenerateRsyslogCA(ctx context.Context, r Runner, log io.Writer) (*tls
 	}
 
 	fmt.Fprintln(log, "  minting new rsyslog CA")
-	ca, err := tlsutil.GenerateCA("claude-shell rsyslog CA", 10)
+	ca, err := tlsutil.GenerateCA("convocate rsyslog CA", 10)
 	if err != nil {
 		return nil, err
 	}

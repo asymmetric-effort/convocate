@@ -5,24 +5,24 @@ Keep it terse; the goal is to orient you, not to duplicate the source.
 
 ## What this project is
 
-`claude-shell` is a Go CLI that runs the Claude CLI inside per-session Docker
+`convocate` is a Go CLI that runs the Claude CLI inside per-session Docker
 containers. Users pick a session from a `tcell`-based TUI menu; each session
 is a UUID-named directory on the host, a tmux session inside a container, and
 optional metadata (published port, protocol, DNS name).
 
-Binary entry point: `cmd/claude-shell/main.go`. Everything else is under
+Binary entry point: `cmd/convocate/main.go`. Everything else is under
 `internal/`.
 
 ## Build, test, lint
 
 ```
-make build          # compiles to ./build/claude-shell
+make build          # compiles to ./build/convocate
 make test           # go test ./...
 make lint           # go vet + yaml lint
 make clean lint test build install release   # full ship cycle
 ```
 
-- `make install` copies the binary to `/usr/local/bin/claude-shell` and
+- `make install` copies the binary to `/usr/local/bin/convocate` and
   configures the login shell. Requires `sudo`.
 - `make release` tags the next patch version and pushes the tag. Be aware
   that `git describe --tags --abbrev=0` picks the first reachable tag, so
@@ -34,13 +34,13 @@ make clean lint test build install release   # full ship cycle
 
 | Path | Role |
 |---|---|
-| `cmd/claude-shell` | CLI entry (`run`, `runSessionManager`, handlers) |
+| `cmd/convocate` | CLI entry (`run`, `runSessionManager`, handlers) |
 | `internal/menu` | `tcell` TUI: session list, create/edit form, action dialogs |
 | `internal/session` | `Manager` + `Metadata` persisted as `session.json` |
 | `internal/container` | `docker run/exec/inspect/stop` wrappers around sessions |
 | `internal/capacity` | Refuses new container starts when CPU or memory >= 80% |
-| `internal/dns` | Rewrites `/var/lib/claude-shell/dnsmasq-hosts` from session DNS names |
-| `internal/install` | The `claude-shell install` subcommand |
+| `internal/dns` | Rewrites `/var/lib/convocate/dnsmasq-hosts` from session DNS names |
+| `internal/install` | The `convocate install` subcommand |
 | `internal/config` | Paths, constants (container name prefix, user, sockets) |
 | `internal/logging` | syslog wrapper |
 | `internal/assets` | Embedded Dockerfile + entrypoint.sh |
@@ -140,15 +140,15 @@ container to background a connected user without stopping the container.
 See `git describe --tags` at read time. The latest tag at the time this
 file was written is **v2.0.0** (2026-04-24). `Version` is set via
 `-ldflags "-X main.Version=$(VERSION)"` in the Makefile and tagged onto
-the built container image (`claude-shell:<semver>`) by
-`claude-shell install`.
+the built container image (`convocate:<semver>`) by
+`convocate install`.
 
 Release history:
-- `v1.0.0` — multi-host orchestration arc (claude-host + claude-agent
+- `v1.0.0` — multi-host orchestration arc (convocate-host + convocate-agent
   deployed; SSH peering; rsyslog TLS; agent-aware TUI).
-- `v2.0.0` — "shell is pure client" arc. claude-shell no longer runs
+- `v2.0.0` — "shell is pure client" arc. convocate no longer runs
   containers; all sessions live on agents. Image built on shell,
   pushed to each agent. Orphan migration via
-  `claude-host migrate-session`. `claude-sessions.slice` 90% cgroup
+  `convocate-host migrate-session`. `convocate-sessions.slice` 90% cgroup
   cap. See `docs/v2.0.0.md` for the full plan + architectural
   snapshot + known limitations.

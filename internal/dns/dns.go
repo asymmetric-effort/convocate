@@ -1,7 +1,7 @@
 // Package dns manages the host file consumed by the local dnsmasq service to
-// resolve claude-shell session DNS names. The file is rewritten in full
+// resolve convocate session DNS names. The file is rewritten in full
 // whenever session state changes; dnsmasq picks up modifications because
-// claude-shell's drop-in config points at it via addn-hosts.
+// convocate's drop-in config points at it via addn-hosts.
 package dns
 
 import (
@@ -18,20 +18,20 @@ type Record struct {
 	IP   string
 }
 
-// DefaultHostsFile is the file path claude-shell manages. dnsmasq should be
-// configured with "addn-hosts=/var/lib/claude-shell/dnsmasq-hosts".
-const DefaultHostsFile = "/var/lib/claude-shell/dnsmasq-hosts"
+// DefaultHostsFile is the file path convocate manages. dnsmasq should be
+// configured with "addn-hosts=/var/lib/convocate/dnsmasq-hosts".
+const DefaultHostsFile = "/var/lib/convocate/dnsmasq-hosts"
 
 // DefaultDnsmasqConfFile is the drop-in conf file the installer writes to
 // wire up the hosts file (if the host has a dnsmasq.d directory).
-const DefaultDnsmasqConfFile = "/etc/dnsmasq.d/claude-shell.conf"
+const DefaultDnsmasqConfFile = "/etc/dnsmasq.d/convocate.conf"
 
 // WriteHostsFile writes records to path in /etc/hosts format, atomically via
 // a temp file + rename. Missing parent directory is surfaced as an error —
 // the caller is expected to have initialized it during install.
 func WriteHostsFile(path string, records []Record) error {
 	var buf bytes.Buffer
-	buf.WriteString("# Managed by claude-shell. Do not edit by hand.\n")
+	buf.WriteString("# Managed by convocate. Do not edit by hand.\n")
 	for _, r := range records {
 		if r.Name == "" || r.IP == "" {
 			continue

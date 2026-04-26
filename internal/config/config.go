@@ -1,4 +1,4 @@
-// Package config provides configuration constants and paths for claude-shell.
+// Package config provides configuration constants and paths for convocate.
 package config
 
 import (
@@ -9,16 +9,16 @@ import (
 
 const (
 	// AppName is the application name.
-	AppName = "claude-shell"
+	AppName = "convocate"
 
-	// ContainerImageName is the Docker image name for claude-shell sessions.
-	ContainerImageName = "claude-shell"
+	// ContainerImageName is the Docker image name for convocate sessions.
+	ContainerImageName = "convocate"
 
 	// ContainerImageTag is the Docker image tag.
 	ContainerImageTag = "latest"
 
 	// ContainerPrefix is the prefix for container names.
-	ContainerPrefix = "claude-session-"
+	ContainerPrefix = "convocate-session-"
 
 	// ClaudeBinaryPath is the path to the claude CLI binary on the host.
 	ClaudeBinaryPath = "/usr/local/bin/claude"
@@ -38,8 +38,8 @@ const (
 	// ClaudeSharedDir is the mount point for shared claude config inside the container.
 	ClaudeSharedDir = ".claude-shared"
 
-	// ClaudeShellBinaryPath is the installed path for the claude-shell binary.
-	ClaudeShellBinaryPath = "/usr/local/bin/claude-shell"
+	// ConvocateBinaryPath is the installed path for the convocate binary.
+	ConvocateBinaryPath = "/usr/local/bin/convocate"
 
 	// DockerSocket is the path to the Docker socket.
 	DockerSocket = "/var/run/docker.sock"
@@ -51,7 +51,7 @@ const (
 	TmuxSessionName = "claude"
 )
 
-// Paths holds resolved filesystem paths for claude-shell.
+// Paths holds resolved filesystem paths for convocate.
 type Paths struct {
 	ClaudeHome   string
 	SessionsBase string
@@ -90,7 +90,7 @@ func ContainerImage() string {
 	return ContainerImageWithTag(ContainerImageTag)
 }
 
-// ContainerImageWithTag returns "claude-shell:<tag>". When tag is empty
+// ContainerImageWithTag returns "convocate:<tag>". When tag is empty
 // it defaults to ContainerImageTag so callers can pass a user-supplied
 // version without null-checking.
 func ContainerImageWithTag(tag string) string {

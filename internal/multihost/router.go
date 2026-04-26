@@ -1,5 +1,5 @@
-// Package multihost aggregates session state from the local claude-shell
-// host and any number of remote claude-agent hosts into a single view for
+// Package multihost aggregates session state from the local convocate
+// host and any number of remote convocate-agent hosts into a single view for
 // the TUI. Lookups are routed by session UUID — the shell-side routing map
 // is rebuilt on every List so newly-added agents or newly-created remote
 // sessions become addressable without a restart.
@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asymmetric-effort/claude-shell/internal/agentclient"
-	"github.com/asymmetric-effort/claude-shell/internal/agentserver"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/agentclient"
+	"github.com/asymmetric-effort/convocate/internal/agentserver"
+	"github.com/asymmetric-effort/convocate/internal/session"
 )
 
 // AgentClient abstracts the subset of agentclient.CRUDClient methods the
@@ -55,7 +55,7 @@ type LocalManager interface {
 
 // Router dispatches session CRUD ops across the local Manager and any
 // registered agents. As of v2.x, the Router no longer runs containers on
-// the claude-shell host; Local's session metadata files are surfaced as
+// the convocate host; Local's session metadata files are surfaced as
 // read-only "orphan" entries pending migration to an agent, and every
 // write op that targets an orphan returns ErrOrphanNeedsMigration.
 type Router struct {
@@ -73,7 +73,7 @@ type Router struct {
 // registered agent. Operators see it in the TUI when they try to kill,
 // restart, edit, clone, etc. a leftover local session from the pre-v2.0
 // world.
-var errOrphanNeedsMigration = fmt.Errorf("session is a local orphan; migrate it to a claude-agent before operating on it")
+var errOrphanNeedsMigration = fmt.Errorf("session is a local orphan; migrate it to a convocate-agent before operating on it")
 
 // List returns the combined metadata for every local and remote session.
 // Remote entries have AgentID + AgentHost stamped in so the TUI can
@@ -90,7 +90,7 @@ func (r *Router) List() ([]session.Metadata, error) {
 	all := make([]session.Metadata, 0, len(localSessions))
 	// Local sessions are orphans — the shell no longer runs containers
 	// itself, so Running is always false and write ops are blocked until
-	// the operator migrates them to a claude-agent.
+	// the operator migrates them to a convocate-agent.
 	for i := range localSessions {
 		localSessions[i].Running = false
 		localSessions[i].Attached = false
@@ -142,13 +142,13 @@ func (r *Router) agentFor(id string) *AgentRef {
 }
 
 // AgentFor exposes agentFor to callers outside the package. Used by the
-// claude-shell TUI to reach the right SSH connection when starting a
+// convocate TUI to reach the right SSH connection when starting a
 // remote attach.
 func (r *Router) AgentFor(id string) *AgentRef { return r.agentFor(id) }
 
 // IsLocked reports attach state (repurposed from v1 lock semantics):
 // true when any operator is currently connected to the session's
-// container via claude-agent-attach. The TUI reads this to render the
+// container via convocate-agent-attach. The TUI reads this to render the
 // "C" (connected) indicator — which now means "someone is attached
 // right now" rather than the old "lockfile exists". Orphans always
 // return false because attach isn't possible on them.

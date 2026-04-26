@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/container"
-	"github.com/asymmetric-effort/claude-shell/internal/multihost"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
-	"github.com/asymmetric-effort/claude-shell/internal/user"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/container"
+	"github.com/asymmetric-effort/convocate/internal/multihost"
+	"github.com/asymmetric-effort/convocate/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/user"
 )
 
 // captureStdout replaces os.Stdout with a pipe, runs fn, and returns captured output.
@@ -46,7 +46,7 @@ func TestRun_Version(t *testing.T) {
 	defer func() { Version = origV }()
 
 	out := captureStdout(t, func() {
-		if err := run([]string{"claude-shell", "version"}); err != nil {
+		if err := run([]string{"convocate", "version"}); err != nil {
 			t.Fatalf("run version failed: %v", err)
 		}
 	})
@@ -61,7 +61,7 @@ func TestRun_Version(t *testing.T) {
 func TestRun_Help(t *testing.T) {
 	for _, arg := range []string{"help", "--help", "-h"} {
 		out := captureStdout(t, func() {
-			if err := run([]string{"claude-shell", arg}); err != nil {
+			if err := run([]string{"convocate", arg}); err != nil {
 				t.Errorf("run %s failed: %v", arg, err)
 			}
 		})
@@ -72,7 +72,7 @@ func TestRun_Help(t *testing.T) {
 }
 
 func TestRun_UnknownCommand(t *testing.T) {
-	err := run([]string{"claude-shell", "bogus"})
+	err := run([]string{"convocate", "bogus"})
 	if err == nil {
 		t.Error("expected error for unknown command")
 	}
@@ -85,7 +85,7 @@ func TestRun_Install_NotRoot(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("test validates non-root behavior")
 	}
-	err := run([]string{"claude-shell", "install"})
+	err := run([]string{"convocate", "install"})
 	if err == nil {
 		t.Error("expected install to fail when not root")
 	}

@@ -1,4 +1,4 @@
-// Package session manages claude-shell sessions including creation, listing, deletion, and locking.
+// Package session manages convocate sessions including creation, listing, deletion, and locking.
 package session
 
 import (
@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asymmetric-effort/claude-shell/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/config"
 	"github.com/google/uuid"
 )
 
@@ -32,7 +32,7 @@ type Metadata struct {
 	DNSName string `json:"dns_name,omitempty"`
 
 	// AgentID and AgentHost are populated when this metadata describes a
-	// session living on a remote claude-agent rather than on the local
+	// session living on a remote convocate-agent rather than on the local
 	// host. They are never persisted (json:"-") — the local Manager's
 	// session.json files never carry them, and remote metadata has them
 	// stamped in by the shell-side aggregator after a CRUD list response.
@@ -47,7 +47,7 @@ type Metadata struct {
 	Running bool `json:"running,omitempty"`
 
 	// Attached reports whether any operator currently has an open
-	// claude-agent-attach pty on this session. Set by the agent's
+	// convocate-agent-attach pty on this session. Set by the agent's
 	// list op from an in-memory attach counter; drives the "C"
 	// indicator in the TUI so operators can see when another user is
 	// live on a session. Always false for sessions the local Manager

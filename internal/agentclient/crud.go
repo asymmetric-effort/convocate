@@ -13,20 +13,20 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/agentserver"
-	"github.com/asymmetric-effort/claude-shell/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/agentserver"
+	"github.com/asymmetric-effort/convocate/internal/session"
 )
 
 // CRUDConfig configures a CRUDClient.
 type CRUDConfig struct {
-	// AgentHost is the hostname / IP of the claude-agent listener.
+	// AgentHost is the hostname / IP of the convocate-agent listener.
 	AgentHost string
 	// AgentPort defaults to 222 when zero.
 	AgentPort int
 	// User is the SSH username. Defaults to "claude".
 	User string
 	// PrivateKeyPath is the shell→agent SSH private key, typically
-	// /etc/claude-shell/agent-keys/<id>/shell_to_agent_ed25519_key.
+	// /etc/convocate/agent-keys/<id>/shell_to_agent_ed25519_key.
 	PrivateKeyPath string
 	// DialTimeout caps the initial TCP+SSH handshake. Defaults to 10s.
 	DialTimeout time.Duration

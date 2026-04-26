@@ -13,8 +13,8 @@ import (
 // no claude user exists yet — we return 0 without erroring so install can
 // run on a fresh host. The actual count-under-home branch can't be tested
 // without mocking os/user, which is overkill; it's exercised indirectly
-// when claude-agent install runs on a host that previously had
-// claude-shell sessions.
+// when convocate-agent install runs on a host that previously had
+// convocate sessions.
 func TestCountAdoptedSessions_NoClaudeUser(t *testing.T) {
 	// Lookup for a definitely-absent user returns an error; we expect the
 	// function to propagate it. This protects against silent 0 returns
@@ -72,8 +72,8 @@ func TestImagePruneScript_ShapeIsShellLegit(t *testing.T) {
 	for _, want := range []string{
 		"#!/bin/sh",
 		"docker ps -a",
-		"/etc/claude-agent/current-image",
-		"docker images claude-shell",
+		"/etc/convocate-agent/current-image",
+		"docker images convocate",
 		"docker rmi",
 	} {
 		if !strings.Contains(body, want) {

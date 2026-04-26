@@ -9,15 +9,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/skel"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/skel"
 )
 
 // systemdUnit is the content installed at defaultSystemdUnit. Kept inline
 // rather than as an embed asset because it's small and the substitution
 // surface is zero.
 const systemdUnit = `[Unit]
-Description=claude-agent SSH API service
+Description=convocate-agent SSH API service
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -25,7 +25,7 @@ Wants=network-online.target
 Type=simple
 User=claude
 Group=claude
-ExecStart=/usr/local/bin/claude-agent serve
+ExecStart=/usr/local/bin/convocate-agent serve
 Restart=on-failure
 RestartSec=5
 
@@ -33,10 +33,10 @@ RestartSec=5
 WantedBy=multi-user.target
 `
 
-// cmdInstall prepares the host to run claude-agent as a systemd service. It
+// cmdInstall prepares the host to run convocate-agent as a systemd service. It
 // is idempotent — repeated invocations only update what's out of date.
 //
-// Requires root (EUID 0) because it writes to /etc/systemd, /etc/claude-agent,
+// Requires root (EUID 0) because it writes to /etc/systemd, /etc/convocate-agent,
 // and fixes ownership on /home/claude directories.
 func cmdInstall(_ []string) error {
 	if os.Geteuid() != 0 {
@@ -48,16 +48,16 @@ func cmdInstall(_ []string) error {
 		fn   func() error
 	}{
 		{"Ensure claude user", ensureClaudeUser},
-		{"Create /etc/claude-agent directory", ensureEtcDir},
+		{"Create /etc/convocate-agent directory", ensureEtcDir},
 		{"Generate / assign agent ID", ensureAgentID},
 		{"Ensure /home/claude/.ssh directory", ensureSSHDir},
 		{"Ensure authorized_keys file", ensureAuthKeys},
 		{"Set up session skeleton directory", ensureSessionSkel},
 		{"Check claude CLI is installed", checkClaudeCLIPresent},
-		{"Install claude-sessions.slice (90% cgroup cap)", writeSessionsSlice},
+		{"Install convocate-sessions.slice (90% cgroup cap)", writeSessionsSlice},
 		{"Install daily image-prune cron", writeImagePruneCron},
 		{"Install systemd unit", writeSystemdUnit},
-		{"Reload systemd + enable claude-agent", enableService},
+		{"Reload systemd + enable convocate-agent", enableService},
 	}
 
 	for _, s := range steps {
@@ -68,7 +68,7 @@ func cmdInstall(_ []string) error {
 		fmt.Printf("[%s] %s... done\n", appName, s.name)
 	}
 
-	// If claude-shell was previously installed on this host, its session
+	// If convocate was previously installed on this host, its session
 	// directory is co-owned with us (same uid) — our serve process will
 	// pick up any existing session.json files automatically. Surface the
 	// count so operators know what's been adopted without having to go
@@ -76,7 +76,7 @@ func cmdInstall(_ []string) error {
 	if n, err := countAdoptedSessions(); err == nil && n > 0 {
 		fmt.Printf("\n[%s] adopted %d pre-existing session(s) from this host\n", appName, n)
 		fmt.Printf("[%s] any containers still running under docker continue to run and will be\n", appName)
-		fmt.Printf("[%s] reported by 'claude-agent list' once the service is up.\n", appName)
+		fmt.Printf("[%s] reported by 'convocate-agent list' once the service is up.\n", appName)
 	}
 
 	fmt.Printf("\n[%s] install complete.\n", appName)
@@ -87,7 +87,7 @@ func cmdInstall(_ []string) error {
 }
 
 // countAdoptedSessions returns the number of session.json files under the
-// claude user's home dir — these are pre-existing claude-shell sessions
+// claude user's home dir — these are pre-existing convocate sessions
 // that this agent now manages because both services run as the same uid
 // and read/write the same directory layout.
 //
@@ -127,7 +127,7 @@ func ensureClaudeUser() error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		// ignore failure when docker group doesn't exist yet — docker may be
-		// installed later by claude-host install.
+		// installed later by convocate-host install.
 		_ = cmd.Run()
 		return nil
 	}
@@ -160,7 +160,7 @@ func ensureAuthKeys() error {
 	if _, err := os.Stat(defaultAuthKeysPath); err == nil {
 		return chownClaude(defaultAuthKeysPath)
 	}
-	if err := os.WriteFile(defaultAuthKeysPath, []byte("# claude-agent authorized keys. Populated by 'claude-host init-agent'.\n"), 0600); err != nil {
+	if err := os.WriteFile(defaultAuthKeysPath, []byte("# convocate-agent authorized keys. Populated by 'convocate-host init-agent'.\n"), 0600); err != nil {
 		return err
 	}
 	return chownClaude(defaultAuthKeysPath)
@@ -172,7 +172,7 @@ func writeSystemdUnit() error {
 
 // ensureSessionSkel provisions /home/claude/.skel/ with the embedded
 // starter files (CLAUDE.md etc.) that session.Manager.CreateWithOptions
-// copies into every new session dir. Pre-v2 this was a claude-shell
+// copies into every new session dir. Pre-v2 this was a convocate
 // install step; now that sessions only spawn on agents, the agent owns
 // it. Idempotent: skel.Setup only writes missing files.
 func ensureSessionSkel() error {
@@ -200,7 +200,7 @@ func checkClaudeCLIPresent() error {
 	return nil
 }
 
-// writeSessionsSlice renders /etc/systemd/system/claude-sessions.slice
+// writeSessionsSlice renders /etc/systemd/system/convocate-sessions.slice
 // with CPUQuota and MemoryMax values computed from the host's own
 // resource totals. Containers enroll under this slice via docker run
 // --cgroup-parent so the kernel caps their aggregate usage at ~90% of
@@ -224,9 +224,9 @@ func writeSessionsSlice() error {
 	memMax := memBytes * 90 / 100
 
 	unit := fmt.Sprintf(`[Unit]
-Description=claude-agent session containers (aggregate 90%% cap)
-Documentation=https://github.com/asymmetric-effort/claude-shell
-Before=claude-agent.service
+Description=convocate-agent session containers (aggregate 90%% cap)
+Documentation=https://github.com/asymmetric-effort/convocate
+Before=convocate-agent.service
 
 [Slice]
 CPUAccounting=yes
@@ -243,32 +243,32 @@ MemoryMax=%d
 	return nil
 }
 
-// imagePruneScript is what claude-agent install drops at
-// /etc/cron.daily/claude-shell-image-prune. Retention policy (per
+// imagePruneScript is what convocate-agent install drops at
+// /etc/cron.daily/convocate-image-prune. Retention policy (per
 // project decision): keep every image tag currently referenced by any
-// container (running OR stopped) plus whatever /etc/claude-agent/
-// current-image points at. Everything else tagged claude-shell:* is
+// container (running OR stopped) plus whatever /etc/convocate-agent/
+// current-image points at. Everything else tagged convocate:* is
 // removed so disk use doesn't creep up over many releases.
 //
 // docker rmi errors are tolerated (|| true) because a concurrent
 // container start could grab an image between our decision to prune
 // and the rmi call.
 const imagePruneScript = `#!/bin/sh
-# Managed by claude-agent install. Do not edit by hand.
+# Managed by convocate-agent install. Do not edit by hand.
 set -e
 
 # Every image referenced by any container (running + stopped).
 in_use=$(docker ps -a --format '{{.Image}}' | sort -u || true)
 
 # Plus whatever is flagged as current.
-if [ -f /etc/claude-agent/current-image ]; then
-    current=$(tr -d '[:space:]' </etc/claude-agent/current-image)
+if [ -f /etc/convocate-agent/current-image ]; then
+    current=$(tr -d '[:space:]' </etc/convocate-agent/current-image)
 else
     current=""
 fi
 
-# Enumerate all local claude-shell images (skip dangling <none>).
-all=$(docker images claude-shell --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -v '<none>' || true)
+# Enumerate all local convocate images (skip dangling <none>).
+all=$(docker images convocate --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -v '<none>' || true)
 
 for img in $all; do
     if echo "$in_use" | grep -qF -x "$img"; then
@@ -277,7 +277,7 @@ for img in $all; do
     if [ "$img" = "$current" ]; then
         continue
     fi
-    echo "claude-shell-image-prune: removing $img"
+    echo "convocate-image-prune: removing $img"
     docker rmi "$img" || true
 done
 `
@@ -285,7 +285,7 @@ done
 func writeImagePruneCron() error {
 	// cron.daily requires the script be executable AND that the name
 	// contain no dots (run-parts semantics). The chosen path
-	// /etc/cron.daily/claude-shell-image-prune satisfies both.
+	// /etc/cron.daily/convocate-image-prune satisfies both.
 	return os.WriteFile(defaultImagePruneScript, []byte(imagePruneScript), 0755)
 }
 
@@ -333,8 +333,8 @@ func detectHostMemoryBytes() (int64, error) {
 func enableService() error {
 	for _, args := range [][]string{
 		{"daemon-reload"},
-		{"enable", "claude-agent.service"},
-		{"restart", "claude-agent.service"},
+		{"enable", "convocate-agent.service"},
+		{"restart", "convocate-agent.service"},
 	} {
 		cmd := exec.Command("systemctl", args...)
 		cmd.Stdout = os.Stdout

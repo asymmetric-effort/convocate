@@ -1,5 +1,5 @@
-// Package sshutil holds SSH server primitives shared across claude-agent
-// and claude-shell: ed25519 host-key management and an authorized_keys
+// Package sshutil holds SSH server primitives shared across convocate-agent
+// and convocate: ed25519 host-key management and an authorized_keys
 // allowlist that can be reloaded at runtime. Server plumbing specific to
 // each binary lives in its own package (agentserver, shellserver).
 package sshutil
@@ -37,7 +37,7 @@ func LoadOrCreateHostKey(path string) (ssh.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generate ed25519 key: %w", err)
 	}
-	pemBlock, err := ssh.MarshalPrivateKey(priv, "claude-agent-host")
+	pemBlock, err := ssh.MarshalPrivateKey(priv, "convocate-agent-host")
 	if err != nil {
 		return nil, fmt.Errorf("marshal private key: %w", err)
 	}

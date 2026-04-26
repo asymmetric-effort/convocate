@@ -74,7 +74,7 @@ func TestBuildUserData_ShapeMatters(t *testing.T) {
 		"if [ -b /dev/vdb ]",
 		"mkfs.ext4 -F /dev/vdb",
 		"echo \"/dev/vdb /var ext4 defaults 0 2\"",
-		"sudoers.d/90-claude-vm",
+		"sudoers.d/90-convocate-vm",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("user-data missing %q\n%s", want, body)

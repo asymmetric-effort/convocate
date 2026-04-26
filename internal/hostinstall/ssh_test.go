@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asymmetric-effort/claude-shell/internal/sshutil"
+	"github.com/asymmetric-effort/convocate/internal/sshutil"
 )
 
 // generateEd25519PEM writes a fresh ed25519 OpenSSH private key to a temp

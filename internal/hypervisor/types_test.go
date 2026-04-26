@@ -143,7 +143,7 @@ func TestCreateVM_ShellHostCheckFailureShortCircuits(t *testing.T) {
 }
 
 func TestShellHostCheck_RealHostMissing(t *testing.T) {
-	// On a runner without /usr/local/bin/claude-shell installed, the
+	// On a runner without /usr/local/bin/convocate installed, the
 	// real check returns an error. We can't reliably verify it
 	// returns nil because some CI environments do install that
 	// binary, so we just assert it returns *some* error path or no
@@ -151,9 +151,9 @@ func TestShellHostCheck_RealHostMissing(t *testing.T) {
 	if err := shellHostCheck(); err != nil {
 		// Confirm the message names a missing path so the operator
 		// learns what to do next.
-		if !strings.Contains(err.Error(), "claude-shell") &&
-			!strings.Contains(err.Error(), "claude-shell install") {
-			t.Errorf("error message should reference claude-shell: %v", err)
+		if !strings.Contains(err.Error(), "convocate") &&
+			!strings.Contains(err.Error(), "convocate install") {
+			t.Errorf("error message should reference convocate: %v", err)
 		}
 	}
 }

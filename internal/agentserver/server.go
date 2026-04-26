@@ -1,8 +1,8 @@
-// Package agentserver implements the claude-agent SSH server, subsystem
+// Package agentserver implements the convocate-agent SSH server, subsystem
 // dispatcher, and RPC handlers.
 //
-// Security posture: the server accepts only the claude-agent-rpc and
-// claude-agent-attach subsystems. Shell, exec, and other SSH channel /
+// Security posture: the server accepts only the convocate-agent-rpc and
+// convocate-agent-attach subsystems. Shell, exec, and other SSH channel /
 // request types are rejected. There is no arbitrary command execution path.
 package agentserver
 
@@ -16,12 +16,12 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/sshutil"
+	"github.com/asymmetric-effort/convocate/internal/sshutil"
 )
 
 // RPCSubsystem is the only subsystem the server accepts on a session
 // channel. Any other subsystem (or shell/exec request) is rejected.
-const RPCSubsystem = "claude-agent-rpc"
+const RPCSubsystem = "convocate-agent-rpc"
 
 // Config configures a Server.
 type Config struct {
@@ -40,7 +40,7 @@ type Config struct {
 	// Dispatcher routes op names to handlers. Must be non-nil.
 	Dispatcher *Dispatcher
 
-	// AttachTarget resolves claude-agent-attach subsystem requests to a
+	// AttachTarget resolves convocate-agent-attach subsystem requests to a
 	// container PTY. When nil, the attach subsystem is refused.
 	AttachTarget AttachTarget
 
@@ -52,7 +52,7 @@ type Config struct {
 	Logger *log.Logger
 }
 
-// Server runs the claude-agent SSH listener.
+// Server runs the convocate-agent SSH listener.
 type Server struct {
 	cfg    Config
 	signer ssh.Signer
@@ -90,7 +90,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", s.cfg.Listen, err)
 	}
-	s.cfg.Logger.Printf("claude-agent: listening on %s (authorized keys: %d)", s.cfg.Listen, s.auth.Len())
+	s.cfg.Logger.Printf("convocate-agent: listening on %s (authorized keys: %d)", s.cfg.Listen, s.auth.Len())
 
 	go func() {
 		<-ctx.Done()
@@ -125,17 +125,17 @@ func (s *Server) handleConn(ctx context.Context, nconn net.Conn) {
 			}
 			return nil, fmt.Errorf("key rejected")
 		},
-		ServerVersion: "SSH-2.0-claude-agent",
+		ServerVersion: "SSH-2.0-convocate-agent",
 	}
 	cfg.AddHostKey(s.signer)
 
 	sshConn, chans, reqs, err := ssh.NewServerConn(nconn, cfg)
 	if err != nil {
-		s.cfg.Logger.Printf("claude-agent: handshake from %s failed: %v", nconn.RemoteAddr(), err)
+		s.cfg.Logger.Printf("convocate-agent: handshake from %s failed: %v", nconn.RemoteAddr(), err)
 		return
 	}
 	defer sshConn.Close()
-	s.cfg.Logger.Printf("claude-agent: connection from %s (user=%s, fp=%s)",
+	s.cfg.Logger.Printf("convocate-agent: connection from %s (user=%s, fp=%s)",
 		sshConn.RemoteAddr(), sshConn.User(), sshConn.Permissions.Extensions["pubkey-fp"])
 
 	// Global requests aren't something we support — discard cleanly.
@@ -148,7 +148,7 @@ func (s *Server) handleConn(ctx context.Context, nconn net.Conn) {
 		}
 		channel, chReqs, err := newChan.Accept()
 		if err != nil {
-			s.cfg.Logger.Printf("claude-agent: accept channel failed: %v", err)
+			s.cfg.Logger.Printf("convocate-agent: accept channel failed: %v", err)
 			continue
 		}
 		go s.handleSession(ctx, channel, chReqs)
@@ -175,7 +175,7 @@ func (s *Server) handleSession(ctx context.Context, ch ssh.Channel, reqs <-chan 
 			case AttachSubsystem:
 				if s.cfg.AttachTarget == nil {
 					_ = req.Reply(false, nil)
-					s.cfg.Logger.Printf("claude-agent: attach subsystem requested but no AttachTarget configured")
+					s.cfg.Logger.Printf("convocate-agent: attach subsystem requested but no AttachTarget configured")
 					_ = ch.Close()
 					return
 				}
@@ -186,7 +186,7 @@ func (s *Server) handleSession(ctx context.Context, ch ssh.Channel, reqs <-chan 
 				return
 			default:
 				_ = req.Reply(false, nil)
-				s.cfg.Logger.Printf("claude-agent: rejected subsystem %q", name)
+				s.cfg.Logger.Printf("convocate-agent: rejected subsystem %q", name)
 				_ = ch.Close()
 				return
 			}

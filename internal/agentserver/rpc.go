@@ -12,7 +12,7 @@ import (
 // so json.NewDecoder can disable unknown-field permissiveness.
 func readerFromBytes(b []byte) io.Reader { return bytes.NewReader(b) }
 
-// Request is the shape of a JSON-RPC request over claude-agent-rpc.
+// Request is the shape of a JSON-RPC request over convocate-agent-rpc.
 type Request struct {
 	Op     string          `json:"op"`
 	Params json.RawMessage `json:"params"`

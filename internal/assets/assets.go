@@ -1,4 +1,4 @@
-// Package assets provides embedded build assets for the claude-shell installer.
+// Package assets provides embedded build assets for the convocate installer.
 // All files needed by the install command are compiled into the binary so that
 // the binary is fully self-contained.
 package assets

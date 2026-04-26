@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/tlsutil"
+	"github.com/asymmetric-effort/convocate/internal/tlsutil"
 )
 
 // seedRsyslogCA stages a CA cert + key at <etcDir>/rsyslog-ca/ so
@@ -40,7 +40,7 @@ func seedRsyslogCA(t *testing.T, etcDir string) {
 func testInitAgentOpts(t *testing.T) (InitAgentOptions, string) {
 	t.Helper()
 	binDir := t.TempDir()
-	bin := filepath.Join(binDir, "claude-agent")
+	bin := filepath.Join(binDir, "convocate-agent")
 	if err := os.WriteFile(bin, []byte("#!fake-agent-binary"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func testInitAgentOpts(t *testing.T) (InitAgentOptions, string) {
 		BinaryPath:       bin,
 		ShellHost:        "shell.example.com",
 		LocalShellEtcDir: etcDir,
-		ImageTag:         "claude-shell:v9.9.9",
+		ImageTag:         "convocate:v9.9.9",
 	}, etcDir
 }
 
@@ -67,7 +67,7 @@ func newAgentMockRunner(agentID string) *mockRunner {
 	return &mockRunner{
 		cmdStdout: map[string]string{
 			// init-agent reads the agent-id via `cat`.
-			"cat /etc/claude-agent/agent-id": agentID + "\n",
+			"cat /etc/convocate-agent/agent-id": agentID + "\n",
 		},
 	}
 }
@@ -84,13 +84,13 @@ func TestInitAgent_RequiresShellHost(t *testing.T) {
 
 func TestInitAgent_MissingBinary(t *testing.T) {
 	opts := InitAgentOptions{
-		BinaryPath: "/does/not/exist/claude-agent",
+		BinaryPath: "/does/not/exist/convocate-agent",
 		ShellHost:  "shell.example.com",
-		ImageTag:   "claude-shell:v0",
+		ImageTag:   "convocate:v0",
 	}
 	m := newAgentMockRunner("x")
 	err := InitAgent(context.Background(), m, nil, opts, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "locate claude-agent") {
+	if err == nil || !strings.Contains(err.Error(), "locate convocate-agent") {
 		t.Errorf("expected locate error, got %v", err)
 	}
 }
@@ -120,20 +120,20 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 		t.Fatalf("expected 10 copies, got %d: %+v", len(m.copies), copyDsts(m.copies))
 	}
 	wantDests := map[string]os.FileMode{
-		"/usr/local/bin/claude-agent":                  0755,
+		"/usr/local/bin/convocate-agent":                  0755,
 		"/home/claude/.ssh/authorized_keys":            0600,
-		"/etc/claude-agent/agent_to_shell_ed25519_key": 0600,
-		"/etc/claude-agent/shell-host":                 0644,
-		"/etc/claude-agent/rsyslog-tls/ca.crt":         0644,
-		"/etc/claude-agent/rsyslog-tls/client.crt":     0644,
-		"/etc/claude-agent/rsyslog-tls/client.key":     0600,
-		"/etc/rsyslog.d/10-claude-shell-client.conf":   0644,
-		"/etc/claude-agent/current-image":              0644,
+		"/etc/convocate-agent/agent_to_shell_ed25519_key": 0600,
+		"/etc/convocate-agent/shell-host":                 0644,
+		"/etc/convocate-agent/rsyslog-tls/ca.crt":         0644,
+		"/etc/convocate-agent/rsyslog-tls/client.crt":     0644,
+		"/etc/convocate-agent/rsyslog-tls/client.key":     0600,
+		"/etc/rsyslog.d/10-convocate-client.conf":   0644,
+		"/etc/convocate-agent/current-image":              0644,
 	}
 	for _, c := range m.copies {
-		// The image tarball lands at /tmp/claude-image-<digest>.tar.gz;
+		// The image tarball lands at /tmp/convocate-image-<digest>.tar.gz;
 		// digest varies per run so match by prefix instead of exact.
-		if strings.HasPrefix(c.Dst, "/tmp/claude-image-") {
+		if strings.HasPrefix(c.Dst, "/tmp/convocate-image-") {
 			if c.Mode != 0600 {
 				t.Errorf("image tarball mode = %o, want 0600", c.Mode)
 			}
@@ -150,16 +150,16 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 	}
 
 	// current-image must carry the tag we asked init-agent to push.
-	ci := findCopy(m.copies, "/etc/claude-agent/current-image")
+	ci := findCopy(m.copies, "/etc/convocate-agent/current-image")
 	if ci == nil {
 		t.Fatal("current-image pointer not written")
 	}
-	if strings.TrimSpace(string(ci.Content)) != "claude-shell:v9.9.9" {
+	if strings.TrimSpace(string(ci.Content)) != "convocate:v9.9.9" {
 		t.Errorf("current-image content = %q", ci.Content)
 	}
 
 	// The rsyslog client config must embed the agent-id + shell-host.
-	cfg := findCopy(m.copies, "/etc/rsyslog.d/10-claude-shell-client.conf")
+	cfg := findCopy(m.copies, "/etc/rsyslog.d/10-convocate-client.conf")
 	if cfg == nil {
 		t.Fatal("client rsyslog config not uploaded")
 	}
@@ -172,14 +172,14 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 	}
 
 	// Verify the shell-host file carries the trimmed value.
-	shellHostCopy := findCopy(m.copies, "/etc/claude-agent/shell-host")
+	shellHostCopy := findCopy(m.copies, "/etc/convocate-agent/shell-host")
 	if shellHostCopy == nil || strings.TrimSpace(string(shellHostCopy.Content)) != "shell.example.com" {
 		t.Errorf("shell-host copy content = %q", shellHostCopy.Content)
 	}
 
 	// The private key pushed to the agent must parse as an SSH key and must
 	// be tagged with the agent-id.
-	privCopy := findCopy(m.copies, "/etc/claude-agent/agent_to_shell_ed25519_key")
+	privCopy := findCopy(m.copies, "/etc/convocate-agent/agent_to_shell_ed25519_key")
 	if privCopy == nil {
 		t.Fatal("agent->shell private key not copied")
 	}
@@ -208,12 +208,12 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 	// is the rsyslog step which we check for key phrases rather than
 	// exact ordering (apt-get, mkdir, chowns, restart rsyslog).
 	wantPeering := []string{
-		"/usr/local/bin/claude-agent install",
-		"cat /etc/claude-agent/agent-id",
+		"/usr/local/bin/convocate-agent install",
+		"cat /etc/convocate-agent/agent-id",
 		"chown claude:claude '/home/claude/.ssh/authorized_keys'",
-		"chown claude:claude '/etc/claude-agent/agent_to_shell_ed25519_key'",
-		"chown root:root '/etc/claude-agent/shell-host'",
-		"systemctl restart claude-agent.service",
+		"chown claude:claude '/etc/convocate-agent/agent_to_shell_ed25519_key'",
+		"chown root:root '/etc/convocate-agent/shell-host'",
+		"systemctl restart convocate-agent.service",
 	}
 	for i, want := range wantPeering {
 		if !strings.Contains(m.cmds[i].Cmd, want) {
@@ -221,7 +221,7 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 		}
 	}
 	rsyslogPhrases := []string{
-		"mkdir -p /etc/claude-agent/rsyslog-tls",
+		"mkdir -p /etc/convocate-agent/rsyslog-tls",
 		"rsyslog-gnutls",
 		"/var/spool/rsyslog",
 		"systemctl restart rsyslog",

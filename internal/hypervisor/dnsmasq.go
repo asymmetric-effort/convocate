@@ -17,8 +17,8 @@ import (
 // otherwise leak.
 //
 // %s placeholders, in order: shell-host IP, default-gateway IP.
-const hypervisorDnsmasqConfTpl = `# Managed by claude-host create-vm. Do not edit by hand.
-# Forward all queries to the claude-shell host's dnsmasq first; fall
+const hypervisorDnsmasqConfTpl = `# Managed by convocate-host create-vm. Do not edit by hand.
+# Forward all queries to the convocate host's dnsmasq first; fall
 # back to the LAN gateway when the primary is unreachable.
 server=%s
 server=%s
@@ -28,10 +28,10 @@ bogus-priv
 `
 
 // resolvedStubDropIn disables systemd-resolved's :53 stub listener so
-// dnsmasq can bind that port. Identical to the drop-in claude-host
+// dnsmasq can bind that port. Identical to the drop-in convocate-host
 // install lays down on the shell host — keeping them aligned means
 // operators only have one shape of file to recognize.
-const resolvedStubDropIn = `# Managed by claude-host create-vm. Frees port 53 for dnsmasq.
+const resolvedStubDropIn = `# Managed by convocate-host create-vm. Frees port 53 for dnsmasq.
 [Resolve]
 DNSStubListener=no
 `
@@ -57,7 +57,7 @@ func ConfigureHypervisorDnsmasq(ctx context.Context, r Runner, shellIP string) e
 	//    drop-in is overwritten on each create-vm).
 	if err := r.Run(ctx, `set -e
 mkdir -p /etc/systemd/resolved.conf.d
-cat >/etc/systemd/resolved.conf.d/00-claude-dnsmasq.conf <<'RESOLV_EOF'
+cat >/etc/systemd/resolved.conf.d/00-convocate-dnsmasq.conf <<'RESOLV_EOF'
 `+resolvedStubDropIn+`RESOLV_EOF
 systemctl restart systemd-resolved || true
 `, RunOptions{Sudo: true}); err != nil {
@@ -76,7 +76,7 @@ systemctl restart systemd-resolved || true
 	conf := fmt.Sprintf(hypervisorDnsmasqConfTpl, shellIP, gateway)
 	cmd := fmt.Sprintf(`set -e
 mkdir -p /etc/dnsmasq.d
-cat >/etc/dnsmasq.d/10-claude-shell.conf <<'DNS_EOF'
+cat >/etc/dnsmasq.d/10-convocate.conf <<'DNS_EOF'
 %sDNS_EOF
 systemctl restart dnsmasq
 `, conf)

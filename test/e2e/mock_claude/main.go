@@ -13,7 +13,7 @@ func main() {
 	// Handle version flag
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {
-			fmt.Println("claude-mock 1.0.0 (test)")
+			fmt.Println("convocate-mock 1.0.0 (test)")
 			os.Exit(0)
 		}
 		if arg == "--help" || arg == "-h" {

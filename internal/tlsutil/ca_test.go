@@ -10,14 +10,14 @@ import (
 )
 
 func TestGenerateCA_RoundTrip(t *testing.T) {
-	ca, err := GenerateCA("claude-shell test CA", 5)
+	ca, err := GenerateCA("convocate test CA", 5)
 	if err != nil {
 		t.Fatalf("GenerateCA: %v", err)
 	}
 	if !ca.Cert.IsCA {
 		t.Error("cert is not marked as CA")
 	}
-	if ca.Cert.Subject.CommonName != "claude-shell test CA" {
+	if ca.Cert.Subject.CommonName != "convocate test CA" {
 		t.Errorf("CN = %q", ca.Cert.Subject.CommonName)
 	}
 	// Round-trip via ParseKeyMaterial.
@@ -31,7 +31,7 @@ func TestGenerateCA_RoundTrip(t *testing.T) {
 }
 
 func TestSignCert_ServerValidatesUnderCA(t *testing.T) {
-	ca, err := GenerateCA("claude-shell test CA", 5)
+	ca, err := GenerateCA("convocate test CA", 5)
 	if err != nil {
 		t.Fatal(err)
 	}

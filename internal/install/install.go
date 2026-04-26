@@ -1,4 +1,4 @@
-// Package install handles the claude-shell install subcommand.
+// Package install handles the convocate install subcommand.
 package install
 
 import (
@@ -13,13 +13,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asymmetric-effort/claude-shell/internal/assets"
-	"github.com/asymmetric-effort/claude-shell/internal/config"
-	"github.com/asymmetric-effort/claude-shell/internal/diskspace"
-	"github.com/asymmetric-effort/claude-shell/internal/skel"
+	"github.com/asymmetric-effort/convocate/internal/assets"
+	"github.com/asymmetric-effort/convocate/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/diskspace"
+	"github.com/asymmetric-effort/convocate/internal/skel"
 )
 
-// Installer performs installation tasks for claude-shell.
+// Installer performs installation tasks for convocate.
 type Installer struct {
 	execFn  ExecFunc
 	version string // binary semver; used as the image tag during build
@@ -34,7 +34,7 @@ func DefaultExecFunc(name string, args ...string) *exec.Cmd {
 }
 
 // New creates a new Installer with the default exec function. version is
-// the claude-shell binary's semver string (passed in from main via
+// the convocate binary's semver string (passed in from main via
 // ldflags) — used verbatim as the image tag during build so agents that
 // pull this image later can reason about versions.
 func New(version string) *Installer {
@@ -47,8 +47,8 @@ func NewWithExec(execFn ExecFunc, version string) *Installer {
 }
 
 // ImageTag returns the tag this installer builds under — either
-// "claude-shell:<semver>" when a version was supplied, or
-// "claude-shell:latest" as the legacy fallback for tests.
+// "convocate:<semver>" when a version was supplied, or
+// "convocate:latest" as the legacy fallback for tests.
 func (inst *Installer) ImageTag() string {
 	if inst.version == "" {
 		return config.ContainerImage()
@@ -59,7 +59,7 @@ func (inst *Installer) ImageTag() string {
 // Run executes all installation steps.
 func (inst *Installer) Run() error {
 	if os.Geteuid() != 0 {
-		return fmt.Errorf("claude-shell install must be run as root (use sudo)")
+		return fmt.Errorf("convocate install must be run as root (use sudo)")
 	}
 
 	steps := []struct {
@@ -69,14 +69,14 @@ func (inst *Installer) Run() error {
 		{"Checking platform", inst.checkPlatform},
 		{"Checking Docker", inst.checkDocker},
 		{"Creating claude user", inst.createUser},
-		{"Installing claude-shell binary", inst.installBinary},
+		{"Installing convocate binary", inst.installBinary},
 		{"Building Docker image", inst.buildImage},
 		{"Configuring login shell", inst.configureLoginShell},
 		{"Setting up dnsmasq integration", inst.setupDnsmasqIntegration},
 	}
 	// Post-v2: the shell host no longer runs containers itself, so the
 	// session skeleton (/home/claude/.skel) + claude CLI are only
-	// needed on agent hosts where sessions actually spawn. claude-agent
+	// needed on agent hosts where sessions actually spawn. convocate-agent
 	// install provisions both.
 
 	for _, step := range steps {
@@ -93,7 +93,7 @@ func (inst *Installer) Run() error {
 
 func (inst *Installer) checkPlatform() error {
 	if runtime.GOOS != "linux" {
-		return fmt.Errorf("claude-shell requires Linux (detected: %s)", runtime.GOOS)
+		return fmt.Errorf("convocate requires Linux (detected: %s)", runtime.GOOS)
 	}
 	return nil
 }
@@ -159,7 +159,7 @@ func (inst *Installer) checkClaudeCLI() error {
 
 func (inst *Installer) buildImage() error {
 	// Write embedded assets to a temporary build context directory.
-	buildCtx, err := os.MkdirTemp("", "claude-shell-build-*")
+	buildCtx, err := os.MkdirTemp("", "convocate-build-*")
 	if err != nil {
 		return fmt.Errorf("failed to create build context: %w", err)
 	}
@@ -209,7 +209,7 @@ func (inst *Installer) installBinary() error {
 		return fmt.Errorf("failed to resolve executable symlink: %w", err)
 	}
 
-	dest := config.ClaudeShellBinaryPath
+	dest := config.ConvocateBinaryPath
 
 	// Skip if we're already running from the install location.
 	if self == dest {
@@ -258,11 +258,11 @@ func copyBinary(src, dest string) error {
 }
 
 func (inst *Installer) configureLoginShell() error {
-	shellPath := config.ClaudeShellBinaryPath
+	shellPath := config.ConvocateBinaryPath
 
 	// Ensure the binary exists at the expected path.
 	if _, err := os.Stat(shellPath); os.IsNotExist(err) {
-		return fmt.Errorf("claude-shell binary not found at %s", shellPath)
+		return fmt.Errorf("convocate binary not found at %s", shellPath)
 	}
 
 	// Add to /etc/shells if not already present.
@@ -321,10 +321,10 @@ func chownRecursive(path string, uid, gid int) error {
 	})
 }
 
-// dnsmasqHostsFile is the file claude-shell rewrites with DNS records for
+// dnsmasqHostsFile is the file convocate rewrites with DNS records for
 // sessions that specify a DNS name. It is exposed as a package variable so
 // tests can redirect it to a tmpdir.
-var dnsmasqHostsFile = "/var/lib/claude-shell/dnsmasq-hosts"
+var dnsmasqHostsFile = "/var/lib/convocate/dnsmasq-hosts"
 
 // dnsmasqConfDir is where dnsmasq looks for drop-in config files. When
 // present, installer writes a config snippet there to pick up the managed
@@ -332,10 +332,10 @@ var dnsmasqHostsFile = "/var/lib/claude-shell/dnsmasq-hosts"
 var dnsmasqConfDir = "/etc/dnsmasq.d"
 
 // dnsmasqConfFile is the drop-in config installer writes.
-var dnsmasqConfFile = "/etc/dnsmasq.d/claude-shell.conf"
+var dnsmasqConfFile = "/etc/dnsmasq.d/convocate.conf"
 
 // setupDnsmasqIntegration provisions the managed dnsmasq hosts file so
-// claude-shell can register session DNS names with the local resolver. When
+// convocate can register session DNS names with the local resolver. When
 // /etc/dnsmasq.d exists, it also writes a drop-in that points dnsmasq at the
 // managed file via addn-hosts. Missing dnsmasq is not an error — it simply
 // skips the drop-in step.
@@ -358,7 +358,7 @@ func (inst *Installer) setupDnsmasqIntegration() error {
 	// Touch the file (create if missing, preserve contents otherwise) and set
 	// ownership to claude so runtime rewrites work without elevated privilege.
 	if _, err := os.Stat(dnsmasqHostsFile); os.IsNotExist(err) {
-		if err := os.WriteFile(dnsmasqHostsFile, []byte("# Managed by claude-shell.\n"), 0644); err != nil {
+		if err := os.WriteFile(dnsmasqHostsFile, []byte("# Managed by convocate.\n"), 0644); err != nil {
 			return fmt.Errorf("create %s: %w", dnsmasqHostsFile, err)
 		}
 	}
@@ -369,7 +369,7 @@ func (inst *Installer) setupDnsmasqIntegration() error {
 
 	// Wire dnsmasq up if the system looks like it uses dnsmasq.
 	if info, err := os.Stat(dnsmasqConfDir); err == nil && info.IsDir() {
-		snippet := fmt.Sprintf("# Managed by claude-shell. Do not edit.\naddn-hosts=%s\n", dnsmasqHostsFile)
+		snippet := fmt.Sprintf("# Managed by convocate. Do not edit.\naddn-hosts=%s\n", dnsmasqHostsFile)
 		if err := os.WriteFile(dnsmasqConfFile, []byte(snippet), 0644); err != nil {
 			return fmt.Errorf("write %s: %w", dnsmasqConfFile, err)
 		}

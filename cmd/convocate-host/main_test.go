@@ -36,7 +36,7 @@ func TestRun_Version(t *testing.T) {
 	defer func() { Version = origV }()
 
 	out := captureStdout(t, func() {
-		if err := run([]string{"claude-host", "version"}); err != nil {
+		if err := run([]string{"convocate-host", "version"}); err != nil {
 			t.Fatalf("run version: %v", err)
 		}
 	})
@@ -48,7 +48,7 @@ func TestRun_Version(t *testing.T) {
 func TestRun_Help(t *testing.T) {
 	for _, arg := range []string{"help", "--help", "-h"} {
 		out := captureStdout(t, func() {
-			if err := run([]string{"claude-host", arg}); err != nil {
+			if err := run([]string{"convocate-host", arg}); err != nil {
 				t.Errorf("run %s: %v", arg, err)
 			}
 		})
@@ -60,7 +60,7 @@ func TestRun_Help(t *testing.T) {
 
 func TestRun_NoArgs_ShowsUsage(t *testing.T) {
 	out := captureStdout(t, func() {
-		if err := run([]string{"claude-host"}); err != nil {
+		if err := run([]string{"convocate-host"}); err != nil {
 			t.Errorf("run (no args): %v", err)
 		}
 	})
@@ -70,7 +70,7 @@ func TestRun_NoArgs_ShowsUsage(t *testing.T) {
 }
 
 func TestRun_UnknownCommand(t *testing.T) {
-	err := run([]string{"claude-host", "bogus"})
+	err := run([]string{"convocate-host", "bogus"})
 	if err == nil {
 		t.Fatal("expected error for unknown subcommand")
 	}
@@ -86,7 +86,7 @@ func TestCmdInstall_LocalNonRoot_FriendlyError(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("tests the non-root path only")
 	}
-	err := run([]string{"claude-host", "install"})
+	err := run([]string{"convocate-host", "install"})
 	if err == nil {
 		t.Fatal("expected error without root")
 	}
@@ -99,7 +99,7 @@ func TestCmdInitShell_LocalNonRoot_FriendlyError(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("tests the non-root path only")
 	}
-	err := run([]string{"claude-host", "init-shell"})
+	err := run([]string{"convocate-host", "init-shell"})
 	if err == nil || !strings.Contains(err.Error(), "run as root") {
 		t.Errorf("expected friendly root error, got: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestCmdInitAgent_LocalNonRoot_FriendlyError(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("tests the non-root path only")
 	}
-	err := run([]string{"claude-host", "init-agent"})
+	err := run([]string{"convocate-host", "init-agent"})
 	if err == nil || !strings.Contains(err.Error(), "run as root") {
 		t.Errorf("expected friendly root error, got: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestCmdUpdate_LocalNonRoot_FriendlyError(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("tests the non-root path only")
 	}
-	err := run([]string{"claude-host", "update"})
+	err := run([]string{"convocate-host", "update"})
 	if err == nil || !strings.Contains(err.Error(), "run as root") {
 		t.Errorf("expected friendly root error, got: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestCmdUpdate_LocalNonRoot_FriendlyError(t *testing.T) {
 
 // Flag parsing — invalid flag should surface from Parse rather than panic.
 func TestCmdInstall_BadFlag(t *testing.T) {
-	err := run([]string{"claude-host", "install", "--nosuchflag"})
+	err := run([]string{"convocate-host", "install", "--nosuchflag"})
 	if err == nil {
 		t.Fatal("expected error for bad flag")
 	}

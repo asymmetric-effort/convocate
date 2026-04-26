@@ -184,7 +184,7 @@ func TestRegisterDNSName_NewFile(t *testing.T) {
 	if !strings.Contains(got, "192.168.1.10\tabc.example.com") {
 		t.Errorf("missing record:\n%s", got)
 	}
-	if !strings.Contains(got, "Managed by claude-shell") {
+	if !strings.Contains(got, "Managed by convocate") {
 		t.Errorf("missing header:\n%s", got)
 	}
 }
@@ -193,7 +193,7 @@ func TestRegisterDNSName_ReplacesExistingFqdn(t *testing.T) {
 	dir := t.TempDir()
 	hf := filepath.Join(dir, "hosts")
 	// Pre-populate with an old IP for the same fqdn.
-	if err := os.WriteFile(hf, []byte("# Managed by claude-shell.\n10.0.0.1\tabc.example.com\nother.host\t1.2.3.4\n"), 0644); err != nil {
+	if err := os.WriteFile(hf, []byte("# Managed by convocate.\n10.0.0.1\tabc.example.com\nother.host\t1.2.3.4\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := RegisterDNSName(hf, "abc.example.com", "10.0.0.99"); err != nil {
@@ -235,7 +235,7 @@ func TestRegisterDNSName_DefaultPath(t *testing.T) {
 	// Empty hostsFile arg should hit DefaultDnsmasqHostsFile. We
 	// can't safely write there from a unit test, so just verify the
 	// constant lines up with the project's convention.
-	if DefaultDnsmasqHostsFile != "/var/lib/claude-shell/dnsmasq-hosts" {
+	if DefaultDnsmasqHostsFile != "/var/lib/convocate/dnsmasq-hosts" {
 		t.Errorf("DefaultDnsmasqHostsFile = %q", DefaultDnsmasqHostsFile)
 	}
 }

@@ -14,13 +14,13 @@ import (
 	"github.com/creack/pty"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/config"
+	"github.com/asymmetric-effort/convocate/internal/config"
 )
 
 // AttachSubsystem is the SSH subsystem name that selects pty-relay mode.
 // When a client requests this subsystem the channel stops being a JSON-RPC
 // stream and becomes a raw byte pipe to a specific container's tmux session.
-const AttachSubsystem = "claude-agent-attach"
+const AttachSubsystem = "convocate-agent-attach"
 
 // AttachTarget resolves an attach request to a container name, then runs
 // the docker-exec that hooks its stdin/stdout to the returned PTY file. The
@@ -165,7 +165,7 @@ func writeAttachError(w io.Writer, msg string) {
 
 // DockerAttachTarget is the production AttachTarget: resolves the session
 // UUID to a container name, runs
-//   docker exec -it claude-session-<uuid> sudo -u claude -- tmux attach-session -t claude
+//   docker exec -it convocate-session-<uuid> sudo -u claude -- tmux attach-session -t claude
 // in a local PTY, and returns the PTY master for byte relay.
 //
 // ExistsFn lets the target refuse attach for sessions the agent doesn't

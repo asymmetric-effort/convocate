@@ -17,7 +17,7 @@ func init() {
 	runCreateVM = orchestrate
 }
 
-// orchestrate is the top-level flow for `claude-host create-vm`.
+// orchestrate is the top-level flow for `convocate-host create-vm`.
 // Phases:
 //
 //   1. Dial hypervisor (key-then-password)
@@ -168,7 +168,7 @@ func orchestrate(ctx context.Context, opts *CreateVMOptions) error {
 	}
 	seedName := opts.SeedISOName
 	if seedName == "" {
-		seedName = "claude-seed-" + hostname + ".iso"
+		seedName = "convocate-seed-" + hostname + ".iso"
 	}
 	logf("building autoinstall seed (cloud-init NoCloud)")
 	if err := PushAutoinstallSeed(ctx, r, cfg, isoDir, seedName); err != nil {
@@ -243,7 +243,7 @@ var ensureUbuntuISO = func(opts *CreateVMOptions) (string, error) {
 
 // registerDNSName is the orchestrator's seam onto RegisterDNSName so
 // tests can stub the local-filesystem write that would otherwise
-// require /var/lib/claude-shell to be present and writable.
+// require /var/lib/convocate to be present and writable.
 var registerDNSName = RegisterDNSName
 
 // localShellIP returns the local machine's primary IPv4 — what the

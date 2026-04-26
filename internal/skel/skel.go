@@ -1,4 +1,4 @@
-// Package skel manages the skeleton directory for new claude-shell sessions.
+// Package skel manages the skeleton directory for new convocate sessions.
 package skel
 
 import (
@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/asymmetric-effort/claude-shell/internal/assets"
-	"github.com/asymmetric-effort/claude-shell/internal/diskspace"
+	"github.com/asymmetric-effort/convocate/internal/assets"
+	"github.com/asymmetric-effort/convocate/internal/diskspace"
 )
 
 // Setup creates the skeleton directory with default files.

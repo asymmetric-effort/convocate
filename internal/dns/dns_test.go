@@ -28,7 +28,7 @@ func TestWriteHostsFile_RoundTrip(t *testing.T) {
 	if !strings.Contains(string(data), "10.0.0.1\tsvc.internal") {
 		t.Errorf("missing svc.internal entry:\n%s", string(data))
 	}
-	if !strings.HasPrefix(string(data), "# Managed by claude-shell") {
+	if !strings.HasPrefix(string(data), "# Managed by convocate") {
 		t.Errorf("missing header:\n%s", string(data))
 	}
 }
@@ -40,7 +40,7 @@ func TestWriteHostsFile_EmptyRecords(t *testing.T) {
 		t.Fatalf("WriteHostsFile(nil): %v", err)
 	}
 	data, _ := os.ReadFile(path)
-	if !strings.HasPrefix(string(data), "# Managed by claude-shell") {
+	if !strings.HasPrefix(string(data), "# Managed by convocate") {
 		t.Errorf("expected header even with no records, got:\n%s", string(data))
 	}
 }

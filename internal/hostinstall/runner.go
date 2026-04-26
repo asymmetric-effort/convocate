@@ -1,4 +1,4 @@
-// Package hostinstall drives claude-host's install/update/init-* workflows.
+// Package hostinstall drives convocate-host's install/update/init-* workflows.
 // It exposes a Runner abstraction so the same step list runs locally or
 // against a remote host over SSH, plus helpers for copying binaries and
 // waiting for the target to come back after a reboot.

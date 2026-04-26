@@ -26,7 +26,7 @@ func (s *syncWriter) Write(p []byte) (int, error) {
 	return s.w.Write(p)
 }
 
-// MigrateSessionOptions drives `claude-host migrate-session`.
+// MigrateSessionOptions drives `convocate-host migrate-session`.
 type MigrateSessionOptions struct {
 	// AgentID identifies the target agent — must be present as a
 	// subdirectory of AgentKeysDir with shell_to_agent_ed25519_key and
@@ -41,7 +41,7 @@ type MigrateSessionOptions struct {
 	// session dirs live directly under this path.
 	ShellSessionsBase string
 
-	// AgentKeysDir defaults to /etc/claude-shell/agent-keys when empty.
+	// AgentKeysDir defaults to /etc/convocate/agent-keys when empty.
 	// Used to locate the shell→agent key + agent's hostname.
 	AgentKeysDir string
 
@@ -58,7 +58,7 @@ type MigrateSessionOptions struct {
 // daemon will docker run a fresh container on next attach/restart using
 // the same UUID; new container, same files.
 //
-// Preflight: a claude-session-<uuid> container still running on the
+// Preflight: a convocate-session-<uuid> container still running on the
 // shell host will have live writes into the source dir. The function
 // does NOT stop it for you — the shell no longer manages containers
 // post-v2, so the operator is expected to `docker stop` the leftover
@@ -78,7 +78,7 @@ func MigrateSession(ctx context.Context, opts MigrateSessionOptions, log io.Writ
 		opts.ShellSessionsBase = "/home/claude"
 	}
 	if opts.AgentKeysDir == "" {
-		opts.AgentKeysDir = "/etc/claude-shell/agent-keys"
+		opts.AgentKeysDir = "/etc/convocate/agent-keys"
 	}
 
 	srcDir := filepath.Join(opts.ShellSessionsBase, opts.SessionUUID)
@@ -187,14 +187,14 @@ func MigrateSession(ctx context.Context, opts MigrateSessionOptions, log io.Writ
 }
 
 // refuseIfContainerRunning returns an error if docker is available on
-// the local host AND a container named claude-session-<uuid> is running.
+// the local host AND a container named convocate-session-<uuid> is running.
 // We can't safely tar the home dir while the container is writing to it.
 func refuseIfContainerRunning(ctx context.Context, uuid string) error {
 	if _, err := exec.LookPath("docker"); err != nil {
 		// No docker → no stale container to worry about on a post-v2 shell.
 		return nil
 	}
-	name := "claude-session-" + uuid
+	name := "convocate-session-" + uuid
 	out, err := exec.CommandContext(ctx, "docker", "inspect",
 		"--format", "{{.State.Running}}",
 		name,

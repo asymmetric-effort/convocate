@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in claude-shell, please report it responsibly.
+If you discover a security vulnerability in convocate, please report it responsibly.
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
@@ -25,7 +25,7 @@ Only the latest release version is actively supported with security updates.
 
 ## Security Considerations
 
-claude-shell runs containers with the following security-relevant properties:
+convocate runs containers with the following security-relevant properties:
 
 - Session isolation via separate Docker containers
 - Read-only bind mounts for shared configuration

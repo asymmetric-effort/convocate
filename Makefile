@@ -4,9 +4,9 @@ GO := go
 GOFLAGS := -trimpath
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 
-BINARIES := claude-shell claude-host claude-agent
+BINARIES := convocate convocate-host convocate-agent
 
-.PHONY: all generate build build-claude-shell build-claude-host build-claude-agent install clean lint lint-go lint-yaml lint-json lint-vuln test test-unit test-integration test-e2e release release/major release/minor
+.PHONY: all generate build build-convocate build-convocate-host build-convocate-agent install clean lint lint-go lint-yaml lint-json lint-vuln test test-unit test-integration test-e2e release release/major release/minor
 
 all: lint test build
 
@@ -15,31 +15,31 @@ generate:
 	$(GO) generate ./internal/assets/
 	@echo "Assets generated."
 
-build: build-claude-shell build-claude-host build-claude-agent
+build: build-convocate build-convocate-host build-convocate-agent
 	@echo "Build complete: $(BINARIES:%=$(BUILD_DIR)/%)"
 
-build-claude-shell: generate
-	@echo "Building claude-shell $(VERSION)..."
+build-convocate: generate
+	@echo "Building convocate $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/claude-shell ./cmd/claude-shell/
+	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/convocate ./cmd/convocate/
 
-build-claude-host:
-	@echo "Building claude-host $(VERSION)..."
+build-convocate-host:
+	@echo "Building convocate-host $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/claude-host ./cmd/claude-host/
+	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/convocate-host ./cmd/convocate-host/
 
-build-claude-agent:
-	@echo "Building claude-agent $(VERSION)..."
+build-convocate-agent:
+	@echo "Building convocate-agent $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/claude-agent ./cmd/claude-agent/
+	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/convocate-agent ./cmd/convocate-agent/
 
 install: build
-	@echo "Installing claude-shell, claude-host, claude-agent to /usr/local/bin..."
-	sudo install -m 0755 $(BUILD_DIR)/claude-shell  /usr/local/bin/claude-shell
-	sudo install -m 0755 $(BUILD_DIR)/claude-host   /usr/local/bin/claude-host
-	sudo install -m 0755 $(BUILD_DIR)/claude-agent  /usr/local/bin/claude-agent
-	@echo "Running 'claude-shell install' to finish setup..."
-	sudo /usr/local/bin/claude-shell install
+	@echo "Installing convocate, convocate-host, convocate-agent to /usr/local/bin..."
+	sudo install -m 0755 $(BUILD_DIR)/convocate  /usr/local/bin/convocate
+	sudo install -m 0755 $(BUILD_DIR)/convocate-host   /usr/local/bin/convocate-host
+	sudo install -m 0755 $(BUILD_DIR)/convocate-agent  /usr/local/bin/convocate-agent
+	@echo "Running 'convocate install' to finish setup..."
+	sudo /usr/local/bin/convocate install
 
 clean:
 	@echo "Cleaning..."

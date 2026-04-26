@@ -1,6 +1,6 @@
-// Package shellserver runs the claude-shell host's SSH listener on tcp/222.
-// Its only job is to accept the claude-shell-status subsystem from
-// claude-agent hosts and deliver pushed events to a registered Listener.
+// Package shellserver runs the convocate host's SSH listener on tcp/222.
+// Its only job is to accept the convocate-status subsystem from
+// convocate-agent hosts and deliver pushed events to a registered Listener.
 // Everything else (shells, exec, other subsystems) is refused.
 package shellserver
 
@@ -16,8 +16,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/asymmetric-effort/claude-shell/internal/sshutil"
-	"github.com/asymmetric-effort/claude-shell/internal/statusproto"
+	"github.com/asymmetric-effort/convocate/internal/sshutil"
+	"github.com/asymmetric-effort/convocate/internal/statusproto"
 )
 
 // Listener receives every Event the server decodes. Returning a non-nil
@@ -55,7 +55,7 @@ type Config struct {
 	Logger *log.Logger
 }
 
-// Server runs the claude-shell status listener.
+// Server runs the convocate status listener.
 type Server struct {
 	cfg    Config
 	signer ssh.Signer
@@ -91,7 +91,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", s.cfg.Listen, err)
 	}
-	s.cfg.Logger.Printf("claude-shell: status listener on %s (authorized keys: %d)", s.cfg.Listen, s.auth.Len())
+	s.cfg.Logger.Printf("convocate: status listener on %s (authorized keys: %d)", s.cfg.Listen, s.auth.Len())
 
 	go func() {
 		<-ctx.Done()
@@ -122,17 +122,17 @@ func (s *Server) handleConn(ctx context.Context, nconn net.Conn) {
 			}
 			return nil, fmt.Errorf("key rejected")
 		},
-		ServerVersion: "SSH-2.0-claude-shell",
+		ServerVersion: "SSH-2.0-convocate",
 	}
 	cfg.AddHostKey(s.signer)
 
 	sshConn, chans, reqs, err := ssh.NewServerConn(nconn, cfg)
 	if err != nil {
-		s.cfg.Logger.Printf("claude-shell: handshake from %s failed: %v", nconn.RemoteAddr(), err)
+		s.cfg.Logger.Printf("convocate: handshake from %s failed: %v", nconn.RemoteAddr(), err)
 		return
 	}
 	defer sshConn.Close()
-	s.cfg.Logger.Printf("claude-shell: status connection from %s (user=%s, fp=%s)",
+	s.cfg.Logger.Printf("convocate: status connection from %s (user=%s, fp=%s)",
 		sshConn.RemoteAddr(), sshConn.User(), sshConn.Permissions.Extensions["pubkey-fp"])
 
 	go ssh.DiscardRequests(reqs)
@@ -144,7 +144,7 @@ func (s *Server) handleConn(ctx context.Context, nconn net.Conn) {
 		}
 		channel, chReqs, err := newChan.Accept()
 		if err != nil {
-			s.cfg.Logger.Printf("claude-shell: accept channel failed: %v", err)
+			s.cfg.Logger.Printf("convocate: accept channel failed: %v", err)
 			continue
 		}
 		go s.handleSession(ctx, channel, chReqs)
@@ -161,7 +161,7 @@ func (s *Server) handleSession(ctx context.Context, ch ssh.Channel, reqs <-chan 
 		name := parseStringPayload(req.Payload)
 		if name != statusproto.Subsystem {
 			_ = req.Reply(false, nil)
-			s.cfg.Logger.Printf("claude-shell: rejected subsystem %q", name)
+			s.cfg.Logger.Printf("convocate: rejected subsystem %q", name)
 			return
 		}
 		_ = req.Reply(true, nil)
@@ -181,11 +181,11 @@ func (s *Server) runStatusStream(ctx context.Context, ch io.Reader) {
 		if len(line) > 0 {
 			var ev statusproto.Event
 			if jerr := json.Unmarshal(line, &ev); jerr != nil {
-				s.cfg.Logger.Printf("claude-shell: malformed event, dropping: %v", jerr)
+				s.cfg.Logger.Printf("convocate: malformed event, dropping: %v", jerr)
 				continue
 			}
 			if herr := s.cfg.Listener.HandleEvent(ctx, ev); herr != nil {
-				s.cfg.Logger.Printf("claude-shell: listener error on %s: %v", ev.Type, herr)
+				s.cfg.Logger.Printf("convocate: listener error on %s: %v", ev.Type, herr)
 			}
 		}
 		if err != nil {

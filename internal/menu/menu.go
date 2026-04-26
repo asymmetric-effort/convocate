@@ -1,4 +1,4 @@
-// Package menu provides the interactive session selection menu for claude-shell.
+// Package menu provides the interactive session selection menu for convocate.
 package menu
 
 import (
@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asymmetric-effort/claude-shell/internal/session"
+	"github.com/asymmetric-effort/convocate/internal/session"
 )
 
 const (

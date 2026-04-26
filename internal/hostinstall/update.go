@@ -8,20 +8,20 @@ import (
 	"strings"
 )
 
-// UpdateOptions configures `claude-host update`.
+// UpdateOptions configures `convocate-host update`.
 type UpdateOptions struct {
-	// ShellBinaryPath is the local path to the new claude-shell binary.
-	// Empty = auto-discover (sibling of claude-host, then ./build/claude-shell).
+	// ShellBinaryPath is the local path to the new convocate binary.
+	// Empty = auto-discover (sibling of convocate-host, then ./build/convocate).
 	ShellBinaryPath string
 
-	// AgentBinaryPath is the local path to the new claude-agent binary.
-	// Empty = auto-discover (sibling of claude-host, then ./build/claude-agent).
+	// AgentBinaryPath is the local path to the new convocate-agent binary.
+	// Empty = auto-discover (sibling of convocate-host, then ./build/convocate-agent).
 	AgentBinaryPath string
 
 	// ImageTag is the container image tag to push to the agent after
 	// the binary update. Empty skips the image push — useful when you
 	// only want to roll the binary and leave the image alone (e.g. a
-	// quick CLI-only hotfix). Ignored entirely when claude-agent is
+	// quick CLI-only hotfix). Ignored entirely when convocate-agent is
 	// not installed on the target.
 	ImageTag string
 }
@@ -47,21 +47,21 @@ func Update(ctx context.Context, r Runner, sshCfg *SSHConfig, opts UpdateOptions
 	if log == nil {
 		log = io.Discard
 	}
-	fmt.Fprintf(log, "[claude-host] target: %s\n", r.Target())
+	fmt.Fprintf(log, "[convocate-host] target: %s\n", r.Target())
 
 	targets := []updateTarget{
 		{
-			Name:                "claude-shell",
-			RemotePath:          "/usr/local/bin/claude-shell",
+			Name:                "convocate",
+			RemotePath:          "/usr/local/bin/convocate",
 			LocalBinaryOverride: opts.ShellBinaryPath,
-			ServiceName:         "claude-shell-status.service",
+			ServiceName:         "convocate-status.service",
 			BinaryResolver:      resolveBinaryPath,
 		},
 		{
-			Name:                "claude-agent",
-			RemotePath:          "/usr/local/bin/claude-agent",
+			Name:                "convocate-agent",
+			RemotePath:          "/usr/local/bin/convocate-agent",
 			LocalBinaryOverride: opts.AgentBinaryPath,
-			ServiceName:         "claude-agent.service",
+			ServiceName:         "convocate-agent.service",
 			BinaryResolver:      resolveAgentBinaryPath,
 		},
 	}
@@ -74,19 +74,19 @@ func Update(ctx context.Context, r Runner, sshCfg *SSHConfig, opts UpdateOptions
 			return fmt.Errorf("probe %s: %w", t.Name, err)
 		}
 		if !installed {
-			fmt.Fprintf(log, "[claude-host] %s not present at %s — skipping\n", t.Name, t.RemotePath)
+			fmt.Fprintf(log, "[convocate-host] %s not present at %s — skipping\n", t.Name, t.RemotePath)
 			continue
 		}
 		local, err := t.BinaryResolver(t.LocalBinaryOverride)
 		if err != nil {
 			return fmt.Errorf("locate %s binary: %w", t.Name, err)
 		}
-		fmt.Fprintf(log, "[claude-host] updating %s from %s\n", t.Name, local)
+		fmt.Fprintf(log, "[convocate-host] updating %s from %s\n", t.Name, local)
 		if err := updateOne(ctx, r, log, t, local); err != nil {
 			return err
 		}
 		anyUpdated = true
-		if t.Name == "claude-agent" {
+		if t.Name == "convocate-agent" {
 			agentUpdated = true
 		}
 	}
@@ -95,7 +95,7 @@ func Update(ctx context.Context, r Runner, sshCfg *SSHConfig, opts UpdateOptions
 	}
 
 	// Push the current container image to the agent (if any) and
-	// rewrite /etc/claude-agent/current-image so fresh Restart ops
+	// rewrite /etc/convocate-agent/current-image so fresh Restart ops
 	// use the new tag. Existing containers keep the tag they started
 	// with until Restart — that's the graceful-cutover invariant.
 	if agentUpdated && strings.TrimSpace(opts.ImageTag) != "" {
@@ -103,29 +103,29 @@ func Update(ctx context.Context, r Runner, sshCfg *SSHConfig, opts UpdateOptions
 			return err
 		}
 	} else if agentUpdated {
-		fmt.Fprintln(log, "[claude-host] --image-tag not set; skipping container image push")
+		fmt.Fprintln(log, "[convocate-host] --image-tag not set; skipping container image push")
 	}
 
 	fmt.Fprintln(log, "")
-	fmt.Fprintln(log, "[claude-host] update complete.")
+	fmt.Fprintln(log, "[convocate-host] update complete.")
 	return nil
 }
 
 // pushImageUpdate ships the given image tag to the agent, rewrites
-// /etc/claude-agent/current-image, and bounces the service so the new
+// /etc/convocate-agent/current-image, and bounces the service so the new
 // pointer is live immediately.
 func pushImageUpdate(ctx context.Context, r Runner, tag string, log io.Writer) error {
 	steps := []step{
 		{"Push container image", func(ctx context.Context, r Runner, log io.Writer) error {
 			return TransferImage(ctx, r, tag, log)
 		}},
-		{"Rewrite /etc/claude-agent/current-image", func(ctx context.Context, r Runner, log io.Writer) error {
+		{"Rewrite /etc/convocate-agent/current-image", func(ctx context.Context, r Runner, log io.Writer) error {
 			return writeRemoteContent(ctx, r, log,
 				[]byte(tag+"\n"),
-				"/etc/claude-agent/current-image", 0644, "root:root")
+				"/etc/convocate-agent/current-image", 0644, "root:root")
 		}},
-		{"Restart claude-agent for new image", func(ctx context.Context, r Runner, log io.Writer) error {
-			return r.Run(ctx, "systemctl restart claude-agent.service",
+		{"Restart convocate-agent for new image", func(ctx context.Context, r Runner, log io.Writer) error {
+			return r.Run(ctx, "systemctl restart convocate-agent.service",
 				RunOptions{Sudo: true, Stdout: log, Stderr: log})
 		}},
 	}
