@@ -38,15 +38,24 @@ You're using Claude Code seriously. You want:
 
 ## Get started
 
-[**→ Bootstrap from a base Ubuntu install**](getting-started.md)
+[**→ Bootstrap from a base Ubuntu install**](getting-started.md) — five-step walkthrough from a vanilla box to a working cluster.
 
-[**→ Architecture and design**](architecture.md)
+[**→ Architecture and design**](architecture/index.md) — three-binary model, control plane, security posture.
 
-[**→ Provision a fresh KVM hypervisor with `convocate-host create-vm`**](guides/create-vm.md)
+[**→ Using the TUI**](guides/using-the-tui.md) — keys, screens, and workflows.
+
+## Reference
+
+- [`convocate` CLI](reference/cli/convocate.md)
+- [`convocate-host` CLI](reference/cli/convocate-host.md)
+- [`convocate-agent` CLI](reference/cli/convocate-agent.md)
+- [SSH subsystems](reference/protocol/ssh-subsystems.md) · [RPC ops](reference/protocol/rpc-ops.md) · [Status events](reference/protocol/status-events.md)
+- [Filesystem layout](reference/filesystem-layout.md) · [Systemd units](reference/systemd-units.md)
+- [Glossary](glossary.md) · [Troubleshooting](troubleshooting.md)
 
 ## Project links
 
 - [Source on GitHub](https://github.com/asymmetric-effort/convocate)
 - [Issue tracker](https://github.com/asymmetric-effort/convocate/issues)
 - [Releases](https://github.com/asymmetric-effort/convocate/releases)
-- [Contributing](contributing.md) · [Security](security.md) · [Code of conduct](code-of-conduct.md)
+- [Contributing](project/contributing.md) · [Security policy](project/security.md) · [Code of conduct](project/code-of-conduct.md)
