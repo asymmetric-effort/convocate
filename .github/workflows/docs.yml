@@ -5,13 +5,14 @@ on:
     branches: [main]
     paths:
       - docs/**
-      - mkdocs.yml
-      - README.md
+      - site/**
       - .github/workflows/docs.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: docs
@@ -23,27 +24,32 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          fetch-depth: 0
+          bun-version: latest
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install dependencies
+        working-directory: site
+        run: bun install --frozen-lockfile || bun install
+
+      - name: Build site
+        working-directory: site
+        run: bun run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          python-version: "3.x"
+          path: site/dist
 
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          key: mkdocs-material-${{ hashFiles('.github/workflows/docs.yml') }}
-          path: ~/.cache/pip
-
-      - name: Install MkDocs Material
-        run: pip install mkdocs-material
-
-      - name: Configure git author
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Build and deploy to gh-pages
-        run: mkdocs gh-deploy --force --no-history
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
