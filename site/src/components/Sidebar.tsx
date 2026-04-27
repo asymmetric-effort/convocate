@@ -25,7 +25,7 @@ export function Sidebar() {
                   <li key={r.path}>
                     <Link
                       to={r.path}
-                      class={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
+                      className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
                     >
                       {r.title}
                     </Link>

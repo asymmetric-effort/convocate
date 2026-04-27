@@ -47,3 +47,5 @@ TO-DO.md
 /site/node_modules/
 /site/src/docs-data.ts
 /site/bun.lockb
+/site/test-results/
+/site/playwright-report/

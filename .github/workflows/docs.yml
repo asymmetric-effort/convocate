@@ -53,3 +53,29 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  verify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: site
+        run: bun install --frozen-lockfile || bun install
+
+      - name: Install Playwright browsers
+        working-directory: site
+        run: bunx playwright install chromium --with-deps
+
+      - name: Run post-deployment smoke tests
+        working-directory: site
+        env:
+          SITE_URL: https://convocate.asymmetric-effort.com
+        run: bun run test:e2e

@@ -9,12 +9,14 @@
     "build": "bun run build:docs-data && vite build",
     "dev": "bun run build:docs-data && vite",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@asymmetric-effort/specifyjs": "^0.0.6"
+    "@asymmetric-effort/specifyjs": "file:./vendor-specifyjs-0.1.0-patched.tgz"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/node": "^20.0.0",
     "highlight.js": "^11.11.1",
     "marked": "^18.0.2",

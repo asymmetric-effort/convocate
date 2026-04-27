@@ -29,22 +29,22 @@ export function Header() {
   return (
     <header class="site-header">
       <div class="site-header-inner">
-        <Link to="/" class="brand" aria-label="Convocate home">
+        <Link to="/" className="brand" aria-label="Convocate home">
           <span class="brand-mark">C</span>
           <span class="brand-text">Convocate</span>
         </Link>
         <nav class="top-nav">
-          <Link to="/getting-started" class="top-nav-link">
+          <Link to="/getting-started" className="top-nav-link">
             Getting started
           </Link>
-          <Link to="/architecture" class="top-nav-link">
+          <Link to="/architecture" className="top-nav-link">
             Architecture
           </Link>
-          <Link to="/reference/cli/convocate" class="top-nav-link">
+          <Link to="/reference/cli/convocate" className="top-nav-link">
             Reference
           </Link>
           <a
-            class="top-nav-link"
+            className="top-nav-link"
             href="https://github.com/asymmetric-effort/convocate"
             target="_blank"
             rel="noopener noreferrer"

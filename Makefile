@@ -57,7 +57,7 @@ lint-go:
 
 lint-yaml:
 	@echo "Running YAML linter..."
-	@find . -name '*.yml' -o -name '*.yaml' | grep -v vendor | xargs yamllint -s
+	@find . -name '*.yml' -o -name '*.yaml' | grep -v vendor | grep -v node_modules | xargs yamllint -s
 
 # lint-vuln scans the call graph against the Go vulnerability database
 # (vuln.go.dev). Auto-installs govulncheck if missing — first run pulls
