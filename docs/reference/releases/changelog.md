@@ -34,8 +34,10 @@ Contents:
   rewritten as iterative; CLAUDE.md and project memory codify the
   rule for future contributions.
 - Documentation site at `convocate.asymmetric-effort.com` —
-  this site, built with MkDocs Material and deployed via GitHub
-  Actions on every push to main.
+  this site, built with [@asymmetric-effort/specifyjs][specifyjs]
+  and deployed via GitHub Actions on every push to main.
+
+[specifyjs]: https://www.npmjs.com/package/@asymmetric-effort/specifyjs
 - Tag history reset; previous tags (v0.0.1 through v3.0.0 under the
   `claude-shell` name) deleted.
 
