@@ -2,6 +2,22 @@
 
 Thank you for your interest in contributing to convocate.
 
+## Coding standards
+
+**Authoritative reference:** <http://coding-standards.asymmetric-effort.com/>
+
+That site is the source of truth for code style across every
+asymmetric-effort project. Read it before submitting a change. The
+project-specific guidance below augments it but does not override it
+— if anything here conflicts with the standards site, the standards
+site wins. Two project-level rules worth flagging up front:
+
+- **No recursion in Go.** Go has no tail-call optimization; we use
+  loops and explicit work-list patterns. See `internal/session/
+  copyDir` for the canonical iterative pattern.
+- **ed25519-only SSH keys.** Every key the project generates must
+  be ed25519. No RSA, no ECDSA.
+
 ## Getting Started
 
 1. Fork the repository
