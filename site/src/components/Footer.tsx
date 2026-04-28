@@ -1,8 +1,15 @@
+declare const __BUILD_YEAR__: string;
+declare const __PROJECT_VERSION__: string;
+
 export function Footer() {
   return (
     <footer class="site-footer">
       <div class="site-footer-inner">
-        <span>© 2026 asymmetric effort</span>
+        <span>(c) 2025-{__BUILD_YEAR__} Asymmetric Effort, LLC. MIT License.</span>
+        <span class="dot" aria-hidden="true">
+          •
+        </span>
+        <span>{__PROJECT_VERSION__}</span>
         <span class="dot" aria-hidden="true">
           •
         </span>
