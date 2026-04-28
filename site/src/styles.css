@@ -1,23 +1,24 @@
-/* convocate docs site — global styles. Indigo accent, light/dark via data-theme. */
+/* convocate docs site — global styles. Blue accent, light/dark via data-theme.
+   Color scheme aligned with specifyjs.asymmetric-effort.com. */
 
 :root {
   --bg: #ffffff;
-  --bg-elev: #f7f8fa;
-  --bg-code: #f4f5f9;
-  --fg: #1f2024;
-  --fg-muted: #5b6372;
-  --fg-subtle: #8a93a6;
-  --border: #e3e6ee;
-  --accent: #3949ab;
-  --accent-hover: #303f9f;
-  --accent-soft: #e8eaf6;
+  --bg-elev: #f8fafc;
+  --bg-code: #f1f5f9;
+  --fg: #0f172a;
+  --fg-muted: #64748b;
+  --fg-subtle: #94a3b8;
+  --border: #e2e8f0;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-soft: #eff6ff;
   --link: var(--accent);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04);
 
   --hl-keyword: #6f42c1;
   --hl-string: #032f62;
   --hl-number: #005cc5;
-  --hl-comment: #6a737d;
+  --hl-comment: #64748b;
   --hl-name: #d73a49;
   --hl-type: #22863a;
   --hl-meta: #735c0f;
@@ -27,23 +28,23 @@
 }
 
 [data-theme='dark'] {
-  --bg: #0e1117;
-  --bg-elev: #161b22;
-  --bg-code: #1b212c;
-  --fg: #e6edf3;
-  --fg-muted: #8b949e;
-  --fg-subtle: #6e7681;
-  --border: #30363d;
-  --accent: #7986cb;
-  --accent-hover: #9fa8da;
-  --accent-soft: rgba(121, 134, 203, 0.15);
+  --bg: #0f172a;
+  --bg-elev: #1e293b;
+  --bg-code: #1e293b;
+  --fg: #f1f5f9;
+  --fg-muted: #94a3b8;
+  --fg-subtle: #64748b;
+  --border: #334155;
+  --accent: #60a5fa;
+  --accent-hover: #3b82f6;
+  --accent-soft: rgba(96, 165, 250, 0.12);
   --link: var(--accent);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
 
   --hl-keyword: #d2a8ff;
   --hl-string: #a5d6ff;
   --hl-number: #79c0ff;
-  --hl-comment: #8b949e;
+  --hl-comment: #94a3b8;
   --hl-name: #ff7b72;
   --hl-type: #7ee787;
   --hl-meta: #d29922;
