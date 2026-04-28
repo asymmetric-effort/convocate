@@ -123,8 +123,8 @@ If override doesn't work either, manually remove the lock file on
 the agent:
 
 ```bash
-ls -la /home/claude/<uuid>.lock
-sudo rm /home/claude/<uuid>.lock
+ls -la /home/convocate/<uuid>.lock
+sudo rm /home/convocate/<uuid>.lock
 ```
 
 ## Image transfer fails during `init-agent` or `update`

@@ -2,7 +2,7 @@
 
 A session is the unit of work convocate manages. Each session is one
 Claude CLI process running inside its own Docker container on an agent
-host, with persistent state under `/home/claude/<uuid>/`.
+host, with persistent state under `/home/convocate/<uuid>/`.
 
 ## Identity
 
@@ -83,17 +83,17 @@ containing the owning PID. Locks are:
 On the **agent** host:
 
 ```
-/home/claude/<uuid>/         ← the session's home dir, mounted into the container
-/home/claude/<uuid>.lock     ← file lock (PID inside)
-/home/claude/<uuid>/session.json
+/home/convocate/<uuid>/         ← the session's home dir, mounted into the container
+/home/convocate/<uuid>.lock     ← file lock (PID inside)
+/home/convocate/<uuid>/session.json
                              ← persisted metadata (name, port, protocol, DNS, etc.)
 ```
 
 In the **container**:
 
-- `/home/claude/` — bind-mounted from `/home/claude/<uuid>/` on the host (read-write)
-- `/home/claude/.claude/` — the user's Claude CLI config, fresh per session
-- `/home/claude/.claude-shared/` — bind-mounted from `~/.claude/` on the host (read-only). This is how Claude Code account credentials are shared without each session having to log in
-- `/home/claude/.ssh/` — bind-mounted from the agent's `claude` user (read-only)
-- `/home/claude/.gitconfig` — bind-mounted (read-only)
+- `/home/convocate/` — bind-mounted from `/home/convocate/<uuid>/` on the host (read-write)
+- `/home/convocate/.claude/` — the user's Claude CLI config, fresh per session
+- `/home/convocate/.claude-shared/` — bind-mounted from `~/.claude/` on the host (read-only). This is how Claude Code account credentials are shared without each session having to log in
+- `/home/convocate/.ssh/` — bind-mounted from the agent's `convocate` user (read-only)
+- `/home/convocate/.gitconfig` — bind-mounted (read-only)
 - `/usr/local/bin/claude` — bind-mounted from the agent's installed Claude CLI (read-only)

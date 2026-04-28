@@ -12,7 +12,7 @@ sessions across one or many Linux hosts.
 
 As of v2.0.0 convocate ships three cooperating binaries:
 
-- **`convocate`** — the interactive TUI. Runs as user `claude`. Lists
+- **`convocate`** — the interactive TUI. Runs as user `convocate`. Lists
   sessions across all registered agents, creates sessions on a chosen
   agent, attaches to a session's container over SSH. Doesn't run
   containers itself.
@@ -65,10 +65,10 @@ sudo make install                # copies all three binaries to /usr/local/bin
 which:
 
 - checks Docker is present
-- creates the `claude` user (uid 1337) if missing
+- creates the `convocate` user (uid 1337) if missing
 - builds the session container image tagged with the binary's version
   (`convocate:v2.0.x`)
-- sets `/usr/local/bin/convocate` as `claude`'s login shell
+- sets `/usr/local/bin/convocate` as `convocate`'s login shell
 - provisions `/var/lib/convocate/dnsmasq-hosts` so the shell can
   register per-session DNS names when `dnsmasq` is installed
 
@@ -87,7 +87,7 @@ convocate-host install --host <agent-host>
 ```
 
 This installs the base apt packages, docker, dnsmasq, creates the
-`claude` user, enables ufw, and sets the timezone to UTC. It runs
+`convocate` user, enables ufw, and sets the timezone to UTC. It runs
 `apt dist-upgrade` and — for remote invocations — reboots the target
 before continuing with the remaining steps. The complete list of
 things it configures is in the
@@ -148,11 +148,11 @@ of the rsyslog CA material.
 
 ### 5. Launch the TUI
 
-SSH into the shell host as the `claude` user (the install step set
+SSH into the shell host as the `convocate` user (the install step set
 that user's login shell to `convocate`):
 
 ```bash
-ssh claude@<shell-host>
+ssh convocate@<shell-host>
 ```
 
 You should see the session menu. Press `N` to create — you'll be
@@ -193,7 +193,7 @@ containers keep running on their original image tag until restart —
 cutover is session-by-session, gated on `(R)estart` in the TUI.
 
 **Migrate a pre-v2 orphan session to an agent.** If you upgraded an
-older convocate install, any `/home/claude/<uuid>/` directories
+older convocate install, any `/home/convocate/<uuid>/` directories
 from before v2 show up in the TUI with an `O` status and can't be
 acted on directly. Move them onto an agent:
 
@@ -215,7 +215,7 @@ The session reappears under the target agent on next TUI refresh.
 Each session has:
 
 - a unique UUIDv4
-- its own home directory at `/home/claude/<uuid>/` on the **agent** host
+- its own home directory at `/home/convocate/<uuid>/` on the **agent** host
 - a dedicated Docker container named `convocate-session-<uuid>`,
   enrolled in `convocate-sessions.slice` for kernel-enforced 90%
   aggregate CPU + memory cap

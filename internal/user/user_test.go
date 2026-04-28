@@ -11,12 +11,12 @@ func TestLookupWith_Success(t *testing.T) {
 		return &user.User{
 			Uid:      "1337",
 			Gid:      "1337",
-			Username: "claude",
-			HomeDir:  "/home/claude",
+			Username: "convocate",
+			HomeDir:  "/home/convocate",
 		}, nil
 	}
 
-	info, err := LookupWith("claude", mockLookup)
+	info, err := LookupWith("convocate", mockLookup)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -27,11 +27,11 @@ func TestLookupWith_Success(t *testing.T) {
 	if info.GID != 1337 {
 		t.Errorf("GID = %d, want 1337", info.GID)
 	}
-	if info.Username != "claude" {
-		t.Errorf("Username = %q, want %q", info.Username, "claude")
+	if info.Username != "convocate" {
+		t.Errorf("Username = %q, want %q", info.Username, "convocate")
 	}
-	if info.HomeDir != "/home/claude" {
-		t.Errorf("HomeDir = %q, want %q", info.HomeDir, "/home/claude")
+	if info.HomeDir != "/home/convocate" {
+		t.Errorf("HomeDir = %q, want %q", info.HomeDir, "/home/convocate")
 	}
 }
 
@@ -51,12 +51,12 @@ func TestLookupWith_InvalidUID(t *testing.T) {
 		return &user.User{
 			Uid:      "notanumber",
 			Gid:      "1337",
-			Username: "claude",
-			HomeDir:  "/home/claude",
+			Username: "convocate",
+			HomeDir:  "/home/convocate",
 		}, nil
 	}
 
-	_, err := LookupWith("claude", mockLookup)
+	_, err := LookupWith("convocate", mockLookup)
 	if err == nil {
 		t.Error("expected error for invalid UID, got nil")
 	}
@@ -67,12 +67,12 @@ func TestLookupWith_InvalidGID(t *testing.T) {
 		return &user.User{
 			Uid:      "1337",
 			Gid:      "notanumber",
-			Username: "claude",
-			HomeDir:  "/home/claude",
+			Username: "convocate",
+			HomeDir:  "/home/convocate",
 		}, nil
 	}
 
-	_, err := LookupWith("claude", mockLookup)
+	_, err := LookupWith("convocate", mockLookup)
 	if err == nil {
 		t.Error("expected error for invalid GID, got nil")
 	}

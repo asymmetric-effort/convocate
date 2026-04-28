@@ -75,7 +75,7 @@ investigate and resume rather than push a half-broken cluster.
 These persist across `update`:
 
 - Every running session container (with its original image tag).
-- Every session directory under `/home/claude/<uuid>/`.
+- Every session directory under `/home/convocate/<uuid>/`.
 - All ed25519 keys (host key, peering keys).
 - All TLS certs (rsyslog CA + client).
 - The `convocate-sessions.slice` cgroup config (rewritten only if

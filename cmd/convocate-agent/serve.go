@@ -26,9 +26,9 @@ func cmdServe(_ []string) error {
 		return fmt.Errorf("agent-id: %w", err)
 	}
 
-	u, err := user.Lookup(defaultClaudeUsername)
+	u, err := user.Lookup(defaultConvocateUsername)
 	if err != nil {
-		return fmt.Errorf("lookup %s: %w", defaultClaudeUsername, err)
+		return fmt.Errorf("lookup %s: %w", defaultConvocateUsername, err)
 	}
 	paths := config.PathsFromHome(u.HomeDir)
 	mgr := session.NewManager(paths.SessionsBase, paths.SkelDir)
@@ -124,7 +124,7 @@ func maybeStartEmitter(ctx context.Context, agentID string) (*agentclient.Status
 	emitter, err := agentclient.NewStatusEmitter(agentclient.Config{
 		ShellHost:         host,
 		ShellPort:         223,
-		User:              "claude",
+		User:              "convocate",
 		PrivateKeyPath:    defaultShellPrivateKeyPath,
 		AgentID:           agentID,
 		HeartbeatInterval: 30 * time.Second,

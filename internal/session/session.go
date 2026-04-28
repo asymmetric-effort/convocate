@@ -623,7 +623,7 @@ func (m *Manager) setupClaudeSymlinks(sessionDir string) error {
 		return err
 	}
 
-	sharedBase := filepath.Join("/home/claude", config.ClaudeSharedDir)
+	sharedBase := filepath.Join("/home/convocate", config.ClaudeSharedDir)
 
 	symlinks := []string{
 		"settings.json",

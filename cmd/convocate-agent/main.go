@@ -31,11 +31,11 @@ func run(args []string) error {
 			return cmdInstall(args[2:])
 		case "serve":
 			// Serve must run as the claude user: all on-disk paths
-			// (/etc/convocate-agent, session dirs under /home/claude) are
+			// (/etc/convocate-agent, session dirs under /home/convocate) are
 			// claude-owned, and running as root would quietly create
 			// root-owned files that the next claude-user invocation
 			// can't read.
-			if err := user.EnforceRunningAs(defaultClaudeUsername); err != nil {
+			if err := user.EnforceRunningAs(defaultConvocateUsername); err != nil {
 				return err
 			}
 			return cmdServe(args[2:])

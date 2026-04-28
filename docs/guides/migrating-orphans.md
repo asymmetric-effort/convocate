@@ -2,7 +2,7 @@
 
 If you upgraded an older `claude-shell` install (where the shell
 host ran the session containers itself) to convocate v2.0.0+ (where
-agents run them), any leftover `/home/claude/<uuid>/` directories on
+agents run them), any leftover `/home/convocate/<uuid>/` directories on
 the shell host are *orphans*. The TUI shows them with an `O` status
 indicator and refuses most operations.
 
@@ -23,13 +23,13 @@ doesn't apply.
 
 ## Inspect what's there
 
-Look at what's under `/home/claude/` on the shell host:
+Look at what's under `/home/convocate/` on the shell host:
 
 ```bash
-ls -la /home/claude/
+ls -la /home/convocate/
 # expect to see UUID-named directories
 
-cat /home/claude/<uuid>/session.json
+cat /home/convocate/<uuid>/session.json
 # the metadata, if you want to see what each session was
 ```
 
@@ -67,13 +67,13 @@ What this does:
 2. **Refuse if the destination agent already has a session with
    that UUID.** Should be impossible in a clean upgrade, but the
    check costs nothing.
-3. **`tar` the session directory** at `/home/claude/<uuid>/` on the
+3. **`tar` the session directory** at `/home/convocate/<uuid>/` on the
    shell host into a temp tarball.
 4. **SHA-256 the tarball** for integrity checking.
 5. **`scp` the tarball** to a temp path on the agent.
 6. **Verify SHA-256** on the agent side.
-7. **Untar into `/home/claude/<uuid>/`** on the agent, with
-   ownership rewritten to the agent's `claude` user.
+7. **Untar into `/home/convocate/<uuid>/`** on the agent, with
+   ownership rewritten to the agent's `convocate` user.
 8. **Update the session metadata** to record the new agent
    stamp (so the router will route subsequent ops to the
    correct agent).
@@ -94,7 +94,7 @@ In the TUI on next 15-second refresh:
 There's no `--all` flag. Wrap it:
 
 ```bash
-for uuid in $(ls /home/claude/ | grep -E '^[0-9a-f]{8}-'); do
+for uuid in $(ls /home/convocate/ | grep -E '^[0-9a-f]{8}-'); do
     echo "=== $uuid ==="
     sudo convocate-host migrate-session \
         --agent <agent-id> --session "$uuid"

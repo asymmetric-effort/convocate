@@ -486,7 +486,7 @@ func TestConfigureLoginShell_CallsUsermod(t *testing.T) {
 			if r.Args[1] != "/usr/local/bin/convocate" {
 				t.Errorf("usermod args[1] = %q, want /usr/local/bin/convocate", r.Args[1])
 			}
-			if r.Args[2] != "claude" {
+			if r.Args[2] != "convocate" {
 				t.Errorf("usermod args[2] = %q, want claude", r.Args[2])
 			}
 		}
@@ -585,7 +585,7 @@ func TestCreateUser_RecordsUsermod(t *testing.T) {
 	for _, r := range *records {
 		if r.Name == "usermod" {
 			found = true
-			wantArgs := []string{"-aG", "docker", "claude"}
+			wantArgs := []string{"-aG", "docker", "convocate"}
 			if len(r.Args) != len(wantArgs) {
 				t.Errorf("usermod args = %v, want %v", r.Args, wantArgs)
 			} else {

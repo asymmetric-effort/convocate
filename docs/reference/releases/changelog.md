@@ -24,10 +24,10 @@ Contents:
   - `convocate-session-<uuid>` containers under `convocate-sessions.slice`
   - `/etc/convocate/`, `/etc/convocate-agent/`, `/var/lib/convocate/`,
     `/var/log/convocate-agent/`
-- Anthropic-tool integration points preserved: the `claude` user,
+- Anthropic-tool integration points preserved: the `convocate` user,
   Anthropic's `/usr/local/bin/claude`, `~/.claude/`,
   `~/.claude-shared/`, `CLAUDE.md` filename convention,
-  `CLAUDE_UID` / `CLAUDE_GID` entrypoint env.
+  `CONVOCATE_UID` / `CONVOCATE_GID` entrypoint env.
 - Project-wide rule added: **no recursion in Go** (Go has no TCO,
   so every recursive call grows the goroutine stack — unacceptable
   for an orchestrator that holds long-lived state). `session.copyDir`

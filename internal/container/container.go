@@ -172,7 +172,7 @@ func (r *Runner) attachTmux() error {
 	containerName := config.ContainerName(r.sessionID)
 	cmd := r.execFn("docker", "exec", "-it",
 		containerName,
-		"sudo", "-E", "-u", "claude", "-H", "--",
+		"sudo", "-E", "-u", "convocate", "-H", "--",
 		"tmux", "attach-session", "-t", config.TmuxSessionName,
 	)
 	cmd.Stdin = os.Stdin
@@ -209,7 +209,7 @@ func StopContainer(sessionID string) error {
 func DetachClients(sessionID string) error {
 	containerName := config.ContainerName(sessionID)
 	cmd := pkgExecFn("docker", "exec", containerName,
-		"sudo", "-u", config.ClaudeUser, "--",
+		"sudo", "-u", config.ConvocateUser, "--",
 		"tmux", "detach-client", "-s", config.TmuxSessionName,
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -237,7 +237,7 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 		"--detach",
 		"--name", containerName,
 		"--hostname", fmt.Sprintf("convocate-%s", r.sessionID[:8]),
-		"-w", "/home/claude",
+		"-w", "/home/convocate",
 		// Enroll the container under the shared convocate-sessions.slice
 		// cgroup so the kernel enforces the aggregate 90% CPU/memory
 		// ceiling across all sessions on this agent. The operator keeps
@@ -246,22 +246,22 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 	}
 
 	// Session home directory
-	args = append(args, "-v", fmt.Sprintf("%s:/home/claude", r.sessionDir))
+	args = append(args, "-v", fmt.Sprintf("%s:/home/convocate", r.sessionDir))
 
 	// Shared claude config (read-only)
-	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/%s:ro", r.paths.ClaudeConfig, config.ClaudeSharedDir))
+	args = append(args, "-v", fmt.Sprintf("%s:/home/convocate/%s:ro", r.paths.ConvocateConfig, config.ClaudeSharedDir))
 
 	// Docker socket
 	args = append(args, "-v", fmt.Sprintf("%s:%s", config.DockerSocket, config.DockerSocket))
 
 	// SSH keys (read-only)
 	if _, err := os.Stat(r.paths.SSHDir); err == nil {
-		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.ssh:ro", r.paths.SSHDir))
+		args = append(args, "-v", fmt.Sprintf("%s:/home/convocate/.ssh:ro", r.paths.SSHDir))
 	}
 
 	// Git config (read-only)
 	if _, err := os.Stat(r.paths.GitConfig); err == nil {
-		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.gitconfig:ro", r.paths.GitConfig))
+		args = append(args, "-v", fmt.Sprintf("%s:/home/convocate/.gitconfig:ro", r.paths.GitConfig))
 	}
 
 	// Claude binary (read-only)
@@ -285,8 +285,8 @@ func (r *Runner) buildRunArgs(containerName string) []string {
 	}
 
 	// Environment variables for user setup
-	args = append(args, "-e", fmt.Sprintf("CLAUDE_UID=%d", r.userInfo.UID))
-	args = append(args, "-e", fmt.Sprintf("CLAUDE_GID=%d", r.userInfo.GID))
+	args = append(args, "-e", fmt.Sprintf("CONVOCATE_UID=%d", r.userInfo.UID))
+	args = append(args, "-e", fmt.Sprintf("CONVOCATE_GID=%d", r.userInfo.GID))
 
 	// Image and entrypoint
 	args = append(args, r.imageRef())

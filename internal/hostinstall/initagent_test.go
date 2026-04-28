@@ -121,7 +121,7 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 	}
 	wantDests := map[string]os.FileMode{
 		"/usr/local/bin/convocate-agent":                  0755,
-		"/home/claude/.ssh/authorized_keys":            0600,
+		"/home/convocate/.ssh/authorized_keys":            0600,
 		"/etc/convocate-agent/agent_to_shell_ed25519_key": 0600,
 		"/etc/convocate-agent/shell-host":                 0644,
 		"/etc/convocate-agent/rsyslog-tls/ca.crt":         0644,
@@ -189,7 +189,7 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 
 	// authorized_keys on the agent must contain a valid public key line
 	// tagged with the matching comment.
-	authCopy := findCopy(m.copies, "/home/claude/.ssh/authorized_keys")
+	authCopy := findCopy(m.copies, "/home/convocate/.ssh/authorized_keys")
 	if authCopy == nil {
 		t.Fatal("authorized_keys not copied")
 	}
@@ -210,8 +210,8 @@ func TestInitAgent_EndToEnd(t *testing.T) {
 	wantPeering := []string{
 		"/usr/local/bin/convocate-agent install",
 		"cat /etc/convocate-agent/agent-id",
-		"chown claude:claude '/home/claude/.ssh/authorized_keys'",
-		"chown claude:claude '/etc/convocate-agent/agent_to_shell_ed25519_key'",
+		"chown convocate:convocate '/home/convocate/.ssh/authorized_keys'",
+		"chown convocate:convocate '/etc/convocate-agent/agent_to_shell_ed25519_key'",
 		"chown root:root '/etc/convocate-agent/shell-host'",
 		"systemctl restart convocate-agent.service",
 	}

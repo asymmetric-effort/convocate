@@ -101,7 +101,7 @@ JSON header line:
 ```
 
 …then the channel becomes a raw byte pipe between the SSH session and
-`docker exec -it <container> sudo -u claude -- tmux attach-session -t claude`.
+`docker exec -it <container> sudo -u convocate -- tmux attach-session -t convocate`.
 Window-change events on the SSH channel are forwarded to the PTY.
 
 ### `convocate-status` (newline-JSON event stream)

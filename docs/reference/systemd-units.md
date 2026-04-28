@@ -183,6 +183,6 @@ sudo systemctl daemon-reload
 sudo systemctl restart rsyslog
 ```
 
-This leaves session directories under `/home/claude/`, the
+This leaves session directories under `/home/convocate/`, the
 container image tags, and the binaries themselves untouched. Clean
 those separately if you want a full removal.

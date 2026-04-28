@@ -39,7 +39,7 @@ Prepares a vanilla Ubuntu host for convocate. Idempotent.
 - `apt-get update && apt-get dist-upgrade -y`
 - Installs base packages: docker, dnsmasq, jq, curl, git, ufw, ca-
   certificates, openssh-server
-- Creates the `claude` user (UID 1337) if missing
+- Creates the `convocate` user (UID 1337) if missing
 - Sets timezone to `Etc/UTC`
 - Configures ufw to allow `tcp/22` plus role-specific ports
 - Reboots the host if a kernel was upgraded (remote invocations

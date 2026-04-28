@@ -85,7 +85,7 @@ container — that happens lazily on attach.
 **Result:** the newly-created session metadata.
 
 **Side effects:**
-- Writes `/home/claude/<uuid>/session.json`
+- Writes `/home/convocate/<uuid>/session.json`
 - Emits `container.created` status event
 
 ### `edit`
@@ -133,7 +133,7 @@ removes the session directory.
 
 **Side effects:**
 - `docker stop -t 10` if the container is running (best-effort)
-- `rm -rf /home/claude/<uuid>/`
+- `rm -rf /home/convocate/<uuid>/`
 - Emits `container.deleted`
 
 ## Lifecycle ops
@@ -153,7 +153,7 @@ Stop the running container without removing the session.
 ### `background`
 
 Detach all currently-attached operators without stopping the
-container. Implementation: `tmux detach-client -s claude` inside the
+container. Implementation: `tmux detach-client -s convocate` inside the
 container, which bumps every connected client off.
 
 **Params:** `{"id":"<uuid>"}`
@@ -193,7 +193,7 @@ process.
 **Result:** `null`
 
 **Side effects:**
-- `rm /home/claude/<uuid>.lock` if present
+- `rm /home/convocate/<uuid>.lock` if present
 - No status event
 
 ## Settings (placeholders)

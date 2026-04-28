@@ -157,12 +157,12 @@ systemctl restart systemd-resolved || true
 func stepCreateClaudeUser(ctx context.Context, r Runner, log io.Writer) error {
 	// Idempotent: if the user already exists we just ensure docker group
 	// membership. uid 1337 matches what convocate install expects (see
-	// internal/config.ClaudeUser and the skel ownership in session dirs).
+	// internal/config.ConvocateUser and the skel ownership in session dirs).
 	cmd := `set -e
-if ! id claude >/dev/null 2>&1; then
-  useradd -u 1337 -m -s /bin/bash claude
+if ! id convocate >/dev/null 2>&1; then
+  useradd -u 1337 -m -s /bin/bash convocate
 fi
-usermod -aG docker claude
+usermod -aG docker convocate
 `
 	return r.Run(ctx, cmd, RunOptions{Sudo: true, Stdout: log, Stderr: log})
 }

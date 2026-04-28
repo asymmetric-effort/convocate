@@ -8,7 +8,7 @@ Quick reference for terms used throughout the docs.
 CLI. Trusted; holds shell-side keys.
 
 **Shell host** — The machine running the `convocate` TUI service and
-the `convocate-status` listener. Operators SSH here as the `claude`
+the `convocate-status` listener. Operators SSH here as the `convocate`
 user to enter the TUI. Also runs the rsyslog server and (optionally)
 dnsmasq for cluster DNS.
 
@@ -17,7 +17,7 @@ dnsmasq for cluster DNS.
 or many.
 
 **Session** — A unit of work managed by convocate. Comprises a UUID,
-a home directory on an agent (`/home/claude/<uuid>/`), and a Docker
+a home directory on an agent (`/home/convocate/<uuid>/`), and a Docker
 container (`convocate-session-<uuid>`) that runs Claude CLI inside
 tmux.
 
@@ -90,10 +90,10 @@ limits, kernel-enforced. Layer 2 of the two-layer capacity model.
 **Admission control** — The pre-flight 90% check the agent runs in
 its `Create` handler before doing `docker run`. Layer 1.
 
-**`claude` user** — UID 1337, GID 1337. The user account on shell
+**`convocate` user** — UID 1337, GID 1337. The user account on shell
 and agent hosts that owns convocate state, runs the TUI as a login
 shell, and runs Claude CLI inside containers (with the same UID via
-`CLAUDE_UID` / `CLAUDE_GID` env passed to entrypoint).
+`CONVOCATE_UID` / `CONVOCATE_GID` env passed to entrypoint).
 
 **Skel** — Files seeded into a freshly-created session's home
 directory. Currently includes a project-level `CLAUDE.md` so Claude
@@ -148,7 +148,7 @@ shell on `tcp/223`. Reconnects with backoff (default 1s → 30s).
 **Heartbeat** — `agent.heartbeat` event the emitter publishes on a
 configurable cadence (default 30s). Used to detect silent agents.
 
-**Skel directory** — `/home/claude/.skel/` on a session-creating
+**Skel directory** — `/home/convocate/.skel/` on a session-creating
 agent; contains the per-session starter content (currently just
 `CLAUDE.md`).
 

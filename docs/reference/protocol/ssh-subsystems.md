@@ -91,8 +91,8 @@ Unknown fields are silently ignored.
 ### Acknowledgment
 
 The agent doesn't send an explicit ack. After processing the header
-it runs `docker exec -it <container> sudo -u claude -- tmux attach-
-session -t claude` and pipes the resulting PTY's bytes to the SSH
+it runs `docker exec -it <container> sudo -u convocate -- tmux attach-
+session -t convocate` and pipes the resulting PTY's bytes to the SSH
 channel. If the container doesn't exist or `tmux attach` fails, the
 agent writes a single line of JSON:
 

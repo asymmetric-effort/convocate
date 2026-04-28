@@ -37,7 +37,7 @@ type MigrateSessionOptions struct {
 	// holds session.json.
 	SessionUUID string
 
-	// ShellSessionsBase defaults to /home/claude when empty. Orphan
+	// ShellSessionsBase defaults to /home/convocate when empty. Orphan
 	// session dirs live directly under this path.
 	ShellSessionsBase string
 
@@ -75,7 +75,7 @@ func MigrateSession(ctx context.Context, opts MigrateSessionOptions, log io.Writ
 		return fmt.Errorf("migrate-session: --session is required")
 	}
 	if opts.ShellSessionsBase == "" {
-		opts.ShellSessionsBase = "/home/claude"
+		opts.ShellSessionsBase = "/home/convocate"
 	}
 	if opts.AgentKeysDir == "" {
 		opts.AgentKeysDir = "/etc/convocate/agent-keys"
@@ -113,11 +113,11 @@ func MigrateSession(ctx context.Context, opts MigrateSessionOptions, log io.Writ
 
 	fmt.Fprintf(log, "[migrate] %s → %s (%s)\n", opts.SessionUUID, opts.AgentID, host)
 
-	// tar cf - -C <base> <uuid> | ssh -i <key> claude@<host>
-	//     'mkdir -p /home/claude && tar xf - -C /home/claude'
+	// tar cf - -C <base> <uuid> | ssh -i <key> convocate@<host>
+	//     'mkdir -p /home/convocate && tar xf - -C /home/convocate'
 	//
 	// tar from <base> with <uuid> as the archive entry so the unpacked
-	// tree lands at /home/claude/<uuid>/. Owner/mode are preserved by
+	// tree lands at /home/convocate/<uuid>/. Owner/mode are preserved by
 	// tar's defaults, which matches the invariant that files are
 	// claude-owned on both ends (same uid).
 	//
@@ -133,8 +133,8 @@ func MigrateSession(ctx context.Context, opts MigrateSessionOptions, log io.Writ
 		"-i", keyPath,
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "BatchMode=yes",
-		"claude@"+host,
-		"mkdir -p /home/claude && tar xf - -C /home/claude",
+		"convocate@"+host,
+		"mkdir -p /home/convocate && tar xf - -C /home/convocate",
 	)
 	// os.Pipe (not io.Pipe) so exec can dup2 these fds directly into
 	// the child processes — no goroutines copying bytes through a

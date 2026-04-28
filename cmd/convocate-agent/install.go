@@ -23,8 +23,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=claude
-Group=claude
+User=convocate
+Group=convocate
 ExecStart=/usr/local/bin/convocate-agent serve
 Restart=on-failure
 RestartSec=5
@@ -37,7 +37,7 @@ WantedBy=multi-user.target
 // is idempotent — repeated invocations only update what's out of date.
 //
 // Requires root (EUID 0) because it writes to /etc/systemd, /etc/convocate-agent,
-// and fixes ownership on /home/claude directories.
+// and fixes ownership on /home/convocate directories.
 func cmdInstall(_ []string) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("%s install must be run as root (use sudo)", appName)
@@ -50,7 +50,7 @@ func cmdInstall(_ []string) error {
 		{"Ensure claude user", ensureClaudeUser},
 		{"Create /etc/convocate-agent directory", ensureEtcDir},
 		{"Generate / assign agent ID", ensureAgentID},
-		{"Ensure /home/claude/.ssh directory", ensureSSHDir},
+		{"Ensure /home/convocate/.ssh directory", ensureSSHDir},
 		{"Ensure authorized_keys file", ensureAuthKeys},
 		{"Set up session skeleton directory", ensureSessionSkel},
 		{"Check claude CLI is installed", checkClaudeCLIPresent},
@@ -91,12 +91,12 @@ func cmdInstall(_ []string) error {
 // that this agent now manages because both services run as the same uid
 // and read/write the same directory layout.
 //
-// Session dirs live directly under /home/claude/ with UUID names. We use
+// Session dirs live directly under /home/convocate/ with UUID names. We use
 // "has a session.json inside" as the detection heuristic rather than
 // parsing the directory name, since that's the file session.Manager
 // itself treats as authoritative.
 func countAdoptedSessions() (int, error) {
-	u, err := user.Lookup(defaultClaudeUsername)
+	u, err := user.Lookup(defaultConvocateUsername)
 	if err != nil {
 		return 0, err
 	}
@@ -120,10 +120,10 @@ func countAdoptedSessions() (int, error) {
 }
 
 func ensureClaudeUser() error {
-	if _, err := user.Lookup(defaultClaudeUsername); err == nil {
+	if _, err := user.Lookup(defaultConvocateUsername); err == nil {
 		// Already exists; make sure docker group membership is in place for
 		// the container-lifecycle ops we'll run later.
-		cmd := exec.Command("usermod", "-aG", "docker", defaultClaudeUsername)
+		cmd := exec.Command("usermod", "-aG", "docker", defaultConvocateUsername)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		// ignore failure when docker group doesn't exist yet — docker may be
@@ -131,11 +131,11 @@ func ensureClaudeUser() error {
 		_ = cmd.Run()
 		return nil
 	}
-	cmd := exec.Command("useradd", "-u", "1337", "-m", "-s", "/bin/bash", defaultClaudeUsername)
+	cmd := exec.Command("useradd", "-u", "1337", "-m", "-s", "/bin/bash", defaultConvocateUsername)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("useradd claude: %w", err)
+		return fmt.Errorf("useradd -u 1337 -m -s /bin/bash convocate: %w", err)
 	}
 	return nil
 }
@@ -170,15 +170,15 @@ func writeSystemdUnit() error {
 	return os.WriteFile(defaultSystemdUnit, []byte(systemdUnit), 0644)
 }
 
-// ensureSessionSkel provisions /home/claude/.skel/ with the embedded
+// ensureSessionSkel provisions /home/convocate/.skel/ with the embedded
 // starter files (CLAUDE.md etc.) that session.Manager.CreateWithOptions
 // copies into every new session dir. Pre-v2 this was a convocate
 // install step; now that sessions only spawn on agents, the agent owns
 // it. Idempotent: skel.Setup only writes missing files.
 func ensureSessionSkel() error {
-	u, err := user.Lookup(defaultClaudeUsername)
+	u, err := user.Lookup(defaultConvocateUsername)
 	if err != nil {
-		return fmt.Errorf("lookup %s: %w", defaultClaudeUsername, err)
+		return fmt.Errorf("lookup %s: %w", defaultConvocateUsername, err)
 	}
 	skelPath := filepath.Join(u.HomeDir, config.SkelDir)
 	if err := skel.Setup(skelPath); err != nil {
@@ -347,7 +347,7 @@ func enableService() error {
 }
 
 func chownClaude(path string) error {
-	u, err := user.Lookup(defaultClaudeUsername)
+	u, err := user.Lookup(defaultConvocateUsername)
 	if err != nil {
 		return err
 	}

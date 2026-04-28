@@ -94,15 +94,15 @@ can't see each other's processes, files, or network namespaces.
 
 ### Per-session home dir
 
-Each session has its own `/home/claude/<uuid>/` directory on the
+Each session has its own `/home/convocate/<uuid>/` directory on the
 agent. That directory is bind-mounted into the container as
-`/home/claude/`. State (Claude conversation history, project files,
+`/home/convocate/`. State (Claude conversation history, project files,
 git checkouts) is per-session, persists across detach/reattach, and
 is destroyed on `(D)elete`.
 
 ### Read-only shares
 
-The host's `claude` user's `~/.claude/`, `~/.ssh/`, and `~/.gitconfig`
+The host's `convocate` user's `~/.claude/`, `~/.ssh/`, and `~/.gitconfig`
 are bind-mounted **read-only** into every container. Sessions get the
 same Claude account, the same SSH identity, the same git identity —
 but can't modify the source-of-truth files.

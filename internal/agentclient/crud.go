@@ -23,7 +23,7 @@ type CRUDConfig struct {
 	AgentHost string
 	// AgentPort defaults to 222 when zero.
 	AgentPort int
-	// User is the SSH username. Defaults to "claude".
+	// User is the SSH username. Defaults to "convocate".
 	User string
 	// PrivateKeyPath is the shell→agent SSH private key, typically
 	// /etc/convocate/agent-keys/<id>/shell_to_agent_ed25519_key.
@@ -80,7 +80,7 @@ func NewCRUDClient(cfg CRUDConfig) (*CRUDClient, error) {
 		cfg.AgentPort = 222
 	}
 	if cfg.User == "" {
-		cfg.User = "claude"
+		cfg.User = "convocate"
 	}
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = 10 * time.Second

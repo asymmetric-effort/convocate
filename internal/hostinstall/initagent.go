@@ -108,7 +108,7 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 
 	// Generate the two keypairs. Tagging comments by agent-id makes it
 	// possible to audit /etc/convocate/status_authorized_keys and
-	// /home/claude/.ssh/authorized_keys entries later.
+	// /home/convocate/.ssh/authorized_keys entries later.
 	shellToAgentKP, err := sshutil.GenerateKeypair(fmt.Sprintf("shell->agent=%s", agentID))
 	if err != nil {
 		return fmt.Errorf("generate shell->agent keypair: %w", err)
@@ -123,12 +123,12 @@ func InitAgent(ctx context.Context, r Runner, sshCfg *SSHConfig, opts InitAgentO
 		{"Install shell->agent authorized_keys", func(ctx context.Context, r Runner, log io.Writer) error {
 			return writeRemoteContent(ctx, r, log,
 				shellToAgentKP.AuthorizedKey,
-				"/home/claude/.ssh/authorized_keys", 0600, "claude:claude")
+				"/home/convocate/.ssh/authorized_keys", 0600, "convocate:convocate")
 		}},
 		{"Install agent->shell private key", func(ctx context.Context, r Runner, log io.Writer) error {
 			return writeRemoteContent(ctx, r, log,
 				agentToShellKP.PrivatePEM,
-				"/etc/convocate-agent/agent_to_shell_ed25519_key", 0600, "claude:claude")
+				"/etc/convocate-agent/agent_to_shell_ed25519_key", 0600, "convocate:convocate")
 		}},
 		{"Write shell-host address", func(ctx context.Context, r Runner, log io.Writer) error {
 			return writeRemoteContent(ctx, r, log,

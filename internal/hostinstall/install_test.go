@@ -181,13 +181,13 @@ func TestStep_CreateClaudeUser_Idempotent(t *testing.T) {
 	}
 	cmd := m.cmds[0].Cmd
 	// Must not fail if the user already exists.
-	if !strings.Contains(cmd, "id claude") {
+	if !strings.Contains(cmd, "id convocate") {
 		t.Errorf("expected existence check before useradd, got: %s", cmd)
 	}
 	if !strings.Contains(cmd, "useradd -u 1337") {
 		t.Errorf("expected uid 1337, got: %s", cmd)
 	}
-	if !strings.Contains(cmd, "usermod -aG docker claude") {
+	if !strings.Contains(cmd, "usermod -aG docker convocate") {
 		t.Errorf("expected docker group membership, got: %s", cmd)
 	}
 }

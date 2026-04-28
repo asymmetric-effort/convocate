@@ -55,7 +55,7 @@ make clean lint test build install release   # full ship cycle
 | `internal/logging` | syslog wrapper |
 | `internal/assets` | Embedded Dockerfile + entrypoint.sh |
 | `internal/skel` | Session skeleton directory contents |
-| `internal/user` | `user.Lookup` wrapper for the `claude` user |
+| `internal/user` | `user.Lookup` wrapper for the `convocate` user |
 | `internal/diskspace` | Free-space check for the build context |
 
 ## TUI shape (internal/menu/tui.go)
@@ -109,7 +109,7 @@ stale-cleaned when the PID is dead or the mtime is older than 24h.
 `container.Runner.buildRunArgs` always emits `--rm --detach` and
 `-p HOST:CONTAINER/PROTO` when a port is set. `Runner.Start` does docker
 run + `docker exec -it tmux attach-session`; `Runner.StartDetached` skips
-the attach. `DetachClients` sends `tmux detach-client -s claude` inside the
+the attach. `DetachClients` sends `tmux detach-client -s convocate` inside the
 container to background a connected user without stopping the container.
 
 ## Things that have tripped us up

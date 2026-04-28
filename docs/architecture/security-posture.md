@@ -7,9 +7,9 @@ It's the ground truth for "who can do what" in a convocate cluster.
 
 | Principal | Trusted to | NOT trusted to |
 |---|---|---|
-| Operator's `claude` user (on the shell host) | Talk to any registered agent over SSH; create / kill / attach to sessions | SSH into agent hosts as a regular user; modify `/etc/convocate/*` (root-only) |
+| Operator's `convocate` user (on the shell host) | Talk to any registered agent over SSH; create / kill / attach to sessions | SSH into agent hosts as a regular user; modify `/etc/convocate/*` (root-only) |
 | Each `convocate-agent` process | Run docker locally on its own host; respond to requests on `tcp/222` | Talk to other agents; modify `/etc/convocate-agent/*` after install |
-| `claude` user inside a session container | Run sudo within the container; bind-mount the operator's `~/.claude/`, `~/.ssh/`, `~/.gitconfig` (read-only) | Touch the host's filesystem outside the session's bind mounts; reach other containers; sudo on the host |
+| `convocate` user inside a session container | Run sudo within the container; bind-mount the operator's `~/.claude/`, `~/.ssh/`, `~/.gitconfig` (read-only) | Touch the host's filesystem outside the session's bind mounts; reach other containers; sudo on the host |
 
 ## Cryptographic primitives
 
@@ -51,7 +51,7 @@ Same posture on the shell's `tcp/223` listener: only the
 
 Inside a session container:
 
-- `claude` user runs everything; UID/GID match the host's `claude`
+- `convocate` user runs everything; UID/GID match the host's `claude`
   user (typically 1337 on convocate hosts) so file ownership stays
   consistent across the bind mount
 - `claude` has NOPASSWD sudo **inside the container only**
@@ -83,7 +83,7 @@ limiting what *Claude itself* can do from inside a session.
   agent can reach each other on the bridge network. If you want
   isolation at the L3 level, run those sessions on different agents.
 - **No quota on disk usage** beyond Layer 1's coarse pre-flight
-  check. A runaway session can still fill `/home/claude` on the
+  check. A runaway session can still fill `/home/convocate` on the
   agent. Monitor `/var/log/convocate-agent/<id>.log` for warnings.
 - **No sandboxing of the Claude CLI itself.** Once Claude has a
   shell, it has full container privileges (as `claude`). Per-action
@@ -97,7 +97,7 @@ convocate is **not** designed to defend against:
   every shell-side key)
 - A compromised agent host (the agent's keys + image cache are
   enough to impersonate that agent until you rotate)
-- Malicious code running as the `claude` user in a session
+- Malicious code running as the `convocate` user in a session
   container, escaping via the docker-socket bind mount (see above)
 
 It **is** designed to defend against:

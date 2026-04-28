@@ -16,10 +16,10 @@ const (
 	defaultAgentIDPath    = "/etc/convocate-agent/agent-id"
 	defaultBinaryPath     = "/usr/local/bin/convocate-agent"
 	defaultSystemdUnit    = "/etc/systemd/system/convocate-agent.service"
-	defaultAuthKeysPath   = "/home/claude/.ssh/authorized_keys"
-	defaultAuthKeysDir    = "/home/claude/.ssh"
-	defaultClaudeHomeDir  = "/home/claude"
-	defaultClaudeUsername = "claude"
+	defaultAuthKeysPath   = "/home/convocate/.ssh/authorized_keys"
+	defaultAuthKeysDir    = "/home/convocate/.ssh"
+	defaultConvocateHomeDir  = "/home/convocate"
+	defaultConvocateUsername = "convocate"
 	defaultListen         = ":222"
 
 	// Shell-peering paths. The agent→shell SSH private key and the shell

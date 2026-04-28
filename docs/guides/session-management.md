@@ -21,7 +21,7 @@ host the session. Then a four-field form:
 When you submit:
 
 1. UUID generated (`uuid.NewRandom`).
-2. Session directory created at `/home/claude/<uuid>/` on the chosen agent.
+2. Session directory created at `/home/convocate/<uuid>/` on the chosen agent.
 3. `session.json` metadata written.
 4. Container *not* started yet — it spins up lazily when you attach.
 
@@ -34,7 +34,7 @@ Enter to attach.
 
 - If the session is `-` (stopped): the agent runs `docker run` with
   the session's persisted port/protocol/DNS, then `docker exec -it
-  ... tmux attach-session -t claude` over the SSH attach subsystem.
+  ... tmux attach-session -t convocate` over the SSH attach subsystem.
   State becomes `C`.
 - If the session is `R` (running detached): the agent skips the
   `docker run` and just attaches. State becomes `C`.
@@ -65,7 +65,7 @@ Use it when:
 
 What gets copied:
 
-- The session's `/home/claude/<uuid>/` directory (project files,
+- The session's `/home/convocate/<uuid>/` directory (project files,
   conversation history, anything written to it).
 - The session's metadata except UUID, timestamps, and any port (the
   clone gets `Port: 0` to avoid collision).
@@ -136,7 +136,7 @@ Use Kill when:
 Permanent. What gets removed:
 
 - The container (kill if running).
-- `/home/claude/<uuid>/` on the agent (project files, conversation
+- `/home/convocate/<uuid>/` on the agent (project files, conversation
   history, everything).
 - `session.json` metadata.
 - The lock file.

@@ -88,10 +88,10 @@ A complete map of every path convocate touches.
     └── client.key                # Client key (mode 0600)
 ```
 
-### Sessions (writable by `claude` user)
+### Sessions (writable by `convocate` user)
 
 ```
-/home/claude/
+/home/convocate/
 ├── <uuid>/                       # One per session
 │   ├── session.json              # Session metadata
 │   ├── .claude/                  # Per-session Claude CLI state
@@ -139,22 +139,22 @@ A complete map of every path convocate touches.
 /usr/local/bin/claude              # Anthropic Claude CLI; mounted at the same path
                                    # in every session container (read-only)
 
-/home/claude/.claude/              # The agent's claude-user Claude config; bind-
+/home/convocate/.claude/              # The agent's claude-user Claude config; bind-
                                    # mounted into every session as ~/.claude-shared/
                                    # (read-only). Sessions write their own ~/.claude/
                                    # which starts empty and persists per session.
 
-/home/claude/.ssh/                 # Mounted read-only into every session
-/home/claude/.gitconfig            # Same
+/home/convocate/.ssh/                 # Mounted read-only into every session
+/home/convocate/.gitconfig            # Same
 ```
 
 ## Inside a session container
 
 ```
-/home/claude/                     # Bind-mounted from <agent>:/home/claude/<uuid>/
+/home/convocate/                     # Bind-mounted from <agent>:/home/convocate/<uuid>/
 ├── .claude/                      # Per-session Claude state (writable)
-├── .claude-shared/               # Bind-mounted from <agent>:/home/claude/.claude/ (RO)
-├── .ssh/                         # Bind-mounted from <agent>:/home/claude/.ssh/ (RO)
+├── .claude-shared/               # Bind-mounted from <agent>:/home/convocate/.claude/ (RO)
+├── .ssh/                         # Bind-mounted from <agent>:/home/convocate/.ssh/ (RO)
 ├── .gitconfig                    # Bind-mounted (RO)
 ├── CLAUDE.md                     # From the skel; tells Claude Code project conventions
 └── (working files, project checkouts, etc.)
@@ -169,11 +169,11 @@ A complete map of every path convocate touches.
 
 | Path | Owner | Mode | Why |
 |---|---|---|---|
-| `/etc/convocate*/` | root:root | 0750 | Config; not readable by `claude` user |
+| `/etc/convocate*/` | root:root | 0750 | Config; not readable by `convocate` user |
 | `*.key` files | root:root | 0600 | Private keys |
 | `*.pub` / `*.crt` | root:root | 0644 | Public material |
 | `agent-id`, `current-image`, `shell-host` | root:root | 0644 | Plain-text config |
 | `/var/lib/convocate/dnsmasq-hosts` | root:root | 0644 | Read by dnsmasq |
 | `/var/log/convocate-agent/*.log` | root or syslog | 0640 | rsyslog-routed |
-| `/home/claude/<uuid>/` | claude:claude | 0700 | Per-session, claude-only |
-| `/home/claude/<uuid>.lock` | claude:claude | 0644 | Lock file |
+| `/home/convocate/<uuid>/` | convocate:convocate | 0700 | Per-session, claude-only |
+| `/home/convocate/<uuid>.lock` | convocate:convocate | 0644 | Lock file |

@@ -31,7 +31,7 @@ sudo make install                # copies all three binaries to /usr/local/bin
 `make install` does the source-install + runs `convocate install`, which:
 
 - checks Docker is present
-- creates the `claude` user (uid 1337) if missing
+- creates the `convocate` user (uid 1337) if missing
 - builds the session container image tagged with the binary's version (`convocate:vX.Y.Z`)
 - sets `/usr/local/bin/convocate` as `claude`'s login shell
 - provisions `/var/lib/convocate/dnsmasq-hosts` so the shell can register per-session DNS names when `dnsmasq` is installed
@@ -51,7 +51,7 @@ convocate-host install --host <agent-host>
 ```
 
 This installs the base apt packages, Docker, dnsmasq, creates the
-`claude` user, enables ufw, and sets the timezone to UTC. It runs
+`convocate` user, enables ufw, and sets the timezone to UTC. It runs
 `apt dist-upgrade` and — for remote invocations — reboots the target
 before continuing with the remaining steps.
 
@@ -97,11 +97,11 @@ of the rsyslog CA material.
 
 ## 5. Launch the TUI
 
-SSH into the shell host as the `claude` user (the install step set
+SSH into the shell host as the `convocate` user (the install step set
 that user's login shell to `convocate`):
 
 ```bash
-ssh claude@<shell-host>
+ssh convocate@<shell-host>
 ```
 
 You should see the session menu. Press `N` to create — you'll be
@@ -142,7 +142,7 @@ containers keep running on their original image tag until restart —
 cutover is session-by-session, gated on `(R)estart` in the TUI.
 
 **Migrate a pre-v2 orphan session to an agent.** If you upgraded an
-older install, any `/home/claude/<uuid>/` directories from before v2
+older install, any `/home/convocate/<uuid>/` directories from before v2
 show up in the TUI with an `O` status and can't be acted on directly.
 Move them onto an agent:
 

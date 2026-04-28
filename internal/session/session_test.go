@@ -976,7 +976,7 @@ func TestSetupClaudeSymlinks(t *testing.T) {
 			t.Errorf("symlink %s not created: %v", name, err)
 			continue
 		}
-		expectedPrefix := "/home/claude/.claude-shared/"
+		expectedPrefix := "/home/convocate/.claude-shared/"
 		if !strings.HasPrefix(target, expectedPrefix) {
 			t.Errorf("symlink %s target = %q, expected prefix %q", name, target, expectedPrefix)
 		}

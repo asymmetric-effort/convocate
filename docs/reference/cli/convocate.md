@@ -1,6 +1,6 @@
 # `convocate`
 
-The operator's TUI binary. Runs as the `claude` user; `convocate-host
+The operator's TUI binary. Runs as the `convocate` user; `convocate-host
 install` sets it as `claude`'s login shell so SSH'ing in lands you
 directly in the menu.
 
@@ -44,7 +44,7 @@ binary by hand.
 **What it does:**
 
 - Verifies Docker is present and the daemon is reachable.
-- Creates the `claude` user (UID 1337, group 1337) if missing.
+- Creates the `convocate` user (UID 1337, group 1337) if missing.
 - Builds the `convocate:<version>` container image from the
   embedded Dockerfile + entrypoint + skel.
 - Sets `/usr/local/bin/convocate` as `claude`'s login shell.
@@ -100,7 +100,7 @@ Prints a short usage summary. `--help` and `-h` are aliases.
 The TUI reads no environment variables for configuration. All state
 comes from:
 
-- `/home/claude/<uuid>/session.json` — per-session metadata (on agents)
+- `/home/convocate/<uuid>/session.json` — per-session metadata (on agents)
 - `/etc/convocate/agent-keys/<id>/` — registered agents (on shell)
 - `/var/lib/convocate/dnsmasq-hosts` — DNS registrations
 

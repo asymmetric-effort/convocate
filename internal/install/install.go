@@ -68,14 +68,14 @@ func (inst *Installer) Run() error {
 	}{
 		{"Checking platform", inst.checkPlatform},
 		{"Checking Docker", inst.checkDocker},
-		{"Creating claude user", inst.createUser},
+		{"Creating convocate user", inst.createUser},
 		{"Installing convocate binary", inst.installBinary},
 		{"Building Docker image", inst.buildImage},
 		{"Configuring login shell", inst.configureLoginShell},
 		{"Setting up dnsmasq integration", inst.setupDnsmasqIntegration},
 	}
 	// Post-v2: the shell host no longer runs containers itself, so the
-	// session skeleton (/home/claude/.skel) + claude CLI are only
+	// session skeleton (/home/convocate/.skel) + Claude CLI are only
 	// needed on agent hosts where sessions actually spawn. convocate-agent
 	// install provisions both.
 
@@ -109,10 +109,10 @@ func (inst *Installer) checkDocker() error {
 }
 
 func (inst *Installer) createUser() error {
-	_, err := user.Lookup(config.ClaudeUser)
+	_, err := user.Lookup(config.ConvocateUser)
 	if err == nil {
-		fmt.Printf("[install]   User %q already exists, ensuring group membership...\n", config.ClaudeUser)
-		cmd := inst.execFn("usermod", "-aG", "docker", config.ClaudeUser)
+		fmt.Printf("[install]   User %q already exists, ensuring group membership...\n", config.ConvocateUser)
+		cmd := inst.execFn("usermod", "-aG", "docker", config.ConvocateUser)
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to add user to docker group: %w", err)
 		}
@@ -123,19 +123,19 @@ func (inst *Installer) createUser() error {
 		"--create-home",
 		"--shell", "/bin/bash",
 		"--groups", "docker",
-		config.ClaudeUser,
+		config.ConvocateUser,
 	)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create user %q: %w", config.ClaudeUser, err)
+		return fmt.Errorf("failed to create user %q: %w", config.ConvocateUser, err)
 	}
 
 	return nil
 }
 
 func (inst *Installer) setupSkel() error {
-	u, err := user.Lookup(config.ClaudeUser)
+	u, err := user.Lookup(config.ConvocateUser)
 	if err != nil {
-		return fmt.Errorf("cannot find user %q: %w", config.ClaudeUser, err)
+		return fmt.Errorf("cannot find user %q: %w", config.ConvocateUser, err)
 	}
 
 	skelPath := filepath.Join(u.HomeDir, config.SkelDir)
@@ -270,13 +270,13 @@ func (inst *Installer) configureLoginShell() error {
 		return fmt.Errorf("failed to update /etc/shells: %w", err)
 	}
 
-	// Set the login shell for the claude user.
-	cmd := inst.execFn("usermod", "--shell", shellPath, config.ClaudeUser)
+	// Set the login shell for the convocate user.
+	cmd := inst.execFn("usermod", "--shell", shellPath, config.ConvocateUser)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to set login shell for %q: %w", config.ClaudeUser, err)
+		return fmt.Errorf("failed to set login shell for %q: %w", config.ConvocateUser, err)
 	}
 
-	fmt.Printf("[install]   Login shell set to %s for user %q\n", shellPath, config.ClaudeUser)
+	fmt.Printf("[install]   Login shell set to %s for user %q\n", shellPath, config.ConvocateUser)
 	return nil
 }
 
@@ -340,9 +340,9 @@ var dnsmasqConfFile = "/etc/dnsmasq.d/convocate.conf"
 // managed file via addn-hosts. Missing dnsmasq is not an error — it simply
 // skips the drop-in step.
 func (inst *Installer) setupDnsmasqIntegration() error {
-	u, err := user.Lookup(config.ClaudeUser)
+	u, err := user.Lookup(config.ConvocateUser)
 	if err != nil {
-		return fmt.Errorf("cannot find user %q: %w", config.ClaudeUser, err)
+		return fmt.Errorf("cannot find user %q: %w", config.ConvocateUser, err)
 	}
 	uid, _ := strconv.Atoi(u.Uid)
 	gid, _ := strconv.Atoi(u.Gid)
@@ -356,7 +356,7 @@ func (inst *Installer) setupDnsmasqIntegration() error {
 	}
 
 	// Touch the file (create if missing, preserve contents otherwise) and set
-	// ownership to claude so runtime rewrites work without elevated privilege.
+	// ownership to convocate so runtime rewrites work without elevated privilege.
 	if _, err := os.Stat(dnsmasqHostsFile); os.IsNotExist(err) {
 		if err := os.WriteFile(dnsmasqHostsFile, []byte("# Managed by convocate.\n"), 0644); err != nil {
 			return fmt.Errorf("create %s: %w", dnsmasqHostsFile, err)

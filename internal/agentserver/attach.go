@@ -182,7 +182,7 @@ func (t *DockerAttachTarget) Start(ctx context.Context, sessionID string, cols, 
 	containerName := config.ContainerName(sessionID)
 	cmd := exec.CommandContext(ctx, "docker", "exec", "-it",
 		containerName,
-		"sudo", "-E", "-u", config.ClaudeUser, "-H", "--",
+		"sudo", "-E", "-u", config.ConvocateUser, "-H", "--",
 		"tmux", "attach-session", "-t", config.TmuxSessionName,
 	)
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})

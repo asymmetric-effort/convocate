@@ -1,11 +1,11 @@
 # Using the TUI
 
 The `convocate` binary is a `tcell`-based terminal UI. After
-`convocate-host install` sets `convocate` as the `claude` user's
+`convocate-host install` sets `convocate` as the `convocate` user's
 login shell, you SSH in and you're in it — no extra command needed.
 
 ```
-ssh claude@<shell-host>
+ssh convocate@<shell-host>
 ```
 
 ## Layout

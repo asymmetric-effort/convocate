@@ -206,8 +206,8 @@ func cmdCreateVM(args []string) error {
 func cmdMigrateSession(args []string) error {
 	fs := flag.NewFlagSet("migrate-session", flag.ContinueOnError)
 	agent := fs.String("agent", "", "target agent ID (must be registered under /etc/convocate/agent-keys/)")
-	session := fs.String("session", "", "session UUID to migrate (directory under /home/claude)")
-	base := fs.String("shell-base", "/home/claude", "local directory holding orphan session dirs")
+	session := fs.String("session", "", "session UUID to migrate (directory under /home/convocate)")
+	base := fs.String("shell-base", "/home/convocate", "local directory holding orphan session dirs")
 	keysDir := fs.String("agent-keys-dir", "/etc/convocate/agent-keys", "per-agent key + agent-host directory")
 	deleteSrc := fs.Bool("delete-source", false, "rm the local session dir after a successful transfer")
 	if err := fs.Parse(args); err != nil {

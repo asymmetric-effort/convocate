@@ -120,8 +120,8 @@ func TestMultihost_EndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	mgr := session.NewManager(sessionsBase, skelDir)
-	uinfo := user.Info{UID: 1337, GID: 1337, Username: "claude", HomeDir: "/home/claude"}
-	paths := config.Paths{ClaudeHome: "/home/claude", SessionsBase: sessionsBase, SkelDir: skelDir}
+	uinfo := user.Info{UID: 1337, GID: 1337, Username: "convocate", HomeDir: "/home/convocate"}
+	paths := config.Paths{ConvocateHome: "/home/convocate", SessionsBase: sessionsBase, SkelDir: skelDir}
 
 	// We give the orchestrator a Publisher we'll wire to the emitter
 	// in a moment.

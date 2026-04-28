@@ -12,9 +12,9 @@ This page describes how it gets there.
   `jq`, `ripgrep`, `tmux`, vim/nano, `openssh-client`, `sudo`
 - Go 1.26 (`/usr/local/go/bin` on `PATH`)
 - Locale set to `en_US.UTF-8`
-- `claude` user created at container start by the entrypoint, using
-  the UID/GID the agent passes via `CLAUDE_UID` / `CLAUDE_GID` env
-  vars (so file ownership matches the host's `claude` user)
+- `convocate` user created at container start by the entrypoint, using
+  the UID/GID the agent passes via `CONVOCATE_UID` / `CONVOCATE_GID` env
+  vars (so file ownership matches the host's `convocate` user)
 
 The Anthropic Claude CLI itself is **not baked in** — it's bind-
 mounted from the agent host at `/usr/local/bin/claude` (read-only).

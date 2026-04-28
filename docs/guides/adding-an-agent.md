@@ -14,7 +14,7 @@ The new host must be:
 - **Configured with NOPASSWD sudo for the connecting user** —
   required because `convocate-host install` runs many `sudo`
   commands and won't pause for prompts.
-- **Equipped with a working `claude` user already, OR** the
+- **Equipped with a working `convocate` user already, OR** the
   connecting user must be able to create one. The first
   `convocate-host install` call sets this up if absent.
 
@@ -38,7 +38,7 @@ What this does on the target:
 - `apt-get update && apt-get dist-upgrade -y`
 - Installs base packages: docker, dnsmasq, jq, curl, git, ufw,
   ca-certificates, openssh-server
-- Creates the `claude` user (UID 1337, group 1337) with `/home/claude`
+- Creates the `convocate` user (UID 1337, group 1337) with `/home/convocate`
 - Sets timezone to `Etc/UTC`
 - Configures ufw to allow `tcp/22` and the agent's `tcp/222`
 - **Reboots the host** if a kernel was upgraded
@@ -165,5 +165,5 @@ There's no explicit "deregister" command. To retire an agent:
 
 After step 5 the agent is gone from the TUI on the next 15-second
 refresh. The agent host is otherwise untouched — Docker images,
-session directories under `/home/claude/`, etc., remain. Reuse the
+session directories under `/home/convocate/`, etc., remain. Reuse the
 machine or `apt purge` whatever you don't need.

@@ -44,7 +44,7 @@ type Config struct {
 	ShellPort int
 
 	// User is the SSH username used when dialing the shell. Typically
-	// "claude".
+	// "convocate".
 	User string
 
 	// PrivateKeyPath is the path to the agent→shell SSH private key (paired
@@ -100,7 +100,7 @@ func NewStatusEmitter(cfg Config) (*StatusEmitter, error) {
 		cfg.ShellPort = 223
 	}
 	if cfg.User == "" {
-		cfg.User = "claude"
+		cfg.User = "convocate"
 	}
 	if cfg.AgentID == "" {
 		return nil, fmt.Errorf("agentclient: AgentID is required")

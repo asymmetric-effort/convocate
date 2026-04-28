@@ -178,7 +178,7 @@ func TestServer_PingRoundTrip(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	clientCfg := &ssh.ClientConfig{
-		User:            "claude",
+		User:            "convocate",
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(clientSigner)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         3 * time.Second,
@@ -273,7 +273,7 @@ func TestServer_ShellAndExecRejected(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	client, err := ssh.Dial("tcp", srv.cfg.Listen, &ssh.ClientConfig{
-		User:            "claude",
+		User:            "convocate",
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(clientSigner)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         3 * time.Second,
@@ -348,7 +348,7 @@ func TestServer_UnauthorizedKeyRejected(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	_, err = ssh.Dial("tcp", srv.cfg.Listen, &ssh.ClientConfig{
-		User:            "claude",
+		User:            "convocate",
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(clientSigner)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         3 * time.Second,

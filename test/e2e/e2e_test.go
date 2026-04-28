@@ -102,8 +102,8 @@ func startDetachedContainer(t *testing.T, prefix string, extraArgs ...string) st
 	args := []string{
 		"run", "--detach", "--rm",
 		"--name", containerName,
-		"-e", "CLAUDE_UID=1000",
-		"-e", "CLAUDE_GID=1000",
+		"-e", "CONVOCATE_UID=1000",
+		"-e", "CONVOCATE_GID=1000",
 	}
 	args = append(args, extraArgs...)
 	args = append(args, testImageName+":"+testImageTag)
@@ -123,7 +123,7 @@ func startDetachedContainer(t *testing.T, prefix string, extraArgs ...string) st
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		check := exec.Command("docker", "exec", containerName,
-			"sudo", "-u", "claude", "tmux", "has-session", "-t", "claude")
+			"sudo", "-u", "convocate", "tmux", "has-session", "-t", "convocate")
 		if check.Run() == nil {
 			return containerName
 		}
@@ -136,14 +136,14 @@ func startDetachedContainer(t *testing.T, prefix string, extraArgs ...string) st
 // execInTmux sends keys to the tmux session and captures pane output.
 func execInTmux(containerName, keys string) error {
 	cmd := exec.Command("docker", "exec", containerName,
-		"sudo", "-u", "claude", "tmux", "send-keys", "-t", "claude", keys, "Enter")
+		"sudo", "-u", "convocate", "tmux", "send-keys", "-t", "convocate", keys, "Enter")
 	return cmd.Run()
 }
 
 // captureTmuxPane captures the current tmux pane content.
 func captureTmuxPane(containerName string) (string, error) {
 	cmd := exec.Command("docker", "exec", containerName,
-		"sudo", "-u", "claude", "tmux", "capture-pane", "-t", "claude", "-p")
+		"sudo", "-u", "convocate", "tmux", "capture-pane", "-t", "convocate", "-p")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -171,8 +171,8 @@ func TestContainerUserSetup(t *testing.T) {
 	args := []string{
 		"run", "--detach", "--rm",
 		"--name", containerName,
-		"-e", "CLAUDE_UID=1337",
-		"-e", "CLAUDE_GID=1337",
+		"-e", "CONVOCATE_UID=1337",
+		"-e", "CONVOCATE_GID=1337",
 		testImageName + ":" + testImageTag,
 	}
 
@@ -188,7 +188,7 @@ func TestContainerUserSetup(t *testing.T) {
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		check := exec.Command("docker", "exec", containerName,
-			"sudo", "-u", "claude", "tmux", "has-session", "-t", "claude")
+			"sudo", "-u", "convocate", "tmux", "has-session", "-t", "convocate")
 		if check.Run() == nil {
 			break
 		}
@@ -200,11 +200,11 @@ func TestContainerUserSetup(t *testing.T) {
 		t.Fatalf("failed to capture tmux pane: %v", err)
 	}
 
-	if !strings.Contains(output, "User: claude") {
-		t.Errorf("expected User: claude, got: %s", output)
+	if !strings.Contains(output, "User: convocate") {
+		t.Errorf("expected User: convocate, got: %s", output)
 	}
-	if !strings.Contains(output, "Home: /home/claude") {
-		t.Errorf("expected Home: /home/claude, got: %s", output)
+	if !strings.Contains(output, "Home: /home/convocate") {
+		t.Errorf("expected Home: /home/convocate, got: %s", output)
 	}
 }
 
@@ -243,17 +243,17 @@ func TestContainerSudoAccess(t *testing.T) {
 		"--rm",
 		"--name", containerName,
 		"--entrypoint", "/bin/bash",
-		"-e", "CLAUDE_UID=1000",
-		"-e", "CLAUDE_GID=1000",
+		"-e", "CONVOCATE_UID=1000",
+		"-e", "CONVOCATE_GID=1000",
 		testImageName+":"+testImageTag,
 		"-c", `
 			# Run entrypoint setup manually (just user creation part)
 			groupadd -g 1000 claude 2>/dev/null || groupadd claude
-			useradd -u 1000 -g claude -d /home/claude -s /bin/bash -m claude 2>/dev/null || useradd -g claude -d /home/claude -s /bin/bash -m claude
+			useradd -u 1337 -m -s /bin/bash convocate
 			echo "claude ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/claude
 			chmod 440 /etc/sudoers.d/claude
-			mkdir -p /home/claude
-			chown claude:claude /home/claude
+			mkdir -p /home/convocate
+			chown claude:claude /home/convocate
 			# Test that sudo works without password
 			su -l claude -c "sudo whoami"
 		`,
@@ -287,11 +287,11 @@ func TestContainerSessionMount(t *testing.T) {
 		"--rm",
 		"--name", containerName,
 		"--entrypoint", "/bin/bash",
-		"-e", "CLAUDE_UID=1000",
-		"-e", "CLAUDE_GID=1000",
-		"-v", sessionDir+":/home/claude",
+		"-e", "CONVOCATE_UID=1000",
+		"-e", "CONVOCATE_GID=1000",
+		"-v", sessionDir+":/home/convocate",
 		testImageName+":"+testImageTag,
-		"-c", "cat /home/claude/test.txt",
+		"-c", "cat /home/convocate/test.txt",
 	)
 
 	var stdout bytes.Buffer
@@ -311,7 +311,7 @@ func TestContainerTmuxSession(t *testing.T) {
 
 	// Verify tmux session exists with correct name
 	cmd := exec.Command("docker", "exec", containerName,
-		"sudo", "-u", "claude", "tmux", "list-sessions")
+		"sudo", "-u", "convocate", "tmux", "list-sessions")
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("failed to list tmux sessions: %v", err)
@@ -351,7 +351,7 @@ func TestContainerTmuxPersistsAfterDetach(t *testing.T) {
 
 	// Verify tmux session still exists
 	check := exec.Command("docker", "exec", containerName,
-		"sudo", "-u", "claude", "tmux", "has-session", "-t", "claude")
+		"sudo", "-u", "convocate", "tmux", "has-session", "-t", "convocate")
 	if err := check.Run(); err != nil {
 		t.Error("tmux session should still exist after detach")
 	}

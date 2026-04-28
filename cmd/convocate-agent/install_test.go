@@ -19,7 +19,7 @@ func TestCountAdoptedSessions_NoClaudeUser(t *testing.T) {
 	// Lookup for a definitely-absent user returns an error; we expect the
 	// function to propagate it. This protects against silent 0 returns
 	// from a typo'd username.
-	origLookup := defaultClaudeUsername
+	origLookup := defaultConvocateUsername
 	// We can't override user.Lookup itself cheaply, so use the real
 	// call with an obviously-bogus name. The function is pure enough
 	// that the branch coverage is just "error from Lookup".

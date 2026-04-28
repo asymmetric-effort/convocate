@@ -62,7 +62,7 @@ agent-host roles, and rolls updates across the cluster. Subcommands:
 
 | Subcommand | Purpose |
 |---|---|
-| `install` | Prep a fresh Ubuntu host: apt packages, Docker, dnsmasq, `claude` user, ufw, timezone, dist-upgrade, reboot if remote |
+| `install` | Prep a fresh Ubuntu host: apt packages, Docker, dnsmasq, `convocate` user, ufw, timezone, dist-upgrade, reboot if remote |
 | `init-shell` | Deploy + configure the shell side: `convocate-status` systemd unit on `tcp/223`, rsyslog CA + server cert, ufw rule |
 | `init-agent` | Deploy + configure an agent: `convocate-agent` binary, systemd unit, `convocate-sessions.slice`, image-prune cron, ed25519 peering keypairs (both directions), TLS client cert for syslog, transfer the current `convocate:<v>` image |
 | `update` | Roll a new binary + image to one host. Existing containers keep running their original tag until `(R)estart` |

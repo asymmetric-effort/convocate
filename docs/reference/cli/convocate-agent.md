@@ -26,7 +26,7 @@ SSH's into the target and invokes it.
 **What it does:**
 
 - Verifies Docker is present and the daemon is reachable.
-- Verifies the `claude` user exists; creates it (UID 1337) if not.
+- Verifies the `convocate` user exists; creates it (UID 1337) if not.
 - Creates `/etc/convocate-agent/`.
 - Generates a stable agent ID (8-char random string) at
   `/etc/convocate-agent/agent-id` if absent.
@@ -38,7 +38,7 @@ SSH's into the target and invokes it.
   current host's resources.
 - Drops `/etc/cron.daily/convocate-image-prune`.
 - Drops `/etc/logrotate.d/convocate-agent-logs`.
-- Counts adopted sessions (existing `/home/claude/<uuid>/` dirs)
+- Counts adopted sessions (existing `/home/convocate/<uuid>/` dirs)
   for diagnostic output.
 
 **Requires:** `sudo`. Touches `/etc/convocate-agent/`,

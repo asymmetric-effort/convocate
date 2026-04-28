@@ -1,0 +1,78 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  # DHCP on all NICs.  Reconfigure post-install if static addressing
+  # is needed.
+  network:
+    version: 2
+    ethernets:
+      id0:
+        match:
+          name: "en*"
+        dhcp4: true
+
+  # Single-disk LVM — uses the entire first disk.
+  storage:
+    layout:
+      name: lvm
+      sizing-policy: all
+
+  # Operator account.  The convocate service user (convocate, UID 1337) is
+  # created by convocate-host install, not here.
+  #
+  # Default password is "convocate".  The chage -d 0 in late-commands
+  # forces a change on first interactive login.
+  #
+  # Regenerate with:  echo 'convocate' | mkpasswd -m sha-512 -s
+  identity:
+    hostname: convocate-host
+    username: operator
+    password: "$6$cEbSmLg8hGqZwXmj$t5oVxQ6FjLHUEmqYPbLwXupRkpJxDQFi.7sKVeFwsLMVxMFOiLwmBTzl7US8MWMO/TdrrVp15xkp.kD6YRWBX."
+
+  ssh:
+    install-server: true
+    allow-pw: true
+
+  # Packages aligned with what convocate-host install expects.
+  packages:
+    - ca-certificates
+    - gnupg
+    - curl
+    - wget
+    - git
+    - make
+    - tmux
+    - vim
+    - build-essential
+    - cmake
+    - pkg-config
+    - ufw
+    - dnsmasq
+    - docker.io
+    - unattended-upgrades
+    - update-notifier-common
+    - openssh-server
+    - rsyslog-gnutls
+    - jq
+
+  updates: security
+
+  late-commands:
+    - curtin in-target -- timedatectl set-timezone Etc/UTC
+    - curtin in-target -- systemctl enable docker
+    - curtin in-target -- systemctl enable unattended-upgrades
+    # Force password change on first login
+    - curtin in-target -- chage -d 0 operator
+    # Fetch and run the convocate provisioning script.  Installs Go,
+    # clones the repo, builds all three binaries, and runs
+    # convocate-host install.  The host reboots into a state ready for
+    # convocate-host init-shell or convocate-host init-agent.
+    - >-
+      curtin in-target -- bash -c
+      'curl -fsSL https://convocate.asymmetric-effort.com/autoinstall/late-install.sh
+      -o /tmp/late-install.sh && chmod +x /tmp/late-install.sh && /tmp/late-install.sh'

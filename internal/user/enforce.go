@@ -14,7 +14,7 @@ var GetuidFn = os.Getuid
 // that tells the operator exactly how to invoke the binary correctly. This
 // is called at the top of main for both convocate and convocate-agent —
 // neither tool is safe to run as any other uid because on-disk paths
-// (~/.claude, /home/claude/.ssh/authorized_keys, session dirs) assume the
+// (~/.claude, /home/convocate/.ssh/authorized_keys, session dirs) assume the
 // claude user owns them.
 func EnforceRunningAs(username string) error {
 	want, err := Lookup(username)

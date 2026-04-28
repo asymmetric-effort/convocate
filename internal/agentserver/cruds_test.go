@@ -53,17 +53,17 @@ func newTestSessionsDir(t *testing.T) (string, string) {
 }
 
 func testUserInfo() user.Info {
-	return user.Info{UID: 1337, GID: 1337, Username: "claude", HomeDir: "/home/claude"}
+	return user.Info{UID: 1337, GID: 1337, Username: "convocate", HomeDir: "/home/convocate"}
 }
 
 func testPaths() config.Paths {
 	return config.Paths{
-		ClaudeHome:   "/home/claude",
-		SessionsBase: "/home/claude",
-		SkelDir:      "/home/claude/.skel",
-		ClaudeConfig: "/home/claude/.claude",
-		SSHDir:       "/home/claude/.ssh",
-		GitConfig:    "/home/claude/.gitconfig",
+		ConvocateHome:   "/home/convocate",
+		SessionsBase: "/home/convocate",
+		SkelDir:      "/home/convocate/.skel",
+		ConvocateConfig: "/home/convocate/.claude",
+		SSHDir:       "/home/convocate/.ssh",
+		GitConfig:    "/home/convocate/.gitconfig",
 	}
 }
 

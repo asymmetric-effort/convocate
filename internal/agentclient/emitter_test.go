@@ -168,7 +168,7 @@ func TestNew_DefaultsApplied(t *testing.T) {
 	if e.cfg.ShellPort != 223 {
 		t.Errorf("ShellPort default = %d, want 223", e.cfg.ShellPort)
 	}
-	if e.cfg.User != "claude" {
+	if e.cfg.User != "convocate" {
 		t.Errorf("User default = %q, want claude", e.cfg.User)
 	}
 	if e.cfg.BufferSize != 256 {
@@ -192,7 +192,7 @@ func TestEmitter_EndToEnd_PublishesEvents(t *testing.T) {
 	e, err := NewStatusEmitter(Config{
 		ShellHost:        host,
 		ShellPort:        port,
-		User:             "claude",
+		User:             "convocate",
 		PrivateKeyPath:   keyPath,
 		AgentID:          "agent-e2e",
 		ReconnectBackoff: 10 * time.Millisecond,

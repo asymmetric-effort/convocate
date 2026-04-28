@@ -67,8 +67,8 @@ func TestPathsFromHome(t *testing.T) {
 	home := "/home/testuser"
 	paths := PathsFromHome(home)
 
-	if paths.ClaudeHome != home {
-		t.Errorf("ClaudeHome = %q, want %q", paths.ClaudeHome, home)
+	if paths.ConvocateHome != home {
+		t.Errorf("ConvocateHome = %q, want %q", paths.ConvocateHome, home)
 	}
 	if paths.SessionsBase != home {
 		t.Errorf("SessionsBase = %q, want %q", paths.SessionsBase, home)
@@ -76,8 +76,8 @@ func TestPathsFromHome(t *testing.T) {
 	if paths.SkelDir != home+"/"+SkelDir {
 		t.Errorf("SkelDir = %q, want %q", paths.SkelDir, home+"/"+SkelDir)
 	}
-	if paths.ClaudeConfig != home+"/"+ClaudeConfigDir {
-		t.Errorf("ClaudeConfig = %q, want %q", paths.ClaudeConfig, home+"/"+ClaudeConfigDir)
+	if paths.ConvocateConfig != home+"/"+ClaudeConfigDir {
+		t.Errorf("ClaudeConfig = %q, want %q", paths.ConvocateConfig, home+"/"+ClaudeConfigDir)
 	}
 	if paths.SSHDir != home+"/.ssh" {
 		t.Errorf("SSHDir = %q, want %q", paths.SSHDir, home+"/.ssh")
@@ -88,7 +88,7 @@ func TestPathsFromHome(t *testing.T) {
 }
 
 func TestResolvePaths_UserNotFound(t *testing.T) {
-	// ResolvePaths looks up the "claude" user. In test environments this may
+	// ResolvePaths looks up the "convocate" user. In test environments this may
 	// or may not exist, so we just verify it returns without panicking.
 	_, err := ResolvePaths()
 	if err != nil {
@@ -114,8 +114,8 @@ func TestConstants(t *testing.T) {
 	if ClaudeBinaryPath == "" {
 		t.Error("ClaudeBinaryPath is empty")
 	}
-	if ClaudeUser == "" {
-		t.Error("ClaudeUser is empty")
+	if ConvocateUser == "" {
+		t.Error("ConvocateUser is empty")
 	}
 	if SessionMetadataFile == "" {
 		t.Error("SessionMetadataFile is empty")

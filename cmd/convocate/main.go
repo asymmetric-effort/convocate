@@ -55,7 +55,7 @@ func run(args []string) error {
 	// (session metadata, ~/.claude, /etc/convocate/agent-keys) is
 	// owned by that user; running the TUI as anyone else would
 	// silently produce broken state.
-	if err := user.EnforceRunningAs(config.ClaudeUser); err != nil {
+	if err := user.EnforceRunningAs(config.ConvocateUser); err != nil {
 		return err
 	}
 	return runSessionManager()
@@ -76,7 +76,7 @@ func runSessionManagerWithLog(log *logging.Logger) error {
 	// Lookup claude user for path resolution only. The shell no longer
 	// runs containers locally — no docker image check — so agent
 	// discovery is the only prerequisite beyond the user existing.
-	userInfo, err := user.Lookup(config.ClaudeUser)
+	userInfo, err := user.Lookup(config.ConvocateUser)
 	if err != nil {
 		return fmt.Errorf("failed to lookup claude user: %w", err)
 	}

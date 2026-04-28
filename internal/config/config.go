@@ -23,8 +23,8 @@ const (
 	// ClaudeBinaryPath is the path to the claude CLI binary on the host.
 	ClaudeBinaryPath = "/usr/local/bin/claude"
 
-	// ClaudeUser is the username for the claude user.
-	ClaudeUser = "claude"
+	// ConvocateUser is the Linux username for the convocate service user.
+	ConvocateUser = "convocate"
 
 	// SessionMetadataFile is the filename for session metadata.
 	SessionMetadataFile = "session.json"
@@ -48,24 +48,24 @@ const (
 	LockFileExtension = ".lock"
 
 	// TmuxSessionName is the name of the tmux session inside the container.
-	TmuxSessionName = "claude"
+	TmuxSessionName = "convocate"
 )
 
 // Paths holds resolved filesystem paths for convocate.
 type Paths struct {
-	ClaudeHome   string
-	SessionsBase string
-	SkelDir      string
-	ClaudeConfig string
-	SSHDir       string
-	GitConfig    string
+	ConvocateHome string
+	SessionsBase  string
+	SkelDir       string
+	ConvocateConfig string
+	SSHDir        string
+	GitConfig     string
 }
 
-// ResolvePaths resolcts all paths based on the claude user's home directory.
+// ResolvePaths resolves all paths based on the convocate user's home directory.
 func ResolvePaths() (Paths, error) {
-	u, err := user.Lookup(ClaudeUser)
+	u, err := user.Lookup(ConvocateUser)
 	if err != nil {
-		return Paths{}, fmt.Errorf("failed to lookup user %q: %w", ClaudeUser, err)
+		return Paths{}, fmt.Errorf("failed to lookup user %q: %w", ConvocateUser, err)
 	}
 	return PathsFromHome(u.HomeDir), nil
 }
@@ -73,12 +73,12 @@ func ResolvePaths() (Paths, error) {
 // PathsFromHome creates Paths from a given home directory.
 func PathsFromHome(home string) Paths {
 	return Paths{
-		ClaudeHome:   home,
-		SessionsBase: home,
-		SkelDir:      filepath.Join(home, SkelDir),
-		ClaudeConfig: filepath.Join(home, ClaudeConfigDir),
-		SSHDir:       filepath.Join(home, ".ssh"),
-		GitConfig:    filepath.Join(home, ".gitconfig"),
+		ConvocateHome:   home,
+		SessionsBase:    home,
+		SkelDir:         filepath.Join(home, SkelDir),
+		ConvocateConfig: filepath.Join(home, ClaudeConfigDir),
+		SSHDir:          filepath.Join(home, ".ssh"),
+		GitConfig:       filepath.Join(home, ".gitconfig"),
 	}
 }
 

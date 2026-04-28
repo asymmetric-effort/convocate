@@ -15,19 +15,19 @@ func testUserInfo() user.Info {
 	return user.Info{
 		UID:      1337,
 		GID:      1337,
-		Username: "claude",
-		HomeDir:  "/home/claude",
+		Username: "convocate",
+		HomeDir:  "/home/convocate",
 	}
 }
 
 func testPaths() config.Paths {
 	return config.Paths{
-		ClaudeHome:   "/home/claude",
-		SessionsBase: "/home/claude",
-		SkelDir:      "/home/claude/.skel",
-		ClaudeConfig: "/home/claude/.claude",
-		SSHDir:       "/home/claude/.ssh",
-		GitConfig:    "/home/claude/.gitconfig",
+		ConvocateHome:   "/home/convocate",
+		SessionsBase: "/home/convocate",
+		SkelDir:      "/home/convocate/.skel",
+		ConvocateConfig: "/home/convocate/.claude",
+		SSHDir:       "/home/convocate/.ssh",
+		GitConfig:    "/home/convocate/.gitconfig",
 	}
 }
 
@@ -58,7 +58,7 @@ func TestBuildRunArgs(t *testing.T) {
 	tmpDir := t.TempDir()
 	sshDir := filepath.Join(tmpDir, ".ssh")
 	gitConfig := filepath.Join(tmpDir, ".gitconfig")
-	claudeConfig := filepath.Join(tmpDir, ".claude")
+	convocateConfig := filepath.Join(tmpDir, ".claude")
 
 	if err := os.MkdirAll(sshDir, 0700); err != nil {
 		t.Fatal(err)
@@ -66,15 +66,15 @@ func TestBuildRunArgs(t *testing.T) {
 	if err := os.WriteFile(gitConfig, []byte("[user]"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(claudeConfig, 0700); err != nil {
+	if err := os.MkdirAll(convocateConfig, 0700); err != nil {
 		t.Fatal(err)
 	}
 
 	paths := config.Paths{
-		ClaudeHome:   tmpDir,
+		ConvocateHome:   tmpDir,
 		SessionsBase: tmpDir,
 		SkelDir:      filepath.Join(tmpDir, ".skel"),
-		ClaudeConfig: claudeConfig,
+		ConvocateConfig: convocateConfig,
 		SSHDir:       sshDir,
 		GitConfig:    gitConfig,
 	}
@@ -92,16 +92,16 @@ func TestBuildRunArgs(t *testing.T) {
 	}{
 		{"--rm", "--rm"},
 		{"--detach", "--detach"},
-		{"-w", "-w /home/claude"},
+		{"-w", "-w /home/convocate"},
 		{"--name", "--name convocate-session-test"},
 		{"--hostname", "--hostname convocate-abcdef12"},
-		{"session home", sessionDir + ":/home/claude"},
+		{"session home", sessionDir + ":/home/convocate"},
 		{"docker socket", config.DockerSocket + ":" + config.DockerSocket},
-		{"SSH mount", sshDir + ":/home/claude/.ssh:ro"},
-		{"gitconfig mount", gitConfig + ":/home/claude/.gitconfig:ro"},
+		{"SSH mount", sshDir + ":/home/convocate/.ssh:ro"},
+		{"gitconfig mount", gitConfig + ":/home/convocate/.gitconfig:ro"},
 		{"claude binary", config.ClaudeBinaryPath + ":" + config.ClaudeBinaryPath + ":ro"},
-		{"CLAUDE_UID", "CLAUDE_UID=1337"},
-		{"CLAUDE_GID", "CLAUDE_GID=1337"},
+		{"CONVOCATE_UID", "CONVOCATE_UID=1337"},
+		{"CONVOCATE_GID", "CONVOCATE_GID=1337"},
 		{"image", config.ContainerImage()},
 		{"claude-shared", config.ClaudeSharedDir + ":ro"},
 	}
@@ -115,9 +115,9 @@ func TestBuildRunArgs(t *testing.T) {
 
 func TestBuildRunArgs_NoSSH(t *testing.T) {
 	paths := config.Paths{
-		ClaudeHome:   "/nonexistent",
+		ConvocateHome:   "/nonexistent",
 		SessionsBase: "/nonexistent",
-		ClaudeConfig: "/nonexistent/.claude",
+		ConvocateConfig: "/nonexistent/.claude",
 		SSHDir:       "/nonexistent/.ssh",
 		GitConfig:    "/nonexistent/.gitconfig",
 	}
@@ -140,11 +140,11 @@ func TestBuildRunArgs_DifferentUIDs(t *testing.T) {
 	args := r.buildRunArgs("test-container")
 	argStr := strings.Join(args, " ")
 
-	if !strings.Contains(argStr, "CLAUDE_UID=5000") {
-		t.Error("missing CLAUDE_UID=5000")
+	if !strings.Contains(argStr, "CONVOCATE_UID=5000") {
+		t.Error("missing CONVOCATE_UID=5000")
 	}
-	if !strings.Contains(argStr, "CLAUDE_GID=5000") {
-		t.Error("missing CLAUDE_GID=5000")
+	if !strings.Contains(argStr, "CONVOCATE_GID=5000") {
+		t.Error("missing CONVOCATE_GID=5000")
 	}
 }
 
@@ -327,8 +327,8 @@ func TestStart_AttachTmuxArgs(t *testing.T) {
 	if !strings.Contains(execStr, "attach-session") {
 		t.Errorf("exec should include attach-session, got: %s", execStr)
 	}
-	if !strings.Contains(execStr, "-t claude") {
-		t.Errorf("exec should target tmux session 'claude', got: %s", execStr)
+	if !strings.Contains(execStr, "-t convocate") {
+		t.Errorf("exec should target tmux session 'convocate', got: %s", execStr)
 	}
 }
 
@@ -349,8 +349,8 @@ func TestAttach_UsesTmux(t *testing.T) {
 	if !strings.Contains(argStr, "docker exec -it") {
 		t.Errorf("Attach should use 'docker exec -it', got: %s", argStr)
 	}
-	if !strings.Contains(argStr, "tmux attach-session -t claude") {
-		t.Errorf("Attach should use 'tmux attach-session -t claude', got: %s", argStr)
+	if !strings.Contains(argStr, "tmux attach-session -t convocate") {
+		t.Errorf("Attach should use 'tmux attach-session -t convocate', got: %s", argStr)
 	}
 }
 
