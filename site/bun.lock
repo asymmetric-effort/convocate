@@ -5,7 +5,7 @@
     "": {
       "name": "@asymmetric-effort/convocate-site",
       "dependencies": {
-        "@asymmetric-effort/specifyjs": "0.2.1",
+        "@asymmetric-effort/specifyjs": "file:./vendor-specifyjs-0.2.1-patched.tgz",
       },
       "devDependencies": {
         "@playwright/test": "^1.59.1",
@@ -18,7 +18,7 @@
     },
   },
   "packages": {
-    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@0.2.1", "", {}, "sha512-xGPJBr86+Lqn8HQEvJC89tSfm0hEgkYQYh/lmpM9Ep6Jhj88TRB8C+QvpGWG3kjS8wYpktUdo9Wr3iteotVYDw=="],
+    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@./vendor-specifyjs-0.2.1-patched.tgz", {}, "sha512-7qJT1QYJ3WW9dKgAVgFdeQU/xERiUgTkDLmnsnD/eLjqh5zKSGXpTSDvt3F5CAxV9nFGX9kcYGYAgkHdE0Vu7A=="],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.25.12", "", { "os": "aix", "cpu": "ppc64" }, "sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA=="],
 

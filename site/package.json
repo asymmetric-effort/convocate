@@ -21,6 +21,6 @@
   },
   "type": "module",
   "dependencies": {
-    "@asymmetric-effort/specifyjs": "0.2.1"
+    "@asymmetric-effort/specifyjs": "file:./vendor-specifyjs-0.2.1-patched.tgz"
   }
 }
