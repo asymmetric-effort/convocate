@@ -6,7 +6,7 @@ and a distinct host where it runs.
 ## `convocate` — the operator's TUI
 
 **Where it runs:** the operator's laptop or the shell host (`ssh
-claude@shell-host` then it's already your login shell).
+convocate@shell-host` then it's already your login shell).
 
 **What it does:**
 
