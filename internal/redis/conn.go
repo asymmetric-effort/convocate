@@ -11,8 +11,8 @@ import (
 
 // ConnConfig holds connection parameters for a Redis TLS connection.
 type ConnConfig struct {
-	Address   string
 	TLSConfig *tls.Config
+	Address   string
 	Timeout   time.Duration
 }
 
@@ -20,11 +20,11 @@ type ConnConfig struct {
 // It is not safe for concurrent use from multiple goroutines — callers
 // must serialize access or use a pool.
 type Conn struct {
-	conn    net.Conn
-	reader  *bufio.Reader
-	writer  *bufio.Writer
-	mu      sync.Mutex
-	closed  bool
+	conn   net.Conn
+	reader *bufio.Reader
+	writer *bufio.Writer
+	mu     sync.Mutex
+	closed bool
 }
 
 // Dial establishes a TLS connection to the Redis server.

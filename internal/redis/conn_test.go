@@ -33,7 +33,7 @@ func TestStringHelper(t *testing.T) {
 	})
 
 	t.Run("propagates error", func(t *testing.T) {
-		_, err := String(nil, &RedisError{Message: "test"})
+		_, err := String(nil, &Error{Message: "test"})
 		if err == nil {
 			t.Error("expected error to propagate")
 		}
@@ -66,7 +66,7 @@ func TestInt64Helper(t *testing.T) {
 	})
 
 	t.Run("propagates error", func(t *testing.T) {
-		_, err := Int64(nil, &RedisError{Message: "test"})
+		_, err := Int64(nil, &Error{Message: "test"})
 		if err == nil {
 			t.Error("expected error to propagate")
 		}
@@ -125,7 +125,7 @@ func TestStringsHelper(t *testing.T) {
 	})
 
 	t.Run("propagates error", func(t *testing.T) {
-		_, err := Strings(nil, &RedisError{Message: "test"})
+		_, err := Strings(nil, &Error{Message: "test"})
 		if err == nil {
 			t.Error("expected error to propagate")
 		}

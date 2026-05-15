@@ -35,7 +35,7 @@ func TestRouterStoreContainerMap(t *testing.T) {
 	}
 
 	t.Run("set and get", func(t *testing.T) {
-		err := store.SetContainer(entry)
+		err := store.SetContainer(&entry)
 		if err != nil {
 			t.Fatalf("SetContainer error: %v", err)
 		}
@@ -250,7 +250,7 @@ func TestRouterStoreJobMetadata(t *testing.T) {
 	}
 
 	t.Run("set and get", func(t *testing.T) {
-		err := store.SetJobMetadata(meta)
+		err := store.SetJobMetadata(&meta)
 		if err != nil {
 			t.Fatalf("SetJobMetadata error: %v", err)
 		}
@@ -466,7 +466,7 @@ func TestRouterStoreProjectInfo(t *testing.T) {
 	}
 
 	t.Run("set and get", func(t *testing.T) {
-		err := store.SetProjectInfo(info)
+		err := store.SetProjectInfo(&info)
 		if err != nil {
 			t.Fatalf("SetProjectInfo error: %v", err)
 		}
@@ -536,7 +536,7 @@ func TestRouterStoreCountContainersByHost(t *testing.T) {
 			ProjectID:   uuid.MustNew(),
 			State:       protocol.ContainerRunning,
 		}
-		err := store.SetContainer(entry)
+		err := store.SetContainer(&entry)
 		if err != nil {
 			t.Fatalf("SetContainer error: %v", err)
 		}
@@ -547,7 +547,7 @@ func TestRouterStoreCountContainersByHost(t *testing.T) {
 		ProjectID:   uuid.MustNew(),
 		State:       protocol.ContainerRunning,
 	}
-	err := store.SetContainer(entry)
+	err := store.SetContainer(&entry)
 	if err != nil {
 		t.Fatalf("SetContainer error: %v", err)
 	}

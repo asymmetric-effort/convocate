@@ -34,11 +34,11 @@ func (s *DispatchStore) key(parts ...string) string {
 
 // DispatchJobState holds the in-flight lifecycle state of a job on this host.
 type DispatchJobState struct {
-	JobID       uuid.UUID          `json:"job_id"`
-	ContainerID string             `json:"container_id"`
-	State       protocol.JobState  `json:"state"`
-	Repository  string             `json:"repository"`
-	IssueNumber int                `json:"issue_number"`
+	ContainerID string            `json:"container_id"`
+	State       protocol.JobState `json:"state"`
+	Repository  string            `json:"repository"`
+	IssueNumber int               `json:"issue_number"`
+	JobID       uuid.UUID         `json:"job_id"`
 }
 
 // SetJobState writes the in-flight state for a job.
@@ -75,7 +75,7 @@ func (s *DispatchStore) DeleteJobState(jobID uuid.UUID) error {
 }
 
 // EnqueueDispatch adds a dispatch event to the host's queue.
-func (s *DispatchStore) EnqueueDispatch(event protocol.DispatchEvent) error {
+func (s *DispatchStore) EnqueueDispatch(event *protocol.DispatchEvent) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("redis/dispatch: marshal dispatch event: %w", err)
@@ -113,7 +113,7 @@ func (s *DispatchStore) Ping() error {
 	if err != nil {
 		return err
 	}
-	if val != "PONG" {
+	if val != pong {
 		return fmt.Errorf("redis/dispatch: unexpected PING response: %q", val)
 	}
 	return nil

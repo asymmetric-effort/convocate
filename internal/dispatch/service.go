@@ -18,25 +18,25 @@ import (
 
 // Service is the per-host Dispatch Service.
 type Service struct {
-	hostID       string
-	controlURL   string
+	containerMgr ContainerManager
 	httpClient   *http.Client
 	store        *redis.DispatchStore
-	containerMgr ContainerManager
 	logger       *log.Logger
-	mu           sync.RWMutex
 	activeJobs   map[uuid.UUID]context.CancelFunc
 	stopCh       chan struct{}
+	hostID       string
+	controlURL   string
+	mu           sync.RWMutex
 }
 
 // Config holds the Dispatch Service configuration.
 type Config struct {
-	HostID       string
-	ControlURL   string
+	ContainerMgr ContainerManager
 	HTTPClient   *http.Client
 	Store        *redis.DispatchStore
-	ContainerMgr ContainerManager
 	Logger       *log.Logger
+	HostID       string
+	ControlURL   string
 }
 
 // ContainerManager is the interface the Dispatch Service uses to manage
@@ -104,7 +104,7 @@ func NewService(config Config) (*Service, error) {
 }
 
 // HandleDispatchEvent processes a single dispatch event from the Router API.
-func (s *Service) HandleDispatchEvent(event protocol.DispatchEvent) error {
+func (s *Service) HandleDispatchEvent(event *protocol.DispatchEvent) error {
 	s.logger.Printf("dispatch: handling job %s for container %s", event.JobID, event.ContainerID)
 
 	// Record in dispatch namespace.
@@ -193,7 +193,7 @@ func (s *Service) TerminateJob(jobID uuid.UUID) error {
 	}
 
 	// Update state.
-	s.store.SetJobState(redis.DispatchJobState{
+	_ = s.store.SetJobState(redis.DispatchJobState{
 		JobID:       jobID,
 		ContainerID: state.ContainerID,
 		State:       protocol.JobTerminated,
@@ -206,7 +206,7 @@ func (s *Service) TerminateJob(jobID uuid.UUID) error {
 }
 
 // CompleteJob marks a job as complete and cleans up.
-func (s *Service) CompleteJob(jobID uuid.UUID, containerID string, prURL string) {
+func (s *Service) CompleteJob(jobID uuid.UUID, containerID, prURL string) {
 	s.mu.Lock()
 	cancel, exists := s.activeJobs[jobID]
 	if exists {
@@ -221,7 +221,7 @@ func (s *Service) CompleteJob(jobID uuid.UUID, containerID string, prURL string)
 		return
 	}
 
-	s.store.SetJobState(redis.DispatchJobState{
+	_ = s.store.SetJobState(redis.DispatchJobState{
 		JobID:       jobID,
 		ContainerID: containerID,
 		State:       protocol.JobComplete,
@@ -232,7 +232,7 @@ func (s *Service) CompleteJob(jobID uuid.UUID, containerID string, prURL string)
 }
 
 // FailJob marks a job as failed.
-func (s *Service) FailJob(jobID uuid.UUID, containerID string, reason string) {
+func (s *Service) FailJob(jobID uuid.UUID, containerID, reason string) {
 	s.mu.Lock()
 	cancel, exists := s.activeJobs[jobID]
 	if exists {
@@ -247,7 +247,7 @@ func (s *Service) FailJob(jobID uuid.UUID, containerID string, reason string) {
 		return
 	}
 
-	s.store.SetJobState(redis.DispatchJobState{
+	_ = s.store.SetJobState(redis.DispatchJobState{
 		JobID:       jobID,
 		ContainerID: containerID,
 		State:       protocol.JobFailed,
@@ -286,13 +286,19 @@ func (s *Service) ReportStatus(jobID uuid.UUID, containerID string, from, to pro
 		return
 	}
 
-	resp, err := s.httpClient.Post(s.controlURL+"/v1/status", "application/json", bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.controlURL+"/v1/status", bytes.NewReader(data))
+	if err != nil {
+		s.logger.Printf("dispatch: create status request: %v", err)
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
 		s.logger.Printf("dispatch: report status: %v", err)
 		return
 	}
 	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	_, _ = io.ReadAll(resp.Body)
 }
 
 // SendHeartbeat sends a heartbeat to the Router API.
@@ -311,13 +317,19 @@ func (s *Service) SendHeartbeat() {
 		return
 	}
 
-	resp, err := s.httpClient.Post(s.controlURL+"/v1/heartbeat", "application/json", bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.controlURL+"/v1/heartbeat", bytes.NewReader(data))
+	if err != nil {
+		s.logger.Printf("dispatch: create heartbeat request: %v", err)
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
 		s.logger.Printf("dispatch: send heartbeat: %v", err)
 		return
 	}
 	defer resp.Body.Close()
-	io.ReadAll(resp.Body)
+	_, _ = io.ReadAll(resp.Body)
 }
 
 // StartHeartbeatLoop starts sending heartbeats every 15 seconds.
@@ -344,7 +356,7 @@ func (s *Service) Stop() {
 }
 
 // buildPrompt constructs the prompt string from a dispatch event.
-func buildPrompt(event protocol.DispatchEvent) string {
+func buildPrompt(event *protocol.DispatchEvent) string {
 	if event.AdHoc {
 		return "Background task: " + event.Prompt
 	}

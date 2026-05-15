@@ -16,18 +16,18 @@ import (
 // Unix socket per Agent Container, maps each socket to its bound project,
 // and serves secrets from the local OpenBao Agent on read.
 type Broker struct {
-	mu           sync.RWMutex
-	socketDir    string
 	baoClient    *openbao.Client
-	bindings     map[string]uuid.UUID // containerID -> projectID
-	listeners    map[string]net.Listener // containerID -> listener
-	stopChannels map[string]chan struct{} // containerID -> stop signal
+	bindings     map[string]uuid.UUID
+	listeners    map[string]net.Listener
+	stopChannels map[string]chan struct{}
+	socketDir    string
+	mu           sync.RWMutex
 }
 
 // Config holds the Broker's configuration.
 type Config struct {
-	SocketDir string
 	BaoClient *openbao.Client
+	SocketDir string
 }
 
 // New creates a new Broker.
@@ -157,7 +157,7 @@ func (b *Broker) Close() error {
 	b.mu.Unlock()
 
 	for _, containerID := range containerIDs {
-		b.Unbind(containerID)
+		_ = b.Unbind(containerID)
 	}
 	return nil
 }
@@ -194,27 +194,28 @@ func (b *Broker) handleConnection(containerID string, conn net.Conn) {
 	projectID, exists := b.bindings[containerID]
 	b.mu.RUnlock()
 
+	encoder := json.NewEncoder(conn)
 	var resp SecretsResponse
 	if !exists {
 		resp.Error = "container not bound"
-		json.NewEncoder(conn).Encode(resp)
+		_ = encoder.Encode(resp)
 		return
 	}
 
 	secrets, err := b.baoClient.ReadProjectSecrets(projectID)
 	if err != nil {
 		resp.Error = fmt.Sprintf("read secrets: %v", err)
-		json.NewEncoder(conn).Encode(resp)
+		_ = encoder.Encode(resp)
 		return
 	}
 	if secrets == nil {
 		resp.Error = "no secrets found for project"
-		json.NewEncoder(conn).Encode(resp)
+		_ = encoder.Encode(resp)
 		return
 	}
 
 	resp.SSHPrivateKey = secrets.SSHPrivateKey
 	resp.GitHubPAT = secrets.GitHubPAT
 	resp.CustomSecrets = secrets.CustomSecrets
-	json.NewEncoder(conn).Encode(resp)
+	_ = encoder.Encode(resp)
 }

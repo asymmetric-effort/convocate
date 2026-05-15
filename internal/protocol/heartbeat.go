@@ -8,11 +8,11 @@ import (
 // HeartbeatRequest is the payload sent by a Dispatch Service to
 // POST /v1/heartbeat every 15 seconds.
 type HeartbeatRequest struct {
+	Timestamp      time.Time `json:"timestamp"`
 	HostID         string    `json:"host_id"`
-	ContainerCount int       `json:"container_count"`
 	CPUPercent     float64   `json:"cpu_percent"`
 	MemoryPercent  float64   `json:"memory_percent"`
-	Timestamp      time.Time `json:"timestamp"`
+	ContainerCount int       `json:"container_count"`
 }
 
 // Validate checks that all required fields are present.

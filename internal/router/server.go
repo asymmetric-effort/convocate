@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/openbao"
 	"github.com/asymmetric-effort/convocate/internal/protocol"
@@ -18,20 +19,20 @@ import (
 
 // Server is the Router API HTTP server.
 type Server struct {
-	store         *redis.RouterStore
-	bao           *openbao.Client
-	version       string
-	mu            sync.RWMutex
-	dispatchSubs  map[string]chan protocol.DispatchEvent // hostID -> channel
-	logger        *log.Logger
+	store        *redis.RouterStore
+	bao          *openbao.Client
+	dispatchSubs map[string]chan protocol.DispatchEvent
+	logger       *log.Logger
+	version      string
+	mu           sync.RWMutex
 }
 
 // Config holds the Router API server configuration.
 type Config struct {
 	Store   *redis.RouterStore
 	Bao     *openbao.Client
-	Version string
 	Logger  *log.Logger
+	Version string
 }
 
 // NewServer creates a new Router API server.
@@ -88,14 +89,16 @@ func (s *Server) Handler() http.Handler {
 // ListenAndServe starts the Router API on the given listeners.
 // publicListener serves /v1/jobs (GitHub Actions, bearer token).
 // internalListener serves everything else (mTLS + Web UI).
-func (s *Server) ListenAndServe(publicListener net.Listener, internalListener net.Listener, publicTLS *tls.Config, internalTLS *tls.Config) error {
+func (s *Server) ListenAndServe(publicListener, internalListener net.Listener, publicTLS, internalTLS *tls.Config) error {
 	publicServer := &http.Server{
-		Handler:   s.publicHandler(),
-		TLSConfig: publicTLS,
+		Handler:           s.publicHandler(),
+		TLSConfig:         publicTLS,
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 	internalServer := &http.Server{
-		Handler:   s.Handler(),
-		TLSConfig: internalTLS,
+		Handler:           s.Handler(),
+		TLSConfig:         internalTLS,
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 
 	errCh := make(chan error, 2)
@@ -140,7 +143,7 @@ func (s *Server) UnsubscribeDispatch(hostID string) {
 }
 
 // dispatchToHost sends a dispatch event to the subscribed host.
-func (s *Server) dispatchToHost(hostID string, event protocol.DispatchEvent) error {
+func (s *Server) dispatchToHost(hostID string, event *protocol.DispatchEvent) error {
 	s.mu.RLock()
 	ch, ok := s.dispatchSubs[hostID]
 	s.mu.RUnlock()
@@ -148,7 +151,7 @@ func (s *Server) dispatchToHost(hostID string, event protocol.DispatchEvent) err
 		return fmt.Errorf("router: host %q not subscribed for dispatch", hostID)
 	}
 	select {
-	case ch <- event:
+	case ch <- *event:
 		return nil
 	default:
 		return fmt.Errorf("router: dispatch channel full for host %q", hostID)
@@ -160,7 +163,7 @@ func (s *Server) dispatchToHost(hostID string, event protocol.DispatchEvent) err
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
@@ -192,4 +195,3 @@ func generateAPIToken() (string, error) {
 	}
 	return "cvt_" + tokenID.String(), nil
 }
-

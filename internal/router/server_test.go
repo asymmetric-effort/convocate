@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -16,7 +17,7 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/uuid"
 )
 
-func testServer(t *testing.T) (*Server, *httptest.Server) {
+func testServer(t *testing.T) (srv *Server, ts *httptest.Server) {
 	t.Helper()
 
 	mockConn := redispkg.NewMockConn()
@@ -41,14 +42,14 @@ func testServer(t *testing.T) (*Server, *httptest.Server) {
 		Token:   "test",
 	})
 
-	srv := NewServer(Config{
+	srv = NewServer(Config{
 		Store:   store,
 		Bao:     baoClient,
 		Version: "test-v0.2.0",
 		Logger:  log.New(io.Discard, "", 0),
 	})
 
-	ts := httptest.NewServer(srv.Handler())
+	ts = httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
 	return srv, ts
@@ -59,7 +60,12 @@ func postJSON(url string, body interface{}) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return http.Post(url, "application/json", bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return http.DefaultClient.Do(req)
 }
 
 func postJSONWithAuth(url, token string, body interface{}) (*http.Response, error) {
@@ -67,7 +73,7 @@ func postJSONWithAuth(url, token string, body interface{}) (*http.Response, erro
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +96,11 @@ func decodeJSON(t *testing.T, resp *http.Response, v interface{}) {
 func TestHealthEndpoint(t *testing.T) {
 	_, ts := testServer(t)
 
-	resp, err := http.Get(ts.URL + "/v1/health")
+	req, err := http.NewRequestWithContext(context.Background(), "GET", ts.URL+"/v1/health", http.NoBody)
+	if err != nil {
+		t.Fatalf("GET /v1/health request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /v1/health error: %v", err)
 	}
@@ -110,7 +120,12 @@ func TestHealthEndpoint(t *testing.T) {
 
 func TestHealthMethodNotAllowed(t *testing.T) {
 	_, ts := testServer(t)
-	resp, err := http.Post(ts.URL+"/v1/health", "application/json", nil)
+	postReq, err := http.NewRequestWithContext(context.Background(), "POST", ts.URL+"/v1/health", http.NoBody)
+	if err != nil {
+		t.Fatalf("POST /v1/health request: %v", err)
+	}
+	postReq.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(postReq)
 	if err != nil {
 		t.Fatalf("POST /v1/health error: %v", err)
 	}
@@ -275,7 +290,7 @@ func TestStatusTransition(t *testing.T) {
 	// Set up a job directly in the store.
 	srvDirect, tsDirect := testServer(t)
 	jobID := uuid.MustNew()
-	srvDirect.store.SetJobMetadata(protocol.JobMetadata{
+	srvDirect.store.SetJobMetadata(&protocol.JobMetadata{
 		JobID:  jobID,
 		Status: protocol.JobClaimed,
 	})
@@ -304,7 +319,7 @@ func TestStatusTransition(t *testing.T) {
 func TestStatusTransitionInvalidTransition(t *testing.T) {
 	srvDirect, tsDirect := testServer(t)
 	jobID := uuid.MustNew()
-	srvDirect.store.SetJobMetadata(protocol.JobMetadata{
+	srvDirect.store.SetJobMetadata(&protocol.JobMetadata{
 		JobID:  jobID,
 		Status: protocol.JobComplete,
 	})
@@ -329,7 +344,7 @@ func TestStatusTransitionInvalidTransition(t *testing.T) {
 func TestStatusTransitionStateMismatch(t *testing.T) {
 	srvDirect, tsDirect := testServer(t)
 	jobID := uuid.MustNew()
-	srvDirect.store.SetJobMetadata(protocol.JobMetadata{
+	srvDirect.store.SetJobMetadata(&protocol.JobMetadata{
 		JobID:  jobID,
 		Status: protocol.JobRunning,
 	})
@@ -447,7 +462,7 @@ func TestDeleteProject(t *testing.T) {
 	srv, ts := testServer(t)
 	projectID := uuid.MustNew()
 
-	srv.store.SetProjectInfo(protocol.ProjectInfo{
+	srv.store.SetProjectInfo(&protocol.ProjectInfo{
 		ProjectID:   projectID,
 		Repository:  "org/to-delete",
 		ContainerID: "c1",
@@ -585,7 +600,7 @@ func TestDispatchSubscription(t *testing.T) {
 		IssueNumber: 1,
 	}
 
-	err := srv.dispatchToHost("host-1", event)
+	err := srv.dispatchToHost("host-1", &event)
 	if err != nil {
 		t.Fatalf("dispatchToHost error: %v", err)
 	}
@@ -602,7 +617,7 @@ func TestDispatchSubscription(t *testing.T) {
 
 func TestDispatchToUnsubscribedHost(t *testing.T) {
 	srv, _ := testServer(t)
-	err := srv.dispatchToHost("nonexistent", protocol.DispatchEvent{})
+	err := srv.dispatchToHost("nonexistent", &protocol.DispatchEvent{})
 	if err == nil {
 		t.Error("expected error for unsubscribed host")
 	}
@@ -611,7 +626,7 @@ func TestDispatchToUnsubscribedHost(t *testing.T) {
 // --- Helper tests ---
 
 func TestExtractBearerToken(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", http.NoBody)
 	req.Header.Set("Authorization", "Bearer tok_abc")
 	got := extractBearerToken(req)
 	if got != "tok_abc" {
@@ -620,7 +635,7 @@ func TestExtractBearerToken(t *testing.T) {
 }
 
 func TestExtractBearerTokenMissing(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "/", http.NoBody)
 	got := extractBearerToken(req)
 	if got != "" {
 		t.Errorf("got %q, want empty", got)

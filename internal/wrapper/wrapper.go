@@ -21,33 +21,33 @@ import (
 // Wrapper is the Agent Container entrypoint. It manages credentials,
 // git worktrees, and Claude Code background tasks.
 type Wrapper struct {
-	workspaceDir string
+	cmdRunner     CommandRunner
+	logger        *log.Logger
+	activeTasks   map[uuid.UUID]context.CancelFunc
+	workspaceDir  string
 	secretsSocket string
-	logger       *log.Logger
-	mu           sync.RWMutex
-	activeTasks  map[uuid.UUID]context.CancelFunc
-	dispatchURL  string
-	hostID       string
-	containerID  string
-	cmdRunner    CommandRunner
+	dispatchURL   string
+	hostID        string
+	containerID   string
+	mu            sync.RWMutex
 }
 
 // Config holds the Wrapper configuration.
 type Config struct {
+	CmdRunner     CommandRunner
+	Logger        *log.Logger
 	WorkspaceDir  string
 	SecretsSocket string
 	DispatchURL   string
 	HostID        string
 	ContainerID   string
-	Logger        *log.Logger
-	CmdRunner     CommandRunner
 }
 
 // CommandRunner abstracts command execution for testing.
 type CommandRunner interface {
 	Run(ctx context.Context, name string, args ...string) (string, error)
 	RunWithEnv(ctx context.Context, env []string, name string, args ...string) (string, error)
-	RunWithStdin(ctx context.Context, stdin string, name string, args ...string) (string, error)
+	RunWithStdin(ctx context.Context, stdin, name string, args ...string) (string, error)
 }
 
 // SecretsResponse mirrors the broker's JSON response.
@@ -59,7 +59,7 @@ type SecretsResponse struct {
 }
 
 // New creates a new Wrapper.
-func New(config Config) (*Wrapper, error) {
+func New(config *Config) (*Wrapper, error) {
 	if config.WorkspaceDir == "" {
 		return nil, fmt.Errorf("wrapper: workspace directory is required")
 	}
@@ -165,17 +165,16 @@ func (w *Wrapper) SetupWorkspace(ctx context.Context, repository string) error {
 }
 
 // CreateWorktree creates a per-job git worktree and feature branch.
-func (w *Wrapper) CreateWorktree(ctx context.Context, jobID uuid.UUID, issueNumber int) (string, string, error) {
-	worktreeDir := filepath.Join(w.workspaceDir, "jobs", jobID.String())
+func (w *Wrapper) CreateWorktree(ctx context.Context, jobID uuid.UUID, issueNumber int) (worktreeDir, branchName string, err error) {
+	worktreeDir = filepath.Join(w.workspaceDir, "jobs", jobID.String())
 
-	var branchName string
 	if issueNumber > 0 {
 		branchName = fmt.Sprintf("feature/issue-%d", issueNumber)
 	} else {
 		branchName = fmt.Sprintf("feature/adhoc-%s", jobID.String()[:8])
 	}
 
-	_, err := w.cmdRunner.Run(ctx, "git", "-C", w.workspaceDir,
+	_, err = w.cmdRunner.Run(ctx, "git", "-C", w.workspaceDir,
 		"worktree", "add", "-b", branchName, worktreeDir, "origin/main")
 	if err != nil {
 		return "", "", fmt.Errorf("wrapper: create worktree: %w", err)
@@ -328,7 +327,7 @@ func (r *realCommandRunner) RunWithEnv(ctx context.Context, env []string, name s
 	return string(output), err
 }
 
-func (r *realCommandRunner) RunWithStdin(ctx context.Context, stdin string, name string, args ...string) (string, error) {
+func (r *realCommandRunner) RunWithStdin(ctx context.Context, stdin, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = strings.NewReader(stdin)
 	output, err := cmd.CombinedOutput()
@@ -376,7 +375,7 @@ func (w *Wrapper) StartHeartbeatLoop(ctx context.Context, writer io.Writer) {
 	for {
 		select {
 		case <-ticker.C:
-			w.SendHeartbeat(writer)
+			_ = w.SendHeartbeat(writer)
 		case <-ctx.Done():
 			return
 		}

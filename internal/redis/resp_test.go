@@ -11,28 +11,28 @@ import (
 func TestWriteCommand(t *testing.T) {
 	tests := []struct {
 		name string
-		args []string
 		want string
+		args []string
 	}{
 		{
-			"ping",
-			[]string{"PING"},
-			"*1\r\n$4\r\nPING\r\n",
+			name: "ping",
+			args: []string{"PING"},
+			want: "*1\r\n$4\r\nPING\r\n",
 		},
 		{
-			"set",
-			[]string{"SET", "key", "value"},
-			"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
+			name: "set",
+			args: []string{"SET", "key", "value"},
+			want: "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n",
 		},
 		{
-			"get",
-			[]string{"GET", "key"},
-			"*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n",
+			name: "get",
+			args: []string{"GET", "key"},
+			want: "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n",
 		},
 		{
-			"empty args",
-			[]string{},
-			"*0\r\n",
+			name: "empty args",
+			args: []string{},
+			want: "*0\r\n",
 		},
 	}
 	for _, testCase := range tests {
@@ -71,9 +71,9 @@ func TestReadResponseError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	var redisErr *RedisError
+	var redisErr *Error
 	if !errors.As(err, &redisErr) {
-		t.Fatalf("expected *RedisError, got %T: %v", err, err)
+		t.Fatalf("expected *Error, got %T: %v", err, err)
 	}
 	if redisErr.Message != "ERR unknown command" {
 		t.Errorf("error message: got %q, want %q", redisErr.Message, "ERR unknown command")
@@ -255,7 +255,7 @@ func TestReadResponseNegativeArrayCount(t *testing.T) {
 }
 
 func TestRedisErrorString(t *testing.T) {
-	err := &RedisError{Message: "test error"}
+	err := &Error{Message: "test error"}
 	want := "redis: test error"
 	if err.Error() != want {
 		t.Errorf("Error() = %q, want %q", err.Error(), want)

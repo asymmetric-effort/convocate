@@ -20,9 +20,9 @@ const (
 
 // ProjectSecrets holds the credentials for a single project.
 type ProjectSecrets struct {
+	CustomSecrets map[string]string `json:"custom_secrets,omitempty"`
 	SSHPrivateKey string            `json:"ssh_private_key"`
 	GitHubPAT     string            `json:"github_pat"`
-	CustomSecrets map[string]string `json:"custom_secrets,omitempty"`
 }
 
 // StoreProjectSecrets writes a project's secrets to OpenBao.

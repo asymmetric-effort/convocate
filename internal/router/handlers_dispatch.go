@@ -127,7 +127,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		meta.CompletedAt = &completedAt
 	}
 
-	err = s.store.SetJobMetadata(*meta)
+	err = s.store.SetJobMetadata(meta)
 	if err != nil {
 		s.logger.Printf("router: set job metadata: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal error")

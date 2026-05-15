@@ -367,9 +367,9 @@ func TestMTLSHandshakeOptionalClientCert(t *testing.T) {
 			errCh <- fmt.Errorf("expected *tls.Conn")
 			return
 		}
-		err := tlsConn.Handshake()
-		if err != nil {
-			errCh <- err
+		handshakeErr := tlsConn.Handshake()
+		if handshakeErr != nil {
+			errCh <- handshakeErr
 			return
 		}
 		state := tlsConn.ConnectionState()

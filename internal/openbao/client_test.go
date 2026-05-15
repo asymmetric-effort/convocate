@@ -14,9 +14,9 @@ import (
 
 // mockBao is a minimal in-memory OpenBao API mock for unit testing.
 type mockBao struct {
-	mu       sync.Mutex
-	kvStore  map[string]map[string]interface{} // path -> data
-	policies map[string]string                 // name -> rules
+	kvStore     map[string]map[string]interface{}
+	policies    map[string]string
+	mu          sync.Mutex
 	initialized bool
 }
 
@@ -304,7 +304,7 @@ func TestSetToken(t *testing.T) {
 }
 
 func TestOpenBaoError(t *testing.T) {
-	err := &OpenBaoError{
+	err := &Error{
 		StatusCode: 403,
 		Errors:     []string{"permission denied"},
 	}
@@ -318,7 +318,7 @@ func TestOpenBaoError(t *testing.T) {
 }
 
 func TestOpenBaoErrorType(t *testing.T) {
-	// Test that server returning 403 produces an *OpenBaoError.
+	// Test that server returning 403 produces an *Error.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -333,9 +333,9 @@ func TestOpenBaoErrorType(t *testing.T) {
 		t.Fatal("expected error for 403")
 	}
 
-	var baoErr *OpenBaoError
+	var baoErr *Error
 	if !errors.As(err, &baoErr) {
-		t.Fatalf("expected *OpenBaoError, got %T: %v", err, err)
+		t.Fatalf("expected *Error, got %T: %v", err, err)
 	}
 	if baoErr.StatusCode != 403 {
 		t.Errorf("StatusCode: got %d, want 403", baoErr.StatusCode)
@@ -567,7 +567,7 @@ func TestNewClientDefaultTimeout(t *testing.T) {
 
 func TestNewClientWithTLS(t *testing.T) {
 	client := NewClient(Config{
-		Address: "https://localhost",
+		Address:   "https://localhost",
 		TLSConfig: &tls.Config{InsecureSkipVerify: true},
 	})
 	if client == nil {

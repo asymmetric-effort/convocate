@@ -18,14 +18,14 @@ import (
 
 // mockContainerManager is a test double for ContainerManager.
 type mockContainerManager struct {
-	mu              sync.Mutex
-	deliveredPrompts map[string][]string // containerID -> prompts
-	healthy         map[string]bool
-	stopped         map[string]bool
-	terminated      map[string][]uuid.UUID
-	containerCount  int
-	cpuPercent      float64
-	memPercent      float64
+	deliveredPrompts map[string][]string
+	healthy          map[string]bool
+	stopped          map[string]bool
+	terminated       map[string][]uuid.UUID
+	containerCount   int
+	cpuPercent       float64
+	memPercent       float64
+	mu               sync.Mutex
 }
 
 func newMockContainerManager() *mockContainerManager {
@@ -74,9 +74,9 @@ func (m *mockContainerManager) TerminateTask(containerID string, jobID uuid.UUID
 	return nil
 }
 
-func (m *mockContainerManager) ContainerCount() int     { return m.containerCount }
-func (m *mockContainerManager) CPUPercent() float64      { return m.cpuPercent }
-func (m *mockContainerManager) MemoryPercent() float64   { return m.memPercent }
+func (m *mockContainerManager) ContainerCount() int    { return m.containerCount }
+func (m *mockContainerManager) CPUPercent() float64    { return m.cpuPercent }
+func (m *mockContainerManager) MemoryPercent() float64 { return m.memPercent }
 
 func (m *mockContainerManager) getPrompts(containerID string) []string {
 	m.mu.Lock()
@@ -86,9 +86,9 @@ func (m *mockContainerManager) getPrompts(containerID string) []string {
 
 // mockRouterAPI captures status and heartbeat posts.
 type mockRouterAPI struct {
-	mu         sync.Mutex
 	statuses   []protocol.StatusTransitionRequest
 	heartbeats []protocol.HeartbeatRequest
+	mu         sync.Mutex
 }
 
 func newMockRouterAPI() (*mockRouterAPI, *httptest.Server) {
@@ -150,13 +150,13 @@ func TestNewServiceValidation(t *testing.T) {
 	cm := newMockContainerManager()
 
 	tests := []struct {
-		name   string
 		config Config
+		name   string
 	}{
-		{"missing host ID", Config{ControlURL: "http://x", Store: store, ContainerMgr: cm}},
-		{"missing control URL", Config{HostID: "h1", Store: store, ContainerMgr: cm}},
-		{"missing store", Config{HostID: "h1", ControlURL: "http://x", ContainerMgr: cm}},
-		{"missing container mgr", Config{HostID: "h1", ControlURL: "http://x", Store: store}},
+		{name: "missing host ID", config: Config{ControlURL: "http://x", Store: store, ContainerMgr: cm}},
+		{name: "missing control URL", config: Config{HostID: "h1", Store: store, ContainerMgr: cm}},
+		{name: "missing store", config: Config{HostID: "h1", ControlURL: "http://x", ContainerMgr: cm}},
+		{name: "missing container mgr", config: Config{HostID: "h1", ControlURL: "http://x", Store: store}},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -181,7 +181,7 @@ func TestHandleDispatchEvent(t *testing.T) {
 		IssueAuthor: "alice",
 	}
 
-	err := svc.HandleDispatchEvent(event)
+	err := svc.HandleDispatchEvent(&event)
 	if err != nil {
 		t.Fatalf("HandleDispatchEvent error: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestHandleDispatchEvent(t *testing.T) {
 	if len(prompts) != 1 {
 		t.Fatalf("expected 1 prompt, got %d", len(prompts))
 	}
-	if len(prompts[0]) == 0 {
+	if prompts[0] == "" {
 		t.Error("prompt is empty")
 	}
 
@@ -220,7 +220,7 @@ func TestHandleDispatchEventUnhealthyContainer(t *testing.T) {
 		IssueNumber: 1,
 	}
 
-	err := svc.HandleDispatchEvent(event)
+	err := svc.HandleDispatchEvent(&event)
 	if err == nil {
 		t.Error("expected error for unhealthy container")
 	}
@@ -237,7 +237,7 @@ func TestHandleDispatchEventAdHoc(t *testing.T) {
 		Prompt:      "Add health check endpoint",
 	}
 
-	err := svc.HandleDispatchEvent(event)
+	err := svc.HandleDispatchEvent(&event)
 	if err != nil {
 		t.Fatalf("HandleDispatchEvent error: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestTerminateJob(t *testing.T) {
 		IssueNumber: 1,
 	}
 
-	err := svc.HandleDispatchEvent(event)
+	err := svc.HandleDispatchEvent(&event)
 	if err != nil {
 		t.Fatalf("HandleDispatchEvent error: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestCompleteJob(t *testing.T) {
 		Repository:  "org/repo",
 		IssueNumber: 1,
 	}
-	svc.HandleDispatchEvent(event)
+	svc.HandleDispatchEvent(&event)
 
 	svc.CompleteJob(jobID, "container-abc", "https://github.com/org/repo/pull/1")
 
@@ -322,7 +322,7 @@ func TestFailJob(t *testing.T) {
 		Repository:  "org/repo",
 		IssueNumber: 1,
 	}
-	svc.HandleDispatchEvent(event)
+	svc.HandleDispatchEvent(&event)
 
 	svc.FailJob(jobID, "container-abc", "test failure")
 
@@ -364,8 +364,8 @@ func TestBuildPromptIssue(t *testing.T) {
 		IssueBody:   "The body text",
 		IssueAuthor: "alice",
 	}
-	prompt := buildPrompt(event)
-	if len(prompt) == 0 {
+	prompt := buildPrompt(&event)
+	if prompt == "" {
 		t.Error("prompt is empty")
 	}
 	if prompt[:17] != "Background task: " {
@@ -378,7 +378,7 @@ func TestBuildPromptAdHoc(t *testing.T) {
 		AdHoc:  true,
 		Prompt: "Do something",
 	}
-	prompt := buildPrompt(event)
+	prompt := buildPrompt(&event)
 	if prompt != "Background task: Do something" {
 		t.Errorf("got %q, want %q", prompt, "Background task: Do something")
 	}
@@ -396,7 +396,7 @@ func TestMultipleConcurrentJobs(t *testing.T) {
 			IssueTitle:  "Issue",
 			IssueBody:   "Body",
 		}
-		err := svc.HandleDispatchEvent(event)
+		err := svc.HandleDispatchEvent(&event)
 		if err != nil {
 			t.Fatalf("HandleDispatchEvent %d error: %v", i, err)
 		}

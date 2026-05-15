@@ -2,6 +2,7 @@ package openbao
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -14,16 +15,16 @@ import (
 // Client is a minimal OpenBao HTTP client for the KV v2 secrets engine
 // and policy management. It speaks the OpenBao/Vault REST API over HTTPS.
 type Client struct {
+	httpClient *http.Client
 	address    string
 	token      string
-	httpClient *http.Client
 }
 
 // Config holds connection parameters for an OpenBao client.
 type Config struct {
+	TLSConfig *tls.Config
 	Address   string
 	Token     string
-	TLSConfig *tls.Config
 	Timeout   time.Duration
 }
 
@@ -191,7 +192,7 @@ func (c *Client) AppRoleLogin(mountPath, roleID, secretID string) (string, error
 // Health checks the OpenBao server health. Returns nil if healthy.
 func (c *Client) Health() error {
 	endpoint := "/v1/sys/health"
-	req, err := http.NewRequest("GET", c.address+endpoint, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", c.address+endpoint, http.NoBody)
 	if err != nil {
 		return fmt.Errorf("openbao: create request: %w", err)
 	}
@@ -234,13 +235,13 @@ func (c *Client) InitStatus() (bool, error) {
 
 // --- Internal HTTP ---
 
-// OpenBaoError represents an error response from the OpenBao API.
-type OpenBaoError struct {
-	StatusCode int
+// Error represents an error response from the OpenBao API.
+type Error struct {
 	Errors     []string
+	StatusCode int
 }
 
-func (e *OpenBaoError) Error() string {
+func (e *Error) Error() string {
 	return fmt.Sprintf("openbao: HTTP %d: %s", e.StatusCode, strings.Join(e.Errors, "; "))
 }
 
@@ -254,7 +255,7 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) (map[strin
 		reqBody = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, c.address+endpoint, reqBody)
+	req, err := http.NewRequestWithContext(context.Background(), method, c.address+endpoint, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("openbao: create request: %w", err)
 	}
@@ -291,7 +292,7 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) (map[strin
 			Errors []string `json:"errors"`
 		}
 		_ = json.Unmarshal(respBody, &errResp)
-		return nil, &OpenBaoError{
+		return nil, &Error{
 			StatusCode: resp.StatusCode,
 			Errors:     errResp.Errors,
 		}

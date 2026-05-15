@@ -101,7 +101,7 @@ func caGenerate() int {
 	certPath := dir + "/ca.crt"
 	keyPath := dir + "/ca.key"
 
-	err = os.WriteFile(certPath, ca.CertPEM, 0o644)
+	err = os.WriteFile(certPath, ca.CertPEM, 0o600)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error writing CA cert: %v\n", err)
 		return 1

@@ -7,15 +7,17 @@ import (
 	"sync"
 )
 
+const pong = "PONG"
+
 // MockConn is an in-memory Redis mock for unit testing. It supports the
 // subset of Redis commands used by RouterStore and DispatchStore.
 type MockConn struct {
-	mu      sync.Mutex
-	data    map[string]string
-	lists   map[string][]string
-	sets    map[string]map[string]bool
-	ttls    map[string]int
-	closed  bool
+	data   map[string]string
+	lists  map[string][]string
+	sets   map[string]map[string]bool
+	ttls   map[string]int
+	mu     sync.Mutex
+	closed bool
 }
 
 // NewMockConn creates a new in-memory mock connection.
@@ -50,19 +52,20 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 	cmd := strings.ToUpper(args[0])
 	switch cmd {
 	case "PING":
-		return "PONG", nil
+		return pong, nil
 
 	case "SET":
 		if len(args) < 3 {
-			return nil, &RedisError{Message: "ERR wrong number of arguments for 'set' command"}
+			return nil, &Error{Message: "ERR wrong number of arguments for 'set' command"}
 		}
-		m.data[args[1]] = args[2]
+		key := args[1]
+		m.data[key] = args[2]
 		// Handle EX option.
 		for i := 3; i < len(args)-1; i++ {
-			if strings.ToUpper(args[i]) == "EX" {
+			if strings.EqualFold(args[i], "EX") {
 				ttl, parseErr := strconv.Atoi(args[i+1])
 				if parseErr == nil {
-					m.ttls[args[1]] = ttl
+					m.ttls[key] = ttl
 				}
 			}
 		}
@@ -70,7 +73,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 
 	case "GET":
 		if len(args) < 2 {
-			return nil, &RedisError{Message: "ERR wrong number of arguments for 'get' command"}
+			return nil, &Error{Message: "ERR wrong number of arguments for 'get' command"}
 		}
 		val, exists := m.data[args[1]]
 		if !exists {
@@ -80,7 +83,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 
 	case "DEL":
 		if len(args) < 2 {
-			return nil, &RedisError{Message: "ERR wrong number of arguments for 'del' command"}
+			return nil, &Error{Message: "ERR wrong number of arguments for 'del' command"}
 		}
 		deleted := int64(0)
 		for _, key := range args[1:] {
@@ -102,7 +105,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 
 	case "SADD":
 		if len(args) < 3 {
-			return nil, &RedisError{Message: "ERR wrong number of arguments for 'sadd' command"}
+			return nil, &Error{Message: "ERR wrong number of arguments for 'sadd' command"}
 		}
 		key := args[1]
 		if m.sets[key] == nil {
@@ -119,7 +122,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 
 	case "SREM":
 		if len(args) < 3 {
-			return nil, &RedisError{Message: "ERR wrong number of arguments for 'srem' command"}
+			return nil, &Error{Message: "ERR wrong number of arguments for 'srem' command"}
 		}
 		key := args[1]
 		removed := int64(0)
@@ -135,7 +138,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 
 	case "SISMEMBER":
 		if len(args) < 3 {
-			return nil, &RedisError{Message: "ERR wrong number of arguments for 'sismember' command"}
+			return nil, &Error{Message: "ERR wrong number of arguments for 'sismember' command"}
 		}
 		key := args[1]
 		member := args[2]
@@ -146,7 +149,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 
 	case "RPUSH":
 		if len(args) < 3 {
-			return nil, &RedisError{Message: "ERR wrong number of arguments for 'rpush' command"}
+			return nil, &Error{Message: "ERR wrong number of arguments for 'rpush' command"}
 		}
 		key := args[1]
 		m.lists[key] = append(m.lists[key], args[2:]...)
@@ -154,7 +157,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 
 	case "LPOP":
 		if len(args) < 2 {
-			return nil, &RedisError{Message: "ERR wrong number of arguments for 'lpop' command"}
+			return nil, &Error{Message: "ERR wrong number of arguments for 'lpop' command"}
 		}
 		key := args[1]
 		list := m.lists[key]
@@ -167,7 +170,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 
 	case "LLEN":
 		if len(args) < 2 {
-			return nil, &RedisError{Message: "ERR wrong number of arguments for 'llen' command"}
+			return nil, &Error{Message: "ERR wrong number of arguments for 'llen' command"}
 		}
 		key := args[1]
 		return int64(len(m.lists[key])), nil
@@ -176,7 +179,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 		// Simplified SCAN: returns all matching keys in one pass.
 		pattern := "*"
 		for i := 1; i < len(args)-1; i++ {
-			if strings.ToUpper(args[i]) == "MATCH" {
+			if strings.EqualFold(args[i], "MATCH") {
 				pattern = args[i+1]
 			}
 		}
@@ -200,7 +203,7 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 		return []interface{}{"0", matched}, nil
 
 	default:
-		return nil, &RedisError{Message: fmt.Sprintf("ERR unknown command '%s'", cmd)}
+		return nil, &Error{Message: fmt.Sprintf("ERR unknown command '%s'", cmd)}
 	}
 }
 
@@ -223,4 +226,3 @@ func matchGlob(pattern, s string) bool {
 	}
 	return pattern == s
 }
-

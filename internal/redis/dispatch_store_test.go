@@ -110,11 +110,11 @@ func TestDispatchStoreQueue(t *testing.T) {
 	}
 
 	t.Run("enqueue", func(t *testing.T) {
-		err := store.EnqueueDispatch(event1)
+		err := store.EnqueueDispatch(&event1)
 		if err != nil {
 			t.Fatalf("EnqueueDispatch error: %v", err)
 		}
-		err = store.EnqueueDispatch(event2)
+		err = store.EnqueueDispatch(&event2)
 		if err != nil {
 			t.Fatalf("EnqueueDispatch error: %v", err)
 		}
@@ -236,7 +236,7 @@ func TestDispatchStoreAdHocDispatchEvent(t *testing.T) {
 		Prompt:      "Add a health check endpoint",
 	}
 
-	err := store.EnqueueDispatch(event)
+	err := store.EnqueueDispatch(&event)
 	if err != nil {
 		t.Fatalf("EnqueueDispatch error: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestDispatchStoreFlushNamespace(t *testing.T) {
 		ContainerID: "c1",
 		State:       protocol.JobRunning,
 	})
-	store.EnqueueDispatch(protocol.DispatchEvent{
+	store.EnqueueDispatch(&protocol.DispatchEvent{
 		JobID:       uuid.MustNew(),
 		ContainerID: "c1",
 	})

@@ -54,12 +54,12 @@ func ParseContainerState(s string) (ContainerState, error) {
 type JobState string
 
 const (
-	JobClaimed     JobState = "claimed"
-	JobRunning     JobState = "running"
-	JobComplete    JobState = "complete"
-	JobFailed      JobState = "failed"
-	JobClarifying  JobState = "clarifying"
-	JobTerminated  JobState = "terminated"
+	JobClaimed    JobState = "claimed"
+	JobRunning    JobState = "running"
+	JobComplete   JobState = "complete"
+	JobFailed     JobState = "failed"
+	JobClarifying JobState = "clarifying"
+	JobTerminated JobState = "terminated"
 )
 
 // ValidJobStates is the canonical set of job lifecycle states.

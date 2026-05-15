@@ -177,7 +177,7 @@ func TestRouterStoreCorruptData(t *testing.T) {
 
 	t.Run("DeleteProjectInfo both indexes", func(t *testing.T) {
 		id := uuid.MustNew()
-		store.SetProjectInfo(protocol.ProjectInfo{
+		store.SetProjectInfo(&protocol.ProjectInfo{
 			ProjectID:  id,
 			Repository: "org/del-proj",
 		})
@@ -202,7 +202,7 @@ func TestRouterStoreCorruptData(t *testing.T) {
 			Repository: "org/proj-idx",
 			HostID:     "h1",
 		}
-		err := store.SetProjectInfo(info)
+		err := store.SetProjectInfo(&info)
 		if err != nil {
 			t.Fatalf("SetProjectInfo error: %v", err)
 		}
@@ -263,7 +263,7 @@ func TestDispatchStoreCorruptData(t *testing.T) {
 
 // TestBoolHelperError tests the Bool helper error propagation.
 func TestBoolHelperError(t *testing.T) {
-	_, err := Bool(nil, &RedisError{Message: "test"})
+	_, err := Bool(nil, &Error{Message: "test"})
 	if err == nil {
 		t.Error("expected error to propagate")
 	}

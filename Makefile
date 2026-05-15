@@ -43,7 +43,8 @@ lint: lint-go lint-yaml lint-vuln
 
 lint-go:
 	@echo "Running Go linter..."
-	$(GO) vet ./...
+	@command -v golangci-lint >/dev/null 2>&1 || $(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@PATH="$$($(GO) env GOBIN):$$($(GO) env GOPATH)/bin:$$PATH" golangci-lint run ./...
 
 lint-yaml:
 	@echo "Running YAML linter..."

@@ -3,7 +3,6 @@ package wrapper
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -18,21 +17,21 @@ import (
 
 // mockCommandRunner records commands for testing.
 type mockCommandRunner struct {
-	mu       sync.Mutex
-	commands []mockCommand
 	results  map[string]mockResult
+	commands []mockCommand
+	mu       sync.Mutex
 }
 
 type mockCommand struct {
-	Name string
-	Args []string
-	Env  []string
+	Name  string
 	Stdin string
+	Args  []string
+	Env   []string
 }
 
 type mockResult struct {
-	Output string
 	Err    error
+	Output string
 }
 
 func newMockCommandRunner() *mockCommandRunner {
@@ -49,11 +48,11 @@ func (m *mockCommandRunner) RunWithEnv(ctx context.Context, env []string, name s
 	return m.record(ctx, env, "", name, args...)
 }
 
-func (m *mockCommandRunner) RunWithStdin(ctx context.Context, stdin string, name string, args ...string) (string, error) {
+func (m *mockCommandRunner) RunWithStdin(ctx context.Context, stdin, name string, args ...string) (string, error) {
 	return m.record(ctx, nil, stdin, name, args...)
 }
 
-func (m *mockCommandRunner) record(ctx context.Context, env []string, stdin string, name string, args ...string) (string, error) {
+func (m *mockCommandRunner) record(ctx context.Context, env []string, stdin, name string, args ...string) (string, error) {
 	m.mu.Lock()
 	cmd := mockCommand{Name: name, Args: args, Env: env, Stdin: stdin}
 	m.commands = append(m.commands, cmd)
@@ -76,7 +75,7 @@ func (m *mockCommandRunner) record(ctx context.Context, env []string, stdin stri
 	return "", nil
 }
 
-func (m *mockCommandRunner) setResult(name string, output string, err error) {
+func (m *mockCommandRunner) setResult(name, output string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.results[name] = mockResult{Output: output, Err: err}
@@ -94,7 +93,7 @@ func testWrapper(t *testing.T) (*Wrapper, *mockCommandRunner) {
 	t.Helper()
 	dir := t.TempDir()
 	runner := newMockCommandRunner()
-	w, err := New(Config{
+	w, err := New(&Config{
 		WorkspaceDir:  dir,
 		SecretsSocket: "/tmp/test-secrets.sock",
 		Logger:        log.New(io.Discard, "", 0),
@@ -110,15 +109,15 @@ func testWrapper(t *testing.T) (*Wrapper, *mockCommandRunner) {
 
 func TestNewWrapperValidation(t *testing.T) {
 	tests := []struct {
-		name   string
 		config Config
+		name   string
 	}{
-		{"missing workspace dir", Config{SecretsSocket: "/tmp/s.sock"}},
-		{"missing secrets socket", Config{WorkspaceDir: "/tmp/ws"}},
+		{name: "missing workspace dir", config: Config{SecretsSocket: "/tmp/s.sock"}},
+		{name: "missing secrets socket", config: Config{WorkspaceDir: "/tmp/ws"}},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			_, err := New(testCase.config)
+			_, err := New(&testCase.config)
 			if err == nil {
 				t.Error("expected error for invalid config")
 			}
@@ -443,11 +442,11 @@ func TestAppendToFile(t *testing.T) {
 func TestMultipleBackgroundTasks(t *testing.T) {
 	w, _ := testWrapper(t)
 
-	var jobIDs []uuid.UUID
+	jobIDs := make([]uuid.UUID, 0, 5)
 	for range 5 {
 		id := uuid.MustNew()
 		jobIDs = append(jobIDs, id)
-		w.RunBackgroundTask(id, fmt.Sprintf("task prompt"))
+		w.RunBackgroundTask(id, "task prompt")
 	}
 
 	time.Sleep(20 * time.Millisecond)

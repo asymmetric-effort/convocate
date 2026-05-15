@@ -38,7 +38,7 @@ func (s *RouterStore) key(parts ...string) string {
 // --- Container Map ---
 
 // SetContainer writes a container map entry.
-func (s *RouterStore) SetContainer(entry protocol.ContainerMapEntry) error {
+func (s *RouterStore) SetContainer(entry *protocol.ContainerMapEntry) error {
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("redis/router: marshal container: %w", err)
@@ -174,7 +174,7 @@ func (s *RouterStore) LookupJobByKey(idempotencyKey protocol.IdempotencyKey) (uu
 // --- Job Metadata ---
 
 // SetJobMetadata writes job metadata.
-func (s *RouterStore) SetJobMetadata(meta protocol.JobMetadata) error {
+func (s *RouterStore) SetJobMetadata(meta *protocol.JobMetadata) error {
 	data, err := json.Marshal(meta)
 	if err != nil {
 		return fmt.Errorf("redis/router: marshal job metadata: %w", err)
@@ -209,7 +209,7 @@ func (s *RouterStore) DeleteJobMetadata(jobID uuid.UUID) error {
 // --- API Token Registry ---
 
 // SetAPIToken stores a CONVOCATE_API_TOKEN for a repository.
-func (s *RouterStore) SetAPIToken(repository string, token string) error {
+func (s *RouterStore) SetAPIToken(repository, token string) error {
 	_, err := s.conn.Do("SET", s.key("token", repository), token)
 	return err
 }
@@ -220,7 +220,7 @@ func (s *RouterStore) GetAPIToken(repository string) (string, error) {
 }
 
 // ValidateAPIToken checks that a token matches the stored one for a repository.
-func (s *RouterStore) ValidateAPIToken(repository string, token string) (bool, error) {
+func (s *RouterStore) ValidateAPIToken(repository, token string) (bool, error) {
 	stored, err := s.GetAPIToken(repository)
 	if err != nil {
 		return false, err
@@ -267,7 +267,7 @@ func (s *RouterStore) GetHeartbeat(hostID string) (*protocol.HeartbeatRequest, e
 // --- Project Info ---
 
 // SetProjectInfo stores project info.
-func (s *RouterStore) SetProjectInfo(info protocol.ProjectInfo) error {
+func (s *RouterStore) SetProjectInfo(info *protocol.ProjectInfo) error {
 	data, err := json.Marshal(info)
 	if err != nil {
 		return fmt.Errorf("redis/router: marshal project info: %w", err)
@@ -326,7 +326,7 @@ func (s *RouterStore) Ping() error {
 	if err != nil {
 		return err
 	}
-	if val != "PONG" {
+	if val != pong {
 		return fmt.Errorf("redis/router: unexpected PING response: %q", val)
 	}
 	return nil

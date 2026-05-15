@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -16,10 +17,10 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/uuid"
 )
 
-func freshServer(t *testing.T) (*Server, *httptest.Server, *redispkg.RouterStore) {
+func freshServer(t *testing.T) (srv *Server, ts *httptest.Server, store *redispkg.RouterStore) {
 	t.Helper()
 	mockConn := redispkg.NewMockConn()
-	store := redispkg.NewRouterStore(mockConn)
+	store = redispkg.NewRouterStore(mockConn)
 	baoMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "DELETE" {
 			w.WriteHeader(http.StatusNoContent)
@@ -34,13 +35,13 @@ func freshServer(t *testing.T) (*Server, *httptest.Server, *redispkg.RouterStore
 	}))
 	t.Cleanup(baoMock.Close)
 	baoClient := openbao.NewClient(openbao.Config{Address: baoMock.URL, Token: "test"})
-	srv := NewServer(Config{
+	srv = NewServer(Config{
 		Store:   store,
 		Bao:     baoClient,
 		Version: "test",
 		Logger:  log.New(io.Discard, "", 0),
 	})
-	ts := httptest.NewServer(srv.Handler())
+	ts = httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return srv, ts, store
 }
@@ -52,7 +53,7 @@ func doReq(t *testing.T, method, url string, body interface{}) *http.Response {
 		data, _ := json.Marshal(body)
 		reqBody = bytes.NewReader(data)
 	}
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(context.Background(), method, url, reqBody)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -71,7 +72,7 @@ func doReqAuth(t *testing.T, method, url, token string, body interface{}) *http.
 		data, _ := json.Marshal(body)
 		reqBody = bytes.NewReader(data)
 	}
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(context.Background(), method, url, reqBody)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -217,7 +218,7 @@ func TestHandleDispatchMissingHost(t *testing.T) {
 
 func TestHandleJobsEmptyBody(t *testing.T) {
 	_, ts, _ := freshServer(t)
-	req, _ := http.NewRequest("POST", ts.URL+"/v1/jobs", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", ts.URL+"/v1/jobs", http.NoBody)
 	req.Header.Set("Authorization", "Bearer tok_test")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -273,7 +274,7 @@ func TestHandleStatusCompleteWithPRURL(t *testing.T) {
 	srv, ts, store := freshServer(t)
 	_ = srv
 	jobID := uuid.MustNew()
-	store.SetJobMetadata(protocol.JobMetadata{
+	store.SetJobMetadata(&protocol.JobMetadata{
 		JobID:  jobID,
 		Status: protocol.JobRunning,
 	})
@@ -303,7 +304,7 @@ func TestHandleStatusCompleteWithPRURL(t *testing.T) {
 func TestHandleStatusTerminated(t *testing.T) {
 	_, ts, store := freshServer(t)
 	jobID := uuid.MustNew()
-	store.SetJobMetadata(protocol.JobMetadata{
+	store.SetJobMetadata(&protocol.JobMetadata{
 		JobID:  jobID,
 		Status: protocol.JobRunning,
 	})
@@ -329,7 +330,7 @@ func TestHandleStatusTerminated(t *testing.T) {
 func TestHandleStatusFailed(t *testing.T) {
 	_, ts, store := freshServer(t)
 	jobID := uuid.MustNew()
-	store.SetJobMetadata(protocol.JobMetadata{
+	store.SetJobMetadata(&protocol.JobMetadata{
 		JobID:  jobID,
 		Status: protocol.JobRunning,
 	})
@@ -352,7 +353,7 @@ func TestHandleStatusFailed(t *testing.T) {
 
 func TestHandleHeartbeatEmptyBody(t *testing.T) {
 	_, ts, _ := freshServer(t)
-	req, _ := http.NewRequest("POST", ts.URL+"/v1/heartbeat", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", ts.URL+"/v1/heartbeat", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := http.DefaultClient.Do(req)
 	resp.Body.Close()
@@ -377,7 +378,7 @@ func TestHandleCreateProjectMissingFields(t *testing.T) {
 
 func TestHandleCreateProjectEmptyBody(t *testing.T) {
 	_, ts, _ := freshServer(t)
-	req, _ := http.NewRequest("POST", ts.URL+"/ui/api/projects/create", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", ts.URL+"/ui/api/projects/create", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := http.DefaultClient.Do(req)
 	resp.Body.Close()
@@ -399,7 +400,7 @@ func TestHandleDeleteProjectMissingID(t *testing.T) {
 
 func TestHandleDeleteProjectEmptyBody(t *testing.T) {
 	_, ts, _ := freshServer(t)
-	req, _ := http.NewRequest("POST", ts.URL+"/ui/api/projects/delete", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", ts.URL+"/ui/api/projects/delete", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := http.DefaultClient.Do(req)
 	resp.Body.Close()
@@ -457,7 +458,7 @@ func TestHandleClusterAuthSessionMode(t *testing.T) {
 
 func TestHandleClusterAuthEmptyBody(t *testing.T) {
 	_, ts, _ := freshServer(t)
-	req, _ := http.NewRequest("POST", ts.URL+"/ui/api/auth", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", ts.URL+"/ui/api/auth", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := http.DefaultClient.Do(req)
 	resp.Body.Close()
@@ -491,7 +492,7 @@ func TestHandleAdHocSubmitProjectNotFound(t *testing.T) {
 
 func TestHandleAdHocSubmitEmptyBody(t *testing.T) {
 	_, ts, _ := freshServer(t)
-	req, _ := http.NewRequest("POST", ts.URL+"/ui/api/adhoc", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", ts.URL+"/ui/api/adhoc", http.NoBody)
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := http.DefaultClient.Do(req)
 	resp.Body.Close()
@@ -508,7 +509,11 @@ func TestPublicHandler(t *testing.T) {
 	defer pubTs.Close()
 
 	// Health should work.
-	resp, err := http.Get(pubTs.URL + "/v1/health")
+	healthReq, err := http.NewRequestWithContext(context.Background(), "GET", pubTs.URL+"/v1/health", http.NoBody)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(healthReq)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -538,7 +543,7 @@ func TestNewServerDefaultLogger(t *testing.T) {
 // --- readJSON nil body ---
 
 func TestReadJSONNilBody(t *testing.T) {
-	req := httptest.NewRequest("POST", "/", nil)
+	req := httptest.NewRequest("POST", "/", http.NoBody)
 	var v struct{}
 	err := readJSON(req, &v)
 	if err == nil {
@@ -555,11 +560,11 @@ func TestDispatchChannelFull(t *testing.T) {
 
 	// Fill the channel (buffer size is 16).
 	for range 16 {
-		srv.dispatchToHost("host-full", protocol.DispatchEvent{JobID: uuid.MustNew()})
+		srv.dispatchToHost("host-full", &protocol.DispatchEvent{JobID: uuid.MustNew()})
 	}
 
 	// Next dispatch should fail (channel full).
-	err := srv.dispatchToHost("host-full", protocol.DispatchEvent{JobID: uuid.MustNew()})
+	err := srv.dispatchToHost("host-full", &protocol.DispatchEvent{JobID: uuid.MustNew()})
 	if err == nil {
 		t.Error("expected error for full dispatch channel")
 	}
@@ -582,7 +587,11 @@ func TestHandleDispatchLongPollTimeout(t *testing.T) {
 	_, ts, _ := freshServer(t)
 
 	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(ts.URL + "/v1/dispatch?host=timeout-host")
+	dispReq, reqErr := http.NewRequestWithContext(context.Background(), "GET", ts.URL+"/v1/dispatch?host=timeout-host", http.NoBody)
+	if reqErr != nil {
+		t.Fatalf("new request: %v", reqErr)
+	}
+	resp, err := client.Do(dispReq)
 	if err != nil {
 		// Timeout is expected if the 30s server timeout exceeds client timeout.
 		return

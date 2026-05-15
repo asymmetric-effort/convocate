@@ -3,6 +3,8 @@ package broker
 import (
 	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,12 +12,10 @@ import (
 
 	"github.com/asymmetric-effort/convocate/internal/openbao"
 	"github.com/asymmetric-effort/convocate/internal/uuid"
-	"net/http"
-	"net/http/httptest"
 )
 
 // mockBaoServer sets up a mock OpenBao that serves project secrets.
-func mockBaoServer(t *testing.T, projectSecrets map[string]map[string]interface{}) (*openbao.Client, func()) {
+func mockBaoServer(t *testing.T, projectSecrets map[string]map[string]interface{}) (client *openbao.Client, cleanup func()) {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// KV v2 read.
@@ -35,7 +35,7 @@ func mockBaoServer(t *testing.T, projectSecrets map[string]map[string]interface{
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	client := openbao.NewClient(openbao.Config{
+	client = openbao.NewClient(openbao.Config{
 		Address: server.URL,
 		Token:   "test-token",
 	})
@@ -165,8 +165,8 @@ func TestBrokerServesSecrets(t *testing.T) {
 
 	baoClient, cleanup := mockBaoServer(t, map[string]map[string]interface{}{
 		projectPath: {
-			"ssh_private_key": "the-ssh-key",
-			"github_pat":      "ghp_test123",
+			"ssh_private_key":  "the-ssh-key",
+			"github_pat":       "ghp_test123",
 			"custom_NPM_TOKEN": "tok_npm",
 		},
 	})
@@ -285,9 +285,8 @@ func TestBrokerCloseUnbindsAll(t *testing.T) {
 	}
 
 	for _, containerID := range []string{"c1", "c2"} {
-		err := b.Bind(containerID, uuid.MustNew())
-		if err != nil {
-			t.Fatalf("Bind error: %v", err)
+		if bindErr := b.Bind(containerID, uuid.MustNew()); bindErr != nil {
+			t.Fatalf("Bind error: %v", bindErr)
 		}
 	}
 

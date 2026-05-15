@@ -117,7 +117,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	err = s.store.SetJobMetadata(meta)
+	err = s.store.SetJobMetadata(&meta)
 	if err != nil {
 		s.logger.Printf("router: set job metadata: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -134,13 +134,13 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		IssueBody:   req.IssueBody,
 		IssueAuthor: req.IssueAuthor,
 	}
-	err = s.dispatchToHost(route.HostID, event)
+	err = s.dispatchToHost(route.HostID, &event)
 	if err != nil {
 		s.logger.Printf("router: dispatch to host %s: %v", route.HostID, err)
 		// Job was recorded but dispatch failed — mark as failed_dispatch.
 		meta.Status = protocol.JobFailed
 		meta.UpdatedAt = time.Now()
-		s.store.SetJobMetadata(meta)
+		_ = s.store.SetJobMetadata(&meta)
 		writeError(w, http.StatusServiceUnavailable, "dispatch failed")
 		return
 	}

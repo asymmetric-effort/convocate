@@ -124,7 +124,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		ContainerState: protocol.ContainerProvisioning,
 		CreatedAt:      time.Now(),
 	}
-	err = s.store.SetProjectInfo(info)
+	err = s.store.SetProjectInfo(&info)
 	if err != nil {
 		s.logger.Printf("router: set project info: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -279,11 +279,12 @@ func (s *Server) handleClusterAuth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Also store in OpenBao as shared credential.
-	credentialName := "anthropic_api_key"
+	// sharedSecretName is the OpenBao path segment for this auth mode — not a credential value.
+	sharedSecretName := "anthropic_api_key" //nolint:gosec // Not a hardcoded credential; this is a vault path name.
 	if req.Mode == protocol.AuthModeClaudeSession {
-		credentialName = "claudeai_session"
+		sharedSecretName = "claudeai_session"
 	}
-	err = s.bao.StoreSharedCredential(credentialName, credential)
+	err = s.bao.StoreSharedCredential(sharedSecretName, credential)
 	if err != nil {
 		s.logger.Printf("router: store shared credential: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to store credential")
@@ -354,7 +355,7 @@ func (s *Server) handleAdHocSubmit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	err = s.store.SetJobMetadata(meta)
+	err = s.store.SetJobMetadata(&meta)
 	if err != nil {
 		s.logger.Printf("router: set job metadata: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -369,7 +370,7 @@ func (s *Server) handleAdHocSubmit(w http.ResponseWriter, r *http.Request) {
 		AdHoc:       true,
 		Prompt:      req.Prompt,
 	}
-	err = s.dispatchToHost(route.HostID, event)
+	err = s.dispatchToHost(route.HostID, &event)
 	if err != nil {
 		s.logger.Printf("router: dispatch ad-hoc to host %s: %v", route.HostID, err)
 		writeError(w, http.StatusServiceUnavailable, "dispatch failed")

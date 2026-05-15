@@ -10,19 +10,19 @@ import (
 // StatusTransitionRequest is the payload sent by a Dispatch Service to
 // POST /v1/status.
 type StatusTransitionRequest struct {
+	Timestamp   time.Time `json:"timestamp"`
 	HostID      string    `json:"host_id"`
 	ContainerID string    `json:"container_id"`
-	JobID       uuid.UUID `json:"job_id"`
 	FromState   JobState  `json:"from_state"`
 	ToState     JobState  `json:"to_state"`
-	Timestamp   time.Time `json:"timestamp"`
 	Reason      string    `json:"reason,omitempty"`
 	PullURL     string    `json:"pr_url,omitempty"`
+	JobID       uuid.UUID `json:"job_id"`
 }
 
 // Validate checks that all required fields are present and the state
 // transition is allowed.
-func (r StatusTransitionRequest) Validate() error {
+func (r *StatusTransitionRequest) Validate() error {
 	if r.HostID == "" {
 		return fmt.Errorf("protocol: status transition missing host_id")
 	}
@@ -49,6 +49,6 @@ func (r StatusTransitionRequest) Validate() error {
 
 // StatusTransitionResponse is the response returned by POST /v1/status.
 type StatusTransitionResponse struct {
-	Accepted bool   `json:"accepted"`
 	Error    string `json:"error,omitempty"`
+	Accepted bool   `json:"accepted"`
 }

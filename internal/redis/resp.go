@@ -36,7 +36,7 @@ func ReadResponse(reader *bufio.Reader) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(line) == 0 {
+	if line == "" {
 		return nil, fmt.Errorf("redis: empty response line")
 	}
 
@@ -48,7 +48,7 @@ func ReadResponse(reader *bufio.Reader) (interface{}, error) {
 		return payload, nil
 
 	case '-':
-		return nil, &RedisError{Message: payload}
+		return nil, &Error{Message: payload}
 
 	case ':':
 		n, parseErr := strconv.ParseInt(payload, 10, 64)
@@ -71,12 +71,12 @@ func ReadResponse(reader *bufio.Reader) (interface{}, error) {
 	}
 }
 
-// RedisError is returned when the Redis server responds with an error.
-type RedisError struct {
+// Error is returned when the Redis server responds with an error.
+type Error struct {
 	Message string
 }
 
-func (e *RedisError) Error() string {
+func (e *Error) Error() string {
 	return "redis: " + e.Message
 }
 
