@@ -229,41 +229,41 @@ specify.
 
 ## Phase 8 — Agent Wrapper (`cmd/convocate-agent-wrapper/`, `internal/wrapper/`)
 
-- [ ] **8.1** Container entrypoint. Read credentials from OpenBao via
+- [x] **8.1** Container entrypoint. Read credentials from OpenBao via
       `/run/convocate/secrets.sock`. Write SSH key to `~/.ssh/id_ed25519`
       (mode `0600`) + `known_hosts` for `github.com`.
-- [ ] **8.2** Clone or reuse `/workspace/.git`. Per-job worktree at
+- [x] **8.2** Clone or reuse `/workspace/.git`. Per-job worktree at
       `/workspace/jobs/<job-id>` via `git worktree add`.
-- [ ] **8.3** Background task acceptance: receive prompts via stdin, prepend
+- [x] **8.3** Background task acceptance: receive prompts via stdin, prepend
       `Background task: `, pass to long-running Claude Code process.
       Multiple concurrent tasks.
-- [ ] **8.4** Per-job feature branch: `fix/issue-<N>` or
+- [x] **8.4** Per-job feature branch: `fix/issue-<N>` or
       `feature/issue-<N>`. Push over SSH.
-- [ ] **8.5** PR creation via `gh` CLI using per-project PAT (`GH_TOKEN`
+- [x] **8.5** PR creation via `gh` CLI using per-project PAT (`GH_TOKEN`
       env var per subprocess, never written to disk).
-- [ ] **8.6** Clarification protocol: post comment with questions, remove
+- [x] **8.6** Clarification protocol: post comment with questions, remove
       `automated-development` + `dispatched` labels, reassign to original
       author.
-- [ ] **8.7** Success protocol: open PR with `Closes #N`, remove
+- [x] **8.7** Success protocol: open PR with `Closes #N`, remove
       `dispatched` label, reassign to author.
-- [ ] **8.8** Failure protocol: post failure reason, remove
+- [x] **8.8** Failure protocol: post failure reason, remove
       `automated-development` + `dispatched` labels, reassign to author.
-- [ ] **8.9** Issue comment cadence: one comment per state transition
+- [x] **8.9** Issue comment cadence: one comment per state transition
       (`running`, `clarifying`, `complete`, `failed`, `terminated`).
       No time-based progress pings.
-- [ ] **8.10** Branch cleanup on PR merge: delete remote + local branch,
+- [x] **8.10** Branch cleanup on PR merge: delete remote + local branch,
       prune worktree. Keep branches for non-merged PRs.
-- [ ] **8.11** Pipeline failure self-healing: detect CI failure via `gh`,
+- [x] **8.11** Pipeline failure self-healing: detect CI failure via `gh`,
       read logs, apply fix, commit. Max 3 retries, 30-minute wall-clock
       cap. Post diagnostic on exhaustion.
-- [ ] **8.12** Liveness heartbeat to local Dispatch Service every 30s.
+- [x] **8.12** Liveness heartbeat to local Dispatch Service every 30s.
       Three missed → unhealthy.
-- [ ] **8.13** Claude authentication: read shared credential from OpenBao.
+- [x] **8.13** Claude authentication: read shared credential from OpenBao.
       If API key → export `ANTHROPIC_API_KEY`. If session token → run
       refresh loop.
-- [ ] **8.14** Ad-hoc job handling: PR body = prompt, no `Closes #N`,
+- [x] **8.14** Ad-hoc job handling: PR body = prompt, no `Closes #N`,
       status streams to Web UI instead of GitHub comments.
-- [ ] **8.15** Unit + integration tests. 90%+ coverage on business logic.
+- [x] **8.15** Unit + integration tests. 90%+ coverage on business logic.
 
 ---
 
