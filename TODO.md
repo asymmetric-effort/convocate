@@ -410,13 +410,13 @@ are the sole exception — they use `ubuntu:latest` because they require a full 
 
 ## Phase 15 — Documentation and Cleanup
 
-- [ ] **15.1** `docs/api/v1.md` — full JSON schema for every Router API
+- [x] **15.1** `docs/api/v1.md` — full JSON schema for every Router API
       endpoint (referenced in README.md § Dispatch Service item 6).
-- [ ] **15.2** Verify `CLAUDE.md` package map matches the new layout.
-- [ ] **15.3** Verify all Makefile targets work end-to-end.
-- [ ] **15.4** Final lint pass (`make lint`), full test pass (`make test`),
+- [x] **15.2** Verify `CLAUDE.md` package map matches the new layout.
+- [x] **15.3** Verify all Makefile targets work end-to-end.
+- [x] **15.4** Final lint pass (`make lint`), full test pass (`make test`),
       image build (`make images`).
-- [ ] **15.5** Final artifact audit: walk the repo tree and confirm every
+- [x] **15.5** Final artifact audit: walk the repo tree and confirm every
       file is actively used by the new version. Remove any orphaned v1
       artifacts, dead configs, unused dependencies in `go.mod`/`go.sum`,
       stale workflow files, and leftover documentation that no longer
