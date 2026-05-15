@@ -1,6 +1,7 @@
 package openbao
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -338,5 +339,259 @@ func TestOpenBaoErrorType(t *testing.T) {
 	}
 	if baoErr.StatusCode != 403 {
 		t.Errorf("StatusCode: got %d, want 403", baoErr.StatusCode)
+	}
+}
+
+func TestKVReadCorruptInnerData(t *testing.T) {
+	// Server returns valid JSON but with unexpected inner structure.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"data": "not-a-map",
+			},
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.KVRead("secret", "test")
+	if err == nil {
+		t.Error("expected error for non-map inner data")
+	}
+}
+
+func TestKVReadMissingDataField(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"other": "field",
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	result, err := client.KVRead("secret", "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil for missing data field, got %v", result)
+	}
+}
+
+func TestKVReadCorruptOuterData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": "not-a-map",
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.KVRead("secret", "test")
+	if err == nil {
+		t.Error("expected error for non-map outer data")
+	}
+}
+
+func TestKVReadMissingInnerData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"metadata": map[string]interface{}{},
+			},
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	result, err := client.KVRead("secret", "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil for missing inner data, got %v", result)
+	}
+}
+
+func TestPolicyReadCorruptData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": "not-a-map",
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.PolicyRead("test")
+	if err == nil {
+		t.Error("expected error for corrupt policy data")
+	}
+}
+
+func TestPolicyReadMissingRules(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"other": "field",
+			},
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	result, err := client.PolicyRead("test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "" {
+		t.Errorf("expected empty for missing rules, got %q", result)
+	}
+}
+
+func TestPolicyReadCorruptRules(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"rules": 42,
+			},
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.PolicyRead("test")
+	if err == nil {
+		t.Error("expected error for non-string rules")
+	}
+}
+
+func TestAppRoleLoginCorruptAuth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"auth": "not-a-map",
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.AppRoleLogin("approle", "r", "s")
+	if err == nil {
+		t.Error("expected error for corrupt auth")
+	}
+}
+
+func TestAppRoleLoginMissingAuth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"other": "field",
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.AppRoleLogin("approle", "r", "s")
+	if err == nil {
+		t.Error("expected error for missing auth")
+	}
+}
+
+func TestAppRoleLoginMissingToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"auth": map[string]interface{}{
+				"other": "field",
+			},
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.AppRoleLogin("approle", "r", "s")
+	if err == nil {
+		t.Error("expected error for missing token")
+	}
+}
+
+func TestAppRoleLoginCorruptToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"auth": map[string]interface{}{
+				"client_token": 42,
+			},
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.AppRoleLogin("approle", "r", "s")
+	if err == nil {
+		t.Error("expected error for non-string token")
+	}
+}
+
+func TestInitStatusCorrupt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"initialized": "not-a-bool",
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.InitStatus()
+	if err == nil {
+		t.Error("expected error for non-bool initialized")
+	}
+}
+
+func TestInitStatusMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"other": true,
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	_, err := client.InitStatus()
+	if err == nil {
+		t.Error("expected error for missing initialized")
+	}
+}
+
+func TestDoRequestNoContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	err := client.KVDelete("secret", "test")
+	if err != nil {
+		t.Fatalf("unexpected error for 204: %v", err)
+	}
+}
+
+func TestNewClientDefaultTimeout(t *testing.T) {
+	client := NewClient(Config{Address: "http://localhost"})
+	if client.httpClient.Timeout == 0 {
+		t.Error("expected non-zero default timeout")
+	}
+}
+
+func TestNewClientWithTLS(t *testing.T) {
+	client := NewClient(Config{
+		Address: "https://localhost",
+		TLSConfig: &tls.Config{InsecureSkipVerify: true},
+	})
+	if client == nil {
+		t.Error("expected non-nil client")
+	}
+}
+
+func TestReadSharedCredentialCorrupt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"data": map[string]interface{}{
+					"value": 42,
+				},
+			},
+		})
+	}))
+	defer server.Close()
+	client := NewClient(Config{Address: server.URL, Token: "t"})
+	result, err := client.ReadSharedCredential("test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "" {
+		t.Errorf("expected empty for non-string value, got %q", result)
 	}
 }
