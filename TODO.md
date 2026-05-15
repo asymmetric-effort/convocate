@@ -392,18 +392,18 @@ are the sole exception — they use `ubuntu:latest` because they require a full 
 
 ## Phase 14 — Mock Claude and E2E Tests
 
-- [ ] **14.1** `test/e2e/mock_claude` binary: deterministic responses for
+- [x] **14.1** `test/e2e/mock_claude` binary: deterministic responses for
       e2e pipeline testing without Anthropic API credits.
-- [ ] **14.2** E2E test suite (`test/e2e/`): exercise the full local dev
+- [x] **14.2** E2E test suite (`test/e2e/`): exercise the full local dev
       stack end-to-end — submit a job, verify dispatch, verify agent
       creates branch + PR, verify status transitions, verify
       clarification and failure paths.
-- [ ] **14.3** Integration test suite (`test/integration/`): test
+- [x] **14.3** Integration test suite (`test/integration/`): test
       inter-component interactions (Router ↔ Redis, Dispatch ↔ Router,
       Broker ↔ OpenBao Agent, Wrapper ↔ Dispatch).
-- [ ] **14.4** Playwright post-deployment verification tests for Web UI
+- [x] **14.4** Playwright post-deployment verification tests for Web UI
       and API endpoints per CLAUDE.md § Rigorous testing.
-- [ ] **14.5** Coverage targets: 90%+ on business-logic packages, 98%+
+- [x] **14.5** Coverage targets: 90%+ on business-logic packages, 98%+
       overall per CLAUDE.md conventions.
 
 ---
