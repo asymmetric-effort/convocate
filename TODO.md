@@ -67,7 +67,7 @@ specify.
 
 ## Phase 1 — Shared Types and Protocol Layer (`internal/protocol/`)
 
-- [ ] **1.1** Define JSON request/response structs for all Router API
+- [x] **1.1** Define JSON request/response structs for all Router API
       endpoints:
       - `POST /v1/jobs` — job submission (from GitHub Action)
       - `GET /v1/dispatch?host=<id>` — long-poll/SSE for dispatch events
@@ -76,17 +76,17 @@ specify.
       - `GET /v1/health` — Router API health check
       - Web UI management endpoints (projects CRUD, ad-hoc submit,
         cluster auth, container upgrade)
-- [ ] **1.2** Define state enums:
+- [x] **1.2** Define state enums:
       - Container states: `provisioning`, `running`, `stopped`,
         `provisioning_failed`, `failed_dispatch`.
       - Job lifecycle states: `claimed`, `running`, `complete`, `failed`,
         `clarifying`, `terminated`.
-- [ ] **1.3** Define the idempotency key type: `(repository, issue_number,
+- [x] **1.3** Define the idempotency key type: `(repository, issue_number,
       run_id)`. `run_attempt` excluded per README.
-- [ ] **1.4** Define `POST /v1/status` payload: `host_id`, `container_id`,
+- [x] **1.4** Define `POST /v1/status` payload: `host_id`, `container_id`,
       `job_id`, `from_state`, `to_state`, `timestamp`, optional `reason`
       and `pr_url`.
-- [ ] **1.5** Unit tests for serialization round-trips and state-transition
+- [x] **1.5** Unit tests for serialization round-trips and state-transition
       validation. 90%+ coverage.
 
 ---
