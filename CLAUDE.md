@@ -15,135 +15,88 @@ standards site wins — fix this file.
 
 ## What this project is
 
-`convocate` is a Go CLI that runs the Claude CLI inside per-session Docker
-containers. Users pick a session from a `tcell`-based TUI menu; each session
-is a UUID-named directory on the host, a tmux session inside a container, and
-optional metadata (published port, protocol, DNS name).
+`convocate` is an automated software-development platform. An engineer
+labels a GitHub Issue `automated-development`; convocate dispatches an
+isolated, containerized Claude Code agent to implement the solution, run
+the CI/CD pipeline, and open a pull request — without human intervention.
 
-Binary entry point: `cmd/convocate/main.go`. Everything else is under
-`internal/`.
+**README.md is the architectural source of truth.** Read it before any
+non-trivial change to understand the current component model:
+
+- **Router API** — single control-plane container; RESTful HTTPS only;
+  owns container map, project routing table, repository allowlist, and
+  the job-submission ledger in Redis.
+- **Dispatch Service** — one per agent host; long-polls the Router API on
+  mTLS HTTPS for new dispatch events; launches Agent Containers as
+  sibling Docker containers; only automatic provisioning convocate
+  performs is *replacement* of a missing/unhealthy container for an
+  already-existing project.
+- **Redis** — single container in the control plane; two namespaces
+  (Router API authoritative + per-host Dispatch); TLS-only.
+- **Secrets Manager (OpenBao)** — unmodified MPL-2.0 OpenBao server in the
+  control plane; OpenBao Agent + convocate-built Secrets Broker on each
+  agent host; per-container Unix sockets at `/run/convocate/secrets.sock`.
+- **Agent Container** — one per project (1 project ≡ 1 repo); long-lived;
+  one long-running Claude Code process inside; per-job tasks run as
+  background tasks within Claude's task feature, each on its own
+  `git worktree`.
+- **Web UI** — SPA served by the Router API on `tcp/8443`; owns Create
+  Project / Delete Project / Cluster Authentication (Claude) /
+  ad-hoc job submission.
+
+There is no auto-provisioning of projects, no SSH control plane, no
+cluster-wide bot PAT. Operators drive the lifecycle from the Web UI;
+agents talk directly to GitHub and Anthropic.
 
 ## Build, test, lint
 
-```
-make build          # compiles to ./build/convocate
-make test           # go test ./...
+```bash
+make clean          # remove ./build/ AND wipe local dev containers + convocate-* images
 make lint           # go vet + yaml lint
-make clean lint test build install release   # full ship cycle
+make test           # unit + integration + e2e (requires `make local/start` first; uses mock_claude)
+make images         # build convocate-router, convocate-dispatch, convocate-agent OCI images
+make build          # build everything (calls make images plus other build steps)
+make local/start    # bring up the local dev ecosystem via Docker Compose
+make local/logs     # tail logs from every dev-stack service
+make local/stop     # stop the dev stack (volumes preserved)
+make local/reset    # tear down stack + volumes, regenerate the local CA, start clean
+make release        # patch bump (commit + tag + push)
+make release/minor  # minor bump
+make release/major  # major bump
 ```
 
-- `make install` copies the binary to `/usr/local/bin/convocate` and
-  configures the login shell. Requires `sudo`.
-- `make release` tags the next patch version and pushes the tag. Be aware
-  that `git describe --tags --abbrev=0` picks the first reachable tag, so
-  if you've manually created tags on the same commit the bump logic can
-  collide — check `git tag` if `make release` errors with "tag already
-  exists".
+- `make release` tags the next version and pushes the tag. `git describe
+  --tags --abbrev=0` picks the first reachable tag, so if you've manually
+  created tags on the same commit the bump logic can collide — check
+  `git tag` if `make release` errors with "tag already exists".
 
 ## Package map
 
-| Path | Role |
-|---|---|
-| `cmd/convocate` | CLI entry (`run`, `runSessionManager`, handlers) |
-| `internal/menu` | `tcell` TUI: session list, create/edit form, action dialogs |
-| `internal/session` | `Manager` + `Metadata` persisted as `session.json` |
-| `internal/container` | `docker run/exec/inspect/stop` wrappers around sessions |
-| `internal/capacity` | Refuses new container starts when CPU or memory >= 80% |
-| `internal/dns` | Rewrites `/var/lib/convocate/dnsmasq-hosts` from session DNS names |
-| `internal/install` | The `convocate install` subcommand |
-| `internal/config` | Paths, constants (container name prefix, user, sockets) |
-| `internal/logging` | syslog wrapper |
-| `internal/assets` | Embedded Dockerfile + entrypoint.sh |
-| `internal/skel` | Session skeleton directory contents |
-| `internal/user` | `user.Lookup` wrapper for the `convocate` user |
-| `internal/diskspace` | Free-space check for the build context |
+The v2 component implementation is in flight; the package layout will
+solidify as code lands. Authoritative names for the binaries shipped as
+OCI images:
 
-## TUI shape (internal/menu/tui.go)
+- `convocate-router` — Router API + Web UI + `convocate-cli` admin tool
+- `convocate-dispatch` — host-local dispatch executor
+- `convocate-secrets-broker` — host-local per-container OpenBao socket
+  multiplexer
+- `convocate-agent-wrapper` — entrypoint inside each Agent Container
 
-The TUI is a single-screen event loop built on `tcell`.
-
-- Menu bar keys: `(N)ew  (C)lone  (E)dit  (B)ackground  (D)elete  (K)ill  (O)verride  (S)ettings  (R)estart  (Q)uit`.
-- Session list shows `Port/Proto` (e.g. `53/udp`) and a status indicator:
-  `C` = terminal connected, `R` = running detached, `L` = lock held only,
-  `-` = stopped.
-- Auto-refresh: 1 s tick for the clock/status; 15 s reload of the session list.
-- Create and Edit share one form (`drawSessionFormDialog`): Name → Protocol
-  → Port → DNS Name. Tab/Shift+Tab cycles. Protocol is a toggle (`t`/`u`/
-  Space). DNS Name accepts hostname chars only; lowercased on input.
-- Restart flow: `(R)estart` prompts; on Y, the container is started detached
-  via `Runner.StartDetached` and a "Restarting…" notification appears that
-  only dismisses on Enter. Pressing Enter later on a running session
-  attaches.
-- Error dialogs wrap long docker stderr via `wrapErrorText` (500-char cap)
-  and widen to `errorDialogMinWidth = 72` when an error is displayed.
-
-Common test helpers: `newTestScreen` (110x30), `newWideTestScreen` (120x30).
-Use the wide one when an assertion touches trailing columns of the session
-table or the full menu bar.
-
-## Session persistence (internal/session/session.go)
-
-Session directories live at `<paths.SessionsBase>/<uuid>/` with a
-`session.json` holding `Metadata`:
-
-```go
-type Metadata struct {
-    UUID, Name string
-    CreatedAt, LastAccessed time.Time
-    Port int              // 0 = none; -1 (PortAuto) = auto-pick >= 1001
-    Protocol string       // "tcp" | "udp"; empty reads as "tcp"
-    DNSName string        // optional, lowercase hostname
-}
-```
-
-Use `CreateWithOptions` / `UpdateWithOptions` for new code; the older
-`CreateWithPort`, `CreateWithPortProtocol`, `Update(id, name, port, proto)`
-wrappers delegate to them. Port collisions are checked per-protocol —
-`tcp:53` and `udp:53` coexist. DNS collisions are checked globally.
-
-Locks are file-based (`<uuid>.lock`) and encode the owning PID; they're
-stale-cleaned when the PID is dead or the mtime is older than 24h.
-
-## Container invariants
-
-`container.Runner.buildRunArgs` always emits `--rm --detach` and
-`-p HOST:CONTAINER/PROTO` when a port is set. `Runner.Start` does docker
-run + `docker exec -it tmux attach-session`; `Runner.StartDetached` skips
-the attach. `DetachClients` sends `tmux detach-client -s convocate` inside the
-container to background a connected user without stopping the container.
-
-## Things that have tripped us up
-
-- **Dialog error truncation** — the old single-line error clip hid docker's
-  real message. Route new error-surfacing dialogs through `wrapErrorText` +
-  `sizeDialogForError`.
-- **Menu-bar width** — menu bar + new labels already push ~100 cols. The
-  test screen width is 110; keep it under that when adding labels or bump
-  both in lockstep.
-- **`make release` picks the first tag** — if a tag for the same commit
-  already exists (e.g. from a prior manual tag), the bump can clash. Delete
-  the stray tag or tag the next version by hand rather than fighting the
-  Makefile.
-- **Privileged ports** — `-p 53:53` on a host running `systemd-resolved`
-  will fail to bind. The 80% capacity cap doesn't help here; either disable
-  `DNSStubListener` or use a non-privileged host port.
-- **sed regex over-match** — an earlier bulk rename of
-  `CreateWithUUID(x, y)` → `CreateWithUUID(x, y, 0)` matched
-  `func TestCreateWithUUID(t *testing.T)` too. When doing wide refactors
-  across tests, spot-check the diff for test function declarations.
+Service-to-service communication, Redis namespaces, secrets ACL, and the
+state machines for container and job lifecycle are all defined in
+README.md → Architecture. Read that before adding new wire calls or
+state values.
 
 ## Conventions
 
 - **No recursion.** Go has no tail-call optimization, so every recursive
   call grows the goroutine stack and can panic on adversarial input
-  (deep trees, cyclic data, hostile filesystem layouts). For an
-  orchestrator that holds long-lived session state, that's
-  unacceptable. Use loops, explicit stacks/queues, `filepath.WalkDir`,
-  or work-list patterns instead. Mutual recursion (A → B → A) is also
-  forbidden — same problem. If you find yourself reaching for a
-  helper that calls itself, stop and rewrite as iteration.
-  Reference implementation: `session.copyDir` (uses an explicit
-  work-list slice).
+  (deep trees, cyclic data, hostile filesystem layouts). For a long-lived
+  control plane and long-running Agent Containers, that's unacceptable.
+  Use loops, explicit stacks/queues, `filepath.WalkDir`, or work-list
+  patterns instead. Mutual recursion (A → B → A) is also forbidden — same
+  problem. If you find yourself reaching for a helper that calls itself,
+  stop and rewrite as iteration.
 - **No speculative abstractions.** Fix what's in front of you; the next
   caller will refactor when it actually shows up.
 - **Don't write docstrings explaining what code already says.** Comment
@@ -151,24 +104,56 @@ container to background a connected user without stopping the container.
   incident).
 - **Tests verify behavior, not implementation.** When you change a
   signature, update callers and the failing tests; don't relax assertions.
-- **Coverage targets** — aim for 90%+ in business-logic packages (`menu`,
-  `session`, `container`, `capacity`, `dns`). Installer and cmd/main have
-  interactive/root-only paths that can't reasonably be unit tested.
+- **Coverage targets** — aim for 90%+ in business-logic packages.
+  Provisioning paths that require root and real network access are
+  excused from automated coverage.
+- **No auto-provisioning.** Projects are only created via the Web UI's
+  Create Project flow. The Router API never auto-creates a project from
+  an inbound `/jobs` call (404 instead). The single exception is
+  Dispatch's automatic *replacement* of a missing/unhealthy container
+  for an already-existing project — and even that fails to
+  `failed_dispatch` on its first error, not retried silently.
+- **No cluster-wide GitHub PAT.** Every credential is repo-scoped via
+  per-project fine-grained PATs and per-project ed25519 deploy keys.
+  A compromised Agent Container can only touch its bound repo.
+- **REST only.** No gRPC, no SSH control plane, no per-service custom
+  wire protocols. Everything is HTTPS + JSON, with mTLS on internal
+  channels.
+- **Minimal third-party dependencies.** Prefer writing our own over
+  pulling in third-party libraries; adopt a dependency only when
+  explicitly approved. Any third-party dependency that ships in product
+  code must be MIT or MIT-compatible (Apache-2.0, BSD, and MPL-2.0 for
+  unmodified redistribution all qualify — OpenBao is the canonical
+  MPL-2.0 example). The Go standard library and dev/build tooling
+  (linters, formatters, test scaffolding) are out of scope.
+
+## Things that have tripped us up
+
+- **`make release` picks the first tag** — if a tag for the same commit
+  already exists (e.g. from a prior manual tag), the bump can clash.
+  Delete the stray tag or tag the next version by hand rather than
+  fighting the Makefile.
+- **`localhost:443` for the dev stack** — binding to privileged ports on
+  a developer workstation requires sudo or rootless-Docker port
+  forwarding. Check the dev-stack Compose file for the actual port
+  bindings before assuming.
+- **sed regex over-match** — wide refactors across tests have historically
+  caught test function declarations. When doing bulk renames,
+  spot-check the diff for test function signatures.
 
 ## Current version
 
-See `git describe --tags` at read time. The latest tag at the time this
-file was written is **v2.0.0** (2026-04-24). `Version` is set via
-`-ldflags "-X main.Version=$(VERSION)"` in the Makefile and tagged onto
-the built container image (`convocate:<semver>`) by
-`convocate install`.
+See `git describe --tags` at read time. `Version` is set via
+`-ldflags "-X main.Version=$(VERSION)"` in the Makefile and is baked into
+the convocate OCI images by `make images`.
 
-Release history:
+Release history (short):
+
 - `v1.0.0` — multi-host orchestration arc (convocate-host + convocate-agent
-  deployed; SSH peering; rsyslog TLS; agent-aware TUI).
-- `v2.0.0` — "shell is pure client" arc. convocate no longer runs
-  containers; all sessions live on agents. Image built on shell,
-  pushed to each agent. Orphan migration via
-  `convocate-host migrate-session`. `convocate-sessions.slice` 90% cgroup
-  cap. See `docs/v2.0.0.md` for the full plan + architectural
-  snapshot + known limitations.
+  deployed; SSH peering; rsyslog TLS).
+- `v2.0.0` — "shell is pure client" arc, eventually superseded by the
+  control-plane redesign captured in this README.
+- **Current (MVP)** — Router API + Redis + OpenBao control plane,
+  per-host Dispatch + OpenBao Agent + Secrets Broker, per-project
+  long-lived Agent Containers, Web-UI-driven project lifecycle. See
+  README.md for the complete picture.
