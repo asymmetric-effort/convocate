@@ -93,10 +93,10 @@ specify.
 
 ## Phase 2 — Redis Client (`internal/redis/`)
 
-- [ ] **2.1** Redis TLS client (TLS v1.3+, `tcp/6379`). Minimal
+- [x] **2.1** Redis TLS client (TLS v1.3+, `tcp/6379`). Minimal
       wrapper — no third-party Redis library unless explicitly approved;
       use raw RESP protocol or the Go stdlib.
-- [ ] **2.2** Router API namespace operations:
+- [x] **2.2** Router API namespace operations:
       - Container map CRUD (keyed by container ID)
       - Project routing table CRUD (project → `(host, container)`)
       - Repository allowlist (set membership)
@@ -104,12 +104,12 @@ specify.
         by job ID
       - Job metadata — issue number, repo, branch, PR URL, status,
         timestamps
-- [ ] **2.3** Dispatch namespace operations (keyed by host ID):
+- [x] **2.3** Dispatch namespace operations (keyed by host ID):
       - Host queue read/write
       - In-flight lifecycle state per job
-- [ ] **2.4** Namespace isolation enforced: Dispatch code cannot read/write
+- [x] **2.4** Namespace isolation enforced: Dispatch code cannot read/write
       Router namespace and vice versa.
-- [ ] **2.5** Unit + integration tests (against real Redis in dev stack).
+- [x] **2.5** Unit + integration tests (against real Redis in dev stack).
       90%+ coverage on business-logic paths.
 
 ---
