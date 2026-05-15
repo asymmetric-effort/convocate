@@ -443,13 +443,120 @@ func TestAppendToFile(t *testing.T) {
 func TestMultipleBackgroundTasks(t *testing.T) {
 	w, _ := testWrapper(t)
 
+	var jobIDs []uuid.UUID
 	for range 5 {
-		w.RunBackgroundTask(uuid.MustNew(), fmt.Sprintf("task prompt"))
+		id := uuid.MustNew()
+		jobIDs = append(jobIDs, id)
+		w.RunBackgroundTask(id, fmt.Sprintf("task prompt"))
 	}
 
 	time.Sleep(20 * time.Millisecond)
 	count := w.ActiveTaskCount()
-	// Tasks may have completed already since the mock runner returns immediately.
-	// The important thing is that none panicked.
-	_ = count
+	if count != 5 {
+		t.Errorf("ActiveTaskCount: got %d, want 5", count)
+	}
+
+	// Clean up — cancel all tasks.
+	for _, id := range jobIDs {
+		w.CancelTask(id)
+	}
+	time.Sleep(20 * time.Millisecond)
+}
+
+func TestDecodeSecrets(t *testing.T) {
+	w, _ := testWrapper(t)
+
+	t.Run("valid response", func(t *testing.T) {
+		data := `{"ssh_private_key":"key","github_pat":"pat","custom_secrets":{"X":"Y"}}`
+		resp, err := w.DecodeSecrets(strings.NewReader(data))
+		if err != nil {
+			t.Fatalf("DecodeSecrets error: %v", err)
+		}
+		if resp.SSHPrivateKey != "key" {
+			t.Errorf("SSHPrivateKey: got %q", resp.SSHPrivateKey)
+		}
+		if resp.GitHubPAT != "pat" {
+			t.Errorf("GitHubPAT: got %q", resp.GitHubPAT)
+		}
+		if resp.CustomSecrets["X"] != "Y" {
+			t.Errorf("CustomSecrets: got %v", resp.CustomSecrets)
+		}
+	})
+
+	t.Run("error response", func(t *testing.T) {
+		data := `{"error":"not bound"}`
+		_, err := w.DecodeSecrets(strings.NewReader(data))
+		if err == nil {
+			t.Error("expected error for error response")
+		}
+	})
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		_, err := w.DecodeSecrets(strings.NewReader("not json"))
+		if err == nil {
+			t.Error("expected error for invalid JSON")
+		}
+	})
+}
+
+func TestReadPrompts(t *testing.T) {
+	w, _ := testWrapper(t)
+	ctx := context.Background()
+
+	input := "first prompt\nsecond prompt\n\nthird prompt\n"
+	var received []string
+	w.ReadPrompts(ctx, strings.NewReader(input), func(prompt string) {
+		received = append(received, prompt)
+	})
+
+	if len(received) != 3 {
+		t.Fatalf("expected 3 prompts, got %d: %v", len(received), received)
+	}
+	if received[0] != "first prompt" {
+		t.Errorf("prompt[0]: got %q", received[0])
+	}
+	if received[1] != "second prompt" {
+		t.Errorf("prompt[1]: got %q", received[1])
+	}
+	if received[2] != "third prompt" {
+		t.Errorf("prompt[2]: got %q", received[2])
+	}
+}
+
+func TestReadPromptsWithCancellation(t *testing.T) {
+	w, _ := testWrapper(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Use a finite input that ends, so scanner.Scan returns false.
+	input := "prompt 1\nprompt 2\n"
+	var received []string
+	w.ReadPrompts(ctx, strings.NewReader(input), func(prompt string) {
+		received = append(received, prompt)
+		if len(received) == 1 {
+			cancel() // Cancel after first prompt.
+		}
+	})
+
+	// Should have stopped after 1 or 2 prompts depending on timing.
+	if len(received) < 1 {
+		t.Errorf("expected at least 1 prompt, got %d", len(received))
+	}
+}
+
+func TestStartHeartbeatLoopWrapper(t *testing.T) {
+	w, _ := testWrapper(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	var buf bytes.Buffer
+	w.StartHeartbeatLoop(ctx, &buf)
+
+	// Should have exited cleanly (no panic).
+}
+
+func TestNewRealCommandRunner(t *testing.T) {
+	runner := NewRealCommandRunner()
+	if runner == nil {
+		t.Error("NewRealCommandRunner returned nil")
+	}
 }

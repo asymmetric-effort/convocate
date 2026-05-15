@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/protocol"
 	redispkg "github.com/asymmetric-effort/convocate/internal/redis"
@@ -402,5 +404,29 @@ func TestMultipleConcurrentJobs(t *testing.T) {
 
 	if svc.ActiveJobCount() != 5 {
 		t.Errorf("ActiveJobCount: got %d, want 5", svc.ActiveJobCount())
+	}
+}
+
+func TestStartHeartbeatLoop(t *testing.T) {
+	svc, _, mockRouter := testService(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		svc.StartHeartbeatLoop(ctx)
+		close(done)
+	}()
+
+	<-done
+
+	mockRouter.mu.Lock()
+	count := len(mockRouter.heartbeats)
+	mockRouter.mu.Unlock()
+
+	// Should have at least the initial heartbeat.
+	if count < 1 {
+		t.Errorf("expected at least 1 heartbeat, got %d", count)
 	}
 }

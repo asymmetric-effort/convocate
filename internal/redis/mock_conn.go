@@ -1,7 +1,6 @@
 package redis
 
 import (
-	"bufio"
 	"fmt"
 	"strconv"
 	"strings"
@@ -187,6 +186,16 @@ func (m *MockConn) Do(args ...string) (interface{}, error) {
 				matched = append(matched, key)
 			}
 		}
+		for key := range m.lists {
+			if matchGlob(pattern, key) {
+				matched = append(matched, key)
+			}
+		}
+		for key := range m.sets {
+			if matchGlob(pattern, key) {
+				matched = append(matched, key)
+			}
+		}
 		// Return cursor "0" (scan complete) and the matched keys.
 		return []interface{}{"0", matched}, nil
 
@@ -215,8 +224,3 @@ func matchGlob(pattern, s string) bool {
 	return pattern == s
 }
 
-// mockReader creates a bufio.Reader that yields RESP-formatted mock responses.
-// Not used directly — the mock intercepts at the Do level.
-func mockReader(responses string) *bufio.Reader {
-	return bufio.NewReader(strings.NewReader(responses))
-}

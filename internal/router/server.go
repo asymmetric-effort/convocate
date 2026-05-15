@@ -1,7 +1,6 @@
 package router
 
 import (
-	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -194,15 +193,3 @@ func generateAPIToken() (string, error) {
 	return "cvt_" + tokenID.String(), nil
 }
 
-// selectHostByLowestCount picks the host with the fewest running containers.
-// In MVP with a single host, this is trivial. For multi-host, it iterates
-// the heartbeat cache.
-func (s *Server) selectHostByLowestCount(ctx context.Context) (string, error) {
-	// MVP: return the first host that has sent a heartbeat.
-	// Multi-host selection by lowest container count would iterate all
-	// cached heartbeats. For now, we use a simple approach.
-	_ = ctx
-	// This will be populated by the heartbeat handler. For now, return
-	// a placeholder that indicates "first available host."
-	return "", fmt.Errorf("router: no agent hosts registered")
-}

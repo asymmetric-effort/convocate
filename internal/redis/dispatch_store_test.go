@@ -255,3 +255,32 @@ func TestDispatchStoreAdHocDispatchEvent(t *testing.T) {
 		t.Errorf("Prompt: got %q, want %q", got.Prompt, "Add a health check endpoint")
 	}
 }
+
+func TestDispatchStoreFlushNamespace(t *testing.T) {
+	store := newTestDispatchStore()
+
+	jobID := uuid.MustNew()
+	store.SetJobState(DispatchJobState{
+		JobID:       jobID,
+		ContainerID: "c1",
+		State:       protocol.JobRunning,
+	})
+	store.EnqueueDispatch(protocol.DispatchEvent{
+		JobID:       uuid.MustNew(),
+		ContainerID: "c1",
+	})
+
+	err := store.FlushNamespace()
+	if err != nil {
+		t.Fatalf("FlushNamespace error: %v", err)
+	}
+
+	got, _ := store.GetJobState(jobID)
+	if got != nil {
+		t.Error("job state should be nil after flush")
+	}
+	length, _ := store.QueueLength()
+	if length != 0 {
+		t.Errorf("queue should be empty after flush, got %d", length)
+	}
+}

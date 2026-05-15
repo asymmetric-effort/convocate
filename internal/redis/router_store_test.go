@@ -576,3 +576,27 @@ func TestRouterStoreCountContainersByHost(t *testing.T) {
 		t.Errorf("host-3 count: got %d, want 0", count)
 	}
 }
+
+func TestRouterStoreFlushNamespace(t *testing.T) {
+	store := newTestRouterStore()
+
+	// Add some data.
+	store.AllowlistAdd("org/repo")
+	store.SetAPIToken("org/repo", "tok")
+	store.SetClusterAuth(protocol.AuthModeAnthropicKey, "key")
+
+	err := store.FlushNamespace()
+	if err != nil {
+		t.Fatalf("FlushNamespace error: %v", err)
+	}
+
+	// Verify everything is gone.
+	contains, _ := store.AllowlistContains("org/repo")
+	if contains {
+		t.Error("allowlist should be empty after flush")
+	}
+	token, _ := store.GetAPIToken("org/repo")
+	if token != "" {
+		t.Error("token should be empty after flush")
+	}
+}

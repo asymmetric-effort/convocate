@@ -88,14 +88,24 @@ func New(config Config) (*Wrapper, error) {
 
 // FetchSecrets reads project secrets from the Secrets Broker socket.
 func (w *Wrapper) FetchSecrets() (*SecretsResponse, error) {
-	conn, err := net.Dial("unix", w.secretsSocket)
+	return w.FetchSecretsFrom(w.secretsSocket)
+}
+
+// FetchSecretsFrom reads secrets from a given Unix socket path.
+// Separated for testability.
+func (w *Wrapper) FetchSecretsFrom(socketPath string) (*SecretsResponse, error) {
+	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("wrapper: connect to secrets socket: %w", err)
 	}
 	defer conn.Close()
+	return w.DecodeSecrets(conn)
+}
 
+// DecodeSecrets reads and validates a secrets response from a reader.
+func (w *Wrapper) DecodeSecrets(reader io.Reader) (*SecretsResponse, error) {
 	var resp SecretsResponse
-	err = json.NewDecoder(conn).Decode(&resp)
+	err := json.NewDecoder(reader).Decode(&resp)
 	if err != nil {
 		return nil, fmt.Errorf("wrapper: decode secrets: %w", err)
 	}
@@ -296,7 +306,13 @@ func (w *Wrapper) AssignIssue(ctx context.Context, pat, repository string, issue
 
 // --- CommandRunner implementations ---
 
-// realCommandRunner executes real system commands.
+// NewRealCommandRunner returns a CommandRunner that executes real system commands.
+// Used by the cmd/convocate-agent-wrapper entrypoint. Separated from the wrapper
+// package's testable logic to keep coverage clean.
+func NewRealCommandRunner() CommandRunner {
+	return &realCommandRunner{}
+}
+
 type realCommandRunner struct{}
 
 func (r *realCommandRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
@@ -330,10 +346,10 @@ func appendToFile(path, data string) error {
 	return err
 }
 
-// ReadPromptFromStdin reads prompts from stdin line by line and sends
+// ReadPrompts reads prompts from the given reader line by line and sends
 // them to the handler. This is how the Dispatch Service delivers prompts.
-func (w *Wrapper) ReadPromptFromStdin(ctx context.Context, handler func(prompt string)) {
-	scanner := bufio.NewScanner(os.Stdin)
+func (w *Wrapper) ReadPrompts(ctx context.Context, reader io.Reader, handler func(prompt string)) {
+	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
