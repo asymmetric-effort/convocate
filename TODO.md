@@ -269,15 +269,15 @@ specify.
 
 ## Phase 9 — convocate-cli (`internal/cli/`)
 
-- [ ] **9.1** `convocate-cli ca print-bundle` — emit private CA trust
+- [x] **9.1** `convocate-cli ca print-bundle` — emit private CA trust
       bundle PEM.
-- [ ] **9.2** `convocate-cli host issue-cert <host-id>` — issue mTLS
+- [x] **9.2** `convocate-cli host issue-cert <host-id>` — issue mTLS
       client cert for an agent host.
-- [ ] **9.3** `convocate-cli openbao init` — generate sealed bootstrap key
+- [x] **9.3** `convocate-cli openbao init` — generate sealed bootstrap key
       file (mode `0400`).
-- [ ] **9.4** CLI is shipped inside the `convocate-router` image, invoked
+- [x] **9.4** CLI is shipped inside the `convocate-router` image, invoked
       via `docker compose exec router convocate-cli ...`.
-- [ ] **9.5** Unit tests for each subcommand.
+- [x] **9.5** Unit tests for each subcommand.
 
 ---
 

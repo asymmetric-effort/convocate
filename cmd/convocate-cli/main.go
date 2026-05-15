@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/asymmetric-effort/convocate/internal/cli"
 )
 
 // Version is set at build time via -ldflags.
@@ -14,12 +16,5 @@ func main() {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "convocate-cli %s\n", Version)
-	os.Exit(run())
-}
-
-func run() int {
-	// Operator admin CLI (ca print-bundle, host issue-cert, openbao init).
-	// Implementation lands in Phase 9.
-	fmt.Fprintln(os.Stderr, "not yet implemented")
-	return 1
+	os.Exit(cli.Run(os.Args[1:]))
 }
