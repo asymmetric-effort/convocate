@@ -22,7 +22,9 @@ jobs:
       - name: YAML lint
         run: |
           pip install yamllint
-          find . -name '*.yml' -o -name '*.yaml' | grep -v vendor | grep -v node_modules | grep -v .dev | xargs yamllint -s
+          find . -name '*.yml' -o -name '*.yaml' \
+            | grep -v vendor | grep -v node_modules | grep -v .dev \
+            | xargs yamllint -s
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
