@@ -201,29 +201,29 @@ specify.
 
 ## Phase 7 — Dispatch Service (`cmd/convocate-dispatch/`, `internal/dispatch/`)
 
-- [ ] **7.1** mTLS HTTPS client: long-poll `GET /v1/dispatch?host=<id>` at
+- [x] **7.1** mTLS HTTPS client: long-poll `GET /v1/dispatch?host=<id>` at
       boot, reconnect on drop.
-- [ ] **7.2** `POST /v1/status` — report per-job lifecycle transitions
+- [x] **7.2** `POST /v1/status` — report per-job lifecycle transitions
       (`claimed`, `running`, `complete`, `failed`, `clarifying`,
       `terminated`).
-- [ ] **7.3** `POST /v1/heartbeat` — every 15 seconds with container count,
+- [x] **7.3** `POST /v1/heartbeat` — every 15 seconds with container count,
       CPU%, memory% from Docker daemon.
-- [ ] **7.4** Container provisioning: launch Agent Containers as sibling
+- [x] **7.4** Container provisioning: launch Agent Containers as sibling
       Docker containers, enroll in `convocate-sessions.slice` (90% CPU
       and memory cap). Requires systemd cgroup driver — refuse to start
       without it.
-- [ ] **7.5** Prompt delivery: non-blocking delivery to wrapper via stdin.
+- [x] **7.5** Prompt delivery: non-blocking delivery to wrapper via stdin.
       Same container handles multiple concurrent prompts.
-- [ ] **7.6** Automatic container replacement on dispatch to
+- [x] **7.6** Automatic container replacement on dispatch to
       missing/unhealthy container: fetch secrets from broker, provision
       fresh container, register with Router API, retry dispatch. On
       failure → reject back to Router API.
-- [ ] **7.7** Per-host Dispatch Redis namespace: queue and in-flight
+- [x] **7.7** Per-host Dispatch Redis namespace: queue and in-flight
       lifecycle state, keyed by host ID.
-- [ ] **7.8** Force-terminate: signal wrapper to abort a specific background
+- [x] **7.8** Force-terminate: signal wrapper to abort a specific background
       task by job ID. Job status → `terminated`.
-- [ ] **7.9** Container stop/remove on Delete Project or image upgrade.
-- [ ] **7.10** Unit + integration tests. 90%+ coverage on business logic.
+- [x] **7.9** Container stop/remove on Delete Project or image upgrade.
+- [x] **7.10** Unit + integration tests. 90%+ coverage on business logic.
 
 ---
 
