@@ -1,0 +1,55 @@
+name: Convocate Feedback
+
+on:
+  workflow_call:
+    inputs:
+      router_api_url:
+        required: true
+        type: string
+      bot_account:
+        required: true
+        type: string
+    secrets:
+      router_api_token:
+        required: true
+
+jobs:
+  feedback:
+    if: github.actor == inputs.bot_account
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run project test suite
+        id: tests
+        run: |
+          if [ -f Makefile ] && make -n test >/dev/null 2>&1; then
+            make test
+          elif [ -f package.json ]; then
+            npm ci && npm test
+          elif [ -f go.mod ]; then
+            go test ./...
+          else
+            echo "No test suite detected"
+          fi
+        continue-on-error: true
+
+      - name: Report results to Router API
+        run: |
+          STATUS="success"
+          if [ "${{ steps.tests.outcome }}" = "failure" ]; then
+            STATUS="failure"
+          fi
+          curl -fsSL \
+            -X POST "${{ inputs.router_api_url }}/v1/status" \
+            -H "Authorization: Bearer ${{ secrets.router_api_token }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"host_id\": \"github-actions\",
+              \"container_id\": \"ci-runner\",
+              \"job_id\": \"00000000-0000-0000-0000-000000000000\",
+              \"from_state\": \"running\",
+              \"to_state\": \"$STATUS\",
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+              \"reason\": \"CI pipeline $STATUS\"
+            }" || true

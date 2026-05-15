@@ -1,0 +1,52 @@
+name: Convocate Dispatch
+
+on:
+  workflow_call:
+    inputs:
+      router_api_url:
+        required: true
+        type: string
+      bot_account:
+        required: true
+        type: string
+    secrets:
+      router_api_token:
+        required: true
+
+jobs:
+  dispatch:
+    if: github.event.label.name == 'automated-development'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Submit to Router API
+        id: submit
+        run: |
+          RESPONSE=$(curl -fsSL -w "\n%{http_code}" \
+            -X POST "${{ inputs.router_api_url }}/v1/jobs" \
+            -H "Authorization: Bearer ${{ secrets.router_api_token }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "repository": "${{ github.repository }}",
+              "issue_number": ${{ github.event.issue.number }},
+              "issue_title": ${{ toJSON(github.event.issue.title) }},
+              "issue_body": ${{ toJSON(github.event.issue.body) }},
+              "issue_author": "${{ github.event.issue.user.login }}",
+              "run_id": ${{ github.run_id }}
+            }')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "status=$HTTP_CODE" >> "$GITHUB_OUTPUT"
+          echo "body=$BODY" >> "$GITHUB_OUTPUT"
+          if [ "$HTTP_CODE" -ge 400 ]; then
+            echo "::error::Router API returned HTTP $HTTP_CODE: $BODY"
+            exit 1
+          fi
+
+      - name: Apply dispatched label
+        if: steps.submit.outputs.status == '200'
+        run: |
+          gh issue edit ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --add-label dispatched
+        env:
+          GH_TOKEN: ${{ github.token }}

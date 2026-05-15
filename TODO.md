@@ -324,16 +324,16 @@ specify.
 
 ## Phase 11 — Agent Container Image
 
-- [ ] **11.1** `Dockerfile.agent` per README.md § Agent Container Image:
+- [x] **11.1** `Dockerfile.agent` per README.md § Agent Container Image:
       `ubuntu:latest` base (agent containers always use ubuntu:latest
       because they need a full userland — git, curl, openssh-client, gh
       CLI, npm/Claude Code). Install deps, copy
       `convocate-agent-wrapper` binary as entrypoint.
-- [ ] **11.2** `CONVOCATE_DEV_MOCK_CLAUDE=1` build-time flag: when set,
+- [x] **11.2** `CONVOCATE_DEV_MOCK_CLAUDE=1` build-time flag: when set,
       bake `mock_claude` binary into the image instead of real Claude
       Code.
-- [ ] **11.3** Volume mount: `convocate-project-<id>` at `/workspace`.
-- [ ] **11.4** Secrets socket mount: `/run/convocate/secrets.sock`.
+- [x] **11.3** Volume mount: `convocate-project-<id>` at `/workspace`.
+- [x] **11.4** Secrets socket mount: `/run/convocate/secrets.sock`.
 
 ---
 
@@ -343,14 +343,14 @@ All non-agent containers use distroless base images (`gcr.io/distroless/static-d
 or `/base-debian12` where a libc is needed) for minimal attack surface. Agent containers
 are the sole exception — they use `ubuntu:latest` because they require a full userland.
 
-- [ ] **11.5.1** `Dockerfile.router` — multi-stage build: Go build stage
+- [x] **11.5.1** `Dockerfile.router` — multi-stage build: Go build stage
       (`golang:1.26`) → distroless final stage. Copy `convocate-router`
       and `convocate-cli` binaries. Embed Web UI static assets.
-- [ ] **11.5.2** `Dockerfile.dispatch` — multi-stage build → distroless.
+- [x] **11.5.2** `Dockerfile.dispatch` — multi-stage build → distroless.
       Copy `convocate-dispatch` binary.
-- [ ] **11.5.3** `Dockerfile.secrets-broker` — multi-stage build →
+- [x] **11.5.3** `Dockerfile.secrets-broker` — multi-stage build →
       distroless. Copy `convocate-secrets-broker` binary.
-- [ ] **11.5.4** Verify all three service images run correctly from
+- [x] **11.5.4** Verify all three service images run correctly from
       distroless (no shell, no package manager, static or CGO-free
       binaries).
 
@@ -358,35 +358,35 @@ are the sole exception — they use `ubuntu:latest` because they require a full 
 
 ## Phase 12 — Docker Compose Stacks
 
-- [ ] **12.1** `deploy/control-plane/docker-compose.yml`:
+- [x] **12.1** `deploy/control-plane/docker-compose.yml`:
       `convocate-router` (`tcp/443` + `tcp/8443`), `convocate-redis`
       (`tcp/6379` TLS), `convocate-openbao` (`tcp/8200`). `.env.example`
       with `CONVOCATE_PUBLIC_URL` and `CONVOCATE_OPENBAO_UNSEAL`.
-- [ ] **12.2** `deploy/agent-host/docker-compose.yml`:
+- [x] **12.2** `deploy/agent-host/docker-compose.yml`:
       `convocate-dispatch`, `convocate-openbao-agent`,
       `convocate-secrets-broker`. `.env.example` with
       `CONVOCATE_CONTROL_URL`, `CONVOCATE_CONTROL_CA`,
       `CONVOCATE_HOST_CERT`, `CONVOCATE_HOST_ID`.
-- [ ] **12.3** `docker-compose.dev.yml` (repo root): combine both stacks on
+- [x] **12.3** `docker-compose.dev.yml` (repo root): combine both stacks on
       single Compose network. Self-signed CA on first start,
       `.dev/secrets/`, localhost-bound `8443`/`8444`. Support
       `CONVOCATE_DEV_MOCK_CLAUDE=1` in `.env`.
-- [ ] **12.4** Verify targets from README.md § Verify work against dev stack.
+- [x] **12.4** Verify targets from README.md § Verify work against dev stack.
 
 ---
 
 ## Phase 13 — GitHub Actions (Reusable Workflows)
 
-- [ ] **13.1** `.github/workflows/ci.yml` — CI pipeline for convocate
+- [x] **13.1** `.github/workflows/ci.yml` — CI pipeline for convocate
       itself (lint, test, build).
-- [ ] **13.2** `.github/workflows/convocate-dispatch.yml` — reusable
+- [x] **13.2** `.github/workflows/convocate-dispatch.yml` — reusable
       workflow: on `issues.labeled` == `automated-development`, POST
       issue payload to Router API, apply `dispatched` label on 200 OK.
-- [ ] **13.3** `.github/workflows/convocate-feedback.yml` — reusable
+- [x] **13.3** `.github/workflows/convocate-feedback.yml` — reusable
       workflow: on push to `fix/**` or `feature/**` branches, gate on
       `github.actor == vars.CONVOCATE_BOT_ACCOUNT`, run project test
       suite, report results, trigger ticket updater.
-- [ ] **13.4** Unit/integration tests for workflow logic where possible.
+- [x] **13.4** Unit/integration tests for workflow logic where possible.
 
 ---
 

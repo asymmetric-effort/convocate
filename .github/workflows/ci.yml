@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feature/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Go vet
+        run: go vet ./...
+      - name: YAML lint
+        run: |
+          pip install yamllint
+          find . -name '*.yml' -o -name '*.yaml' | grep -v vendor | grep -v node_modules | grep -v .dev | xargs yamllint -s
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Unit tests
+        run: go test -v -race -count=1 -coverprofile=coverage.out ./internal/...
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Build all binaries
+        run: make build
+      - name: Build Web UI
+        run: |
+          cd internal/webui
+          npm install
+          npm run build
+
+  webui-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install dependencies
+        run: cd internal/webui && npm install
+      - name: TypeScript typecheck
+        run: cd internal/webui && npx tsc --noEmit
