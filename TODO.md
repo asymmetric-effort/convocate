@@ -144,16 +144,16 @@ specify.
 
 ## Phase 5 — Secrets Broker (`cmd/convocate-secrets-broker/`, `internal/broker/`)
 
-- [ ] **5.1** Per-container Unix socket multiplexer: one socket per Agent
+- [x] **5.1** Per-container Unix socket multiplexer: one socket per Agent
       Container under `/run/convocate/secrets/`, bind-mounted into
       containers at `/run/convocate/secrets.sock`.
-- [ ] **5.2** Map each socket to its bound project via the Router API's
+- [x] **5.2** Map each socket to its bound project via the Router API's
       container map.
-- [ ] **5.3** Fetch project secrets from the local OpenBao Agent on read,
+- [x] **5.3** Fetch project secrets from the local OpenBao Agent on read,
       return to caller.
-- [ ] **5.4** Socket lifecycle: create on container provision, remove on
+- [x] **5.4** Socket lifecycle: create on container provision, remove on
       container teardown.
-- [ ] **5.5** Unit + integration tests. The broker is the only consumer of
+- [x] **5.5** Unit + integration tests. The broker is the only consumer of
       OpenBao Agent's HTTP API on the host.
 
 ---
