@@ -28,6 +28,7 @@ build-%:
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
+	@mkdir -p $(BUILD_DIR)
 	@rm -f coverage.out coverage.html
 	@$(GO) clean -testcache
 	@echo "Removing convocate Docker containers and images..."

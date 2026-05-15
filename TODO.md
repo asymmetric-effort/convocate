@@ -116,15 +116,15 @@ specify.
 
 ## Phase 3 — mTLS Infrastructure (`internal/mtls/`)
 
-- [ ] **3.1** Private CA generation at control-plane first start.
-- [ ] **3.2** `convocate-cli ca print-bundle` — emit trust bundle PEM.
-- [ ] **3.3** `convocate-cli host issue-cert <host-id>` — issue per-host
+- [x] **3.1** Private CA generation at control-plane first start.
+- [x] **3.2** `convocate-cli ca print-bundle` — emit trust bundle PEM.
+- [x] **3.3** `convocate-cli host issue-cert <host-id>` — issue per-host
       mTLS client cert.
-- [ ] **3.4** TLS server config (Router API `tcp/8443`): require client cert
+- [x] **3.4** TLS server config (Router API `tcp/8443`): require client cert
       on Dispatch routes, optional on Web UI routes.
-- [ ] **3.5** TLS client config (Dispatch Service): present host cert,
+- [x] **3.5** TLS client config (Dispatch Service): present host cert,
       verify Router API server cert against the private CA.
-- [ ] **3.6** Unit tests for cert generation, signing, verification.
+- [x] **3.6** Unit tests for cert generation, signing, verification.
 
 ---
 
