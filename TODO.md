@@ -160,30 +160,30 @@ specify.
 
 ## Phase 6 — Router API (`cmd/convocate-router/`, `internal/router/`)
 
-- [ ] **6.1** HTTP server on `tcp/443` (GitHub Actions `/v1/jobs`) and
+- [x] **6.1** HTTP server on `tcp/443` (GitHub Actions `/v1/jobs`) and
       `tcp/8443` (Web UI + Dispatch mTLS), path-multiplexed.
-- [ ] **6.2** `POST /v1/jobs` — bearer-token auth (`CONVOCATE_API_TOKEN`
+- [x] **6.2** `POST /v1/jobs` — bearer-token auth (`CONVOCATE_API_TOKEN`
       per repo), validate repo against allowlist (404 if missing),
       idempotency check, resolve project → container binding, record job,
       dispatch to Dispatch Service, return job ID.
-- [ ] **6.3** `GET /v1/dispatch?host=<id>` — long-poll or SSE stream of
+- [x] **6.3** `GET /v1/dispatch?host=<id>` — long-poll or SSE stream of
       dispatch events targeted at the requesting host. mTLS required.
-- [ ] **6.4** `POST /v1/status` — accept per-job state transitions from
+- [x] **6.4** `POST /v1/status` — accept per-job state transitions from
       Dispatch Services. Update job metadata in Redis. mTLS required.
-- [ ] **6.5** `POST /v1/heartbeat` — accept host health from Dispatch
+- [x] **6.5** `POST /v1/heartbeat` — accept host health from Dispatch
       Services (container count, CPU%, memory%). Cache latest per host.
       mTLS required.
-- [ ] **6.6** `GET /v1/health` — health check endpoint.
-- [ ] **6.7** Job submission idempotency: `(repo, issue, run_id)` key.
+- [x] **6.6** `GET /v1/health` — health check endpoint.
+- [x] **6.7** Job submission idempotency: `(repo, issue, run_id)` key.
       Duplicate returns original job ID (HTTP 200). Fresh `run_id` =
       new job.
-- [ ] **6.8** `CONVOCATE_API_TOKEN` minting per repo at Create Project time.
+- [x] **6.8** `CONVOCATE_API_TOKEN` minting per repo at Create Project time.
       Token only authorizes `/v1/jobs` for its bound repo.
-- [ ] **6.9** Container-replacement failure handling: mark project
+- [x] **6.9** Container-replacement failure handling: mark project
       `failed_dispatch`, apply `failed_dispatch` label to issue using
       the project's PAT from OpenBao, remove `dispatched` label.
-- [ ] **6.10** State recovery on restart: rebuild from Redis.
-- [ ] **6.11** Web UI management API endpoints:
+- [x] **6.10** State recovery on restart: rebuild from Redis.
+- [x] **6.11** Web UI management API endpoints:
       - Create Project (allowlist + OpenBao secrets + mint token + select
         host by lowest container count + provision container)
       - Delete Project (drain → force-terminate option → teardown →
@@ -194,7 +194,7 @@ specify.
       - List projects, job status, agent-fleet health
       - Container upgrade (stop old, provision new image, re-bind)
       - Upgrade All Idle
-- [ ] **6.12** Unit tests for every endpoint, idempotency logic, routing
+- [x] **6.12** Unit tests for every endpoint, idempotency logic, routing
       logic, state transitions. 90%+ coverage.
 
 ---
