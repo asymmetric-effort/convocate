@@ -1,7 +1,6 @@
 package router
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -43,12 +42,7 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request) {
 				if !ok {
 					return
 				}
-				data, err := json.Marshal(event)
-				if err != nil {
-					s.logger.Printf("router: marshal dispatch event: %v", err)
-					continue
-				}
-				fmt.Fprintf(w, "data: %s\n\n", data)
+				fmt.Fprintf(w, "data: %s\n\n", mustMarshalJSON(event))
 				flusher.Flush()
 			case <-r.Context().Done():
 				return

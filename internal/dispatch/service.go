@@ -3,7 +3,6 @@ package dispatch
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -280,11 +279,7 @@ func (s *Service) ReportStatus(jobID uuid.UUID, containerID string, from, to pro
 		req.Reason = ""
 	}
 
-	data, err := json.Marshal(req)
-	if err != nil {
-		s.logger.Printf("dispatch: marshal status: %v", err)
-		return
-	}
+	data := mustMarshalJSON(req)
 
 	httpReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.controlURL+"/v1/status", bytes.NewReader(data))
 	if err != nil {
@@ -311,11 +306,7 @@ func (s *Service) SendHeartbeat() {
 		Timestamp:      time.Now(),
 	}
 
-	data, err := json.Marshal(req)
-	if err != nil {
-		s.logger.Printf("dispatch: marshal heartbeat: %v", err)
-		return
-	}
+	data := mustMarshalJSON(req)
 
 	httpReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.controlURL+"/v1/heartbeat", bytes.NewReader(data))
 	if err != nil {

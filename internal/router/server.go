@@ -188,10 +188,6 @@ func extractBearerToken(r *http.Request) string {
 }
 
 // generateAPIToken creates a random API token for project dispatch auth.
-func generateAPIToken() (string, error) {
-	tokenID, err := uuid.New()
-	if err != nil {
-		return "", err
-	}
-	return "cvt_" + tokenID.String(), nil
+func generateAPIToken() string {
+	return "cvt_" + uuid.New().String()
 }

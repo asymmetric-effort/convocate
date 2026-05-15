@@ -213,6 +213,22 @@ func TestProjectSecretsNoCustom(t *testing.T) {
 	}
 }
 
+func TestReadProjectSecretsNetworkError(t *testing.T) {
+	client := NewClient(Config{Address: "http://127.0.0.1:1", Token: "t"})
+	_, err := client.ReadProjectSecrets(uuid.MustNew())
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+}
+
+func TestReadSharedCredentialNetworkError(t *testing.T) {
+	client := NewClient(Config{Address: "http://127.0.0.1:1", Token: "t"})
+	_, err := client.ReadSharedCredential("test")
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+}
+
 func containsSubstring(s, substr string) bool {
 	return len(s) >= len(substr) && searchSubstring(s, substr)
 }

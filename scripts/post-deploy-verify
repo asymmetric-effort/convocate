@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Post-deployment verification script.
+# Verifies the deployed convocate stack is healthy after a deploy.
+# Usage: ./scripts/post-deploy-verify <router-url>
+# Example: ./scripts/post-deploy-verify https://router.example.com
+set -euo pipefail
+
+ROUTER_URL="${1:?Usage: post-deploy-verify <router-url>}"
+
+echo "=== Post-deployment verification ==="
+echo "Router URL: $ROUTER_URL"
+
+# 1. Health check
+echo -n "Health check... "
+HEALTH=$(curl -fsSk "${ROUTER_URL}/v1/health" 2>/dev/null)
+STATUS=$(echo "$HEALTH" | jq -r '.status' 2>/dev/null)
+VERSION=$(echo "$HEALTH" | jq -r '.version' 2>/dev/null)
+if [ "$STATUS" != "ok" ]; then
+  echo "FAIL (status: $STATUS)"
+  exit 1
+fi
+echo "OK (version: $VERSION)"
+
+# 2. Unauthorized job submission rejected
+echo -n "Auth enforcement... "
+HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" \
+  -X POST "${ROUTER_URL}/v1/jobs" \
+  -H "Content-Type: application/json" \
+  -d '{"repository":"test/verify","run_id":1}')
+if [ "$HTTP_CODE" != "401" ]; then
+  echo "FAIL (expected 401, got $HTTP_CODE)"
+  exit 1
+fi
+echo "OK (401 for missing token)"
+
+# 3. Unknown repo rejected
+echo -n "Allowlist enforcement... "
+HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" \
+  -X POST "${ROUTER_URL}/v1/jobs" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer invalid-token" \
+  -d '{"repository":"unknown/repo","run_id":1}')
+if [ "$HTTP_CODE" != "404" ]; then
+  echo "FAIL (expected 404, got $HTTP_CODE)"
+  exit 1
+fi
+echo "OK (404 for unknown repo)"
+
+# 4. Web UI API responsive
+echo -n "Web UI API... "
+HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" \
+  "${ROUTER_URL}/ui/api/projects")
+if [ "$HTTP_CODE" != "200" ]; then
+  echo "FAIL (expected 200, got $HTTP_CODE)"
+  exit 1
+fi
+echo "OK"
+
+echo "=== All post-deployment checks passed ==="

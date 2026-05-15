@@ -643,10 +643,7 @@ func TestExtractBearerTokenMissing(t *testing.T) {
 }
 
 func TestGenerateAPIToken(t *testing.T) {
-	token, err := generateAPIToken()
-	if err != nil {
-		t.Fatalf("generateAPIToken error: %v", err)
-	}
+	token := generateAPIToken()
 	if len(token) < 10 {
 		t.Errorf("token too short: %q", token)
 	}

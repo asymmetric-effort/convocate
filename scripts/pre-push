@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Pre-push hook: tests and coverage threshold.
+# Install: cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+# Or: make hooks
+set -euo pipefail
+
+echo "pre-push: running tests..."
+go test -race -count=1 -coverprofile=/tmp/convocate-coverage.out ./internal/...
+
+echo "pre-push: checking coverage threshold (98%)..."
+COVERAGE=$(go tool cover -func=/tmp/convocate-coverage.out \
+  | grep '^total:' | awk '{print $NF}' | tr -d '%')
+echo "Coverage: ${COVERAGE}%"
+
+THRESHOLD=98
+if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
+  echo "ERROR: Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+  exit 1
+fi
+
+echo "pre-push: passed (${COVERAGE}% coverage)"

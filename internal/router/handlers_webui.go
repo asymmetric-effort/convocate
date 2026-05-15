@@ -50,12 +50,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectID, err := uuid.New()
-	if err != nil {
-		s.logger.Printf("router: generate project ID: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
+	projectID := uuid.New()
 
 	// Step 1: Add to allowlist.
 	err = s.store.AllowlistAdd(req.Repository)
@@ -83,12 +78,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 4: Mint API token.
-	apiToken, err := generateAPIToken()
-	if err != nil {
-		s.logger.Printf("router: generate API token: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
+	apiToken := generateAPIToken()
 	err = s.store.SetAPIToken(req.Repository, apiToken)
 	if err != nil {
 		s.logger.Printf("router: store API token: %v", err)
@@ -327,12 +317,7 @@ func (s *Server) handleAdHocSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID, err := uuid.New()
-	if err != nil {
-		s.logger.Printf("router: generate job ID: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
+	jobID := uuid.New()
 
 	now := time.Now()
 	meta := protocol.JobMetadata{

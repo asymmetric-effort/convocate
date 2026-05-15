@@ -221,12 +221,11 @@ func openbaoInit() int {
 		return 1
 	}
 
-	// Generate a 256-bit random key.
+	// Generate a 256-bit random key. crypto/rand.Read cannot fail on a
+	// healthy system; a panic here signals a broken runtime.
 	key := make([]byte, 32)
-	_, err = rand.Read(key)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error generating bootstrap key: %v\n", err)
-		return 1
+	if _, err = rand.Read(key); err != nil {
+		panic("cli: read crypto/rand: " + err.Error())
 	}
 
 	keyHex := hex.EncodeToString(key)

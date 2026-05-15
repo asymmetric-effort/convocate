@@ -40,6 +40,18 @@ site wins. Two project-level rules worth flagging up front:
 - Node.js 24+ (for Web UI)
 - yamllint
 
+## Git Hooks
+
+Install pre-commit and pre-push hooks before making changes:
+
+```bash
+make hooks
+```
+
+This installs:
+- **pre-commit**: gofmt check, go vet, golangci-lint (fast mode)
+- **pre-push**: full test suite with 98% coverage threshold enforcement
+
 ## Building
 
 ```bash

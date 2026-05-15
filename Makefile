@@ -8,7 +8,7 @@ BINARIES := convocate-router convocate-dispatch convocate-secrets-broker convoca
 
 .PHONY: all build clean lint lint-go lint-yaml lint-vuln test test-unit test-integration test-e2e test-coverage \
         images image-router image-dispatch image-secrets-broker image-agent \
-        local/start local/logs local/stop local/reset \
+        local/start local/logs local/stop local/reset hooks verify \
         release release/minor release/major
 
 all: lint test build
@@ -136,6 +136,20 @@ local/reset:
 	@rm -rf .dev/secrets
 	@echo "Regenerating local CA on next start."
 	@$(MAKE) local/start
+
+# --- Git Hooks ---
+
+hooks:
+	@echo "Installing git hooks..."
+	@cp scripts/pre-commit .git/hooks/pre-commit
+	@cp scripts/pre-push .git/hooks/pre-push
+	@chmod +x .git/hooks/pre-commit .git/hooks/pre-push
+	@echo "Git hooks installed."
+
+# --- Post-deployment Verification ---
+
+verify:
+	@scripts/post-deploy-verify $(CONVOCATE_PUBLIC_URL)
 
 # --- Release ---
 

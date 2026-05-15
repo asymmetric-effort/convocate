@@ -39,11 +39,7 @@ func (s *RouterStore) key(parts ...string) string {
 
 // SetContainer writes a container map entry.
 func (s *RouterStore) SetContainer(entry *protocol.ContainerMapEntry) error {
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return fmt.Errorf("redis/router: marshal container: %w", err)
-	}
-	_, err = s.conn.Do("SET", s.key("container", entry.ContainerID), string(data))
+	_, err := s.conn.Do("SET", s.key("container", entry.ContainerID), mustMarshalJSON(entry))
 	return err
 }
 
@@ -74,16 +70,13 @@ func (s *RouterStore) DeleteContainer(containerID string) error {
 
 // SetRoute writes a project → (host, container) binding.
 func (s *RouterStore) SetRoute(entry protocol.ProjectRouteEntry) error {
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return fmt.Errorf("redis/router: marshal route: %w", err)
-	}
-	_, err = s.conn.Do("SET", s.key("route", entry.ProjectID.String()), string(data))
+	data := mustMarshalJSON(entry)
+	_, err := s.conn.Do("SET", s.key("route", entry.ProjectID.String()), data)
 	if err != nil {
 		return err
 	}
 	// Also index by repository for job submission lookups.
-	_, err = s.conn.Do("SET", s.key("route-by-repo", entry.Repository), string(data))
+	_, err = s.conn.Do("SET", s.key("route-by-repo", entry.Repository), data)
 	return err
 }
 
@@ -175,11 +168,7 @@ func (s *RouterStore) LookupJobByKey(idempotencyKey protocol.IdempotencyKey) (uu
 
 // SetJobMetadata writes job metadata.
 func (s *RouterStore) SetJobMetadata(meta *protocol.JobMetadata) error {
-	data, err := json.Marshal(meta)
-	if err != nil {
-		return fmt.Errorf("redis/router: marshal job metadata: %w", err)
-	}
-	_, err = s.conn.Do("SET", s.key("job", meta.JobID.String()), string(data))
+	_, err := s.conn.Do("SET", s.key("job", meta.JobID.String()), mustMarshalJSON(meta))
 	return err
 }
 
@@ -238,12 +227,8 @@ func (s *RouterStore) DeleteAPIToken(repository string) error {
 
 // CacheHeartbeat stores the latest heartbeat for a host.
 func (s *RouterStore) CacheHeartbeat(heartbeat protocol.HeartbeatRequest) error {
-	data, err := json.Marshal(heartbeat)
-	if err != nil {
-		return fmt.Errorf("redis/router: marshal heartbeat: %w", err)
-	}
 	// Set with a 60-second TTL (4x the 15-second interval).
-	_, err = s.conn.Do("SET", s.key("heartbeat", heartbeat.HostID), string(data), "EX", "60")
+	_, err := s.conn.Do("SET", s.key("heartbeat", heartbeat.HostID), mustMarshalJSON(heartbeat), "EX", "60")
 	return err
 }
 
@@ -268,11 +253,7 @@ func (s *RouterStore) GetHeartbeat(hostID string) (*protocol.HeartbeatRequest, e
 
 // SetProjectInfo stores project info.
 func (s *RouterStore) SetProjectInfo(info *protocol.ProjectInfo) error {
-	data, err := json.Marshal(info)
-	if err != nil {
-		return fmt.Errorf("redis/router: marshal project info: %w", err)
-	}
-	_, err = s.conn.Do("SET", s.key("project", info.ProjectID.String()), string(data))
+	_, err := s.conn.Do("SET", s.key("project", info.ProjectID.String()), mustMarshalJSON(info))
 	if err != nil {
 		return err
 	}
@@ -322,14 +303,7 @@ func (s *RouterStore) DeleteProjectInfo(projectID uuid.UUID, repository string) 
 
 // Ping checks the connection is alive.
 func (s *RouterStore) Ping() error {
-	val, err := String(s.conn.Do("PING"))
-	if err != nil {
-		return err
-	}
-	if val != pong {
-		return fmt.Errorf("redis/router: unexpected PING response: %q", val)
-	}
-	return nil
+	return doPing(s.conn)
 }
 
 // FlushNamespace deletes all keys in the router namespace. WARNING: destructive.
@@ -345,23 +319,11 @@ func (s *RouterStore) flushByPrefix(prefix string) error {
 		if err != nil {
 			return err
 		}
-		arr, ok := result.([]interface{})
-		if !ok || len(arr) != 2 {
-			return fmt.Errorf("redis/router: unexpected SCAN result type")
+		nextCursor, keys, parseErr := parseScanResult(result)
+		if parseErr != nil {
+			return parseErr
 		}
-		nextCursor, ok := arr[0].(string)
-		if !ok {
-			return fmt.Errorf("redis/router: unexpected SCAN cursor type")
-		}
-		keys, ok := arr[1].([]interface{})
-		if !ok {
-			return fmt.Errorf("redis/router: unexpected SCAN keys type")
-		}
-		for _, keyIface := range keys {
-			keyStr, strOk := keyIface.(string)
-			if !strOk {
-				continue
-			}
+		for _, keyStr := range keys {
 			_, delErr := s.conn.Do("DEL", keyStr)
 			if delErr != nil {
 				return delErr
@@ -420,23 +382,11 @@ func (s *RouterStore) CountContainersByHost(hostID string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		arr, ok := result.([]interface{})
-		if !ok || len(arr) != 2 {
-			return 0, fmt.Errorf("redis/router: unexpected SCAN result type")
+		nextCursor, keys, parseErr := parseScanResult(result)
+		if parseErr != nil {
+			return 0, parseErr
 		}
-		nextCursor, ok := arr[0].(string)
-		if !ok {
-			return 0, fmt.Errorf("redis/router: unexpected SCAN cursor type")
-		}
-		keys, ok := arr[1].([]interface{})
-		if !ok {
-			return 0, fmt.Errorf("redis/router: unexpected SCAN keys type")
-		}
-		for _, keyIface := range keys {
-			keyStr, strOk := keyIface.(string)
-			if !strOk {
-				continue
-			}
+		for _, keyStr := range keys {
 			val, getErr := String(s.conn.Do("GET", keyStr))
 			if getErr != nil || val == "" {
 				continue

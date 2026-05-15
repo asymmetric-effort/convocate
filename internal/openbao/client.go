@@ -250,7 +250,7 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) (map[strin
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("openbao: marshal request: %w", err)
+			panic("openbao: marshal request: " + err.Error())
 		}
 		reqBody = bytes.NewReader(data)
 	}

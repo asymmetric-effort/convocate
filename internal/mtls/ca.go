@@ -2,13 +2,11 @@ package mtls
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"math/big"
 	"time"
 )
 
@@ -24,15 +22,8 @@ type CA struct {
 // The CA is valid for the given duration from now. Common name is set to
 // the provided value.
 func GenerateCA(commonName string, validity time.Duration) (*CA, error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("mtls: generate CA key: %w", err)
-	}
-
-	serialNumber, err := randomSerialNumber()
-	if err != nil {
-		return nil, err
-	}
+	privateKey := mustGenerateKey()
+	serialNumber := mustSerialNumber()
 
 	now := time.Now()
 	template := &x509.Certificate{
@@ -60,12 +51,7 @@ func GenerateCA(commonName string, validity time.Duration) (*CA, error) {
 	}
 
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-
-	keyDER, err := x509.MarshalECPrivateKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("mtls: marshal CA key: %w", err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: mustMarshalECKey(privateKey)})
 
 	return &CA{
 		Certificate: cert,
@@ -107,14 +93,4 @@ func LoadCA(certPEM, keyPEM []byte) (*CA, error) {
 // a trust anchor by clients and servers.
 func (ca *CA) TrustBundle() []byte {
 	return ca.CertPEM
-}
-
-func randomSerialNumber() (*big.Int, error) {
-	// 128-bit random serial per RFC 5280 recommendation.
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-	if err != nil {
-		return nil, fmt.Errorf("mtls: generate serial number: %w", err)
-	}
-	return serialNumber, nil
 }

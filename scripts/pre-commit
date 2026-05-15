@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Pre-commit hook: formatting and type checking.
+# Install: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# Or: make hooks
+set -euo pipefail
+
+echo "pre-commit: checking gofmt..."
+GOFMT_OUTPUT=$(gofmt -l ./internal/ ./cmd/ 2>/dev/null || true)
+if [ -n "$GOFMT_OUTPUT" ]; then
+  echo "ERROR: gofmt found unformatted files:"
+  echo "$GOFMT_OUTPUT"
+  echo "Run: gofmt -w ./internal/ ./cmd/"
+  exit 1
+fi
+
+echo "pre-commit: running go vet..."
+go vet ./...
+
+echo "pre-commit: checking golangci-lint..."
+if command -v golangci-lint >/dev/null 2>&1; then
+  golangci-lint run --config .golangci-lint.yml --fast ./...
+fi
+
+echo "pre-commit: passed"

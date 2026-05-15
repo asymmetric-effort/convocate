@@ -6,10 +6,7 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	id, err := New()
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
+	id := New()
 	if id.IsZero() {
 		t.Fatal("New() returned zero UUID")
 	}
@@ -34,10 +31,7 @@ func TestMustNew(t *testing.T) {
 func TestUniqueness(t *testing.T) {
 	seen := make(map[UUID]bool, 1000)
 	for range 1000 {
-		id, err := New()
-		if err != nil {
-			t.Fatalf("New() error: %v", err)
-		}
+		id := New()
 		if seen[id] {
 			t.Fatalf("duplicate UUID: %s", id)
 		}
@@ -46,10 +40,7 @@ func TestUniqueness(t *testing.T) {
 }
 
 func TestString(t *testing.T) {
-	id, err := New()
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
+	id := New()
 	s := id.String()
 	if len(s) != 36 {
 		t.Errorf("String() length: got %d, want 36", len(s))

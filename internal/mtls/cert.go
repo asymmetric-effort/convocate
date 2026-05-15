@@ -2,7 +2,6 @@ package mtls
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -21,15 +20,8 @@ type CertKeyPair struct {
 // IssueServerCert issues a server certificate signed by the CA. The cert
 // includes the given DNS names and IP addresses as SANs.
 func (ca *CA) IssueServerCert(commonName string, dnsNames []string, ips []net.IP, validity time.Duration) (*CertKeyPair, error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("mtls: generate server key: %w", err)
-	}
-
-	serialNumber, err := randomSerialNumber()
-	if err != nil {
-		return nil, err
-	}
+	privateKey := mustGenerateKey()
+	serialNumber := mustSerialNumber()
 
 	now := time.Now()
 	template := &x509.Certificate{
@@ -53,15 +45,8 @@ func (ca *CA) IssueServerCert(commonName string, dnsNames []string, ips []net.IP
 // IssueClientCert issues a client certificate signed by the CA for mTLS
 // authentication. The commonName identifies the client (e.g. a host ID).
 func (ca *CA) IssueClientCert(commonName string, validity time.Duration) (*CertKeyPair, error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("mtls: generate client key: %w", err)
-	}
-
-	serialNumber, err := randomSerialNumber()
-	if err != nil {
-		return nil, err
-	}
+	privateKey := mustGenerateKey()
+	serialNumber := mustSerialNumber()
 
 	now := time.Now()
 	template := &x509.Certificate{
@@ -84,15 +69,8 @@ func (ca *CA) IssueClientCert(commonName string, validity time.Duration) (*CertK
 // authentication. Used by the Router API which both serves TLS and
 // authenticates to other services.
 func (ca *CA) IssueCombinedCert(commonName string, dnsNames []string, ips []net.IP, validity time.Duration) (*CertKeyPair, error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("mtls: generate combined key: %w", err)
-	}
-
-	serialNumber, err := randomSerialNumber()
-	if err != nil {
-		return nil, err
-	}
+	privateKey := mustGenerateKey()
+	serialNumber := mustSerialNumber()
 
 	now := time.Now()
 	template := &x509.Certificate{
@@ -120,12 +98,7 @@ func (ca *CA) signCert(template *x509.Certificate, pub *ecdsa.PublicKey, priv *e
 	}
 
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-
-	keyDER, err := x509.MarshalECPrivateKey(priv)
-	if err != nil {
-		return nil, fmt.Errorf("mtls: marshal key: %w", err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: mustMarshalECKey(priv)})
 
 	return &CertKeyPair{
 		CertPEM: certPEM,

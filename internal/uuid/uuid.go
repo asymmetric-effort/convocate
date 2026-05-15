@@ -11,27 +11,24 @@ import (
 // UUID represents a 128-bit universally unique identifier (RFC 9562 v4).
 type UUID [16]byte
 
-// New generates a random UUID v4 using crypto/rand.
-func New() (UUID, error) {
+// New generates a random UUID v4 using crypto/rand. It panics if
+// crypto/rand is unreadable, which indicates a broken runtime.
+func New() UUID {
 	var id UUID
 	_, err := io.ReadFull(rand.Reader, id[:])
 	if err != nil {
-		return UUID{}, fmt.Errorf("uuid: read crypto/rand: %w", err)
+		panic("uuid: read crypto/rand: " + err.Error())
 	}
 	// Set version 4 (bits 4-7 of byte 6).
 	id[6] = (id[6] & 0x0f) | 0x40
 	// Set variant 10 (bits 6-7 of byte 8).
 	id[8] = (id[8] & 0x3f) | 0x80
-	return id, nil
+	return id
 }
 
-// MustNew generates a random UUID v4 and panics on failure.
+// MustNew is an alias for New, retained for call-site compatibility.
 func MustNew() UUID {
-	id, err := New()
-	if err != nil {
-		panic(err)
-	}
-	return id
+	return New()
 }
 
 // String returns the standard 8-4-4-4-12 hex representation.

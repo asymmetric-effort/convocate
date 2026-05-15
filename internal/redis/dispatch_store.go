@@ -43,11 +43,7 @@ type DispatchJobState struct {
 
 // SetJobState writes the in-flight state for a job.
 func (s *DispatchStore) SetJobState(state DispatchJobState) error {
-	data, err := json.Marshal(state)
-	if err != nil {
-		return fmt.Errorf("redis/dispatch: marshal job state: %w", err)
-	}
-	_, err = s.conn.Do("SET", s.key("job", state.JobID.String()), string(data))
+	_, err := s.conn.Do("SET", s.key("job", state.JobID.String()), mustMarshalJSON(state))
 	return err
 }
 
@@ -76,11 +72,7 @@ func (s *DispatchStore) DeleteJobState(jobID uuid.UUID) error {
 
 // EnqueueDispatch adds a dispatch event to the host's queue.
 func (s *DispatchStore) EnqueueDispatch(event *protocol.DispatchEvent) error {
-	data, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("redis/dispatch: marshal dispatch event: %w", err)
-	}
-	_, err = s.conn.Do("RPUSH", s.key("queue"), string(data))
+	_, err := s.conn.Do("RPUSH", s.key("queue"), mustMarshalJSON(event))
 	return err
 }
 
@@ -109,14 +101,7 @@ func (s *DispatchStore) QueueLength() (int64, error) {
 
 // Ping checks the connection is alive.
 func (s *DispatchStore) Ping() error {
-	val, err := String(s.conn.Do("PING"))
-	if err != nil {
-		return err
-	}
-	if val != pong {
-		return fmt.Errorf("redis/dispatch: unexpected PING response: %q", val)
-	}
-	return nil
+	return doPing(s.conn)
 }
 
 // FlushNamespace deletes all keys in this host's dispatch namespace.
@@ -129,23 +114,11 @@ func (s *DispatchStore) FlushNamespace() error {
 		if err != nil {
 			return err
 		}
-		arr, ok := result.([]interface{})
-		if !ok || len(arr) != 2 {
-			return fmt.Errorf("redis/dispatch: unexpected SCAN result type")
+		nextCursor, keys, parseErr := parseScanResult(result)
+		if parseErr != nil {
+			return parseErr
 		}
-		nextCursor, ok := arr[0].(string)
-		if !ok {
-			return fmt.Errorf("redis/dispatch: unexpected SCAN cursor type")
-		}
-		keys, ok := arr[1].([]interface{})
-		if !ok {
-			return fmt.Errorf("redis/dispatch: unexpected SCAN keys type")
-		}
-		for _, keyIface := range keys {
-			keyStr, strOk := keyIface.(string)
-			if !strOk {
-				continue
-			}
+		for _, keyStr := range keys {
 			_, delErr := s.conn.Do("DEL", keyStr)
 			if delErr != nil {
 				return delErr

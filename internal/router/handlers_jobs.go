@@ -88,12 +88,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the job.
-	jobID, err := uuid.New()
-	if err != nil {
-		s.logger.Printf("router: generate job ID: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
+	jobID := uuid.New()
 
 	now := time.Now()
 	meta := protocol.JobMetadata{
