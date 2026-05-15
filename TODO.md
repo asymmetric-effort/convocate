@@ -130,15 +130,15 @@ specify.
 
 ## Phase 4 — OpenBao Integration (`internal/openbao/`)
 
-- [ ] **4.1** OpenBao client for the Router API: store/read/revoke
+- [x] **4.1** OpenBao client for the Router API: store/read/revoke
       per-project secrets (SSH key, PAT, custom secrets) and shared
       service credentials (Anthropic API key or Claude.ai session token).
-- [ ] **4.2** Policy management: when binding project X to container Y on
+- [x] **4.2** Policy management: when binding project X to container Y on
       host H, push an OpenBao policy authorizing H's AppRole to read
       project-X secrets. Revoking reverses.
-- [ ] **4.3** `convocate-cli openbao init` — generate the sealed bootstrap
+- [x] **4.3** `convocate-cli openbao init` — generate the sealed bootstrap
       key file (mode `0400`).
-- [ ] **4.4** Unit tests with a mock OpenBao or the dev-stack OpenBao.
+- [x] **4.4** Unit tests with a mock OpenBao or the dev-stack OpenBao.
 
 ---
 
