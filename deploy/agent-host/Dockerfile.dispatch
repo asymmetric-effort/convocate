@@ -1,0 +1,11 @@
+FROM gcr.io/distroless/base-debian12
+
+ARG VERSION=dev
+
+LABEL org.opencontainers.image.title="convocate-dispatch" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.description="Convocate per-host Dispatch Service"
+
+COPY build/convocate-dispatch /usr/local/bin/convocate-dispatch
+
+ENTRYPOINT ["/usr/local/bin/convocate-dispatch"]

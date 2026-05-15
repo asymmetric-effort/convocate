@@ -25,15 +25,15 @@ Only the latest release version is actively supported with security updates.
 
 ## Security Considerations
 
-convocate runs containers with the following security-relevant properties:
+See README.md § Security Posture for the full security model. Key properties:
 
-- Session isolation via separate Docker containers
-- Read-only bind mounts for shared configuration
-- Per-session filesystem namespaces
-- Dynamic UID/GID mapping to match host user
-
-Users should be aware that:
-
-- The Docker socket is mounted into containers, granting container-level Docker access
-- Network access is enabled by default
-- The claude CLI binary is bind-mounted from the host
+- **Network isolation**: Agent Containers have outbound internet only; no inbound
+  connections; cannot reach Redis, OpenBao server, or Router API mTLS listener.
+- **Credential scope**: Per-project fine-grained PATs and ed25519 deploy keys. No
+  cluster-wide bot PAT. Credentials live in OpenBao, served via per-container Unix
+  sockets with short-lived tokens.
+- **Agent isolation**: Each project runs in a dedicated container enrolled in a cgroup
+  slice (90% aggregate CPU/memory cap). Strict project-to-container binding.
+- **mTLS everywhere**: All inter-service traffic uses mutual TLS with certificates
+  from a private CA. Each service holds its own keypair.
+- **Repository allowlist**: Job submissions from unauthorized repositories are rejected.

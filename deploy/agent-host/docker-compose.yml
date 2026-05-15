@@ -1,0 +1,48 @@
+services:
+  dispatch:
+    image: convocate-dispatch:${VERSION:-latest}
+    container_name: convocate-dispatch
+    restart: unless-stopped
+    environment:
+      - CONVOCATE_CONTROL_URL=${CONVOCATE_CONTROL_URL}
+      - CONVOCATE_HOST_ID=${CONVOCATE_HOST_ID}
+      - CONVOCATE_REDIS_URL=rediss://${CONVOCATE_REDIS_HOST:-redis}:6379
+    volumes:
+      - ${CONVOCATE_CONTROL_CA}:/etc/convocate/control-ca.pem:ro
+      - ${CONVOCATE_HOST_CERT}:/etc/convocate/host.pem:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - secrets-sockets:/run/convocate/secrets
+    networks:
+      - agent-host
+
+  openbao-agent:
+    image: openbao/openbao:latest
+    container_name: convocate-openbao-agent
+    restart: unless-stopped
+    command: agent -config=/etc/openbao/agent.hcl
+    volumes:
+      - ${CONVOCATE_CONTROL_CA}:/etc/convocate/control-ca.pem:ro
+      - openbao-agent-data:/var/lib/openbao
+    networks:
+      - agent-host
+
+  secrets-broker:
+    image: convocate-secrets-broker:${VERSION:-latest}
+    container_name: convocate-secrets-broker
+    restart: unless-stopped
+    environment:
+      - CONVOCATE_HOST_ID=${CONVOCATE_HOST_ID}
+    volumes:
+      - secrets-sockets:/run/convocate/secrets
+    depends_on:
+      - openbao-agent
+    networks:
+      - agent-host
+
+volumes:
+  openbao-agent-data:
+  secrets-sockets:
+
+networks:
+  agent-host:
+    driver: bridge

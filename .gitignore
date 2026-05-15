@@ -1,7 +1,9 @@
 # Binaries
-/convocate
-/convocate-host
-/convocate-agent
+/convocate-router
+/convocate-dispatch
+/convocate-secrets-broker
+/convocate-agent-wrapper
+/convocate-cli
 /mock-claude
 *.exe
 *.exe~
@@ -38,14 +40,11 @@ Thumbs.db
 # Environment
 .env
 .env.local
-.venv/
-venv/
-TO-DO.md
 
-# SpecifyJS docs site build output
-/site/dist/
-/site/node_modules/
-/site/src/docs-data.ts
-/site/bun.lockb
-/site/test-results/
-/site/playwright-report/
+# Local dev secrets and state
+.dev/
+
+# Node (Web UI)
+node_modules/
+/internal/webui/dist/
+/internal/webui/node_modules/

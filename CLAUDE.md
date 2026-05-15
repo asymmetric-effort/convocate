@@ -72,15 +72,46 @@ make release/major  # major bump
 
 ## Package map
 
-The v2 component implementation is in flight; the package layout will
-solidify as code lands. Authoritative names for the binaries shipped as
-OCI images:
+Binaries shipped as OCI images:
 
 - `convocate-router` — Router API + Web UI + `convocate-cli` admin tool
 - `convocate-dispatch` — host-local dispatch executor
 - `convocate-secrets-broker` — host-local per-container OpenBao socket
   multiplexer
 - `convocate-agent-wrapper` — entrypoint inside each Agent Container
+- `convocate-cli` — operator admin tool (ships in the router image)
+- `mock-claude` — deterministic Claude Code stand-in for e2e testing
+
+Directory layout:
+
+```
+cmd/
+  convocate-router/         main.go
+  convocate-dispatch/       main.go
+  convocate-secrets-broker/ main.go
+  convocate-agent-wrapper/  main.go
+  convocate-cli/            main.go
+  mock-claude/              main.go
+internal/
+  router/       Router API business logic
+  dispatch/     Dispatch Service business logic
+  broker/       Secrets Broker logic
+  wrapper/      Agent wrapper logic
+  redis/        Raw RESP3 client over crypto/tls
+  openbao/      OpenBao client integration
+  mtls/         mTLS certificate utilities
+  protocol/     Shared JSON request/response types
+  cli/          convocate-cli subcommands
+  webui/        Web UI SPA (specifyjs framework)
+  mock/         Test doubles
+  uuid/         UUID v4 generation (crypto/rand)
+test/
+  e2e/          End-to-end tests (mock_claude)
+  integration/  Integration tests
+deploy/
+  control-plane/  Docker Compose + Dockerfile.router
+  agent-host/     Docker Compose + Dockerfile.{dispatch,secrets-broker,agent}
+```
 
 Service-to-service communication, Redis namespaces, secrets ACL, and the
 state machines for container and job lifecycle are all defined in
@@ -133,10 +164,9 @@ state values.
   already exists (e.g. from a prior manual tag), the bump can clash.
   Delete the stray tag or tag the next version by hand rather than
   fighting the Makefile.
-- **`localhost:443` for the dev stack** — binding to privileged ports on
-  a developer workstation requires sudo or rootless-Docker port
-  forwarding. Check the dev-stack Compose file for the actual port
-  bindings before assuming.
+- **Dev stack ports** — the dev stack binds to `localhost:8443` (Router
+  API) and `localhost:8444` (Web UI + Dispatch). Check
+  `docker-compose.dev.yml` for the actual port bindings.
 - **sed regex over-match** — wide refactors across tests have historically
   caught test function declarations. When doing bulk renames,
   spot-check the diff for test function signatures.
@@ -150,10 +180,8 @@ the convocate OCI images by `make images`.
 Release history (short):
 
 - `v1.0.0` — multi-host orchestration arc (convocate-host + convocate-agent
-  deployed; SSH peering; rsyslog TLS).
-- `v2.0.0` — "shell is pure client" arc, eventually superseded by the
-  control-plane redesign captured in this README.
-- **Current (MVP)** — Router API + Redis + OpenBao control plane,
-  per-host Dispatch + OpenBao Agent + Secrets Broker, per-project
-  long-lived Agent Containers, Web-UI-driven project lifecycle. See
-  README.md for the complete picture.
+  deployed; SSH peering; rsyslog TLS). Retired.
+- **v0.2.0 (current, MVP)** — complete rewrite: Router API + Redis +
+  OpenBao control plane, per-host Dispatch + OpenBao Agent + Secrets
+  Broker, per-project long-lived Agent Containers, Web-UI-driven
+  project lifecycle. See README.md for the complete picture.

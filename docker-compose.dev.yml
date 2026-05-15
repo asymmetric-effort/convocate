@@ -1,0 +1,144 @@
+# Local development environment combining control-plane and agent-host stacks.
+#
+# Ports:
+#   8443 — Router API (HTTPS, GitHub Actions equivalent of tcp/443)
+#   8444 — Web UI + Dispatch mTLS (equivalent of tcp/8443)
+#   6379 — Redis (TLS)
+#   8200 — OpenBao
+#
+# Usage:
+#   make local/start   # build images and bring up everything
+#   make local/logs    # tail all service logs
+#   make local/stop    # stop (volumes preserved)
+#   make local/reset   # tear down + volumes, regenerate CA, restart
+
+services:
+  # --- Control Plane ---
+
+  router:
+    image: convocate-router:${VERSION:-latest}
+    container_name: convocate-router
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8443:443"
+      - "127.0.0.1:8444:8443"
+    environment:
+      - CONVOCATE_PUBLIC_URL=https://localhost:8443
+      - CONVOCATE_REDIS_URL=rediss://redis:6379
+      - CONVOCATE_OPENBAO_URL=https://openbao:8200
+      - CONVOCATE_DEV=1
+    depends_on:
+      redis:
+        condition: service_healthy
+      openbao:
+        condition: service_healthy
+    volumes:
+      - router-data:/var/lib/convocate
+      - dev-tls:/tls
+    networks:
+      - convocate-dev
+
+  redis:
+    image: redis:7-alpine
+    container_name: convocate-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: >
+      redis-server
+      --tls-port 6379
+      --port 0
+      --tls-cert-file /tls/redis.crt
+      --tls-key-file /tls/redis.key
+      --tls-ca-cert-file /tls/ca.crt
+      --tls-auth-clients optional
+    volumes:
+      - redis-data:/data
+      - dev-tls:/tls:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/tls/ca.crt", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - convocate-dev
+
+  openbao:
+    image: openbao/openbao:latest
+    container_name: convocate-openbao
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8200:8200"
+    environment:
+      - BAO_ADDR=https://127.0.0.1:8200
+    volumes:
+      - openbao-data:/var/lib/openbao
+      - dev-tls:/tls:ro
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "bao", "status", "-tls-skip-verify"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - convocate-dev
+
+  # --- Agent Host ---
+
+  dispatch:
+    image: convocate-dispatch:${VERSION:-latest}
+    container_name: convocate-dispatch
+    restart: unless-stopped
+    environment:
+      - CONVOCATE_CONTROL_URL=https://router:8443
+      - CONVOCATE_HOST_ID=dev-host-1
+      - CONVOCATE_REDIS_URL=rediss://redis:6379
+      - CONVOCATE_DEV=1
+    depends_on:
+      - router
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - secrets-sockets:/run/convocate/secrets
+      - dev-tls:/tls:ro
+    networks:
+      - convocate-dev
+
+  openbao-agent:
+    image: openbao/openbao:latest
+    container_name: convocate-openbao-agent
+    restart: unless-stopped
+    command: agent -config=/etc/openbao/agent.hcl
+    depends_on:
+      - openbao
+    volumes:
+      - openbao-agent-data:/var/lib/openbao
+      - dev-tls:/tls:ro
+    networks:
+      - convocate-dev
+
+  secrets-broker:
+    image: convocate-secrets-broker:${VERSION:-latest}
+    container_name: convocate-secrets-broker
+    restart: unless-stopped
+    environment:
+      - CONVOCATE_HOST_ID=dev-host-1
+      - CONVOCATE_DEV=1
+    depends_on:
+      - openbao-agent
+    volumes:
+      - secrets-sockets:/run/convocate/secrets
+    networks:
+      - convocate-dev
+
+volumes:
+  router-data:
+  redis-data:
+  openbao-data:
+  openbao-agent-data:
+  secrets-sockets:
+  dev-tls:
+
+networks:
+  convocate-dev:
+    driver: bridge

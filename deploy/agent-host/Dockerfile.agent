@@ -1,0 +1,46 @@
+FROM ubuntu:latest
+
+ARG VERSION=dev
+ARG DEV_MOCK_CLAUDE=0
+
+LABEL org.opencontainers.image.title="convocate-agent" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.description="Convocate Agent Container (per-project)"
+
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# gh CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) \
+      signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
+      https://cli.github.com/packages stable main" \
+    | tee /etc/apt/sources.list.d/github-cli.list && \
+    apt-get update && apt-get install -y gh && \
+    rm -rf /var/lib/apt/lists/*
+
+# Claude Code (skipped when DEV_MOCK_CLAUDE=1)
+RUN if [ "$DEV_MOCK_CLAUDE" = "0" ]; then \
+      curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
+      apt-get install -y nodejs && \
+      npm install -g @anthropic-ai/claude-code && \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Go wrapper — the container entrypoint
+COPY build/convocate-agent-wrapper /usr/local/bin/convocate-agent-wrapper
+
+# mock-claude for dev/e2e testing
+COPY build/mock-claude /usr/local/bin/mock-claude
+
+RUN useradd -m -s /bin/bash agent
+USER agent
+WORKDIR /workspace
+
+VOLUME ["/workspace"]
+
+ENTRYPOINT ["/usr/local/bin/convocate-agent-wrapper"]

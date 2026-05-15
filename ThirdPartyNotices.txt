@@ -1,0 +1,43 @@
+Third-Party Software Notices
+============================
+
+This file lists third-party software used by convocate, along with their
+license types.
+
+Go Dependencies
+---------------
+
+github.com/docker/docker (Apache-2.0)
+  Docker SDK for Go — used by the Dispatch Service to manage Agent Containers.
+  https://github.com/moby/moby/blob/master/LICENSE
+
+openbao/openbao (MPL-2.0, unmodified redistribution)
+  OpenBao Go client — used by the Router API and Secrets Broker for secret
+  storage and retrieval.
+  https://github.com/openbao/openbao/blob/main/LICENSE
+
+Container Images
+----------------
+
+gcr.io/distroless/base-debian12 (Apache-2.0)
+  Base image for non-agent service containers (router, dispatch, secrets-broker).
+  https://github.com/GoogleContainerTools/distroless/blob/main/LICENSE
+
+openbao/openbao (MPL-2.0)
+  OpenBao server and agent containers, used unmodified.
+  https://github.com/openbao/openbao/blob/main/LICENSE
+
+redis:7-alpine (BSD-3-Clause)
+  Redis server container.
+  https://redis.io/docs/about/license/
+
+ubuntu:latest (various; see Ubuntu IP Policy)
+  Base image for Agent Containers.
+  https://ubuntu.com/legal/intellectual-property-policy
+
+NPM Dependencies
+----------------
+
+@asymmetric-effort/specifyjs (MIT)
+  SpecifyJS UI framework — used for the Web UI SPA.
+  https://www.npmjs.com/package/@asymmetric-effort/specifyjs

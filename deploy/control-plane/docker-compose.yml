@@ -1,0 +1,77 @@
+services:
+  router:
+    image: convocate-router:${VERSION:-latest}
+    container_name: convocate-router
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "8443:8443"
+    environment:
+      - CONVOCATE_PUBLIC_URL=${CONVOCATE_PUBLIC_URL}
+      - CONVOCATE_REDIS_URL=rediss://redis:6379
+      - CONVOCATE_OPENBAO_URL=https://openbao:8200
+    depends_on:
+      redis:
+        condition: service_healthy
+      openbao:
+        condition: service_healthy
+    volumes:
+      - router-data:/var/lib/convocate
+    networks:
+      - control-plane
+
+  redis:
+    image: redis:7-alpine
+    container_name: convocate-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --tls-port 6379
+      --port 0
+      --tls-cert-file /tls/redis.crt
+      --tls-key-file /tls/redis.key
+      --tls-ca-cert-file /tls/ca.crt
+      --tls-auth-clients optional
+    volumes:
+      - redis-data:/data
+      - tls-certs:/tls:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/tls/ca.crt", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - control-plane
+
+  openbao:
+    image: openbao/openbao:latest
+    container_name: convocate-openbao
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      - BAO_ADDR=https://127.0.0.1:8200
+    volumes:
+      - openbao-data:/var/lib/openbao
+      - tls-certs:/tls:ro
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "bao", "status", "-tls-skip-verify"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - control-plane
+
+volumes:
+  router-data:
+  redis-data:
+  openbao-data:
+  tls-certs:
+
+networks:
+  control-plane:
+    driver: bridge
