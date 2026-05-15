@@ -283,9 +283,9 @@ specify.
 
 ## Phase 10 — Web UI (`internal/webui/`)
 
-- [ ] **10.1** SPA using the specifyjs.asymmetric-effort.com UI framework.
+- [x] **10.1** SPA using the specifyjs.asymmetric-effort.com UI framework.
       Served by Router API on `tcp/8443` under `/ui/...` prefix.
-- [ ] **10.2** Create Project form:
+- [x] **10.2** Create Project form:
       - Input: repo full name, ed25519 SSH private key, fine-grained PAT,
         custom secrets.
       - On submit: Router API provisions (allowlist + OpenBao + mint token
@@ -294,18 +294,18 @@ specify.
       - Display workflow file snippets and config values for the operator.
       - Show `provisioning_failed` state with failed step if provision
         fails.
-- [ ] **10.3** Delete Project flow:
+- [x] **10.3** Delete Project flow:
       - Drain in-flight jobs (with force-terminate option per job).
       - Teardown container, revoke token, delete secrets, remove routing.
       - Prompt operator for GitHub-side cleanup steps.
-- [ ] **10.4** Cluster Authentication form:
+- [x] **10.4** Cluster Authentication form:
       - Anthropic API key mode (paste key).
       - Claude.ai subscription mode (OAuth dance, capture session token).
       - Switch modes forces containers to pick up new credential on next
         task.
-- [ ] **10.5** Ad-hoc job submission form: pick project, type prompt,
+- [x] **10.5** Ad-hoc job submission form: pick project, type prompt,
       submit. Status streams to job-detail view.
-- [ ] **10.6** Dashboard views:
+- [x] **10.6** Dashboard views:
       - Project list with container status.
       - Job list with status and links to PRs/issues.
       - Job detail view (state transitions, clarification Qs, failure
@@ -314,10 +314,10 @@ specify.
         memory% per host).
       - "Image upgrade available" indicator per project. "Upgrade
         Container" and "Upgrade All Idle" actions.
-- [ ] **10.7** No first-party auth — operator fronts with authenticating
+- [x] **10.7** No first-party auth — operator fronts with authenticating
       reverse proxy. Router API trusts proxied identity headers from
       configured upstream.
-- [ ] **10.8** Playwright tests for all UI flows (Create Project, Delete
+- [x] **10.8** Playwright tests for all UI flows (Create Project, Delete
       Project, Cluster Auth, ad-hoc submit, dashboard views).
 
 ---

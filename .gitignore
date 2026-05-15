@@ -46,5 +46,7 @@ Thumbs.db
 
 # Node (Web UI)
 node_modules/
-/internal/webui/dist/
-/internal/webui/node_modules/
+internal/webui/dist/
+internal/webui/bun.lockb
+internal/webui/test-results/
+internal/webui/playwright-report/
