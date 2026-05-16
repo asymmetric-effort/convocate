@@ -39,7 +39,7 @@ Thumbs.db
 
 # Environment
 .env
-.env.local
+.env.*
 *.env
 
 # Local dev secrets and state
