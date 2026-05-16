@@ -1,11 +1,28 @@
-FROM gcr.io/distroless/base-debian12
+FROM ubuntu:latest AS builder
+
+ARG GO_VERSION=1.26.3
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    ARCH=$(dpkg --print-architecture) && \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+      | tar -xz -C /usr/local
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
 
 ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags "-s -w -X main.Version=${VERSION}" \
+    -o /out/convocate-dispatch ./cmd/convocate-dispatch/
 
-LABEL org.opencontainers.image.title="convocate-dispatch" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.description="Convocate per-host Dispatch Service"
+FROM gcr.io/distroless/static-debian12
 
-COPY build/convocate-dispatch /usr/local/bin/convocate-dispatch
+COPY --from=builder /out/convocate-dispatch /usr/local/bin/convocate-dispatch
 
 ENTRYPOINT ["/usr/local/bin/convocate-dispatch"]

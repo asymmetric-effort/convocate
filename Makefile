@@ -87,28 +87,28 @@ test-coverage: test-unit
 images: image-router image-dispatch image-secrets-broker image-agent
 	@echo "All images built."
 
-image-router: build-convocate-router build-convocate-cli
+image-router:
 	@echo "Building convocate-router image $(VERSION)..."
 	docker build -f deploy/control-plane/Dockerfile.router \
 		--build-arg VERSION=$(VERSION) \
 		-t convocate-router:$(VERSION) \
 		-t convocate-router:latest .
 
-image-dispatch: build-convocate-dispatch
+image-dispatch:
 	@echo "Building convocate-dispatch image $(VERSION)..."
 	docker build -f deploy/agent-host/Dockerfile.dispatch \
 		--build-arg VERSION=$(VERSION) \
 		-t convocate-dispatch:$(VERSION) \
 		-t convocate-dispatch:latest .
 
-image-secrets-broker: build-convocate-secrets-broker
+image-secrets-broker:
 	@echo "Building convocate-secrets-broker image $(VERSION)..."
 	docker build -f deploy/agent-host/Dockerfile.secrets-broker \
 		--build-arg VERSION=$(VERSION) \
 		-t convocate-secrets-broker:$(VERSION) \
 		-t convocate-secrets-broker:latest .
 
-image-agent: build-convocate-agent-wrapper
+image-agent: build-convocate-agent-wrapper build-mock-claude
 	@echo "Building convocate-agent image $(VERSION)..."
 	docker build -f deploy/agent-host/Dockerfile.agent \
 		--build-arg VERSION=$(VERSION) \
