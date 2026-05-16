@@ -1,11 +1,12 @@
 declare module "@asymmetric-effort/specifyjs" {
-  export function useState<T>(
-    initial: T | (() => T)
-  ): [T, (value: T | ((prev: T) => T)) => void];
-  export function useEffect(
-    effect: () => void | (() => void),
-    deps?: unknown[]
-  ): void;
+  export class Component<TProps = Record<string, never>, TState = Record<string, unknown>> {
+    props: TProps;
+    state: TState;
+    setState(partial: Partial<TState>): void;
+    componentDidMount?(): void;
+    componentWillUnmount?(): void;
+    render(): unknown;
+  }
 }
 
 declare module "@asymmetric-effort/specifyjs/dom" {

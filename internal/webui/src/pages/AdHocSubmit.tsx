@@ -1,84 +1,98 @@
-import { useState, useEffect } from "@asymmetric-effort/specifyjs";
+import { Component } from "@asymmetric-effort/specifyjs";
 import { api } from "../api/client";
 import type { ProjectInfo } from "../api/client";
 
-export function AdHocSubmit() {
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
-  const [selectedProject, setSelectedProject] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<{ job_id: string } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+interface AdHocSubmitState {
+  projects: ProjectInfo[];
+  selectedProject: string;
+  prompt: string;
+  error: string;
+  result: { job_id: string } | null;
+  submitting: boolean;
+}
 
-  useEffect(() => {
+export class AdHocSubmit extends Component<Record<string, never>, AdHocSubmitState> {
+  state: AdHocSubmitState = {
+    projects: [],
+    selectedProject: "",
+    prompt: "",
+    error: "",
+    result: null,
+    submitting: false,
+  };
+
+  componentDidMount() {
     api.listProjects()
       .then((data) => {
-        setProjects(data);
-        if (data.length > 0) {
-          setSelectedProject(data[0].project_id);
-        }
+        this.setState({
+          projects: data,
+          selectedProject: data.length > 0 ? data[0].project_id : "",
+        });
       })
-      .catch((err: Error) => setError(err.message));
-  }, []);
+      .catch((err: Error) => this.setState({ error: err.message }));
+  }
 
-  const handleSubmit = async () => {
+  handleSubmit = async () => {
+    const { selectedProject, prompt } = this.state;
     if (!selectedProject || !prompt) {
-      setError("Select a project and enter a prompt.");
+      this.setState({ error: "Select a project and enter a prompt." });
       return;
     }
-    setSubmitting(true);
-    setError("");
-    setResult(null);
+    this.setState({ submitting: true, error: "", result: null });
     try {
       const resp = await api.submitAdHoc({
         project_id: selectedProject,
         prompt,
       });
-      setResult(resp);
+      this.setState({ result: resp });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      this.setState({ error: err instanceof Error ? err.message : "Unknown error" });
     } finally {
-      setSubmitting(false);
+      this.setState({ submitting: false });
     }
   };
 
-  return (
-    <div className="adhoc-submit">
-      <h1>Ad-hoc Job Submission</h1>
+  render() {
+    const { projects, selectedProject, prompt, error, result, submitting } = this.state;
 
-      {error ? <div className="error">{error}</div> : null}
-      {result ? <div className="success">Job submitted: {result.job_id}</div> : null}
+    return (
+      <div className="adhoc-submit">
+        <h1>Ad-hoc Job Submission</h1>
 
-      <div className="form-group">
-        <label>Project</label>
-        <select
-          value={selectedProject}
-          onChange={(e: Event) => setSelectedProject((e.target as HTMLSelectElement).value)}
-        >
-          {projects.length === 0 ? (
-            <option value="">No projects available</option>
-          ) : null}
-          {projects.map((project) => (
-            <option key={project.project_id} value={project.project_id}>
-              {project.repository}
-            </option>
-          ))}
-        </select>
+        {error ? <div className="error">{error}</div> : null}
+        {result ? <div className="success">Job submitted: {result.job_id}</div> : null}
+
+        <div className="form-group">
+          <label>Project</label>
+          <select
+            value={selectedProject}
+            onChange={(e: Event) => this.setState({ selectedProject: (e.target as HTMLSelectElement).value })}
+          >
+            {projects.length === 0 ? (
+              <option value="">No projects available</option>
+            ) : null}
+            {projects.map((project) => (
+              <option key={project.project_id} value={project.project_id}>
+                {project.repository}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label>Prompt</label>
+          <textarea
+            value={prompt}
+            placeholder="Describe what you want the agent to implement..."
+            rows={8}
+            onInput={(e: Event) => this.setState({ prompt: (e.target as HTMLTextAreaElement).value })}
+          />
+        </div>
+
+        <button onClick={this.handleSubmit} disabled={submitting || projects.length === 0}>
+          {submitting ? "Submitting..." : "Submit"}
+        </button>
       </div>
-
-      <div className="form-group">
-        <label>Prompt</label>
-        <textarea
-          value={prompt}
-          placeholder="Describe what you want the agent to implement..."
-          rows={8}
-          onInput={(e: Event) => setPrompt((e.target as HTMLTextAreaElement).value)}
-        />
-      </div>
-
-      <button onClick={handleSubmit} disabled={submitting || projects.length === 0}>
-        {submitting ? "Submitting..." : "Submit"}
-      </button>
-    </div>
-  );
+    );
+  }
 }
