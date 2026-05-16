@@ -3,6 +3,7 @@
 # Install: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 # Or: make hooks
 set -euo pipefail
+export PATH="/usr/local/go/bin:$HOME/go/bin:$HOME/.local/bin:$PATH"
 
 echo "pre-commit: checking gofmt..."
 GOFMT_OUTPUT=$(gofmt -l ./internal/ ./cmd/ 2>/dev/null || true)

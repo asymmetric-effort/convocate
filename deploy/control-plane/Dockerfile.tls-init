@@ -1,0 +1,10 @@
+FROM --platform=linux/amd64 ubuntu:latest
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssl curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY scripts/dev-tls-init.sh /usr/local/bin/dev-tls-init.sh
+RUN chmod +x /usr/local/bin/dev-tls-init.sh
+
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/dev-tls-init.sh"]

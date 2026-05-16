@@ -3,7 +3,7 @@
 # Runs as an init container — exits after writing certs to /tls/.
 set -eu
 
-apt-get update -qq && apt-get install -y -qq openssl >/dev/null 2>&1
+# openssl is pre-installed in the convocate-tls-init image
 
 CERT_DIR="/tls"
 CA_CERT="$CERT_DIR/ca.crt"

@@ -3,15 +3,52 @@ BUILD_DIR := build
 GO := $(shell command -v go 2>/dev/null || echo /usr/local/go/bin/go)
 GOFLAGS := -trimpath
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
+COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
 
 BINARIES := convocate-router convocate-dispatch convocate-secrets-broker convocate-agent-wrapper convocate-cli mock-claude
 
-.PHONY: all build clean lint lint-go lint-yaml lint-vuln test test-unit test-integration test-e2e test-coverage \
+.PHONY: all dev build clean lint lint-go lint-yaml lint-vuln test test-unit test-integration test-e2e test-coverage \
         images image-router image-dispatch image-secrets-broker image-agent image-redis image-openbao \
-        local/start local/logs local/stop local/reset hooks verify \
+        local/start local/logs local/stop local/reset local/test hooks verify \
         release release/minor release/major
 
 all: lint test build
+
+# --- Dev Environment Setup ---
+
+dev:
+	@echo "Installing development dependencies..."
+	@command -v $(GO) >/dev/null 2>&1 || { echo "ERROR: Go not found. Install Go 1.26+ from https://go.dev/dl/"; exit 1; }
+	@echo "  Go: $$($(GO) version)"
+	@$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@echo "  golangci-lint: installed"
+	@$(GO) install golang.org/x/vuln/cmd/govulncheck@latest
+	@echo "  govulncheck: installed"
+	@command -v yamllint >/dev/null 2>&1 || pip install --break-system-packages yamllint 2>/dev/null || pip install yamllint
+	@echo "  yamllint: $$(yamllint --version)"
+	@command -v node >/dev/null 2>&1 || { echo "WARNING: Node.js not found. Install Node 24+ for Web UI builds."; }
+	@if command -v node >/dev/null 2>&1; then \
+		echo "  node: $$(node --version)"; \
+		cd internal/webui && npm install; \
+		echo "  webui deps: installed"; \
+	fi
+	@if [ ! -f .git/hooks/pre-commit ]; then \
+		$(MAKE) hooks; \
+	else \
+		echo "  git hooks: already installed"; \
+	fi
+	@COMPOSE_CMD=""; \
+	if docker compose version >/dev/null 2>&1; then \
+		COMPOSE_CMD="docker compose"; \
+	elif command -v docker-compose >/dev/null 2>&1; then \
+		COMPOSE_CMD="docker-compose"; \
+	else \
+		echo "WARNING: Docker Compose not found. Install for local dev stack."; \
+	fi; \
+	if [ -n "$$COMPOSE_CMD" ]; then \
+		echo "  compose: $$COMPOSE_CMD ($$($$COMPOSE_CMD version 2>/dev/null || echo unknown))"; \
+	fi
+	@echo "Development environment ready."
 
 # --- Build ---
 
@@ -84,8 +121,13 @@ test-coverage: test-unit
 
 # --- OCI Images ---
 
-images: image-router image-dispatch image-secrets-broker image-agent image-redis image-openbao
+images: image-tls-init image-router image-dispatch image-secrets-broker image-agent image-redis image-openbao
 	@echo "All images built."
+
+image-tls-init:
+	@echo "Building convocate-tls-init image..."
+	docker build -f deploy/control-plane/Dockerfile.tls-init \
+		-t convocate-tls-init:latest .
 
 image-router:
 	@echo "Building convocate-router image $(VERSION)..."
@@ -137,32 +179,92 @@ image-openbao:
 
 local/start: images
 	@echo "Starting local dev environment..."
-	docker compose -f docker-compose.dev.yml up -d
+	$(COMPOSE) -f docker-compose.dev.yml up -d
 	@echo "Waiting for Router API to become healthy..."
 	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do \
 		if curl -fsSk https://localhost:8443/v1/health >/dev/null 2>&1; then \
 			echo "Router API healthy: $$(curl -sk https://localhost:8443/v1/health)"; \
 			exit 0; \
 		fi; \
+		if docker run --rm --network convocate_convocate-dev --entrypoint sh convocate-tls-init:latest \
+			-c 'curl -fsSk https://convocate-router:443/v1/health' 2>/dev/null; then \
+			echo ""; \
+			echo "Router API healthy (via docker network)"; \
+			exit 0; \
+		fi; \
 		sleep 2; \
 	done; \
 	echo "ERROR: Router API not healthy after 40s"; \
-	docker compose -f docker-compose.dev.yml logs --tail=20 router; \
+	$(COMPOSE) -f docker-compose.dev.yml logs --tail=20 router; \
 	exit 1
 
 local/logs:
-	docker compose -f docker-compose.dev.yml logs -f
+	$(COMPOSE) -f docker-compose.dev.yml logs -f
 
 local/stop:
 	@echo "Stopping local dev environment (volumes preserved)..."
-	docker compose -f docker-compose.dev.yml stop
+	$(COMPOSE) -f docker-compose.dev.yml stop
 
 local/reset:
 	@echo "Tearing down local dev environment (volumes removed)..."
-	docker compose -f docker-compose.dev.yml down -v
+	$(COMPOSE) -f docker-compose.dev.yml down -v
 	@rm -rf .dev/secrets
 	@echo "Regenerating local CA on next start."
 	@$(MAKE) local/start
+
+# DCURL runs curl against the router inside the Docker network.
+# Falls back to localhost for environments where port mapping works.
+DCURL = docker run --rm --network convocate_convocate-dev --entrypoint sh \
+	convocate-tls-init:latest -c
+
+local/test:
+	@echo "=== Post-deployment verification tests ==="
+	@echo "--- Health check ---"
+	@$(DCURL) 'curl -fsSk https://convocate-router:443/v1/health' || \
+		{ echo "FAIL: /v1/health unreachable"; exit 1; }
+	@echo ""
+	@echo "--- Health alias ---"
+	@$(DCURL) 'curl -fsSk https://convocate-router:443/health' || \
+		{ echo "FAIL: /health unreachable"; exit 1; }
+	@echo ""
+	@echo "--- Root serves Web UI ---"
+	@$(DCURL) 'curl -fsSk -o /dev/null -w "%{http_code}" https://convocate-router:443/' \
+		| grep -q "200" || { echo "FAIL: / did not return 200"; exit 1; }
+	@echo "OK: / returns 200"
+	@echo "--- Auth enforcement ---"
+	@HTTP_CODE=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" \
+		-X POST https://convocate-router:443/v1/jobs \
+		-H "Content-Type: application/json" \
+		-d "{\"repository\":\"test/repo\",\"run_id\":1}"'); \
+	if [ "$$HTTP_CODE" != "401" ]; then \
+		echo "FAIL: /v1/jobs without token returned $$HTTP_CODE, want 401"; exit 1; \
+	fi; \
+	echo "OK: /v1/jobs returns 401 without token"
+	@echo "--- Allowlist enforcement ---"
+	@HTTP_CODE=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" \
+		-X POST https://convocate-router:443/v1/jobs \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer bad-token" \
+		-d "{\"repository\":\"unknown/repo\",\"run_id\":1}"'); \
+	if [ "$$HTTP_CODE" != "404" ]; then \
+		echo "FAIL: unknown repo returned $$HTTP_CODE, want 404"; exit 1; \
+	fi; \
+	echo "OK: unknown repo returns 404"
+	@echo "--- Web UI API ---"
+	@$(DCURL) 'curl -fsSk https://convocate-router:443/ui/api/projects' > /dev/null || \
+		{ echo "FAIL: /ui/api/projects unreachable"; exit 1; }
+	@echo "OK: /ui/api/projects returns 200"
+	@$(DCURL) 'curl -fsSk https://convocate-router:443/ui/api/jobs' > /dev/null || \
+		{ echo "FAIL: /ui/api/jobs unreachable"; exit 1; }
+	@echo "OK: /ui/api/jobs returns 200"
+	@$(DCURL) 'curl -fsSk https://convocate-router:443/ui/api/hosts' > /dev/null || \
+		{ echo "FAIL: /ui/api/hosts unreachable"; exit 1; }
+	@echo "OK: /ui/api/hosts returns 200"
+	@echo "--- Internal port (8443) ---"
+	@$(DCURL) 'curl -fsSk https://convocate-router:8443/v1/health' > /dev/null || \
+		{ echo "FAIL: port 8443 /v1/health unreachable"; exit 1; }
+	@echo "OK: port 8443 serves /v1/health"
+	@echo "=== All local verification tests passed ==="
 
 # --- Git Hooks ---
 

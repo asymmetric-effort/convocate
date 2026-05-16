@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Pre-push hook: tests and coverage threshold.
+# Pre-push hook: tests, coverage, and local dev stack verification.
 # Install: cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
 # Or: make hooks
 set -euo pipefail
+export PATH="/usr/local/go/bin:$HOME/go/bin:$HOME/.local/bin:$PATH"
 
-echo "pre-push: running tests..."
+echo "pre-push: running unit tests..."
 go test -race -count=1 -coverprofile=/tmp/convocate-coverage.out ./internal/...
 
 echo "pre-push: checking coverage threshold (98%)..."
@@ -18,4 +19,8 @@ if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
   exit 1
 fi
 
-echo "pre-push: passed (${COVERAGE}% coverage)"
+echo "pre-push: rebuilding and testing local dev stack..."
+make local/reset
+make local/test
+
+echo "pre-push: passed (${COVERAGE}% coverage, dev stack healthy)"

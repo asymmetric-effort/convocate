@@ -1,23 +1,16 @@
-FROM --platform=linux/amd64 ubuntu:latest AS builder
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      curl ca-certificates unzip && \
-    rm -rf /var/lib/apt/lists/*
-
-ARG OPENBAO_VERSION=2.2.0
-RUN curl -fsSL \
-      "https://github.com/openbao/openbao/releases/download/v${OPENBAO_VERSION}/bao_${OPENBAO_VERSION}_linux_amd64.zip" \
-      -o /tmp/bao.zip && \
-    unzip /tmp/bao.zip -d /out && \
-    chmod +x /out/bao
-
 FROM --platform=linux/amd64 ubuntu:latest
 
-RUN useradd -r -s /usr/sbin/nologin openbao && \
-    mkdir -p /var/lib/openbao && chown openbao:openbao /var/lib/openbao
+ARG OPENBAO_VERSION=2.5.3
 
-COPY --from=builder /out/bao /usr/local/bin/bao
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    curl -fsSL \
+      "https://github.com/openbao/openbao/releases/download/v${OPENBAO_VERSION}/openbao_${OPENBAO_VERSION}_linux_amd64.deb" \
+      -o /tmp/openbao.deb && \
+    dpkg -i /tmp/openbao.deb && \
+    rm /tmp/openbao.deb && \
+    mkdir -p /var/lib/openbao
 
 ENV BAO_ADDR=http://127.0.0.1:8200
 EXPOSE 8200

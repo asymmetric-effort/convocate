@@ -20,13 +20,10 @@ services:
   # --- TLS Bootstrap (runs once, generates dev certs) ---
 
   tls-init:
-    image: ubuntu:latest
-    platform: linux/amd64
+    image: convocate-tls-init:latest
     container_name: convocate-tls-init
-    command: ["/bin/sh", "/scripts/dev-tls-init.sh"]
     volumes:
       - dev-tls:/tls
-      - ./scripts:/scripts:ro
     restart: "no"
 
   # --- Control Plane ---
@@ -41,7 +38,6 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     command: >
-      redis-server
       --bind 127.0.0.1
       --tls-port 6379
       --port 0
