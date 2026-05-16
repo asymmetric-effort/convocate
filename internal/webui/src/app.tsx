@@ -5,6 +5,8 @@ import { Projects } from "./pages/Projects";
 import { Agents } from "./pages/Agents";
 import { DevEnvs } from "./pages/DevEnvs";
 import { Console } from "./pages/Console";
+import { api, UnauthorizedError } from "./api/client";
+import type { MeResponse } from "./api/client";
 
 type TopNav = "dashboard" | "projects" | "agents" | "dev-envs" | "console";
 
@@ -46,15 +48,40 @@ const DEFAULT_SIDE_NAV: Record<TopNav, string> = {
 interface AppState {
   topNav: TopNav;
   sideNav: string;
+  authenticated: boolean;
+  authChecked: boolean;
+  user: MeResponse | null;
 }
 
 export class App extends Component<Record<string, never>, AppState> {
   state: AppState = {
     topNav: "dashboard",
     sideNav: "",
+    authenticated: false,
+    authChecked: false,
+    user: null,
+  };
+
+  componentDidMount() {
+    this.checkAuth();
+  }
+
+  checkAuth = () => {
+    api.getMe().then((user) => {
+      this.setState({ authenticated: true, authChecked: true, user });
+    }).catch((err) => {
+      if (err instanceof UnauthorizedError) {
+        this.setState({ authenticated: false, authChecked: true, user: null });
+      } else {
+        // Network error or server down — treat as authenticated to avoid
+        // blocking the UI in dev mode without OAuth configured.
+        this.setState({ authenticated: true, authChecked: true, user: null });
+      }
+    });
   };
 
   handleTopNav = (id: string) => {
+    if (!this.state.authenticated && id !== "dashboard") return;
     const topNav = id as TopNav;
     this.setState({ topNav, sideNav: DEFAULT_SIDE_NAV[topNav] });
   };
@@ -64,25 +91,38 @@ export class App extends Component<Record<string, never>, AppState> {
   };
 
   render() {
-    const { topNav, sideNav } = this.state;
-    const sideNavItems = SIDE_NAV_ITEMS[topNav];
+    const { topNav, sideNav, authenticated, authChecked, user } = this.state;
+
+    if (!authChecked) {
+      return <div className="loading">Loading...</div>;
+    }
+
+    const sideNavItems = authenticated ? SIDE_NAV_ITEMS[topNav] : [];
 
     let content: unknown;
     switch (topNav) {
       case "dashboard":
-        content = <Dashboard />;
+        content = <Dashboard authenticated={authenticated} />;
         break;
       case "projects":
-        content = <Projects activeSideNav={sideNav} />;
+        content = authenticated
+          ? <Projects activeSideNav={sideNav} />
+          : <Dashboard authenticated={false} />;
         break;
       case "agents":
-        content = <Agents activeSideNav={sideNav} />;
+        content = authenticated
+          ? <Agents activeSideNav={sideNav} />
+          : <Dashboard authenticated={false} />;
         break;
       case "dev-envs":
-        content = <DevEnvs activeSideNav={sideNav} />;
+        content = authenticated
+          ? <DevEnvs activeSideNav={sideNav} />
+          : <Dashboard authenticated={false} />;
         break;
       case "console":
-        content = <Console activeSideNav={sideNav} />;
+        content = authenticated
+          ? <Console activeSideNav={sideNav} />
+          : <Dashboard authenticated={false} />;
         break;
     }
 
@@ -93,6 +133,8 @@ export class App extends Component<Record<string, never>, AppState> {
         sideNavItems={sideNavItems}
         onTopNav={this.handleTopNav}
         onSideNav={this.handleSideNav}
+        user={user}
+        authenticated={authenticated}
       >
         {content}
       </Layout>

@@ -37,7 +37,11 @@ function timeAgo(isoString: string): string {
   return `${Math.floor(diff / 60)}m ago`;
 }
 
-export class Dashboard extends Component<Record<string, never>, DashboardState> {
+interface DashboardProps {
+  authenticated?: boolean;
+}
+
+export class Dashboard extends Component<DashboardProps, DashboardState> {
   state: DashboardState = {
     projects: [],
     hosts: [],
@@ -55,7 +59,10 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
   private startTimes: Map<string, number> = new Map();
 
   componentDidMount() {
-    this.fetchAll();
+    this.fetchComponentStatus();
+    if (this.props.authenticated !== false) {
+      this.fetchData();
+    }
     this.pollTimer = setInterval(() => this.fetchComponentStatus(), 15000);
   }
 
@@ -66,14 +73,13 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
     }
   }
 
-  private fetchAll() {
+  private fetchData() {
     api.listProjects()
       .then((projects) => this.setState({ projects }))
       .catch((err: Error) => this.setState({ error: err.message }));
     api.listHosts()
       .then((hosts) => this.setState({ hosts }))
       .catch((err: Error) => this.setState({ error: err.message }));
-    this.fetchComponentStatus();
   }
 
   private async fetchComponentStatus() {
@@ -125,6 +131,7 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
 
   render() {
     const { projects, hosts, components, error } = this.state;
+    const authenticated = this.props.authenticated !== false;
 
     return (
       <div className="dashboard">
@@ -132,59 +139,63 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
 
         {error ? <div className="error">{error}</div> : null}
 
-        <Card title="Projects">
-          {projects.length === 0 ? (
-            <p>No projects configured.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Repository</th>
-                  <th>Container State</th>
-                  <th>Active Jobs</th>
-                </tr>
-              </thead>
-              <tbody>
-                {projects.map((project) => (
-                  <tr key={project.project_id}>
-                    <td>{project.repository}</td>
-                    <td>{project.container_state}</td>
-                    <td>{String(project.active_jobs)}</td>
+        {!authenticated ? null : (
+          <Card title="Projects">
+            {projects.length === 0 ? (
+              <p>No projects configured.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Repository</th>
+                    <th>Container State</th>
+                    <th>Active Jobs</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
+                </thead>
+                <tbody>
+                  {projects.map((project) => (
+                    <tr key={project.project_id}>
+                      <td>{project.repository}</td>
+                      <td>{project.container_state}</td>
+                      <td>{String(project.active_jobs)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </Card>
+        )}
 
-        <Card title="Agents">
-          {hosts.length === 0 ? (
-            <p>No agent hosts registered.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Host ID</th>
-                  <th>Containers</th>
-                  <th>CPU %</th>
-                  <th>Memory %</th>
-                  <th>Healthy</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hosts.map((host) => (
-                  <tr key={host.host_id}>
-                    <td>{host.host_id}</td>
-                    <td>{String(host.container_count)}</td>
-                    <td>{host.cpu_percent.toFixed(1)}</td>
-                    <td>{host.memory_percent.toFixed(1)}</td>
-                    <td>{host.healthy ? "Yes" : "No"}</td>
+        {!authenticated ? null : (
+          <Card title="Agents">
+            {hosts.length === 0 ? (
+              <p>No agent hosts registered.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Host ID</th>
+                    <th>Containers</th>
+                    <th>CPU %</th>
+                    <th>Memory %</th>
+                    <th>Healthy</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Card>
+                </thead>
+                <tbody>
+                  {hosts.map((host) => (
+                    <tr key={host.host_id}>
+                      <td>{host.host_id}</td>
+                      <td>{String(host.container_count)}</td>
+                      <td>{host.cpu_percent.toFixed(1)}</td>
+                      <td>{host.memory_percent.toFixed(1)}</td>
+                      <td>{host.healthy ? "Yes" : "No"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </Card>
+        )}
 
         <Card title="Convocate Components">
           <p className="text-muted">

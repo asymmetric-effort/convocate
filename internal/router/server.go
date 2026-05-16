@@ -23,6 +23,8 @@ import (
 type Server struct {
 	store        *redis.RouterStore
 	bao          *openbao.Client
+	authHandler  http.Handler
+	authMW       func(http.Handler) http.Handler
 	dispatchSubs map[string]chan protocol.DispatchEvent
 	logger       *log.Logger
 	version      string
@@ -31,10 +33,12 @@ type Server struct {
 
 // Config holds the Router API server configuration.
 type Config struct {
-	Store   *redis.RouterStore
-	Bao     *openbao.Client
-	Logger  *log.Logger
-	Version string
+	Store       *redis.RouterStore
+	Bao         *openbao.Client
+	Logger      *log.Logger
+	AuthHandler http.Handler
+	AuthMW      func(http.Handler) http.Handler
+	Version     string
 }
 
 // NewServer creates a new Router API server.
@@ -46,6 +50,8 @@ func NewServer(config Config) *Server {
 	return &Server{
 		store:        config.Store,
 		bao:          config.Bao,
+		authHandler:  config.AuthHandler,
+		authMW:       config.AuthMW,
 		version:      config.Version,
 		dispatchSubs: make(map[string]chan protocol.DispatchEvent),
 		logger:       logger,
@@ -74,6 +80,11 @@ func (s *Server) Handler() http.Handler {
 	// Health (canonical + convenience alias).
 	mux.HandleFunc("/v1/health", s.handleHealth)
 	mux.HandleFunc("/health", s.handleHealth)
+
+	// Auth routes.
+	if s.authHandler != nil {
+		mux.Handle("/auth/", s.authHandler)
+	}
 
 	// Web UI static files (SPA with index.html fallback).
 	distFS, distErr := fs.Sub(webui.Dist, "dist")
@@ -119,6 +130,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/ui/api/jobs", s.handleJobsList)
 	mux.HandleFunc("/ui/api/hosts", s.handleHostsList)
 
+	// Wrap with auth middleware if configured.
+	if s.authMW != nil {
+		return s.authMW(mux)
+	}
 	return mux
 }
 

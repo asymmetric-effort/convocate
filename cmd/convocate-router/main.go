@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asymmetric-effort/convocate/internal/auth"
 	"github.com/asymmetric-effort/convocate/internal/mtls"
 	"github.com/asymmetric-effort/convocate/internal/openbao"
 	"github.com/asymmetric-effort/convocate/internal/redis"
@@ -59,11 +60,42 @@ func run() int {
 		Token:   os.Getenv("BAO_TOKEN"),
 	})
 
+	// GitHub OAuth authentication.
+	var authHandler http.Handler
+	var authMW func(http.Handler) http.Handler
+
+	ghClientID := os.Getenv("GITHUB_CLIENT_ID")
+	ghClientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
+	authOrg := os.Getenv("CONVOCATE_AUTH_ORG")
+	if authOrg == "" {
+		authOrg = "asymmetric-effort"
+	}
+
+	switch {
+	case ghClientID != "" && ghClientSecret != "":
+		authCfg := &auth.Config{
+			ClientID:     ghClientID,
+			ClientSecret: ghClientSecret,
+			CallbackURL:  "https://localhost:8443/auth/callback",
+			Org:          authOrg,
+			RedisConn:    store.Conn(),
+		}
+		authHandler = auth.Handler(authCfg, logger)
+		authMW = auth.Middleware(auth.Sessions(authCfg))
+		logger.Println("GitHub OAuth authentication enabled")
+	case isDev:
+		logger.Println("WARNING: GITHUB_CLIENT_ID/SECRET not set — auth bypassed in DEV mode")
+	default:
+		logger.Println("WARNING: GITHUB_CLIENT_ID/SECRET not set — auth disabled")
+	}
+
 	srv := router.NewServer(router.Config{
-		Store:   store,
-		Bao:     baoClient,
-		Version: Version,
-		Logger:  logger,
+		Store:       store,
+		Bao:         baoClient,
+		Version:     Version,
+		Logger:      logger,
+		AuthHandler: authHandler,
+		AuthMW:      authMW,
 	})
 
 	// TLS setup.

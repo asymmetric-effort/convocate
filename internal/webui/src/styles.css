@@ -392,3 +392,31 @@ button, .nav-link, .side-nav-link, a, [role="button"] {
 .card-body p {
   margin: 0;
 }
+
+.nav-link.disabled,
+.nav-link:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.nav-login {
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.nav-login:hover {
+  text-decoration: underline;
+}
+
+.nav-logout {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.nav-logout:hover {
+  color: var(--color-error);
+}

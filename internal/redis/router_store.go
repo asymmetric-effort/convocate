@@ -24,6 +24,11 @@ func NewRouterStore(conn Doer) *RouterStore {
 	return &RouterStore{conn: conn}
 }
 
+// Conn returns the underlying Redis connection for shared use.
+func (s *RouterStore) Conn() Doer {
+	return s.conn
+}
+
 func (s *RouterStore) key(parts ...string) string {
 	result := routerPrefix
 	for i, part := range parts {

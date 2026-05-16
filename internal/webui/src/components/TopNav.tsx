@@ -1,4 +1,5 @@
 import { Component } from "@asymmetric-effort/specifyjs";
+import type { MeResponse } from "../api/client";
 
 interface TopNavItem {
   id: string;
@@ -9,6 +10,8 @@ interface TopNavProps {
   items: TopNavItem[];
   active: string;
   onNavigate: (id: string) => void;
+  user?: MeResponse | null;
+  authenticated: boolean;
 }
 
 interface TopNavState {
@@ -33,28 +36,41 @@ export class TopNav extends Component<TopNavProps, TopNavState> {
   }
 
   render() {
-    const { items, active, onNavigate } = this.props;
+    const { items, active, onNavigate, user, authenticated } = this.props;
     const { time } = this.state;
     const date = new Date().toLocaleDateString(undefined, {
       weekday: "short", month: "short", day: "numeric",
     });
 
+    const displayName = user?.username || (authenticated ? "operator" : "not signed in");
+
     return (
       <nav className="top-nav">
         <div className="nav-brand">convocate</div>
         <div className="nav-links">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              className={`nav-link${active === item.id ? " active" : ""}`}
-              onClick={() => onNavigate(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
+          {items.map((item) => {
+            const disabled = !authenticated && item.id !== "dashboard";
+            return (
+              <button
+                key={item.id}
+                className={`nav-link${active === item.id ? " active" : ""}${disabled ? " disabled" : ""}`}
+                onClick={() => !disabled && onNavigate(item.id)}
+                disabled={disabled}
+              >
+                {item.label}
+              </button>
+            );
+          })}
         </div>
         <div className="nav-status">
-          <span className="nav-status-user">operator</span>
+          {authenticated ? (
+            <span className="nav-status-user">{displayName}</span>
+          ) : (
+            <a href="/auth/login" className="nav-login">Sign in with GitHub</a>
+          )}
+          {user ? (
+            <a href="/auth/logout" className="nav-logout">Logout</a>
+          ) : null}
           <span className="nav-status-time">{date} {time}</span>
         </div>
       </nav>

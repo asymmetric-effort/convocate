@@ -102,6 +102,9 @@ services:
       - CONVOCATE_REDIS_URL=rediss://redis:6379
       - CONVOCATE_OPENBAO_URL=http://openbao:8200
       - CONVOCATE_DEV=1
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - CONVOCATE_AUTH_ORG=${CONVOCATE_AUTH_ORG:-asymmetric-effort}
     depends_on:
       redis:
         condition: service_healthy

@@ -1,5 +1,12 @@
 const BASE_URL = "/ui/api";
 
+export class UnauthorizedError extends Error {
+  constructor() {
+    super("unauthorized");
+    this.name = "UnauthorizedError";
+  }
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const options: RequestInit = {
     method,
@@ -9,6 +16,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     options.body = JSON.stringify(body);
   }
   const response = await fetch(`${BASE_URL}${path}`, options);
+  if (response.status === 401) {
+    throw new UnauthorizedError();
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || `HTTP ${response.status}`);
@@ -85,7 +95,20 @@ export interface AdHocSubmissionRequest {
   prompt: string;
 }
 
+export interface MeResponse {
+  username: string;
+  avatar: string;
+}
+
 export const api = {
+  getMe: async (): Promise<MeResponse> => {
+    const resp = await fetch("/auth/me");
+    if (resp.status === 401) {
+      throw new UnauthorizedError();
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  },
   listProjects: () => request<ProjectInfo[]>("GET", "/projects"),
   createProject: (req: CreateProjectRequest) =>
     request<CreateProjectResponse>("POST", "/projects/create", req),
