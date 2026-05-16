@@ -40,7 +40,13 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
   state: DashboardState = {
     projects: [],
     hosts: [],
-    components: [],
+    components: [
+      { name: "router", status: "unknown", uptime: "—", checkedAt: "" },
+      { name: "redis", status: "unknown", uptime: "—", checkedAt: "" },
+      { name: "openbao", status: "unknown", uptime: "—", checkedAt: "" },
+      { name: "dispatch", status: "unknown", uptime: "—", checkedAt: "" },
+      { name: "secrets-broker", status: "unknown", uptime: "—", checkedAt: "" },
+    ],
     error: "",
   };
 
