@@ -69,8 +69,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/status", s.handleStatus)
 	mux.HandleFunc("/v1/heartbeat", s.handleHeartbeat)
 
-	// Health.
+	// Health (canonical + convenience alias).
 	mux.HandleFunc("/v1/health", s.handleHealth)
+	mux.HandleFunc("/health", s.handleHealth)
+
+	// Root — redirect to health for quick liveness check.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Redirect(w, r, "/v1/health", http.StatusTemporaryRedirect)
+	})
 
 	// Web UI management API.
 	mux.HandleFunc("/ui/api/projects", s.handleProjects)
