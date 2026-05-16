@@ -85,13 +85,13 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: "1.26"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - name: Build Web UI (required for embed)
+        run: cd internal/webui && npm install && npm run build
       - name: Build all binaries
         run: make build
-      - name: Build Web UI
-        run: |
-          cd internal/webui
-          npm install
-          npm run build
 
   webui-typecheck:
     runs-on: ubuntu-latest
