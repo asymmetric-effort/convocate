@@ -146,6 +146,7 @@ body {
   background: transparent;
   color: var(--color-text-muted);
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
   border-radius: var(--radius);
   transition: background 0.15s, color 0.15s;
