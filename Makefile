@@ -121,7 +121,17 @@ image-agent: build-convocate-agent-wrapper build-mock-claude
 local/start: images
 	@echo "Starting local dev environment..."
 	docker compose -f docker-compose.dev.yml up -d
-	@echo "Dev stack is up. Router API: https://localhost:8443/ Web UI: https://localhost:8444/"
+	@echo "Waiting for Router API to become healthy..."
+	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do \
+		if curl -fsSk https://localhost:8443/v1/health >/dev/null 2>&1; then \
+			echo "Router API healthy: $$(curl -sk https://localhost:8443/v1/health)"; \
+			exit 0; \
+		fi; \
+		sleep 2; \
+	done; \
+	echo "ERROR: Router API not healthy after 40s"; \
+	docker compose -f docker-compose.dev.yml logs --tail=20 router; \
+	exit 1
 
 local/logs:
 	docker compose -f docker-compose.dev.yml logs -f
