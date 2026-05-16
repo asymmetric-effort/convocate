@@ -1,6 +1,6 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_DIR := build
-GO := /usr/local/go/bin/go
+GO := $(shell command -v go 2>/dev/null || echo /usr/local/go/bin/go)
 GOFLAGS := -trimpath
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 
