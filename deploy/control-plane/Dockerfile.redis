@@ -1,26 +1,16 @@
-FROM ubuntu:latest AS builder
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      build-essential curl ca-certificates pkg-config libssl-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-ARG REDIS_VERSION=7.4.4
-RUN curl -fsSL "https://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz" \
-      | tar -xz -C /tmp && \
-    cd /tmp/redis-${REDIS_VERSION} && \
-    make -j"$(nproc)" BUILD_TLS=yes && \
-    make install PREFIX=/out
-
 FROM ubuntu:latest
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends libssl3t64 && \
+# Redis from Ubuntu packages. Uses archive.ubuntu.com mirror explicitly
+# to work around corporate proxy issues with ports.ubuntu.com (arm64).
+RUN sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+    sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list 2>/dev/null; \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      redis-server ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
-    useradd -r -s /usr/sbin/nologin redis && \
     mkdir -p /data && chown redis:redis /data
-
-COPY --from=builder /out/bin/ /usr/local/bin/
 
 USER redis
 WORKDIR /data

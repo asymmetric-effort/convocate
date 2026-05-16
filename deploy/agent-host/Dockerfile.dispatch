@@ -2,7 +2,11 @@ FROM ubuntu:latest AS builder
 
 ARG GO_VERSION=1.26.3
 
-RUN apt-get update && \
+RUN sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+    sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list 2>/dev/null; \
+    apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
     ARCH=$(dpkg --print-architecture) && \

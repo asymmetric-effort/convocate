@@ -8,7 +8,12 @@ LABEL org.opencontainers.image.title="convocate-agent" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.description="Convocate Agent Container (per-project)"
 
-RUN apt-get update && apt-get install -y \
+# Work around corporate proxy blocking ports.ubuntu.com (arm64 mirror).
+RUN sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+    sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list 2>/dev/null; \
+    apt-get update && apt-get install -y \
     git \
     curl \
     openssh-client \

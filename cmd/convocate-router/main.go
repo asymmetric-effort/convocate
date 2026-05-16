@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/mtls"
@@ -75,8 +76,26 @@ func run() int {
 			logger.Printf("generate CA: %v", caErr)
 			return 1
 		}
+		dnsNames := []string{
+			"localhost",
+			"router",
+			"webui.dev.convocate.asymmetric-effort.com",
+		}
+		// Add any extra SANs from CONVOCATE_PUBLIC_URL.
+		if pubURL := os.Getenv("CONVOCATE_PUBLIC_URL"); pubURL != "" {
+			for _, prefix := range []string{"https://", "http://"} {
+				if strings.HasPrefix(pubURL, prefix) {
+					host := strings.TrimPrefix(pubURL, prefix)
+					if idx := strings.IndexAny(host, ":/"); idx > 0 {
+						host = host[:idx]
+					}
+					dnsNames = append(dnsNames, host)
+					break
+				}
+			}
+		}
 		pair, certErr := ca.IssueServerCert("convocate-router",
-			[]string{"localhost", "router"}, []net.IP{net.ParseIP("127.0.0.1")},
+			dnsNames, []net.IP{net.ParseIP("127.0.0.1")},
 			365*24*time.Hour)
 		if certErr != nil {
 			logger.Printf("issue cert: %v", certErr)

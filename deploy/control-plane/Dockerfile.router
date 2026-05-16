@@ -1,19 +1,37 @@
 FROM ubuntu:latest AS builder
 
 ARG GO_VERSION=1.26.3
+ARG NODE_VERSION=24
 
-RUN apt-get update && \
+# Work around corporate proxy blocking ports.ubuntu.com (arm64 mirror).
+RUN sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+    sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list 2>/dev/null; \
+    apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
     ARCH=$(dpkg --print-architecture) && \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
-      | tar -xz -C /usr/local
+      | tar -xz -C /usr/local && \
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x \
+      | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
+
+# Build Web UI first (embedded into the Go binary).
+COPY internal/webui/package.json internal/webui/bun.lock internal/webui/
+RUN cd internal/webui && npm install --ignore-scripts
+COPY internal/webui/ internal/webui/
+RUN cd internal/webui && npm run build
+
+# Copy remaining source and build Go binaries.
 COPY . .
 
 ARG VERSION=dev

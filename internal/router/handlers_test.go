@@ -656,36 +656,46 @@ func TestHealthAlias(t *testing.T) {
 	}
 }
 
-func TestRootRedirect(t *testing.T) {
+func TestRootServesWebUI(t *testing.T) {
 	_, ts, _ := freshServer(t)
-	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
 	req, _ := http.NewRequestWithContext(context.Background(), "GET",
 		ts.URL+"/", http.NoBody)
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusTemporaryRedirect {
-		t.Errorf("status: got %d, want 307", resp.StatusCode)
-	}
-	loc := resp.Header.Get("Location")
-	if loc != "/v1/health" {
-		t.Errorf("Location: got %q, want /v1/health", loc)
-	}
-}
-
-func TestUnknownPath404(t *testing.T) {
-	_, ts, _ := freshServer(t)
-	req, _ := http.NewRequestWithContext(context.Background(), "GET",
-		ts.URL+"/nonexistent", http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
 	resp.Body.Close()
+	// Root serves the Web UI SPA (index.html from embedded dist).
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status: got %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestUnknownPathServesSPAFallback(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET",
+		ts.URL+"/some/spa/route", http.NoBody)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	resp.Body.Close()
+	// SPA fallback: unknown non-API paths serve index.html (200).
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status: got %d, want 200 (SPA fallback)", resp.StatusCode)
+	}
+}
+
+func TestUnknownV1Path404(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET",
+		ts.URL+"/v1/nonexistent", http.NoBody)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	resp.Body.Close()
+	// API paths that don't match a handler still return 404.
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status: got %d, want 404", resp.StatusCode)
 	}

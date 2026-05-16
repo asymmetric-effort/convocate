@@ -1,7 +1,13 @@
 FROM ubuntu:latest AS builder
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates && \
+# Work around corporate proxy blocking ports.ubuntu.com (arm64 mirror).
+RUN sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+    sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
+      /etc/apt/sources.list 2>/dev/null; \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      curl ca-certificates unzip && \
     rm -rf /var/lib/apt/lists/*
 
 ARG OPENBAO_VERSION=2.2.0
@@ -9,16 +15,12 @@ RUN ARCH=$(dpkg --print-architecture) && \
     curl -fsSL \
       "https://github.com/openbao/openbao/releases/download/v${OPENBAO_VERSION}/bao_${OPENBAO_VERSION}_linux_${ARCH}.zip" \
       -o /tmp/bao.zip && \
-    apt-get update && apt-get install -y --no-install-recommends unzip && \
     unzip /tmp/bao.zip -d /out && \
     chmod +x /out/bao
 
 FROM ubuntu:latest
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
-    rm -rf /var/lib/apt/lists/* && \
-    useradd -r -s /usr/sbin/nologin openbao && \
+RUN useradd -r -s /usr/sbin/nologin openbao && \
     mkdir -p /var/lib/openbao && chown openbao:openbao /var/lib/openbao
 
 COPY --from=builder /out/bao /usr/local/bin/bao
