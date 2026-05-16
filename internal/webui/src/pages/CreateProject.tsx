@@ -1,4 +1,4 @@
-import { createElement, useState } from "@asymmetric-effort/specifyjs";
+import { useState } from "@asymmetric-effort/specifyjs";
 import { api } from "../api/client";
 import type { CreateProjectResponse } from "../api/client";
 
@@ -36,92 +36,93 @@ export function CreateProject({ onDone }: CreateProjectProps) {
   };
 
   if (result) {
-    return createElement("div", { className: "create-project-result" },
-      createElement("h1", null, "Project Created"),
-      createElement("p", null, `Repository: ${result.repository}`),
-      createElement("p", null, `Project ID: ${result.project_id}`),
+    return (
+      <div className="create-project-result">
+        <h1>Project Created</h1>
+        <p>Repository: {result.repository}</p>
+        <p>Project ID: {result.project_id}</p>
 
-      createElement("div", { className: "token-display" },
-        createElement("h2", null, "CONVOCATE_API_TOKEN"),
-        createElement("p", { className: "warning" },
-          "Copy this token now. It will not be shown again."
-        ),
-        createElement("code", { className: "token" }, result.api_token),
-      ),
+        <div className="token-display">
+          <h2>CONVOCATE_API_TOKEN</h2>
+          <p className="warning">Copy this token now. It will not be shown again.</p>
+          <code className="token">{result.api_token}</code>
+        </div>
 
-      createElement("div", { className: "setup-instructions" },
-        createElement("h2", null, "GitHub Setup"),
-        createElement("p", null, "Add these to your repository's Actions secrets and variables:"),
-        createElement("table", null,
-          createElement("thead", null,
-            createElement("tr", null,
-              createElement("th", null, "Type"),
-              createElement("th", null, "Name"),
-              createElement("th", null, "Value"),
-            )
-          ),
-          createElement("tbody", null,
-            createElement("tr", null,
-              createElement("td", null, "Variable"),
-              createElement("td", null, "CONVOCATE_BOT_ACCOUNT"),
-              createElement("td", null, "(your bot account name)"),
-            ),
-            createElement("tr", null,
-              createElement("td", null, "Variable"),
-              createElement("td", null, "CONVOCATE_ROUTER_URL"),
-              createElement("td", null, "(your Router API URL)"),
-            ),
-            createElement("tr", null,
-              createElement("td", null, "Secret"),
-              createElement("td", null, "CONVOCATE_API_TOKEN"),
-              createElement("td", null, result.api_token),
-            ),
-          )
-        ),
-      ),
+        <div className="setup-instructions">
+          <h2>GitHub Setup</h2>
+          <p>Add these to your repository's Actions secrets and variables:</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Name</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Variable</td>
+                <td>CONVOCATE_BOT_ACCOUNT</td>
+                <td>(your bot account name)</td>
+              </tr>
+              <tr>
+                <td>Variable</td>
+                <td>CONVOCATE_ROUTER_URL</td>
+                <td>(your Router API URL)</td>
+              </tr>
+              <tr>
+                <td>Secret</td>
+                <td>CONVOCATE_API_TOKEN</td>
+                <td>{result.api_token}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-      createElement("button", { onClick: onDone }, "Done"),
+        <button onClick={onDone}>Done</button>
+      </div>
     );
   }
 
-  return createElement("div", { className: "create-project" },
-    createElement("h1", null, "Create Project"),
+  return (
+    <div className="create-project">
+      <h1>Create Project</h1>
 
-    error ? createElement("div", { className: "error" }, error) : null,
+      {error ? <div className="error">{error}</div> : null}
 
-    createElement("div", { className: "form-group" },
-      createElement("label", null, "Repository (org/repo)"),
-      createElement("input", {
-        type: "text",
-        value: repository,
-        placeholder: "org/repo",
-        onInput: (e: Event) => setRepository((e.target as HTMLInputElement).value),
-      }),
-    ),
+      <div className="form-group">
+        <label>Repository (org/repo)</label>
+        <input
+          type="text"
+          value={repository}
+          placeholder="org/repo"
+          onInput={(e: Event) => setRepository((e.target as HTMLInputElement).value)}
+        />
+      </div>
 
-    createElement("div", { className: "form-group" },
-      createElement("label", null, "SSH Private Key (ed25519)"),
-      createElement("textarea", {
-        value: sshPrivateKey,
-        placeholder: "-----BEGIN OPENSSH PRIVATE KEY-----\n...",
-        rows: 6,
-        onInput: (e: Event) => setSSHPrivateKey((e.target as HTMLTextAreaElement).value),
-      }),
-    ),
+      <div className="form-group">
+        <label>SSH Private Key (ed25519)</label>
+        <textarea
+          value={sshPrivateKey}
+          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----\n..."
+          rows={6}
+          onInput={(e: Event) => setSSHPrivateKey((e.target as HTMLTextAreaElement).value)}
+        />
+      </div>
 
-    createElement("div", { className: "form-group" },
-      createElement("label", null, "GitHub PAT (fine-grained, repo-scoped)"),
-      createElement("input", {
-        type: "password",
-        value: githubPAT,
-        placeholder: "ghp_...",
-        onInput: (e: Event) => setGithubPAT((e.target as HTMLInputElement).value),
-      }),
-    ),
+      <div className="form-group">
+        <label>GitHub PAT (fine-grained, repo-scoped)</label>
+        <input
+          type="password"
+          value={githubPAT}
+          placeholder="ghp_..."
+          onInput={(e: Event) => setGithubPAT((e.target as HTMLInputElement).value)}
+        />
+      </div>
 
-    createElement("button", {
-      onClick: handleSubmit,
-      disabled: submitting,
-    }, submitting ? "Creating..." : "Create Project"),
+      <button onClick={handleSubmit} disabled={submitting}>
+        {submitting ? "Creating..." : "Create Project"}
+      </button>
+    </div>
   );
 }

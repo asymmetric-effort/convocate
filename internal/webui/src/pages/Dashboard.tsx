@@ -1,4 +1,4 @@
-import { createElement, useState, useEffect } from "@asymmetric-effort/specifyjs";
+import { useState, useEffect } from "@asymmetric-effort/specifyjs";
 import { api } from "../api/client";
 import type { ProjectInfo, JobMetadata, HostHealthInfo } from "../api/client";
 
@@ -14,103 +14,111 @@ export function Dashboard() {
     api.listHosts().then(setHosts).catch((err: Error) => setError(err.message));
   }, []);
 
-  return createElement("div", { className: "dashboard" },
-    createElement("h1", null, "Dashboard"),
+  return (
+    <div className="dashboard">
+      <h1>Dashboard</h1>
 
-    error ? createElement("div", { className: "error" }, error) : null,
+      {error ? <div className="error">{error}</div> : null}
 
-    createElement("section", null,
-      createElement("h2", null, "Projects"),
-      projects.length === 0
-        ? createElement("p", null, "No projects configured.")
-        : createElement("table", null,
-            createElement("thead", null,
-              createElement("tr", null,
-                createElement("th", null, "Repository"),
-                createElement("th", null, "Host"),
-                createElement("th", null, "State"),
-                createElement("th", null, "Active Jobs"),
-                createElement("th", null, "Actions"),
-              )
-            ),
-            createElement("tbody", null,
-              ...projects.map((project) =>
-                createElement("tr", { key: project.project_id },
-                  createElement("td", null, project.repository),
-                  createElement("td", null, project.host_id),
-                  createElement("td", null, project.container_state),
-                  createElement("td", null, String(project.active_jobs)),
-                  createElement("td", null,
-                    project.upgrade_ready
-                      ? createElement("button", {
-                          onClick: () => api.upgradeContainer(project.project_id),
-                        }, "Upgrade")
-                      : null
-                  ),
-                )
-              )
-            ),
-          )
-    ),
+      <section>
+        <h2>Projects</h2>
+        {projects.length === 0 ? (
+          <p>No projects configured.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Repository</th>
+                <th>Host</th>
+                <th>State</th>
+                <th>Active Jobs</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.map((project) => (
+                <tr key={project.project_id}>
+                  <td>{project.repository}</td>
+                  <td>{project.host_id}</td>
+                  <td>{project.container_state}</td>
+                  <td>{String(project.active_jobs)}</td>
+                  <td>
+                    {project.upgrade_ready ? (
+                      <button onClick={() => api.upgradeContainer(project.project_id)}>
+                        Upgrade
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
 
-    createElement("section", null,
-      createElement("h2", null, "Recent Jobs"),
-      jobs.length === 0
-        ? createElement("p", null, "No jobs.")
-        : createElement("table", null,
-            createElement("thead", null,
-              createElement("tr", null,
-                createElement("th", null, "Job ID"),
-                createElement("th", null, "Repository"),
-                createElement("th", null, "Issue"),
-                createElement("th", null, "Status"),
-                createElement("th", null, "PR"),
-              )
-            ),
-            createElement("tbody", null,
-              ...jobs.map((job) =>
-                createElement("tr", { key: job.job_id },
-                  createElement("td", null, job.job_id.substring(0, 8)),
-                  createElement("td", null, job.repository),
-                  createElement("td", null, job.ad_hoc ? "ad-hoc" : `#${job.issue_number}`),
-                  createElement("td", null, job.status),
-                  createElement("td", null,
-                    job.pr_url
-                      ? createElement("a", { href: job.pr_url, target: "_blank" }, "View PR")
-                      : null
-                  ),
-                )
-              )
-            ),
-          )
-    ),
+      <section>
+        <h2>Recent Jobs</h2>
+        {jobs.length === 0 ? (
+          <p>No jobs.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Job ID</th>
+                <th>Repository</th>
+                <th>Issue</th>
+                <th>Status</th>
+                <th>PR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.job_id}>
+                  <td>{job.job_id.substring(0, 8)}</td>
+                  <td>{job.repository}</td>
+                  <td>{job.ad_hoc ? "ad-hoc" : `#${job.issue_number}`}</td>
+                  <td>{job.status}</td>
+                  <td>
+                    {job.pr_url ? (
+                      <a href={job.pr_url} target="_blank">View PR</a>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
 
-    createElement("section", null,
-      createElement("h2", null, "Agent Fleet Health"),
-      hosts.length === 0
-        ? createElement("p", null, "No agent hosts registered.")
-        : createElement("table", null,
-            createElement("thead", null,
-              createElement("tr", null,
-                createElement("th", null, "Host"),
-                createElement("th", null, "Containers"),
-                createElement("th", null, "CPU %"),
-                createElement("th", null, "Memory %"),
-                createElement("th", null, "Status"),
-              )
-            ),
-            createElement("tbody", null,
-              ...hosts.map((host) =>
-                createElement("tr", { key: host.host_id },
-                  createElement("td", null, host.host_id),
-                  createElement("td", null, String(host.container_count)),
-                  createElement("td", null, host.cpu_percent.toFixed(1)),
-                  createElement("td", null, host.memory_percent.toFixed(1)),
-                  createElement("td", null, host.healthy ? "Healthy" : "Unhealthy"),
-                )
-              )
-            ),
-          )
-    ),
+      <section>
+        <h2>Agent Fleet Health</h2>
+        {hosts.length === 0 ? (
+          <p>No agent hosts registered.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th>Containers</th>
+                <th>CPU %</th>
+                <th>Memory %</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hosts.map((host) => (
+                <tr key={host.host_id}>
+                  <td>{host.host_id}</td>
+                  <td>{String(host.container_count)}</td>
+                  <td>{host.cpu_percent.toFixed(1)}</td>
+                  <td>{host.memory_percent.toFixed(1)}</td>
+                  <td>{host.healthy ? "Healthy" : "Unhealthy"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </div>
   );
 }

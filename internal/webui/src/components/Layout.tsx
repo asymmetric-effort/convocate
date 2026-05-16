@@ -1,5 +1,3 @@
-import { createElement } from "@asymmetric-effort/specifyjs";
-
 interface LayoutProps {
   currentPage: string;
   onNavigate: (page: string) => void;
@@ -14,19 +12,23 @@ export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
     { id: "adhoc", label: "Ad-hoc Submit" },
   ];
 
-  return createElement("div", { className: "app" },
-    createElement("nav", { className: "nav" },
-      createElement("div", { className: "nav-brand" }, "convocate"),
-      createElement("div", { className: "nav-links" },
-        ...navItems.map((item) =>
-          createElement("button", {
-            key: item.id,
-            className: `nav-link ${currentPage === item.id ? "active" : ""}`,
-            onClick: () => onNavigate(item.id),
-          }, item.label)
-        )
-      )
-    ),
-    createElement("main", { className: "main" }, children)
+  return (
+    <div className="app">
+      <nav className="nav">
+        <div className="nav-brand">convocate</div>
+        <div className="nav-links">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              className={`nav-link ${currentPage === item.id ? "active" : ""}`}
+              onClick={() => onNavigate(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+      <main className="main">{children}</main>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { createElement, useState, useEffect } from "@asymmetric-effort/specifyjs";
+import { useState, useEffect } from "@asymmetric-effort/specifyjs";
 import { api } from "../api/client";
 
 export function ClusterAuth() {
@@ -35,47 +35,50 @@ export function ClusterAuth() {
     }
   };
 
-  return createElement("div", { className: "cluster-auth" },
-    createElement("h1", null, "Cluster Authentication"),
-    createElement("p", null, `Current mode: ${currentMode || "loading..."}`),
+  return (
+    <div className="cluster-auth">
+      <h1>Cluster Authentication</h1>
+      <p>Current mode: {currentMode || "loading..."}</p>
 
-    error ? createElement("div", { className: "error" }, error) : null,
-    success ? createElement("div", { className: "success" }, success) : null,
+      {error ? <div className="error">{error}</div> : null}
+      {success ? <div className="success">{success}</div> : null}
 
-    createElement("div", { className: "form-group" },
-      createElement("label", null, "Authentication Mode"),
-      createElement("select", {
-        value: mode,
-        onChange: (e: Event) => setMode((e.target as HTMLSelectElement).value as typeof mode),
-      },
-        createElement("option", { value: "anthropic_api_key" }, "Anthropic API Key"),
-        createElement("option", { value: "claude_session" }, "Claude.ai Session"),
-      ),
-    ),
+      <div className="form-group">
+        <label>Authentication Mode</label>
+        <select
+          value={mode}
+          onChange={(e: Event) => setMode((e.target as HTMLSelectElement).value as typeof mode)}
+        >
+          <option value="anthropic_api_key">Anthropic API Key</option>
+          <option value="claude_session">Claude.ai Session</option>
+        </select>
+      </div>
 
-    mode === "anthropic_api_key"
-      ? createElement("div", { className: "form-group" },
-          createElement("label", null, "Anthropic API Key"),
-          createElement("input", {
-            type: "password",
-            value: apiKey,
-            placeholder: "sk-ant-api03-...",
-            onInput: (e: Event) => setApiKey((e.target as HTMLInputElement).value),
-          }),
-        )
-      : createElement("div", { className: "form-group" },
-          createElement("label", null, "Claude.ai Session Token"),
-          createElement("input", {
-            type: "password",
-            value: sessionToken,
-            placeholder: "session token",
-            onInput: (e: Event) => setSessionToken((e.target as HTMLInputElement).value),
-          }),
-        ),
+      {mode === "anthropic_api_key" ? (
+        <div className="form-group">
+          <label>Anthropic API Key</label>
+          <input
+            type="password"
+            value={apiKey}
+            placeholder="sk-ant-api03-..."
+            onInput={(e: Event) => setApiKey((e.target as HTMLInputElement).value)}
+          />
+        </div>
+      ) : (
+        <div className="form-group">
+          <label>Claude.ai Session Token</label>
+          <input
+            type="password"
+            value={sessionToken}
+            placeholder="session token"
+            onInput={(e: Event) => setSessionToken((e.target as HTMLInputElement).value)}
+          />
+        </div>
+      )}
 
-    createElement("button", {
-      onClick: handleSubmit,
-      disabled: submitting,
-    }, submitting ? "Updating..." : "Update Authentication"),
+      <button onClick={handleSubmit} disabled={submitting}>
+        {submitting ? "Updating..." : "Update Authentication"}
+      </button>
+    </div>
   );
 }

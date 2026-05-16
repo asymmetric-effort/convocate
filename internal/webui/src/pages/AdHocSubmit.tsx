@@ -1,4 +1,4 @@
-import { createElement, useState, useEffect } from "@asymmetric-effort/specifyjs";
+import { useState, useEffect } from "@asymmetric-effort/specifyjs";
 import { api } from "../api/client";
 import type { ProjectInfo } from "../api/client";
 
@@ -42,47 +42,43 @@ export function AdHocSubmit() {
     }
   };
 
-  return createElement("div", { className: "adhoc-submit" },
-    createElement("h1", null, "Ad-hoc Job Submission"),
+  return (
+    <div className="adhoc-submit">
+      <h1>Ad-hoc Job Submission</h1>
 
-    error ? createElement("div", { className: "error" }, error) : null,
-    result
-      ? createElement("div", { className: "success" },
-          `Job submitted: ${result.job_id}`
-        )
-      : null,
+      {error ? <div className="error">{error}</div> : null}
+      {result ? <div className="success">Job submitted: {result.job_id}</div> : null}
 
-    createElement("div", { className: "form-group" },
-      createElement("label", null, "Project"),
-      createElement("select", {
-        value: selectedProject,
-        onChange: (e: Event) => setSelectedProject((e.target as HTMLSelectElement).value),
-      },
-        projects.length === 0
-          ? createElement("option", { value: "" }, "No projects available")
-          : null,
-        ...projects.map((project) =>
-          createElement("option", {
-            key: project.project_id,
-            value: project.project_id,
-          }, project.repository)
-        ),
-      ),
-    ),
+      <div className="form-group">
+        <label>Project</label>
+        <select
+          value={selectedProject}
+          onChange={(e: Event) => setSelectedProject((e.target as HTMLSelectElement).value)}
+        >
+          {projects.length === 0 ? (
+            <option value="">No projects available</option>
+          ) : null}
+          {projects.map((project) => (
+            <option key={project.project_id} value={project.project_id}>
+              {project.repository}
+            </option>
+          ))}
+        </select>
+      </div>
 
-    createElement("div", { className: "form-group" },
-      createElement("label", null, "Prompt"),
-      createElement("textarea", {
-        value: prompt,
-        placeholder: "Describe what you want the agent to implement...",
-        rows: 8,
-        onInput: (e: Event) => setPrompt((e.target as HTMLTextAreaElement).value),
-      }),
-    ),
+      <div className="form-group">
+        <label>Prompt</label>
+        <textarea
+          value={prompt}
+          placeholder="Describe what you want the agent to implement..."
+          rows={8}
+          onInput={(e: Event) => setPrompt((e.target as HTMLTextAreaElement).value)}
+        />
+      </div>
 
-    createElement("button", {
-      onClick: handleSubmit,
-      disabled: submitting || projects.length === 0,
-    }, submitting ? "Submitting..." : "Submit"),
+      <button onClick={handleSubmit} disabled={submitting || projects.length === 0}>
+        {submitting ? "Submitting..." : "Submit"}
+      </button>
+    </div>
   );
 }
