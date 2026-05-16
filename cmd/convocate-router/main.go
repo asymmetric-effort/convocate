@@ -85,6 +85,18 @@ func run() int {
 		logger.Println("GitHub OAuth authentication enabled")
 	case isDev:
 		logger.Println("WARNING: GITHUB_CLIENT_ID/SECRET not set — auth bypassed in DEV mode")
+		// Stub auth handler returns a fake user so the Web UI loads.
+		authHandler = http.StripPrefix("/auth", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.URL.Path {
+			case "/me":
+				_, _ = w.Write([]byte(`{"username":"dev-operator","avatar":""}`))
+			case "/logout":
+				http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+			default:
+				http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+			}
+		}))
 	default:
 		logger.Println("WARNING: GITHUB_CLIENT_ID/SECRET not set — auth disabled")
 	}
