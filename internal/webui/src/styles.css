@@ -361,3 +361,7 @@ section {
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-subtle);
 }
+
+button, .nav-link, .side-nav-link, a, [role="button"] {
+  cursor: pointer;
+}
