@@ -1,6 +1,7 @@
 import { Component } from "@asymmetric-effort/specifyjs";
 import { TopNav } from "./TopNav";
 import { SideNav } from "./SideNav";
+import { Footer } from "./Footer";
 
 interface SideNavItem {
   id: string;
@@ -20,6 +21,7 @@ const TOP_NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard" },
   { id: "projects", label: "Projects" },
   { id: "agents", label: "Agents" },
+  { id: "dev-envs", label: "Dev Environments" },
   { id: "console", label: "Console" },
 ];
 
@@ -49,6 +51,7 @@ export class Layout extends Component<LayoutProps, Record<string, never>> {
             {children}
           </main>
         </div>
+        <Footer />
       </div>
     );
   }

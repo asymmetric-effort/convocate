@@ -116,6 +116,25 @@ body {
   margin-right: 32px;
 }
 
+.nav-status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.nav-status-user {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.nav-status-time {
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
 .nav-links {
   display: flex;
   gap: 8px;
@@ -133,13 +152,17 @@ body {
 }
 
 .nav-link:hover {
-  background: var(--color-bg-subtle);
+  background: var(--color-border);
   color: var(--color-text);
 }
 
 .nav-link.active {
   background: var(--color-primary);
   color: #ffffff;
+}
+
+.nav-link.active:hover {
+  background: #2563eb;
 }
 
 .main {
@@ -263,6 +286,17 @@ button:disabled {
   color: #86efac;
 }
 
+.text-muted {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.status-unknown {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
 .token-display {
   margin: 24px 0;
   padding: 16px;
@@ -313,4 +347,16 @@ section {
 .status-stopped {
   color: var(--color-error);
   font-weight: 600;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 16px 24px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
 }

@@ -103,4 +103,9 @@ export const api = {
     request<{ mode: string; updated: boolean }>("POST", "/auth", req),
   submitAdHoc: (req: AdHocSubmissionRequest) =>
     request<{ job_id: string }>("POST", "/adhoc", req),
+  health: async (): Promise<{ status: string; version: string }> => {
+    const resp = await fetch("/v1/health");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  },
 };

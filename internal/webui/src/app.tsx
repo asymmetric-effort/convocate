@@ -3,9 +3,10 @@ import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { Projects } from "./pages/Projects";
 import { Agents } from "./pages/Agents";
+import { DevEnvs } from "./pages/DevEnvs";
 import { Console } from "./pages/Console";
 
-type TopNav = "dashboard" | "projects" | "agents" | "console";
+type TopNav = "dashboard" | "projects" | "agents" | "dev-envs" | "console";
 
 interface SideNavItem {
   id: string;
@@ -23,7 +24,11 @@ const SIDE_NAV_ITEMS: Record<TopNav, SideNavItem[]> = {
     { id: "stop-project", label: "Stop Project" },
     { id: "restart-project", label: "Restart Project" },
   ],
-  agents: [],
+  agents: [
+    { id: "list-agents", label: "List Agents" },
+    { id: "register-agent", label: "Register Agent" },
+  ],
+  "dev-envs": [],
   console: [
     { id: "adhoc", label: "Ad-hoc Submit" },
     { id: "cluster-auth", label: "Cluster Auth" },
@@ -33,7 +38,8 @@ const SIDE_NAV_ITEMS: Record<TopNav, SideNavItem[]> = {
 const DEFAULT_SIDE_NAV: Record<TopNav, string> = {
   dashboard: "",
   projects: "list-projects",
-  agents: "",
+  agents: "list-agents",
+  "dev-envs": "",
   console: "adhoc",
 };
 
@@ -70,7 +76,10 @@ export class App extends Component<Record<string, never>, AppState> {
         content = <Projects activeSideNav={sideNav} />;
         break;
       case "agents":
-        content = <Agents />;
+        content = <Agents activeSideNav={sideNav} />;
+        break;
+      case "dev-envs":
+        content = <DevEnvs activeSideNav={sideNav} />;
         break;
       case "console":
         content = <Console activeSideNav={sideNav} />;

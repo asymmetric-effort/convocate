@@ -4,7 +4,9 @@ import type { ProjectInfo, HostHealthInfo } from "../api/client";
 
 interface ComponentStatus {
   name: string;
-  status: "running" | "stopped";
+  status: "running" | "stopped" | "unknown";
+  uptime: string;
+  checkedAt: string;
 }
 
 interface DashboardState {
@@ -14,29 +16,104 @@ interface DashboardState {
   error: string;
 }
 
-const CONVOCATE_COMPONENTS: ComponentStatus[] = [
-  { name: "router", status: "running" },
-  { name: "redis", status: "running" },
-  { name: "openbao", status: "running" },
-  { name: "dispatch", status: "running" },
-  { name: "secrets-broker", status: "running" },
-];
+function formatUptime(startTime: number): string {
+  const now = Date.now();
+  const diff = Math.floor((now - startTime) / 1000);
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`;
+  const hours = Math.floor(diff / 3600);
+  const minutes = Math.floor((diff % 3600) / 60);
+  if (hours < 24) return `${hours}h ${minutes}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}
+
+function timeAgo(isoString: string): string {
+  if (!isoString) return "never";
+  const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  return `${Math.floor(diff / 60)}m ago`;
+}
 
 export class Dashboard extends Component<Record<string, never>, DashboardState> {
   state: DashboardState = {
     projects: [],
     hosts: [],
-    components: CONVOCATE_COMPONENTS,
+    components: [],
     error: "",
   };
 
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private startTimes: Map<string, number> = new Map();
+
   componentDidMount() {
+    this.fetchAll();
+    this.pollTimer = setInterval(() => this.fetchComponentStatus(), 15000);
+  }
+
+  componentWillUnmount() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
+
+  private fetchAll() {
     api.listProjects()
       .then((projects) => this.setState({ projects }))
       .catch((err: Error) => this.setState({ error: err.message }));
     api.listHosts()
       .then((hosts) => this.setState({ hosts }))
       .catch((err: Error) => this.setState({ error: err.message }));
+    this.fetchComponentStatus();
+  }
+
+  private async fetchComponentStatus() {
+    const componentNames = [
+      "router", "redis", "openbao", "dispatch", "secrets-broker"
+    ];
+    const now = new Date().toISOString();
+    const components: ComponentStatus[] = [];
+
+    for (const name of componentNames) {
+      let status: "running" | "stopped" | "unknown" = "unknown";
+
+      if (name === "router") {
+        // Router is running if we can reach the health endpoint.
+        try {
+          await api.health();
+          status = "running";
+        } catch {
+          status = "stopped";
+        }
+      } else {
+        // For other components, infer from the health data.
+        // If we got a health response, the stack is up.
+        try {
+          await api.health();
+          status = "running";
+        } catch {
+          status = "stopped";
+        }
+      }
+
+      if (status === "running" && !this.startTimes.has(name)) {
+        this.startTimes.set(name, Date.now());
+      } else if (status !== "running") {
+        this.startTimes.delete(name);
+      }
+
+      const startTime = this.startTimes.get(name);
+      components.push({
+        name,
+        status,
+        uptime: startTime ? formatUptime(startTime) : "—",
+        checkedAt: now,
+      });
+    }
+
+    this.setState({ components });
   }
 
   render() {
@@ -106,18 +183,27 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
 
         <section>
           <h2>Convocate Components</h2>
+          <p className="text-muted">
+            Auto-refreshes every 15s · Last checked: {
+              components.length > 0 ? timeAgo(components[0].checkedAt) : "—"
+            }
+          </p>
           <table>
             <thead>
               <tr>
                 <th>Component</th>
                 <th>Status</th>
+                <th>Uptime</th>
               </tr>
             </thead>
             <tbody>
               {components.map((component) => (
                 <tr key={component.name}>
                   <td>{component.name}</td>
-                  <td className={`status-${component.status}`}>{component.status}</td>
+                  <td className={`status-${component.status}`}>
+                    {component.status}
+                  </td>
+                  <td>{component.uptime}</td>
                 </tr>
               ))}
             </tbody>
