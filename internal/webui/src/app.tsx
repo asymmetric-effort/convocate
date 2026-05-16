@@ -1,42 +1,89 @@
 import { Component } from "@asymmetric-effort/specifyjs";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
-import { CreateProject } from "./pages/CreateProject";
-import { ClusterAuth } from "./pages/ClusterAuth";
-import { AdHocSubmit } from "./pages/AdHocSubmit";
+import { Projects } from "./pages/Projects";
+import { Agents } from "./pages/Agents";
+import { Console } from "./pages/Console";
 
-type Page = "dashboard" | "create-project" | "cluster-auth" | "adhoc";
+type TopNav = "dashboard" | "projects" | "agents" | "console";
+
+interface SideNavItem {
+  id: string;
+  label: string;
+}
+
+const SIDE_NAV_ITEMS: Record<TopNav, SideNavItem[]> = {
+  dashboard: [],
+  projects: [
+    { id: "list-projects", label: "List Projects" },
+    { id: "create-project", label: "Create Project" },
+    { id: "configure-project", label: "Configure Project" },
+    { id: "delete-project", label: "Delete Project" },
+    { id: "start-project", label: "Start Project" },
+    { id: "stop-project", label: "Stop Project" },
+    { id: "restart-project", label: "Restart Project" },
+  ],
+  agents: [],
+  console: [
+    { id: "adhoc", label: "Ad-hoc Submit" },
+    { id: "cluster-auth", label: "Cluster Auth" },
+  ],
+};
+
+const DEFAULT_SIDE_NAV: Record<TopNav, string> = {
+  dashboard: "",
+  projects: "list-projects",
+  agents: "",
+  console: "adhoc",
+};
 
 interface AppState {
-  page: Page;
+  topNav: TopNav;
+  sideNav: string;
 }
 
 export class App extends Component<Record<string, never>, AppState> {
-  state: AppState = { page: "dashboard" };
+  state: AppState = {
+    topNav: "dashboard",
+    sideNav: "",
+  };
+
+  handleTopNav = (id: string) => {
+    const topNav = id as TopNav;
+    this.setState({ topNav, sideNav: DEFAULT_SIDE_NAV[topNav] });
+  };
+
+  handleSideNav = (id: string) => {
+    this.setState({ sideNav: id });
+  };
 
   render() {
-    const { page } = this.state;
+    const { topNav, sideNav } = this.state;
+    const sideNavItems = SIDE_NAV_ITEMS[topNav];
 
-    let content;
-    switch (page) {
+    let content: unknown;
+    switch (topNav) {
       case "dashboard":
         content = <Dashboard />;
         break;
-      case "create-project":
-        content = <CreateProject onDone={() => this.setState({ page: "dashboard" })} />;
+      case "projects":
+        content = <Projects activeSideNav={sideNav} />;
         break;
-      case "cluster-auth":
-        content = <ClusterAuth />;
+      case "agents":
+        content = <Agents />;
         break;
-      case "adhoc":
-        content = <AdHocSubmit />;
+      case "console":
+        content = <Console activeSideNav={sideNav} />;
         break;
     }
 
     return (
       <Layout
-        currentPage={page}
-        onNavigate={(p: string) => this.setState({ page: p as Page })}
+        topNav={topNav}
+        sideNav={sideNav}
+        sideNavItems={sideNavItems}
+        onTopNav={this.handleTopNav}
+        onSideNav={this.handleSideNav}
       >
         {content}
       </Layout>

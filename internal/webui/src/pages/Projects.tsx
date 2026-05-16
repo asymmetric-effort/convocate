@@ -1,0 +1,472 @@
+import { Component } from "@asymmetric-effort/specifyjs";
+import { api } from "../api/client";
+import type { ProjectInfo, CreateProjectResponse } from "../api/client";
+
+interface ProjectsProps {
+  activeSideNav: string;
+}
+
+// ---- List Projects ----
+
+interface ListProjectsState {
+  projects: ProjectInfo[];
+  error: string;
+}
+
+export class ListProjects extends Component<Record<string, never>, ListProjectsState> {
+  state: ListProjectsState = { projects: [], error: "" };
+
+  componentDidMount() {
+    api.listProjects()
+      .then((projects) => this.setState({ projects }))
+      .catch((err: Error) => this.setState({ error: err.message }));
+  }
+
+  render() {
+    const { projects, error } = this.state;
+    return (
+      <div>
+        <h1>Projects</h1>
+        {error ? <div className="error">{error}</div> : null}
+        {projects.length === 0 ? (
+          <p>No projects configured.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Repository</th>
+                <th>Container State</th>
+                <th>Active Jobs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.map((project) => (
+                <tr key={project.project_id}>
+                  <td>{project.repository}</td>
+                  <td>{project.container_state}</td>
+                  <td>{String(project.active_jobs)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    );
+  }
+}
+
+// ---- Create Project ----
+
+interface CreateProjectState {
+  repository: string;
+  sshPrivateKey: string;
+  githubPAT: string;
+  error: string;
+  result: CreateProjectResponse | null;
+  submitting: boolean;
+}
+
+export class CreateProject extends Component<Record<string, never>, CreateProjectState> {
+  state: CreateProjectState = {
+    repository: "",
+    sshPrivateKey: "",
+    githubPAT: "",
+    error: "",
+    result: null,
+    submitting: false,
+  };
+
+  handleSubmit = async () => {
+    const { repository, sshPrivateKey, githubPAT } = this.state;
+    if (!repository || !sshPrivateKey || !githubPAT) {
+      this.setState({ error: "All fields are required." });
+      return;
+    }
+    this.setState({ submitting: true, error: "" });
+    try {
+      const resp = await api.createProject({
+        repository,
+        ssh_private_key: sshPrivateKey,
+        github_pat: githubPAT,
+      });
+      this.setState({ result: resp });
+    } catch (err: unknown) {
+      this.setState({ error: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      this.setState({ submitting: false });
+    }
+  };
+
+  render() {
+    const { repository, sshPrivateKey, githubPAT, error, result, submitting } = this.state;
+
+    if (result) {
+      return (
+        <div className="create-project-result">
+          <h1>Project Created</h1>
+          <p>Repository: {result.repository}</p>
+          <p>Project ID: {result.project_id}</p>
+
+          <div className="token-display">
+            <h2>CONVOCATE_API_TOKEN</h2>
+            <p className="warning">Copy this token now. It will not be shown again.</p>
+            <code className="token">{result.api_token}</code>
+          </div>
+
+          <div className="setup-instructions">
+            <h2>GitHub Setup</h2>
+            <p>Add these to your repository's Actions secrets and variables:</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Name</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Variable</td>
+                  <td>CONVOCATE_BOT_ACCOUNT</td>
+                  <td>(your bot account name)</td>
+                </tr>
+                <tr>
+                  <td>Variable</td>
+                  <td>CONVOCATE_ROUTER_URL</td>
+                  <td>(your Router API URL)</td>
+                </tr>
+                <tr>
+                  <td>Secret</td>
+                  <td>CONVOCATE_API_TOKEN</td>
+                  <td>{result.api_token}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <button onClick={() => this.setState({ result: null, repository: "", sshPrivateKey: "", githubPAT: "" })}>
+            Create Another
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="create-project">
+        <h1>Create Project</h1>
+
+        {error ? <div className="error">{error}</div> : null}
+
+        <div className="form-group">
+          <label>Repository (org/repo)</label>
+          <input
+            type="text"
+            value={repository}
+            placeholder="org/repo"
+            onInput={(e: Event) => this.setState({ repository: (e.target as HTMLInputElement).value })}
+          />
+        </div>
+
+        <div className="form-group">
+          <label>SSH Private Key (ed25519)</label>
+          <textarea
+            value={sshPrivateKey}
+            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
+            rows={6}
+            onInput={(e: Event) => this.setState({ sshPrivateKey: (e.target as HTMLTextAreaElement).value })}
+          />
+        </div>
+
+        <div className="form-group">
+          <label>GitHub PAT (fine-grained, repo-scoped)</label>
+          <input
+            type="password"
+            value={githubPAT}
+            placeholder="ghp_..."
+            onInput={(e: Event) => this.setState({ githubPAT: (e.target as HTMLInputElement).value })}
+          />
+        </div>
+
+        <button onClick={this.handleSubmit} disabled={submitting}>
+          {submitting ? "Creating..." : "Create Project"}
+        </button>
+      </div>
+    );
+  }
+}
+
+// ---- Configure Project ----
+
+interface ConfigureProjectState {
+  projects: ProjectInfo[];
+  selectedId: string;
+  error: string;
+}
+
+export class ConfigureProject extends Component<Record<string, never>, ConfigureProjectState> {
+  state: ConfigureProjectState = { projects: [], selectedId: "", error: "" };
+
+  componentDidMount() {
+    api.listProjects()
+      .then((projects) => this.setState({
+        projects,
+        selectedId: projects.length > 0 ? projects[0].project_id : "",
+      }))
+      .catch((err: Error) => this.setState({ error: err.message }));
+  }
+
+  render() {
+    const { projects, selectedId, error } = this.state;
+    const selected = projects.find((p) => p.project_id === selectedId);
+
+    return (
+      <div>
+        <h1>Configure Project</h1>
+        {error ? <div className="error">{error}</div> : null}
+
+        <div className="form-group">
+          <label>Project</label>
+          <select
+            value={selectedId}
+            onChange={(e: Event) => this.setState({ selectedId: (e.target as HTMLSelectElement).value })}
+          >
+            {projects.length === 0 ? (
+              <option value="">No projects available</option>
+            ) : null}
+            {projects.map((p) => (
+              <option key={p.project_id} value={p.project_id}>{p.repository}</option>
+            ))}
+          </select>
+        </div>
+
+        {selected ? (
+          <table>
+            <tbody>
+              <tr><th>Project ID</th><td>{selected.project_id}</td></tr>
+              <tr><th>Repository</th><td>{selected.repository}</td></tr>
+              <tr><th>Host ID</th><td>{selected.host_id}</td></tr>
+              <tr><th>Container ID</th><td>{selected.container_id}</td></tr>
+              <tr><th>Container State</th><td>{selected.container_state}</td></tr>
+              <tr><th>Container Image</th><td>{selected.container_image}</td></tr>
+              <tr><th>Active Jobs</th><td>{String(selected.active_jobs)}</td></tr>
+              <tr><th>Created At</th><td>{selected.created_at}</td></tr>
+            </tbody>
+          </table>
+        ) : null}
+      </div>
+    );
+  }
+}
+
+// ---- Delete Project ----
+
+interface DeleteProjectState {
+  projects: ProjectInfo[];
+  selectedId: string;
+  forceTerminate: boolean;
+  error: string;
+  success: string;
+  submitting: boolean;
+}
+
+export class DeleteProject extends Component<Record<string, never>, DeleteProjectState> {
+  state: DeleteProjectState = {
+    projects: [],
+    selectedId: "",
+    forceTerminate: false,
+    error: "",
+    success: "",
+    submitting: false,
+  };
+
+  componentDidMount() {
+    api.listProjects()
+      .then((projects) => this.setState({
+        projects,
+        selectedId: projects.length > 0 ? projects[0].project_id : "",
+      }))
+      .catch((err: Error) => this.setState({ error: err.message }));
+  }
+
+  handleDelete = async () => {
+    const { selectedId, forceTerminate } = this.state;
+    if (!selectedId) {
+      this.setState({ error: "Select a project." });
+      return;
+    }
+    this.setState({ submitting: true, error: "", success: "" });
+    try {
+      await api.deleteProject({ project_id: selectedId, force_terminate: forceTerminate });
+      this.setState({ success: "Project deleted.", selectedId: "" });
+      const projects = await api.listProjects();
+      this.setState({ projects, selectedId: projects.length > 0 ? projects[0].project_id : "" });
+    } catch (err: unknown) {
+      this.setState({ error: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      this.setState({ submitting: false });
+    }
+  };
+
+  render() {
+    const { projects, selectedId, forceTerminate, error, success, submitting } = this.state;
+
+    return (
+      <div>
+        <h1>Delete Project</h1>
+        {error ? <div className="error">{error}</div> : null}
+        {success ? <div className="success">{success}</div> : null}
+
+        <div className="form-group">
+          <label>Project</label>
+          <select
+            value={selectedId}
+            onChange={(e: Event) => this.setState({ selectedId: (e.target as HTMLSelectElement).value })}
+          >
+            {projects.length === 0 ? (
+              <option value="">No projects available</option>
+            ) : null}
+            {projects.map((p) => (
+              <option key={p.project_id} value={p.project_id}>{p.repository}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label>
+            <input
+              type="checkbox"
+              checked={forceTerminate}
+              onChange={(e: Event) => this.setState({ forceTerminate: (e.target as HTMLInputElement).checked })}
+            />
+            {" "}Force terminate (stop running jobs)
+          </label>
+        </div>
+
+        <button onClick={this.handleDelete} disabled={submitting || !selectedId}>
+          {submitting ? "Deleting..." : "Delete Project"}
+        </button>
+      </div>
+    );
+  }
+}
+
+// ---- Container Actions (Start / Stop / Restart) ----
+
+type ContainerAction = "start" | "stop" | "restart";
+
+interface ContainerActionProps {
+  action: ContainerAction;
+}
+
+interface ContainerActionState {
+  projects: ProjectInfo[];
+  selectedId: string;
+  error: string;
+  success: string;
+  submitting: boolean;
+}
+
+const ACTION_LABELS: Record<ContainerAction, string> = {
+  start: "Start",
+  stop: "Stop",
+  restart: "Restart",
+};
+
+export class ContainerActionPage extends Component<ContainerActionProps, ContainerActionState> {
+  state: ContainerActionState = {
+    projects: [],
+    selectedId: "",
+    error: "",
+    success: "",
+    submitting: false,
+  };
+
+  componentDidMount() {
+    api.listProjects()
+      .then((projects) => this.setState({
+        projects,
+        selectedId: projects.length > 0 ? projects[0].project_id : "",
+      }))
+      .catch((err: Error) => this.setState({ error: err.message }));
+  }
+
+  handleAction = async () => {
+    const { selectedId } = this.state;
+    const { action } = this.props;
+    if (!selectedId) {
+      this.setState({ error: "Select a project." });
+      return;
+    }
+    this.setState({ submitting: true, error: "", success: "" });
+    try {
+      await api.upgradeContainer(selectedId);
+      this.setState({ success: `${ACTION_LABELS[action]} triggered for project.` });
+    } catch (err: unknown) {
+      this.setState({ error: err instanceof Error ? err.message : "Unknown error" });
+    } finally {
+      this.setState({ submitting: false });
+    }
+  };
+
+  render() {
+    const { projects, selectedId, error, success, submitting } = this.state;
+    const { action } = this.props;
+    const label = ACTION_LABELS[action];
+
+    return (
+      <div>
+        <h1>{label} Project</h1>
+        {error ? <div className="error">{error}</div> : null}
+        {success ? <div className="success">{success}</div> : null}
+
+        <div className="form-group">
+          <label>Project</label>
+          <select
+            value={selectedId}
+            onChange={(e: Event) => this.setState({ selectedId: (e.target as HTMLSelectElement).value })}
+          >
+            {projects.length === 0 ? (
+              <option value="">No projects available</option>
+            ) : null}
+            {projects.map((p) => (
+              <option key={p.project_id} value={p.project_id}>{p.repository}</option>
+            ))}
+          </select>
+        </div>
+
+        <button onClick={this.handleAction} disabled={submitting || !selectedId}>
+          {submitting ? `${label}ing...` : `${label} Project`}
+        </button>
+      </div>
+    );
+  }
+}
+
+// ---- Projects top-level router ----
+
+export class Projects extends Component<ProjectsProps, Record<string, never>> {
+  state = {};
+
+  render() {
+    const { activeSideNav } = this.props;
+
+    switch (activeSideNav) {
+      case "list-projects":
+        return <ListProjects />;
+      case "create-project":
+        return <CreateProject />;
+      case "configure-project":
+        return <ConfigureProject />;
+      case "delete-project":
+        return <DeleteProject />;
+      case "start-project":
+        return <ContainerActionPage action="start" />;
+      case "stop-project":
+        return <ContainerActionPage action="stop" />;
+      case "restart-project":
+        return <ContainerActionPage action="restart" />;
+      default:
+        return <ListProjects />;
+    }
+  }
+}

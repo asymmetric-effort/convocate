@@ -1,34 +1,55 @@
+import { Component } from "@asymmetric-effort/specifyjs";
+import { TopNav } from "./TopNav";
+import { SideNav } from "./SideNav";
+
+interface SideNavItem {
+  id: string;
+  label: string;
+}
+
 interface LayoutProps {
-  currentPage: string;
-  onNavigate: (page: string) => void;
+  topNav: string;
+  sideNav: string;
+  sideNavItems: SideNavItem[];
+  onTopNav: (id: string) => void;
+  onSideNav: (id: string) => void;
   children?: unknown;
 }
 
-export function Layout({ currentPage, onNavigate, children }: LayoutProps) {
-  const navItems = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "create-project", label: "Create Project" },
-    { id: "cluster-auth", label: "Cluster Auth" },
-    { id: "adhoc", label: "Ad-hoc Submit" },
-  ];
+const TOP_NAV_ITEMS = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "projects", label: "Projects" },
+  { id: "agents", label: "Agents" },
+  { id: "console", label: "Console" },
+];
 
-  return (
-    <div className="app">
-      <nav className="nav">
-        <div className="nav-brand">convocate</div>
-        <div className="nav-links">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              className={`nav-link ${currentPage === item.id ? "active" : ""}`}
-              onClick={() => onNavigate(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
+export class Layout extends Component<LayoutProps, Record<string, never>> {
+  state = {};
+
+  render() {
+    const { topNav, sideNav, sideNavItems, onTopNav, onSideNav, children } = this.props;
+    const hasSideNav = sideNavItems.length > 0;
+
+    return (
+      <div className="app">
+        <TopNav
+          items={TOP_NAV_ITEMS}
+          active={topNav}
+          onNavigate={onTopNav}
+        />
+        <div className="body-row">
+          {hasSideNav ? (
+            <SideNav
+              items={sideNavItems}
+              active={sideNav}
+              onNavigate={onSideNav}
+            />
+          ) : null}
+          <main className={`main${hasSideNav ? " with-side-nav" : ""}`}>
+            {children}
+          </main>
         </div>
-      </nav>
-      <main className="main">{children}</main>
-    </div>
-  );
+      </div>
+    );
+  }
 }

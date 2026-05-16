@@ -1,19 +1,32 @@
 import { Component } from "@asymmetric-effort/specifyjs";
 import { api } from "../api/client";
-import type { ProjectInfo, JobMetadata, HostHealthInfo } from "../api/client";
+import type { ProjectInfo, HostHealthInfo } from "../api/client";
+
+interface ComponentStatus {
+  name: string;
+  status: "running" | "stopped";
+}
 
 interface DashboardState {
   projects: ProjectInfo[];
-  jobs: JobMetadata[];
   hosts: HostHealthInfo[];
+  components: ComponentStatus[];
   error: string;
 }
+
+const CONVOCATE_COMPONENTS: ComponentStatus[] = [
+  { name: "router", status: "running" },
+  { name: "redis", status: "running" },
+  { name: "openbao", status: "running" },
+  { name: "dispatch", status: "running" },
+  { name: "secrets-broker", status: "running" },
+];
 
 export class Dashboard extends Component<Record<string, never>, DashboardState> {
   state: DashboardState = {
     projects: [],
-    jobs: [],
     hosts: [],
+    components: CONVOCATE_COMPONENTS,
     error: "",
   };
 
@@ -21,16 +34,13 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
     api.listProjects()
       .then((projects) => this.setState({ projects }))
       .catch((err: Error) => this.setState({ error: err.message }));
-    api.listJobs()
-      .then((jobs) => this.setState({ jobs }))
-      .catch((err: Error) => this.setState({ error: err.message }));
     api.listHosts()
       .then((hosts) => this.setState({ hosts }))
       .catch((err: Error) => this.setState({ error: err.message }));
   }
 
   render() {
-    const { projects, jobs, hosts, error } = this.state;
+    const { projects, hosts, components, error } = this.state;
 
     return (
       <div className="dashboard">
@@ -47,26 +57,16 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
               <thead>
                 <tr>
                   <th>Repository</th>
-                  <th>Host</th>
-                  <th>State</th>
+                  <th>Container State</th>
                   <th>Active Jobs</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {projects.map((project) => (
                   <tr key={project.project_id}>
                     <td>{project.repository}</td>
-                    <td>{project.host_id}</td>
                     <td>{project.container_state}</td>
                     <td>{String(project.active_jobs)}</td>
-                    <td>
-                      {project.upgrade_ready ? (
-                        <button onClick={() => api.upgradeContainer(project.project_id)}>
-                          Upgrade
-                        </button>
-                      ) : null}
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -75,52 +75,18 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
         </section>
 
         <section>
-          <h2>Recent Jobs</h2>
-          {jobs.length === 0 ? (
-            <p>No jobs.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Job ID</th>
-                  <th>Repository</th>
-                  <th>Issue</th>
-                  <th>Status</th>
-                  <th>PR</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job) => (
-                  <tr key={job.job_id}>
-                    <td>{job.job_id.substring(0, 8)}</td>
-                    <td>{job.repository}</td>
-                    <td>{job.ad_hoc ? "ad-hoc" : `#${job.issue_number}`}</td>
-                    <td>{job.status}</td>
-                    <td>
-                      {job.pr_url ? (
-                        <a href={job.pr_url} target="_blank">View PR</a>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-
-        <section>
-          <h2>Agent Fleet Health</h2>
+          <h2>Agents</h2>
           {hosts.length === 0 ? (
             <p>No agent hosts registered.</p>
           ) : (
             <table>
               <thead>
                 <tr>
-                  <th>Host</th>
+                  <th>Host ID</th>
                   <th>Containers</th>
                   <th>CPU %</th>
                   <th>Memory %</th>
-                  <th>Status</th>
+                  <th>Healthy</th>
                 </tr>
               </thead>
               <tbody>
@@ -130,12 +96,32 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
                     <td>{String(host.container_count)}</td>
                     <td>{host.cpu_percent.toFixed(1)}</td>
                     <td>{host.memory_percent.toFixed(1)}</td>
-                    <td>{host.healthy ? "Healthy" : "Unhealthy"}</td>
+                    <td>{host.healthy ? "Yes" : "No"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+        </section>
+
+        <section>
+          <h2>Convocate Components</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Component</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {components.map((component) => (
+                <tr key={component.name}>
+                  <td>{component.name}</td>
+                  <td className={`status-${component.status}`}>{component.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       </div>
     );
