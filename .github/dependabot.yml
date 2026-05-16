@@ -26,3 +26,12 @@ updates:
     labels:
       - dependencies
       - docker
+
+  - package-ecosystem: npm
+    directory: /internal/webui
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - npm
