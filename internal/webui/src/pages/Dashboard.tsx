@@ -1,4 +1,5 @@
 import { Component } from "@asymmetric-effort/specifyjs";
+import { Card } from "../components/Card";
 import { api } from "../api/client";
 import type { ProjectInfo, HostHealthInfo } from "../api/client";
 
@@ -131,8 +132,7 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
 
         {error ? <div className="error">{error}</div> : null}
 
-        <section>
-          <h2>Projects</h2>
+        <Card title="Projects">
           {projects.length === 0 ? (
             <p>No projects configured.</p>
           ) : (
@@ -155,10 +155,9 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
               </tbody>
             </table>
           )}
-        </section>
+        </Card>
 
-        <section>
-          <h2>Agents</h2>
+        <Card title="Agents">
           {hosts.length === 0 ? (
             <p>No agent hosts registered.</p>
           ) : (
@@ -185,10 +184,9 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
               </tbody>
             </table>
           )}
-        </section>
+        </Card>
 
-        <section>
-          <h2>Convocate Components</h2>
+        <Card title="Convocate Components">
           <p className="text-muted">
             Auto-refreshes every 15s · Last checked: {
               components.length > 0 ? timeAgo(components[0].checkedAt) : "—"
@@ -214,7 +212,7 @@ export class Dashboard extends Component<Record<string, never>, DashboardState> 
               ))}
             </tbody>
           </table>
-        </section>
+        </Card>
       </div>
     );
   }

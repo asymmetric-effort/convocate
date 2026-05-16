@@ -365,3 +365,30 @@ section {
 button, .nav-link, .side-nav-link, a, [role="button"] {
   cursor: pointer;
 }
+
+.card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.card-body {
+  padding: 16px;
+}
+
+.card-body table {
+  margin-bottom: 0;
+}
+
+.card-body p {
+  margin: 0;
+}
