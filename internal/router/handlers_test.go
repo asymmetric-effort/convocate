@@ -639,3 +639,54 @@ func TestHandleJobsDispatchFailureNoHost(t *testing.T) {
 		t.Errorf("status: got %d, want 503", resp.StatusCode)
 	}
 }
+
+// --- /health alias and / redirect ---
+
+func TestHealthAlias(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET",
+		ts.URL+"/health", http.NoBody)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status: got %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestRootRedirect(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	client := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	req, _ := http.NewRequestWithContext(context.Background(), "GET",
+		ts.URL+"/", http.NoBody)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusTemporaryRedirect {
+		t.Errorf("status: got %d, want 307", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if loc != "/v1/health" {
+		t.Errorf("Location: got %q, want /v1/health", loc)
+	}
+}
+
+func TestUnknownPath404(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET",
+		ts.URL+"/nonexistent", http.NoBody)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status: got %d, want 404", resp.StatusCode)
+	}
+}

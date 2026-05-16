@@ -28,9 +28,14 @@ func TestListenAndServe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IssueServerCert: %v", err)
 	}
-	serverTLS, err := mtls.ServerTLSConfig(*serverPair, ca.TrustBundle(), false)
+	// Each listener needs its own TLS config to avoid data race in ServeTLS.
+	publicServerTLS, err := mtls.ServerTLSConfig(*serverPair, ca.TrustBundle(), false)
 	if err != nil {
-		t.Fatalf("ServerTLSConfig: %v", err)
+		t.Fatalf("ServerTLSConfig public: %v", err)
+	}
+	internalServerTLS, err := mtls.ServerTLSConfig(*serverPair, ca.TrustBundle(), false)
+	if err != nil {
+		t.Fatalf("ServerTLSConfig internal: %v", err)
 	}
 	clientTLS, err := mtls.PlainTLSConfig(ca.TrustBundle())
 	if err != nil {
@@ -65,7 +70,7 @@ func TestListenAndServe(t *testing.T) {
 	// Start ListenAndServe in background.
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- srv.ListenAndServe(publicLn, internalLn, serverTLS, serverTLS)
+		errCh <- srv.ListenAndServe(publicLn, internalLn, publicServerTLS, internalServerTLS)
 	}()
 
 	// Give servers time to start.

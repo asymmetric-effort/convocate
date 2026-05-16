@@ -381,7 +381,7 @@ the issue to the original author when work is complete or blocked.
 Each agent container is built from a single image defined in the convocate monorepo:
 
 ```dockerfile
-FROM ubuntu:24.04
+FROM ubuntu:latest
 
 RUN apt-get update && apt-get install -y git curl openssh-client && rm -rf /var/lib/apt/lists/*
 
