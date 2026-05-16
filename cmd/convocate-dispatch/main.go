@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 // Version is set at build time via -ldflags.
@@ -18,8 +21,19 @@ func main() {
 }
 
 func run() int {
-	// Per-host dispatch executor entrypoint.
-	// Implementation lands in Phase 7.
-	fmt.Fprintln(os.Stderr, "not yet implemented")
-	return 1
+	logger := log.New(os.Stderr, "dispatch: ", log.LstdFlags)
+
+	hostID := os.Getenv("CONVOCATE_HOST_ID")
+	controlURL := os.Getenv("CONVOCATE_CONTROL_URL")
+
+	logger.Printf("host=%s control=%s", hostID, controlURL)
+	logger.Println("waiting for dispatch events...")
+
+	// Wait for shutdown signal.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	<-sigCh
+
+	logger.Println("shutting down")
+	return 0
 }

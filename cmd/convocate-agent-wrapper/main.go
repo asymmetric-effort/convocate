@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 // Version is set at build time via -ldflags.
@@ -18,8 +21,14 @@ func main() {
 }
 
 func run() int {
-	// Agent Container entrypoint.
-	// Implementation lands in Phase 8.
-	fmt.Fprintln(os.Stderr, "not yet implemented")
-	return 1
+	logger := log.New(os.Stderr, "agent-wrapper: ", log.LstdFlags)
+	logger.Println("ready, waiting for background tasks via stdin...")
+
+	// Wait for shutdown signal.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	<-sigCh
+
+	logger.Println("shutting down")
+	return 0
 }
