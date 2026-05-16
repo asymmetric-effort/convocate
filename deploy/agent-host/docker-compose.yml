@@ -16,7 +16,7 @@ services:
       - agent-host
 
   openbao-agent:
-    image: openbao/openbao:latest
+    image: convocate-openbao:latest
     container_name: convocate-openbao-agent
     restart: unless-stopped
     command: agent -config=/etc/openbao/agent.hcl

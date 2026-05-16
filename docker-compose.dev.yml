@@ -1,5 +1,9 @@
 # Local development environment combining control-plane and agent-host stacks.
 #
+# All base images are ubuntu:latest or gcr.io/distroless (supply chain policy).
+# All listeners bind 127.0.0.1 inside containers; Docker port-mapping
+# handles external access on the loopback interface only.
+#
 # Ports:
 #   8443 — Router API (HTTPS, GitHub Actions equivalent of tcp/443)
 #   8444 — Web UI + Dispatch mTLS (equivalent of tcp/8443)
@@ -16,7 +20,7 @@ services:
   # --- TLS Bootstrap (runs once, generates dev certs) ---
 
   tls-init:
-    image: alpine:latest
+    image: ubuntu:latest
     container_name: convocate-tls-init
     command: ["/bin/sh", "/scripts/dev-tls-init.sh"]
     volumes:
@@ -27,7 +31,7 @@ services:
   # --- Control Plane ---
 
   redis:
-    image: redis:7-alpine
+    image: convocate-redis:latest
     container_name: convocate-redis
     restart: unless-stopped
     depends_on:
@@ -37,6 +41,7 @@ services:
       - "127.0.0.1:6379:6379"
     command: >
       redis-server
+      --bind 127.0.0.1
       --tls-port 6379
       --port 0
       --tls-cert-file /tls/redis.crt
@@ -48,7 +53,7 @@ services:
       - dev-tls:/tls:ro
     healthcheck:
       test: >
-        redis-cli --tls
+        redis-cli -h 127.0.0.1 --tls
         --cert /tls/redis.crt
         --key /tls/redis.key
         --cacert /tls/ca.crt ping
@@ -59,7 +64,7 @@ services:
       - convocate-dev
 
   openbao:
-    image: openbao/openbao:latest
+    image: convocate-openbao:latest
     container_name: convocate-openbao
     restart: unless-stopped
     depends_on:
@@ -69,7 +74,7 @@ services:
       - "127.0.0.1:8200:8200"
     environment:
       - BAO_DEV_ROOT_TOKEN_ID=dev-root-token
-      - BAO_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+      - BAO_DEV_LISTEN_ADDRESS=127.0.0.1:8200
     command: server -dev
     volumes:
       - openbao-data:/var/lib/openbao
@@ -132,7 +137,7 @@ services:
       - convocate-dev
 
   openbao-agent:
-    image: openbao/openbao:latest
+    image: convocate-openbao:latest
     container_name: convocate-openbao-agent
     restart: unless-stopped
     depends_on:
@@ -152,7 +157,7 @@ services:
         }
         cache { use_auto_auth_token = true }
         listener "tcp" {
-          address = "0.0.0.0:8100"
+          address = "127.0.0.1:8100"
           tls_disable = true
         }
         HCL

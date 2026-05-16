@@ -3,7 +3,7 @@
 # Runs as an init container — exits after writing certs to /tls/.
 set -eu
 
-apk add --no-cache openssl >/dev/null 2>&1
+apt-get update -qq && apt-get install -y -qq openssl >/dev/null 2>&1
 
 CERT_DIR="/tls"
 CA_CERT="$CERT_DIR/ca.crt"

@@ -7,7 +7,7 @@ LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 BINARIES := convocate-router convocate-dispatch convocate-secrets-broker convocate-agent-wrapper convocate-cli mock-claude
 
 .PHONY: all build clean lint lint-go lint-yaml lint-vuln test test-unit test-integration test-e2e test-coverage \
-        images image-router image-dispatch image-secrets-broker image-agent \
+        images image-router image-dispatch image-secrets-broker image-agent image-redis image-openbao \
         local/start local/logs local/stop local/reset hooks verify \
         release release/minor release/major
 
@@ -84,7 +84,7 @@ test-coverage: test-unit
 
 # --- OCI Images ---
 
-images: image-router image-dispatch image-secrets-broker image-agent
+images: image-router image-dispatch image-secrets-broker image-agent image-redis image-openbao
 	@echo "All images built."
 
 image-router:
@@ -115,6 +115,16 @@ image-agent: build-convocate-agent-wrapper build-mock-claude
 		$(if $(CONVOCATE_DEV_MOCK_CLAUDE),--build-arg DEV_MOCK_CLAUDE=1,) \
 		-t convocate-agent:$(VERSION) \
 		-t convocate-agent:latest .
+
+image-redis:
+	@echo "Building convocate-redis image..."
+	docker build -f deploy/control-plane/Dockerfile.redis \
+		-t convocate-redis:latest .
+
+image-openbao:
+	@echo "Building convocate-openbao image..."
+	docker build -f deploy/control-plane/Dockerfile.openbao \
+		-t convocate-openbao:latest .
 
 # --- Local Dev Environment ---
 
