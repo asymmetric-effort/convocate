@@ -700,3 +700,18 @@ func TestUnknownV1Path404(t *testing.T) {
 		t.Errorf("status: got %d, want 404", resp.StatusCode)
 	}
 }
+
+func TestStaticFileServed(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	// The embedded dist has placeholder.html.
+	req, _ := http.NewRequestWithContext(context.Background(), "GET",
+		ts.URL+"/placeholder.html", http.NoBody)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status: got %d, want 200", resp.StatusCode)
+	}
+}
