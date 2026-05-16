@@ -1,18 +1,15 @@
-FROM ubuntu:latest AS builder
+# Builder runs as amd64 so apt uses archive.ubuntu.com (not blocked).
+# Go cross-compiles for the target arch via TARGETARCH.
+FROM --platform=linux/amd64 ubuntu:latest AS builder
 
 ARG GO_VERSION=1.26.3
 ARG NODE_VERSION=24
+ARG TARGETARCH
 
-# Work around corporate proxy blocking ports.ubuntu.com (arm64 mirror).
-RUN sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
-      /etc/apt/sources.list.d/*.sources 2>/dev/null; \
-    sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
-      /etc/apt/sources.list 2>/dev/null; \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
-    ARCH=$(dpkg --print-architecture) && \
-    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
       | tar -xz -C /usr/local && \
     curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x \
       | bash - && \
@@ -31,14 +28,14 @@ RUN cd internal/webui && npm install --ignore-scripts
 COPY internal/webui/ internal/webui/
 RUN cd internal/webui && npm run build
 
-# Copy remaining source and build Go binaries.
+# Copy remaining source and build Go binaries for the target platform.
 COPY . .
 
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 GOARCH=${TARGETARCH:-arm64} go build -trimpath \
     -ldflags "-s -w -X main.Version=${VERSION}" \
     -o /out/convocate-router ./cmd/convocate-router/
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 GOARCH=${TARGETARCH:-arm64} go build -trimpath \
     -ldflags "-s -w -X main.Version=${VERSION}" \
     -o /out/convocate-cli ./cmd/convocate-cli/
 

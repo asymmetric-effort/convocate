@@ -21,6 +21,7 @@ services:
 
   tls-init:
     image: ubuntu:latest
+    platform: linux/amd64
     container_name: convocate-tls-init
     command: ["/bin/sh", "/scripts/dev-tls-init.sh"]
     volumes:

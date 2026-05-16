@@ -1,14 +1,7 @@
-FROM ubuntu:latest
+FROM --platform=linux/amd64 ubuntu:latest
 
-# Redis from Ubuntu packages. Uses archive.ubuntu.com mirror explicitly
-# to work around corporate proxy issues with ports.ubuntu.com (arm64).
-RUN sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
-      /etc/apt/sources.list.d/*.sources 2>/dev/null; \
-    sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
-      /etc/apt/sources.list 2>/dev/null; \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-      redis-server ca-certificates && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends redis-server && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /data && chown redis:redis /data
 

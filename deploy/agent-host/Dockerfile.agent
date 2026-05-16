@@ -1,28 +1,21 @@
-FROM ubuntu:latest
+FROM --platform=linux/amd64 ubuntu:latest
 
 ARG VERSION=dev
 ARG DEV_MOCK_CLAUDE=0
-ARG TARGETARCH
 
 LABEL org.opencontainers.image.title="convocate-agent" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.description="Convocate Agent Container (per-project)"
 
-# Work around corporate proxy blocking ports.ubuntu.com (arm64 mirror).
-RUN sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
-      /etc/apt/sources.list.d/*.sources 2>/dev/null; \
-    sed -i 's|ports.ubuntu.com|archive.ubuntu.com|g' \
-      /etc/apt/sources.list 2>/dev/null; \
-    apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y \
     git \
     curl \
     openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-# gh CLI — install from official tarball (avoids apt repo index issues)
+# gh CLI — install from official tarball
 RUN GH_VERSION="2.74.0" && \
-    GH_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "amd64") && \
-    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${GH_ARCH}.tar.gz" \
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
     | tar -xz -C /usr/local --strip-components=1
 
 # Claude Code (skipped when DEV_MOCK_CLAUDE=1)
@@ -33,7 +26,7 @@ RUN if [ "$DEV_MOCK_CLAUDE" = "0" ]; then \
       rm -rf /var/lib/apt/lists/*; \
     fi
 
-# Go wrapper — the container entrypoint
+# Go wrapper — the container entrypoint (cross-compiled for amd64)
 COPY build/convocate-agent-wrapper /usr/local/bin/convocate-agent-wrapper
 
 # mock-claude for dev/e2e testing

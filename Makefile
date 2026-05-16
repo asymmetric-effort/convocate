@@ -108,9 +108,16 @@ image-secrets-broker:
 		-t convocate-secrets-broker:$(VERSION) \
 		-t convocate-secrets-broker:latest .
 
-image-agent: build-convocate-agent-wrapper build-mock-claude
+image-agent:
+	@echo "Building agent binaries (linux/amd64, static)..."
+	@mkdir -p $(BUILD_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) $(LDFLAGS) \
+		-o $(BUILD_DIR)/convocate-agent-wrapper ./cmd/convocate-agent-wrapper/
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) $(LDFLAGS) \
+		-o $(BUILD_DIR)/mock-claude ./cmd/mock-claude/
 	@echo "Building convocate-agent image $(VERSION)..."
 	docker build -f deploy/agent-host/Dockerfile.agent \
+		--platform linux/amd64 \
 		--build-arg VERSION=$(VERSION) \
 		$(if $(CONVOCATE_DEV_MOCK_CLAUDE),--build-arg DEV_MOCK_CLAUDE=1,) \
 		-t convocate-agent:$(VERSION) \
