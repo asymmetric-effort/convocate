@@ -13,35 +13,26 @@
 #   make local/reset   # tear down + volumes, regenerate CA, restart
 
 services:
-  # --- Control Plane ---
+  # --- TLS Bootstrap (runs once, generates dev certs) ---
 
-  router:
-    image: convocate-router:${VERSION:-latest}
-    container_name: convocate-router
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8443:443"
-      - "127.0.0.1:8444:8443"
-    environment:
-      - CONVOCATE_PUBLIC_URL=https://localhost:8443
-      - CONVOCATE_REDIS_URL=rediss://redis:6379
-      - CONVOCATE_OPENBAO_URL=https://openbao:8200
-      - CONVOCATE_DEV=1
-    depends_on:
-      redis:
-        condition: service_healthy
-      openbao:
-        condition: service_healthy
+  tls-init:
+    image: alpine:latest
+    container_name: convocate-tls-init
+    command: ["/bin/sh", "/scripts/dev-tls-init.sh"]
     volumes:
-      - router-data:/var/lib/convocate
       - dev-tls:/tls
-    networks:
-      - convocate-dev
+      - ./scripts:/scripts:ro
+    restart: "no"
+
+  # --- Control Plane ---
 
   redis:
     image: redis:7-alpine
     container_name: convocate-redis
     restart: unless-stopped
+    depends_on:
+      tls-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:6379:6379"
     command: >
@@ -56,7 +47,11 @@ services:
       - redis-data:/data
       - dev-tls:/tls:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "--tls", "--cacert", "/tls/ca.crt", "ping"]
+      test: >
+        redis-cli --tls
+        --cert /tls/redis.crt
+        --key /tls/redis.key
+        --cacert /tls/ca.crt ping
       interval: 5s
       timeout: 3s
       retries: 5
@@ -67,20 +62,52 @@ services:
     image: openbao/openbao:latest
     container_name: convocate-openbao
     restart: unless-stopped
+    depends_on:
+      tls-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8200:8200"
     environment:
-      - BAO_ADDR=https://127.0.0.1:8200
+      - BAO_DEV_ROOT_TOKEN_ID=dev-root-token
+      - BAO_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    command: server -dev
     volumes:
       - openbao-data:/var/lib/openbao
       - dev-tls:/tls:ro
     cap_add:
       - IPC_LOCK
     healthcheck:
-      test: ["CMD", "bao", "status", "-tls-skip-verify"]
+      test:
+        - CMD
+        - sh
+        - -c
+        - "BAO_ADDR=http://127.0.0.1:8200 bao status || true"
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - convocate-dev
+
+  router:
+    image: convocate-router:${VERSION:-latest}
+    container_name: convocate-router
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8443:443"
+      - "127.0.0.1:8444:8443"
+    environment:
+      - CONVOCATE_PUBLIC_URL=https://localhost:8443
+      - CONVOCATE_REDIS_URL=rediss://redis:6379
+      - CONVOCATE_OPENBAO_URL=http://openbao:8200
+      - CONVOCATE_DEV=1
+    depends_on:
+      redis:
+        condition: service_healthy
+      openbao:
+        condition: service_healthy
+    volumes:
+      - router-data:/var/lib/convocate
+      - dev-tls:/tls
     networks:
       - convocate-dev
 
@@ -108,9 +135,28 @@ services:
     image: openbao/openbao:latest
     container_name: convocate-openbao-agent
     restart: unless-stopped
-    command: agent -config=/etc/openbao/agent.hcl
     depends_on:
-      - openbao
+      openbao:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        cat > /tmp/agent.hcl << 'HCL'
+        pid_file = "/tmp/bao-agent.pid"
+        vault { address = "http://openbao:8200" }
+        auto_auth {
+          method "token" {
+            config = { token = "dev-root-token" }
+          }
+        }
+        cache { use_auto_auth_token = true }
+        listener "tcp" {
+          address = "0.0.0.0:8100"
+          tls_disable = true
+        }
+        HCL
+        exec bao agent -config=/tmp/agent.hcl
     volumes:
       - openbao-agent-data:/var/lib/openbao
       - dev-tls:/tls:ro
