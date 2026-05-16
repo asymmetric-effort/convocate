@@ -13,3 +13,16 @@ declare module "@asymmetric-effort/specifyjs/dom" {
     render(element: unknown): void;
   };
 }
+
+declare module "@asymmetric-effort/specifyjs/jsx-runtime" {
+  export function jsx(type: unknown, props: unknown, key?: unknown): unknown;
+  export function jsxs(type: unknown, props: unknown, key?: unknown): unknown;
+  export const Fragment: unique symbol;
+}
+
+declare namespace JSX {
+  type Element = unknown;
+  interface IntrinsicElements {
+    [elemName: string]: Record<string, unknown>;
+  }
+}

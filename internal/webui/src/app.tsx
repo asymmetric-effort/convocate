@@ -26,5 +26,5 @@ export function App() {
       break;
   }
 
-  return <Layout currentPage={page} onNavigate={setPage}>{content}</Layout>;
+  return <Layout currentPage={page} onNavigate={setPage as (page: string) => void}>{content}</Layout>;
 }
