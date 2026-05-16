@@ -97,6 +97,9 @@ services:
     ports:
       - "127.0.0.1:8443:443"
       - "127.0.0.1:8444:8443"
+    env_file:
+      - path: .dev/auth.env
+        required: false
     environment:
       - CONVOCATE_PUBLIC_URL=https://localhost:8443
       - CONVOCATE_REDIS_URL=rediss://redis:6379

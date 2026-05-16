@@ -7,7 +7,7 @@ COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compos
 
 BINARIES := convocate-router convocate-dispatch convocate-secrets-broker convocate-agent-wrapper convocate-cli mock-claude
 
-.PHONY: all dev build clean lint lint-go lint-yaml lint-vuln test test-unit test-integration test-e2e test-coverage \
+.PHONY: all dev auth build clean lint lint-go lint-yaml lint-vuln test test-unit test-integration test-e2e test-coverage \
         images image-router image-dispatch image-secrets-broker image-agent image-redis image-openbao \
         local/start local/logs local/stop local/reset local/test hooks verify \
         release release/minor release/major
@@ -49,6 +49,24 @@ dev:
 		echo "  compose: $$COMPOSE_CMD ($$($$COMPOSE_CMD version 2>/dev/null || echo unknown))"; \
 	fi
 	@echo "Development environment ready."
+
+# --- GitHub OAuth Setup ---
+
+auth:
+	@echo "=== GitHub OAuth Setup ==="
+	@echo ""
+	@echo "Create an OAuth App at: https://github.com/settings/developers"
+	@echo "  Homepage URL:  https://localhost:8443"
+	@echo "  Callback URL:  https://localhost:8443/auth/callback"
+	@echo ""
+	@printf "Enter GitHub Client ID: " && read CLIENT_ID && \
+	printf "Enter GitHub Client Secret: " && read CLIENT_SECRET && \
+	mkdir -p .dev && \
+	printf "GITHUB_CLIENT_ID=%s\nGITHUB_CLIENT_SECRET=%s\nCONVOCATE_AUTH_ORG=asymmetric-effort\n" \
+		"$$CLIENT_ID" "$$CLIENT_SECRET" > .dev/auth.env && \
+	echo "" && \
+	echo "Credentials saved to .dev/auth.env" && \
+	echo "Run 'make local/reset' to apply."
 
 # --- Build ---
 
