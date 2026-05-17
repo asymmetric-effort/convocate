@@ -81,7 +81,8 @@ async function bootstrap() {
     return;
   }
 
-  // Services are healthy — render the app.
+  // Services are healthy — clear loading screen and render the app.
+  rootEl.innerHTML = "";
   const root = createRoot(rootEl);
   setAppRoot(root);
 
