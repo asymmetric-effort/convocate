@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -718,5 +719,126 @@ func TestStaticFileReturns404(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status: got %d, want 404", resp.StatusCode)
+	}
+}
+
+// --- requireJSONContentType ---
+
+func TestRequireJSONContentTypeRejectsNonJSON(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	// POST without Content-Type: application/json should get 415.
+	req, _ := http.NewRequestWithContext(context.Background(), "POST",
+		ts.URL+"/ui/api/projects/create", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "text/plain")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Errorf("status: got %d, want 415", resp.StatusCode)
+	}
+}
+
+func TestRequireJSONContentTypeAcceptsJSON(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST",
+		ts.URL+"/ui/api/projects/create", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	resp.Body.Close()
+	// Should get past the content-type check (400 for missing fields is fine).
+	if resp.StatusCode == http.StatusUnsupportedMediaType {
+		t.Error("should not reject application/json")
+	}
+}
+
+func TestRequireJSONContentTypeSkipsGET(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET",
+		ts.URL+"/ui/api/projects", http.NoBody)
+	// No Content-Type header — GET should pass through.
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusUnsupportedMediaType {
+		t.Error("GET should not be subject to content-type check")
+	}
+}
+
+func TestUpgradeContainerNoContentType(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST",
+		ts.URL+"/ui/api/projects/upgrade", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "text/plain")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Errorf("status: got %d, want 415", resp.StatusCode)
+	}
+}
+
+func TestUpgradeAllIdleNoContentType(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST",
+		ts.URL+"/ui/api/projects/upgrade-all-idle", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "text/plain")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Errorf("status: got %d, want 415", resp.StatusCode)
+	}
+}
+
+func TestUpgradeAllIdleWithJSON(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST",
+		ts.URL+"/ui/api/projects/upgrade-all-idle", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusUnsupportedMediaType {
+		t.Error("should accept application/json")
+	}
+}
+
+func TestDeleteProjectNoContentType(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST",
+		ts.URL+"/ui/api/projects/delete", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "text/plain")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Errorf("status: got %d, want 415", resp.StatusCode)
+	}
+}
+
+func TestAdHocNoContentType(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST",
+		ts.URL+"/ui/api/adhoc", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "text/plain")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Errorf("status: got %d, want 415", resp.StatusCode)
+	}
+}
+
+func TestClusterAuthNoContentType(t *testing.T) {
+	_, ts, _ := freshServer(t)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST",
+		ts.URL+"/ui/api/auth", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "text/plain")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Errorf("status: got %d, want 415", resp.StatusCode)
 	}
 }
