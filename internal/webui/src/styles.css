@@ -450,3 +450,19 @@ button, .nav-link, .side-nav-link, a, [role="button"] {
 .startup-error-dialog button {
   margin-top: 12px;
 }
+
+.btn-secondary {
+  padding: 8px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-secondary:hover {
+  background: var(--color-border);
+}

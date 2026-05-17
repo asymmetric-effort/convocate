@@ -84,6 +84,52 @@ function validatePAT(value: string): string {
 export class CreateProject extends Component<Record<string, never>, Record<string, never>> {
   state = {};
 
+  handleGenerateKeypair = async () => {
+    const keyInput = document.getElementById("cp-key") as HTMLTextAreaElement | null;
+    const pubInput = document.getElementById("cp-pubkey") as HTMLTextAreaElement | null;
+    const errorDiv = document.getElementById("cp-error");
+
+    if (!keyInput || !pubInput) return;
+
+    try {
+      // Generate ed25519 keypair using Web Crypto API.
+      const keyPair = await crypto.subtle.generateKey(
+        { name: "Ed25519" } as unknown as EcKeyGenParams,
+        true,
+        ["sign", "verify"]
+      );
+
+      // Export private key in PKCS8 format.
+      const privDer = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+      const privB64 = btoa(String.fromCharCode(...new Uint8Array(privDer)));
+      const privPem = `-----BEGIN PRIVATE KEY-----\n${privB64.match(/.{1,64}/g)?.join("\n")}\n-----END PRIVATE KEY-----`;
+
+      // Export public key in SPKI format, then convert to SSH format.
+      const pubDer = await crypto.subtle.exportKey("raw", keyPair.publicKey);
+      const pubBytes = new Uint8Array(pubDer);
+      // SSH ed25519 public key format: "ssh-ed25519 <base64-encoded-key>"
+      const keyType = new TextEncoder().encode("ssh-ed25519");
+      const sshPub = new Uint8Array(4 + keyType.length + 4 + pubBytes.length);
+      const view = new DataView(sshPub.buffer);
+      let offset = 0;
+      view.setUint32(offset, keyType.length); offset += 4;
+      sshPub.set(keyType, offset); offset += keyType.length;
+      view.setUint32(offset, pubBytes.length); offset += 4;
+      sshPub.set(pubBytes, offset);
+      const pubB64 = btoa(String.fromCharCode(...sshPub));
+
+      keyInput.value = privPem;
+      pubInput.value = `ssh-ed25519 ${pubB64} convocate-generated`;
+
+      if (errorDiv) errorDiv.style.display = "none";
+    } catch (err: unknown) {
+      if (errorDiv) {
+        errorDiv.textContent = `Key generation failed: ${err instanceof Error ? err.message : "unsupported browser"}`;
+        errorDiv.style.display = "block";
+      }
+    }
+  };
+
   handleSubmit = () => {
     const repoInput = document.getElementById("cp-repo") as HTMLInputElement | null;
     const keyInput = document.getElementById("cp-key") as HTMLTextAreaElement | null;
@@ -166,6 +212,15 @@ export class CreateProject extends Component<Record<string, never>, Record<strin
         </div>
 
         <div className="form-group">
+          <label>SSH Public Key (ed25519)</label>
+          <textarea id="cp-pubkey" placeholder="ssh-ed25519 AAAA..." rows={2} readOnly></textarea>
+        </div>
+
+        <button type="button" onClick={this.handleGenerateKeypair} className="btn-secondary">
+          Generate Key Pair
+        </button>
+
+        <div className="form-group" style={{ marginTop: "16px" }}>
           <label>GitHub PAT (fine-grained, repo-scoped)</label>
           <input id="cp-pat" type="password" placeholder="ghp_..." />
         </div>
