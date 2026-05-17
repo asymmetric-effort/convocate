@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/protocol"
 	"github.com/asymmetric-effort/convocate/internal/redis"
 	"github.com/asymmetric-effort/convocate/internal/uuid"
-	"github.com/asymmetric-effort/convocate/internal/webui"
 )
 
 // Server is the Router API HTTP server.
@@ -86,34 +84,14 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/auth/", s.authHandler)
 	}
 
-	// Web UI static files (SPA with index.html fallback).
-	distFS, distErr := fs.Sub(webui.Dist, "dist")
-	if distErr != nil {
-		s.logger.Printf("router: webui dist not available: %v", distErr)
-	}
-	fileServer := http.FileServer(http.FS(distFS))
+	// Root handler — router-api does not serve Web UI (that's convocate-ui).
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// API paths that don't match a registered handler → 404.
 		if strings.HasPrefix(r.URL.Path, "/v1/") {
 			http.NotFound(w, r)
 			return
 		}
-		// Try serving a static file. If it doesn't exist, serve
-		// index.html for SPA client-side routing.
-		if distErr == nil {
-			path := r.URL.Path
-			if path == "/" {
-				path = "/index.html"
-			}
-			if _, err := fs.Stat(distFS, strings.TrimPrefix(path, "/")); err == nil {
-				fileServer.ServeHTTP(w, r)
-				return
-			}
-		}
-		// SPA fallback: serve index.html for any unmatched path.
-		if distErr == nil {
-			r.URL.Path = "/"
-			fileServer.ServeHTTP(w, r)
+		if r.URL.Path == "/" {
+			writeJSON(w, http.StatusOK, map[string]string{"service": "convocate-router-api"})
 			return
 		}
 		http.NotFound(w, r)

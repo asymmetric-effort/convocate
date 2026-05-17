@@ -11,9 +11,6 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
       | tar -xz -C /usr/local && \
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x \
-      | bash - && \
-    apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/usr/local/go/bin:${PATH}"
@@ -22,28 +19,22 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Build Web UI first (embedded into the Go binary).
-COPY internal/webui/package.json internal/webui/bun.lock internal/webui/
-RUN cd internal/webui && npm install --ignore-scripts
-COPY internal/webui/ internal/webui/
-RUN cd internal/webui && npm run build
-
-# Copy remaining source and build Go binaries for the target platform.
+# Copy source (no Web UI build needed for router-api).
 COPY . .
 
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOARCH=${TARGETARCH:-amd64} go build -trimpath \
     -ldflags "-s -w -X main.Version=${VERSION}" \
-    -o /out/convocate-router ./cmd/convocate-router/
+    -o /out/convocate-router-api ./cmd/convocate-router-api/
 RUN CGO_ENABLED=0 GOARCH=${TARGETARCH:-amd64} go build -trimpath \
     -ldflags "-s -w -X main.Version=${VERSION}" \
     -o /out/convocate-cli ./cmd/convocate-cli/
 
 FROM gcr.io/distroless/static-debian12
 
-COPY --from=builder /out/convocate-router /usr/local/bin/convocate-router
+COPY --from=builder /out/convocate-router-api /usr/local/bin/convocate-router-api
 COPY --from=builder /out/convocate-cli /usr/local/bin/convocate-cli
 
 EXPOSE 443 8443
 
-ENTRYPOINT ["/usr/local/bin/convocate-router"]
+ENTRYPOINT ["/usr/local/bin/convocate-router-api"]

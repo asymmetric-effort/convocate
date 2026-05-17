@@ -5,10 +5,10 @@ GOFLAGS := -trimpath
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
 
-BINARIES := convocate-router convocate-dispatch convocate-secrets-broker convocate-agent-wrapper convocate-cli mock-claude
+BINARIES := convocate-router-api convocate-ui convocate-dispatch convocate-secrets-broker convocate-agent-wrapper convocate-cli mock-claude
 
 .PHONY: all dev auth build clean lint lint-go lint-yaml lint-vuln test test-unit test-integration test-e2e test-coverage \
-        images image-router image-dispatch image-secrets-broker image-agent image-redis image-openbao \
+        images image-router-api image-ui image-dispatch image-secrets-broker image-agent image-redis image-openbao \
         local/start local/logs local/stop local/reset local/test local/pdv hooks verify \
         release release/minor release/major
 
@@ -139,7 +139,7 @@ test-coverage: test-unit
 
 # --- OCI Images ---
 
-images: image-tls-init image-router image-dispatch image-secrets-broker image-agent image-redis image-openbao
+images: image-tls-init image-router-api image-ui image-dispatch image-secrets-broker image-agent image-redis image-openbao
 	@echo "All images built."
 
 image-tls-init:
@@ -147,12 +147,19 @@ image-tls-init:
 	docker build -f deploy/control-plane/Dockerfile.tls-init \
 		-t convocate-tls-init:latest .
 
-image-router:
-	@echo "Building convocate-router image $(VERSION)..."
-	docker build -f deploy/control-plane/Dockerfile.router \
+image-router-api:
+	@echo "Building convocate-router-api image $(VERSION)..."
+	docker build -f deploy/control-plane/Dockerfile.router-api \
 		--build-arg VERSION=$(VERSION) \
-		-t convocate-router:$(VERSION) \
-		-t convocate-router:latest .
+		-t convocate-router-api:$(VERSION) \
+		-t convocate-router-api:latest .
+
+image-ui:
+	@echo "Building convocate-ui image $(VERSION)..."
+	docker build -f deploy/control-plane/Dockerfile.ui \
+		--build-arg VERSION=$(VERSION) \
+		-t convocate-ui:$(VERSION) \
+		-t convocate-ui:latest .
 
 image-dispatch:
 	@echo "Building convocate-dispatch image $(VERSION)..."
@@ -201,12 +208,12 @@ local/start: images
 	$(COMPOSE) -f docker-compose.dev.yml up -d
 	@echo "Waiting for Router API to become healthy..."
 	@for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do \
-		if curl -fsSk https://localhost:8443/v1/health >/dev/null 2>&1; then \
-			echo "Router API healthy: $$(curl -sk https://localhost:8443/v1/health)"; \
+		if curl -fsSk https://localhost:8444/v1/health >/dev/null 2>&1; then \
+			echo "Router API healthy: $$(curl -sk https://localhost:8444/v1/health)"; \
 			exit 0; \
 		fi; \
 		if docker run --rm --network convocate_convocate-dev --entrypoint sh convocate-tls-init:latest \
-			-c 'curl -fsSk https://convocate-router:443/v1/health' 2>/dev/null; then \
+			-c 'curl -fsSk https://convocate-router-api:443/v1/health' 2>/dev/null; then \
 			echo ""; \
 			echo "Router API healthy (via docker network)"; \
 			exit 0; \
@@ -214,7 +221,7 @@ local/start: images
 		sleep 2; \
 	done; \
 	echo "ERROR: Router API not healthy after 40s"; \
-	$(COMPOSE) -f docker-compose.dev.yml logs --tail=20 router; \
+	$(COMPOSE) -f docker-compose.dev.yml logs --tail=20 router-api; \
 	exit 1
 
 local/logs:
@@ -231,31 +238,30 @@ local/reset:
 	@echo "Regenerating local CA on next start."
 	@$(MAKE) local/start
 
-# DCURL runs curl against the router inside the Docker network.
-# Falls back to localhost for environments where port mapping works.
+# DCURL runs curl against services inside the Docker network.
 DCURL = docker run --rm --network convocate_convocate-dev --entrypoint sh \
 	convocate-tls-init:latest -c
 
 local/test:
 	@echo "=== Post-deployment verification tests ==="
-	@echo "--- Health check ---"
-	@$(DCURL) 'curl -fsSk https://convocate-router:443/v1/health' || \
+	@echo "--- Router API health check ---"
+	@$(DCURL) 'curl -fsSk https://convocate-router-api:443/v1/health' || \
 		{ echo "FAIL: /v1/health unreachable"; exit 1; }
 	@echo ""
-	@echo "--- Health alias ---"
-	@$(DCURL) 'curl -fsSk https://convocate-router:443/health' || \
+	@echo "--- Router API health alias ---"
+	@$(DCURL) 'curl -fsSk https://convocate-router-api:443/health' || \
 		{ echo "FAIL: /health unreachable"; exit 1; }
 	@echo ""
-	@echo "--- Root serves Web UI or auth redirect ---"
-	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router:443/'); \
+	@echo "--- Router API root returns service JSON or auth redirect ---"
+	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router-api:443/'); \
 	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "302" ]; then \
-		echo "OK: / returns $$HTTP"; \
+		echo "OK: router-api / returns $$HTTP"; \
 	else \
-		echo "FAIL: / returned $$HTTP (expected 200 or 302)"; exit 1; \
+		echo "FAIL: router-api / returned $$HTTP (expected 200 or 302)"; exit 1; \
 	fi
 	@echo "--- Auth enforcement ---"
 	@HTTP_CODE=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" \
-		-X POST https://convocate-router:443/v1/jobs \
+		-X POST https://convocate-router-api:443/v1/jobs \
 		-H "Content-Type: application/json" \
 		-d "{\"repository\":\"test/repo\",\"run_id\":1}"'); \
 	if [ "$$HTTP_CODE" != "401" ]; then \
@@ -264,7 +270,7 @@ local/test:
 	echo "OK: /v1/jobs returns 401 without token"
 	@echo "--- Allowlist enforcement ---"
 	@HTTP_CODE=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" \
-		-X POST https://convocate-router:443/v1/jobs \
+		-X POST https://convocate-router-api:443/v1/jobs \
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer bad-token" \
 		-d "{\"repository\":\"unknown/repo\",\"run_id\":1}"'); \
@@ -272,29 +278,40 @@ local/test:
 		echo "FAIL: unknown repo returned $$HTTP_CODE, want 404"; exit 1; \
 	fi; \
 	echo "OK: unknown repo returns 404"
-	@echo "--- Web UI API (responds, may require auth) ---"
-	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router:443/ui/api/projects'); \
+	@echo "--- Web UI API via router-api (responds, may require auth) ---"
+	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router-api:443/ui/api/projects'); \
 	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "401" ] || [ "$$HTTP" = "302" ]; then \
 		echo "OK: /ui/api/projects returns $$HTTP"; \
 	else \
 		echo "FAIL: /ui/api/projects returned $$HTTP"; exit 1; \
 	fi
-	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router:443/ui/api/jobs'); \
+	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router-api:443/ui/api/jobs'); \
 	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "401" ] || [ "$$HTTP" = "302" ]; then \
 		echo "OK: /ui/api/jobs returns $$HTTP"; \
 	else \
 		echo "FAIL: /ui/api/jobs returned $$HTTP"; exit 1; \
 	fi
-	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router:443/ui/api/hosts'); \
+	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router-api:443/ui/api/hosts'); \
 	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "401" ] || [ "$$HTTP" = "302" ]; then \
 		echo "OK: /ui/api/hosts returns $$HTTP"; \
 	else \
 		echo "FAIL: /ui/api/hosts returned $$HTTP"; exit 1; \
 	fi
-	@echo "--- Internal port (8443) ---"
-	@$(DCURL) 'curl -fsSk https://convocate-router:8443/v1/health' > /dev/null || \
+	@echo "--- Router API internal port (8443) ---"
+	@$(DCURL) 'curl -fsSk https://convocate-router-api:8443/v1/health' > /dev/null || \
 		{ echo "FAIL: port 8443 /v1/health unreachable"; exit 1; }
 	@echo "OK: port 8443 serves /v1/health"
+	@echo "--- UI serves Web UI ---"
+	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-ui:443/'); \
+	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "302" ]; then \
+		echo "OK: UI / returns $$HTTP"; \
+	else \
+		echo "FAIL: UI / returned $$HTTP (expected 200 or 302)"; exit 1; \
+	fi
+	@echo "--- UI proxies /v1/health to router-api ---"
+	@$(DCURL) 'curl -fsSk https://convocate-ui:443/v1/health' || \
+		{ echo "FAIL: UI /v1/health proxy unreachable"; exit 1; }
+	@echo ""
 	@echo "=== All local verification tests passed ==="
 
 local/pdv:

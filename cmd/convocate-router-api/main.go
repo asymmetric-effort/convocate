@@ -25,12 +25,12 @@ func main() {
 		fmt.Println(Version)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "convocate-router %s\n", Version)
+	fmt.Fprintf(os.Stderr, "convocate-router-api %s\n", Version)
 	os.Exit(run())
 }
 
 func run() int {
-	logger := log.New(os.Stderr, "router: ", log.LstdFlags)
+	logger := log.New(os.Stderr, "router-api: ", log.LstdFlags)
 
 	// Redis connection — use mock for dev if real Redis isn't reachable.
 	var store *redis.RouterStore
@@ -123,6 +123,7 @@ func run() int {
 		dnsNames := []string{
 			"localhost",
 			"router",
+			"router-api",
 			"webui.dev.convocate.asymmetric-effort.com",
 		}
 		// Add any extra SANs from CONVOCATE_PUBLIC_URL.
@@ -138,7 +139,7 @@ func run() int {
 				}
 			}
 		}
-		pair, certErr := ca.IssueServerCert("convocate-router",
+		pair, certErr := ca.IssueServerCert("convocate-router-api",
 			dnsNames, []net.IP{net.ParseIP("127.0.0.1")},
 			365*24*time.Hour)
 		if certErr != nil {

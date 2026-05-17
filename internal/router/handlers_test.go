@@ -656,7 +656,7 @@ func TestHealthAlias(t *testing.T) {
 	}
 }
 
-func TestRootServesWebUI(t *testing.T) {
+func TestRootServesServiceJSON(t *testing.T) {
 	_, ts, _ := freshServer(t)
 	req, _ := http.NewRequestWithContext(context.Background(), "GET",
 		ts.URL+"/", http.NoBody)
@@ -664,14 +664,19 @@ func TestRootServesWebUI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	resp.Body.Close()
-	// Root serves the Web UI SPA (index.html from embedded dist).
+	defer resp.Body.Close()
+	// Root returns service identification JSON.
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status: got %d, want 200", resp.StatusCode)
 	}
+	var body map[string]string
+	json.NewDecoder(resp.Body).Decode(&body)
+	if body["service"] != "convocate-router-api" {
+		t.Errorf("service: got %q, want %q", body["service"], "convocate-router-api")
+	}
 }
 
-func TestUnknownPathServesSPAFallback(t *testing.T) {
+func TestUnknownPathReturns404(t *testing.T) {
 	_, ts, _ := freshServer(t)
 	req, _ := http.NewRequestWithContext(context.Background(), "GET",
 		ts.URL+"/some/spa/route", http.NoBody)
@@ -680,9 +685,9 @@ func TestUnknownPathServesSPAFallback(t *testing.T) {
 		t.Fatalf("error: %v", err)
 	}
 	resp.Body.Close()
-	// SPA fallback: unknown non-API paths serve index.html (200).
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status: got %d, want 200 (SPA fallback)", resp.StatusCode)
+	// Non-API, non-root paths return 404 (Web UI is served by convocate-ui).
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status: got %d, want 404", resp.StatusCode)
 	}
 }
 
@@ -701,9 +706,9 @@ func TestUnknownV1Path404(t *testing.T) {
 	}
 }
 
-func TestStaticFileServed(t *testing.T) {
+func TestStaticFileReturns404(t *testing.T) {
 	_, ts, _ := freshServer(t)
-	// The embedded dist has placeholder.html.
+	// Router-api no longer serves static files (Web UI is in convocate-ui).
 	req, _ := http.NewRequestWithContext(context.Background(), "GET",
 		ts.URL+"/placeholder.html", http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
@@ -711,7 +716,7 @@ func TestStaticFileServed(t *testing.T) {
 		t.Fatalf("error: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status: got %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status: got %d, want 404", resp.StatusCode)
 	}
 }

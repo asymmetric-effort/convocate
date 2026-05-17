@@ -1,7 +1,7 @@
 services:
-  router:
-    image: convocate-router:${VERSION:-latest}
-    container_name: convocate-router
+  router-api:
+    image: convocate-router-api:${VERSION:-latest}
+    container_name: convocate-router-api
     restart: unless-stopped
     ports:
       - "127.0.0.1:443:443"
@@ -17,6 +17,19 @@ services:
         condition: service_healthy
     volumes:
       - router-data:/var/lib/convocate
+    networks:
+      - control-plane
+
+  ui:
+    image: convocate-ui:${VERSION:-latest}
+    container_name: convocate-ui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8444:443"
+    environment:
+      - CONVOCATE_ROUTER_API_URL=https://router-api:443
+    depends_on:
+      - router-api
     networks:
       - control-plane
 

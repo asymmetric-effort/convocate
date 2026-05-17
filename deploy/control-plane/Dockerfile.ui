@@ -1,0 +1,45 @@
+# Builder runs as amd64 so apt uses archive.ubuntu.com (not blocked).
+# Go cross-compiles for the target arch via TARGETARCH.
+FROM --platform=linux/amd64 ubuntu:latest AS builder
+
+ARG GO_VERSION=1.26.3
+ARG TARGETARCH
+ARG NODE_VERSION=24
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+      | tar -xz -C /usr/local && \
+    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x \
+      | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build Web UI first (embedded into the Go binary).
+COPY internal/webui/package.json internal/webui/bun.lock internal/webui/
+RUN cd internal/webui && npm install --ignore-scripts
+COPY internal/webui/ internal/webui/
+RUN cd internal/webui && npm run build
+
+# Copy remaining source and build Go binary for the target platform.
+COPY . .
+
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOARCH=${TARGETARCH:-amd64} go build -trimpath \
+    -ldflags "-s -w -X main.Version=${VERSION}" \
+    -o /out/convocate-ui ./cmd/convocate-ui/
+
+FROM gcr.io/distroless/static-debian12
+
+COPY --from=builder /out/convocate-ui /usr/local/bin/convocate-ui
+
+EXPOSE 443
+
+ENTRYPOINT ["/usr/local/bin/convocate-ui"]

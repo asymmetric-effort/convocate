@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
-      - name: Build Web UI (for embed)
+      - name: Build Web UI (for embed in convocate-ui)
         run: cd internal/webui && npm install && npm run build
       - name: Go lint (golangci-lint)
         run: |
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
-      - name: Build Web UI (for embed)
+      - name: Build Web UI (for embed in convocate-ui)
         run: cd internal/webui && npm install && npm run build
       - name: Unit tests with coverage
         run: |
@@ -88,7 +88,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
-      - name: Build Web UI (required for embed)
+      - name: Build Web UI (required for embed in convocate-ui)
         run: cd internal/webui && npm install && npm run build
       - name: Build all binaries
         run: make build

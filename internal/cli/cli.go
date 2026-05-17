@@ -192,7 +192,7 @@ func IssueServerCert(ca *mtls.CA, publicURL string) (*mtls.CertKeyPair, error) {
 	}
 	ips = append(ips, net.ParseIP("127.0.0.1"))
 
-	return ca.IssueServerCert("convocate-router", dnsNames, ips, DefaultCertValidity)
+	return ca.IssueServerCert("convocate-router-api", dnsNames, ips, DefaultCertValidity)
 }
 
 // --- OpenBao subcommands ---

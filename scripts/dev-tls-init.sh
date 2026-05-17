@@ -58,7 +58,7 @@ openssl req -new -key "$CERT_DIR/router.key" \
   -subj "/CN=router/O=convocate" \
   -out /tmp/router.csr 2>/dev/null
 cat > /tmp/router-ext.cnf << 'EXTEOF'
-subjectAltName=DNS:router,DNS:localhost,IP:127.0.0.1
+subjectAltName=DNS:router,DNS:router-api,DNS:convocate-router-api,DNS:localhost,IP:127.0.0.1
 EXTEOF
 openssl x509 -req -in /tmp/router.csr -CA "$CA_CERT" -CAkey "$CA_KEY" \
   -CAcreateserial -days 3650 -sha256 \
