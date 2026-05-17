@@ -87,8 +87,8 @@ func TestCallbackSuccess(t *testing.T) {
 				Login:     "testuser",
 				AvatarURL: "https://github.com/testuser.png",
 			})
-		case strings.HasPrefix(r.URL.Path, "/orgs/asymmetric-effort/members/"):
-			w.WriteHeader(http.StatusNoContent)
+		case strings.HasPrefix(r.URL.Path, "/user/memberships/orgs/asymmetric-effort"):
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -170,7 +170,7 @@ func TestCallbackNonOrgMember(t *testing.T) {
 				Login:     "outsider",
 				AvatarURL: "https://github.com/outsider.png",
 			})
-		case strings.HasPrefix(r.URL.Path, "/orgs/asymmetric-effort/members/"):
+		case strings.HasPrefix(r.URL.Path, "/user/memberships/orgs/asymmetric-effort"):
 			w.WriteHeader(http.StatusNotFound) // Not a member.
 		default:
 			w.WriteHeader(http.StatusNotFound)

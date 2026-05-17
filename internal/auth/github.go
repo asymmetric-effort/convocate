@@ -118,9 +118,11 @@ func (g *GitHubClient) GetUser(accessToken string) (*GitHubUser, error) {
 	return &user, nil
 }
 
-// CheckOrgMembership verifies that the user is a member of the given org.
+// CheckOrgMembership verifies that the authenticated user is a member of the given org.
+// Uses /user/memberships/orgs/{org} which works even with private membership.
 func (g *GitHubClient) CheckOrgMembership(accessToken, org, username string) (bool, error) {
-	u := fmt.Sprintf("%s/orgs/%s/members/%s", g.apiBaseURL, org, username)
+	// Use the user's own membership endpoint — works regardless of visibility setting.
+	u := fmt.Sprintf("%s/user/memberships/orgs/%s", g.apiBaseURL, org)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -138,6 +140,9 @@ func (g *GitHubClient) CheckOrgMembership(accessToken, org, username string) (bo
 	}
 	defer resp.Body.Close()
 
-	// 204 = member, 302 = requester is not org member (redirect), 404 = not a member
-	return resp.StatusCode == http.StatusNoContent, nil
+	// 200 = member (active or pending), 403 = not a member, 404 = org not found
+	if resp.StatusCode == http.StatusOK {
+		return true, nil
+	}
+	return false, nil
 }

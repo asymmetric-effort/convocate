@@ -338,7 +338,7 @@ type splitTransport struct {
 }
 
 func (st *splitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if strings.Contains(req.URL.Path, "/orgs/") {
+	if strings.Contains(req.URL.Path, "/memberships/orgs/") {
 		broken := *req.URL
 		broken.Host = strings.TrimPrefix(st.broken, "http://")
 		broken.Scheme = "http"
@@ -367,8 +367,8 @@ func TestCallbackHandlerSessionCreateFailure(t *testing.T) {
 		case r.URL.Path == "/user":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(GitHubUser{Login: "u", AvatarURL: "a"})
-		case strings.HasPrefix(r.URL.Path, "/orgs/"):
-			w.WriteHeader(http.StatusNoContent)
+		case strings.HasPrefix(r.URL.Path, "/user/memberships/orgs/"):
+			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
