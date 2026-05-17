@@ -1,7 +1,7 @@
 import { createRoot } from "@asymmetric-effort/specifyjs/dom";
 import { App, setAppRoot } from "./app";
-import { UnauthorizedError } from "./api/client";
-import type { MeResponse } from "./api/client";
+import { api, UnauthorizedError } from "./api/client";
+import type { MeResponse, ProjectInfo, HostHealthInfo } from "./api/client";
 import "./styles.css";
 
 const CONNECT_TIMEOUT_MS = 10000;
@@ -81,6 +81,25 @@ async function bootstrap() {
     return;
   }
 
+  // Fetch dashboard data before rendering.
+  let projects: ProjectInfo[] = [];
+  let hosts: HostHealthInfo[] = [];
+  try {
+    projects = await api.listProjects();
+  } catch { /* empty is fine */ }
+  try {
+    hosts = await api.listHosts();
+  } catch { /* empty is fine */ }
+
+  // Determine component status — if health check passed, services are running.
+  const components = [
+    { name: "router-api", status: "running" as const },
+    { name: "ui", status: "running" as const },
+    { name: "openbao", status: "running" as const },
+    { name: "dispatch-api", status: "running" as const },
+    { name: "secrets-broker", status: "running" as const },
+  ];
+
   // Services are healthy — clear loading screen and render the app.
   rootEl.innerHTML = "";
   const root = createRoot(rootEl);
@@ -91,6 +110,9 @@ async function bootstrap() {
       initialAuthenticated={authenticated}
       initialUser={user}
       initialError=""
+      projects={projects}
+      hosts={hosts}
+      components={components}
     />
   );
 }

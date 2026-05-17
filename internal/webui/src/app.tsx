@@ -5,7 +5,7 @@ import { Projects } from "./pages/Projects";
 import { Agents } from "./pages/Agents";
 import { DevEnvs } from "./pages/DevEnvs";
 import { Console } from "./pages/Console";
-import type { MeResponse } from "./api/client";
+import type { MeResponse, ProjectInfo, HostHealthInfo } from "./api/client";
 
 type TopNav = "dashboard" | "projects" | "agents" | "dev-envs" | "console";
 
@@ -44,10 +44,18 @@ const DEFAULT_SIDE_NAV: Record<TopNav, string> = {
   console: "adhoc",
 };
 
+interface ComponentStatus {
+  name: string;
+  status: "running" | "stopped" | "unknown";
+}
+
 interface AppProps {
   initialAuthenticated: boolean;
   initialUser: MeResponse | null;
   initialError: string;
+  projects: ProjectInfo[];
+  hosts: HostHealthInfo[];
+  components: ComponentStatus[];
 }
 
 interface AppState {
@@ -94,30 +102,32 @@ export class App extends Component<AppProps, AppState> {
       rerenderApp();
     };
 
+    const { projects, hosts, components } = this.props;
+
     let content: unknown;
     switch (topNav) {
       case "dashboard":
-        content = <Dashboard authenticated={authenticated} />;
+        content = <Dashboard authenticated={authenticated} projects={projects} hosts={hosts} components={components} />;
         break;
       case "projects":
         content = authenticated
           ? <Projects activeSideNav={sideNav} />
-          : <Dashboard authenticated={false} />;
+          : <Dashboard authenticated={false} projects={[]} hosts={[]} components={components} />;
         break;
       case "agents":
         content = authenticated
           ? <Agents activeSideNav={sideNav} />
-          : <Dashboard authenticated={false} />;
+          : <Dashboard authenticated={false} projects={[]} hosts={[]} components={components} />;
         break;
       case "dev-envs":
         content = authenticated
           ? <DevEnvs activeSideNav={sideNav} />
-          : <Dashboard authenticated={false} />;
+          : <Dashboard authenticated={false} projects={[]} hosts={[]} components={components} />;
         break;
       case "console":
         content = authenticated
           ? <Console activeSideNav={sideNav} />
-          : <Dashboard authenticated={false} />;
+          : <Dashboard authenticated={false} projects={[]} hosts={[]} components={components} />;
         break;
     }
 
