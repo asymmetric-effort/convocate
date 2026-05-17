@@ -103,6 +103,7 @@ services:
       - dev-tls:/tls:ro
     networks:
       - convocate-dev
+      - shared-dev
 
   # --- Agent Host ---
 
