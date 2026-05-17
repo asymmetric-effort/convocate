@@ -38,14 +38,14 @@ async function bootstrap() {
   );
 }
 
-// Show loading state immediately via plain HTML, then bootstrap.
+// Show loading state immediately via inline styles (CSS bundle not yet loaded).
 const rootEl = document.getElementById("root");
 if (rootEl) {
   rootEl.innerHTML = `
-    <div class="startup-screen">
-      <div class="startup-spinner">
-        <div class="nav-brand">convocate</div>
-        <p>Connecting to services...</p>
+    <div style="display:flex;align-items:center;justify-content:center;position:fixed;inset:0;background:#0f172a;z-index:9999;">
+      <div style="text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:#60a5fa;margin-bottom:16px;">convocate</div>
+        <p style="color:#94a3b8;font-size:14px;">Connecting to services...</p>
       </div>
     </div>
   `;
