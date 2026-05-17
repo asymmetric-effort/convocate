@@ -406,7 +406,7 @@ func TestLogoutHandlerMethodNotAllowed(t *testing.T) {
 	logger := log.New(&strings.Builder{}, "", 0)
 	handler := Handler(cfg, logger)
 
-	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/auth/logout", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -422,7 +422,7 @@ func TestLogoutHandlerNoCookie(t *testing.T) {
 	handler := Handler(cfg, logger)
 
 	// No session cookie — should still redirect to /auth/login.
-	req := httptest.NewRequest(http.MethodGet, "/auth/logout", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 

@@ -164,7 +164,7 @@ func callbackHandler(cfg *Config, gh *GitHubClient, sessions *SessionStore, logg
 			MaxAge:   int(cfg.SessionTTL.Seconds()),
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteStrictMode,
 		})
 
 		http.Redirect(w, r, "/", http.StatusFound)
@@ -173,7 +173,7 @@ func callbackHandler(cfg *Config, gh *GitHubClient, sessions *SessionStore, logg
 
 func logoutHandler(sessions *SessionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -190,7 +190,7 @@ func logoutHandler(sessions *SessionStore) http.HandlerFunc {
 			MaxAge:   -1,
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteStrictMode,
 		})
 
 		http.Redirect(w, r, "/auth/login", http.StatusFound)

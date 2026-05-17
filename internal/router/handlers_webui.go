@@ -26,6 +26,9 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !requireJSONContentType(w, r) {
+		return
+	}
 
 	var req protocol.CreateProjectRequest
 	if err := readJSON(r, &req); err != nil {
@@ -137,6 +140,9 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !requireJSONContentType(w, r) {
+		return
+	}
 
 	var req protocol.DeleteProjectRequest
 	if err := readJSON(r, &req); err != nil {
@@ -232,6 +238,9 @@ func (s *Server) handleClusterAuth(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !requireJSONContentType(w, r) {
+		return
+	}
 
 	var req protocol.SetClusterAuthRequest
 	if err := readJSON(r, &req); err != nil {
@@ -291,6 +300,9 @@ func (s *Server) handleClusterAuth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAdHocSubmit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !requireJSONContentType(w, r) {
 		return
 	}
 
@@ -374,6 +386,9 @@ func (s *Server) handleUpgradeContainer(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !requireJSONContentType(w, r) {
+		return
+	}
 
 	var req protocol.UpgradeContainerRequest
 	if err := readJSON(r, &req); err != nil {
@@ -399,6 +414,9 @@ func (s *Server) handleUpgradeContainer(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleUpgradeAllIdle(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !requireJSONContentType(w, r) {
 		return
 	}
 
