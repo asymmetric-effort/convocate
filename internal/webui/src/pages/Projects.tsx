@@ -1,6 +1,6 @@
 import { Component } from "@asymmetric-effort/specifyjs";
 import { api } from "../api/client";
-import type { ProjectInfo, CreateProjectResponse } from "../api/client";
+import type { ProjectInfo } from "../api/client";
 
 interface ProjectsProps {
   activeSideNav: string;
@@ -57,139 +57,120 @@ export class ListProjects extends Component<Record<string, never>, ListProjectsS
 
 // ---- Create Project ----
 
-interface CreateProjectState {
-  repository: string;
-  sshPrivateKey: string;
-  githubPAT: string;
-  error: string;
-  result: CreateProjectResponse | null;
-  submitting: boolean;
+function validateRepository(value: string): string {
+  if (!value.trim()) return "Repository is required.";
+  // Must be git@github.com:org/repo.git or org/repo format.
+  const sshPattern = /^git@[\w.-]+:[\w.-]+\/[\w.-]+(\.git)?$/;
+  const shortPattern = /^[\w.-]+\/[\w.-]+$/;
+  if (!sshPattern.test(value) && !shortPattern.test(value)) {
+    return "Repository must be in format 'org/repo' or 'git@github.com:org/repo.git'.";
+  }
+  return "";
 }
 
-export class CreateProject extends Component<Record<string, never>, CreateProjectState> {
-  state: CreateProjectState = {
-    repository: "",
-    sshPrivateKey: "",
-    githubPAT: "",
-    error: "",
-    result: null,
-    submitting: false,
-  };
+function validateSSHKey(value: string): string {
+  if (!value.trim()) return "SSH private key is required.";
+  if (!value.includes("BEGIN") || !value.includes("PRIVATE KEY")) {
+    return "SSH key must be a valid PEM-encoded private key.";
+  }
+  return "";
+}
 
-  handleSubmit = async () => {
-    const { repository, sshPrivateKey, githubPAT } = this.state;
-    if (!repository || !sshPrivateKey || !githubPAT) {
-      this.setState({ error: "All fields are required." });
-      return;
-    }
-    this.setState({ submitting: true, error: "" });
-    try {
-      const resp = await api.createProject({
-        repository,
-        ssh_private_key: sshPrivateKey,
-        github_pat: githubPAT,
-      });
-      this.setState({ result: resp });
-    } catch (err: unknown) {
-      this.setState({ error: err instanceof Error ? err.message : "Unknown error" });
-    } finally {
-      this.setState({ submitting: false });
-    }
-  };
+function validatePAT(value: string): string {
+  if (!value.trim()) return "GitHub PAT is required.";
+  return "";
+}
 
-  render() {
-    const { repository, sshPrivateKey, githubPAT, error, result, submitting } = this.state;
+export class CreateProject extends Component<Record<string, never>, Record<string, never>> {
+  state = {};
 
-    if (result) {
-      return (
-        <div className="create-project-result">
+  handleSubmit = () => {
+    const repoInput = document.getElementById("cp-repo") as HTMLInputElement | null;
+    const keyInput = document.getElementById("cp-key") as HTMLTextAreaElement | null;
+    const patInput = document.getElementById("cp-pat") as HTMLInputElement | null;
+    const errorDiv = document.getElementById("cp-error");
+    const btn = document.getElementById("cp-submit") as HTMLButtonElement | null;
+
+    if (!repoInput || !keyInput || !patInput || !errorDiv || !btn) return;
+
+    const repo = repoInput.value.trim();
+    const key = keyInput.value.trim();
+    const pat = patInput.value.trim();
+
+    // Validate.
+    const repoErr = validateRepository(repo);
+    if (repoErr) { errorDiv.textContent = repoErr; errorDiv.style.display = "block"; return; }
+    const keyErr = validateSSHKey(key);
+    if (keyErr) { errorDiv.textContent = keyErr; errorDiv.style.display = "block"; return; }
+    const patErr = validatePAT(pat);
+    if (patErr) { errorDiv.textContent = patErr; errorDiv.style.display = "block"; return; }
+
+    errorDiv.style.display = "none";
+    btn.disabled = true;
+    btn.textContent = "Creating...";
+
+    api.createProject({
+      repository: repo,
+      ssh_private_key: key,
+      github_pat: pat,
+    }).then((resp) => {
+      // Show result in the same container.
+      const container = document.getElementById("cp-form");
+      if (container) {
+        container.innerHTML = `
           <h1>Project Created</h1>
-          <p>Repository: {result.repository}</p>
-          <p>Project ID: {result.project_id}</p>
-
-          <div className="token-display">
+          <p>Repository: ${resp.repository}</p>
+          <p>Project ID: ${resp.project_id}</p>
+          <div class="token-display">
             <h2>CONVOCATE_API_TOKEN</h2>
-            <p className="warning">Copy this token now. It will not be shown again.</p>
-            <code className="token">{result.api_token}</code>
+            <p class="warning">Copy this token now. It will not be shown again.</p>
+            <code class="token">${resp.api_token}</code>
           </div>
-
-          <div className="setup-instructions">
+          <div class="setup-instructions">
             <h2>GitHub Setup</h2>
-            <p>Add these to your repository's Actions secrets and variables:</p>
+            <p>Add to your repository's Actions secrets and variables:</p>
             <table>
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Name</th>
-                  <th>Value</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Type</th><th>Name</th><th>Value</th></tr></thead>
               <tbody>
-                <tr>
-                  <td>Variable</td>
-                  <td>CONVOCATE_BOT_ACCOUNT</td>
-                  <td>(your bot account name)</td>
-                </tr>
-                <tr>
-                  <td>Variable</td>
-                  <td>CONVOCATE_ROUTER_URL</td>
-                  <td>(your Router API URL)</td>
-                </tr>
-                <tr>
-                  <td>Secret</td>
-                  <td>CONVOCATE_API_TOKEN</td>
-                  <td>{result.api_token}</td>
-                </tr>
+                <tr><td>Variable</td><td>CONVOCATE_BOT_ACCOUNT</td><td>(your bot account)</td></tr>
+                <tr><td>Variable</td><td>CONVOCATE_ROUTER_URL</td><td>(Router API URL)</td></tr>
+                <tr><td>Secret</td><td>CONVOCATE_API_TOKEN</td><td>${resp.api_token}</td></tr>
               </tbody>
             </table>
           </div>
+        `;
+      }
+    }).catch((err: unknown) => {
+      errorDiv.textContent = err instanceof Error ? err.message : "Unknown error";
+      errorDiv.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = "Create Project";
+    });
+  };
 
-          <button onClick={() => this.setState({ result: null, repository: "", sshPrivateKey: "", githubPAT: "" })}>
-            Create Another
-          </button>
-        </div>
-      );
-    }
-
+  render() {
     return (
-      <div className="create-project">
+      <div id="cp-form" className="create-project">
         <h1>Create Project</h1>
 
-        {error ? <div className="error">{error}</div> : null}
+        <div id="cp-error" className="error" style={{ display: "none" }}></div>
 
         <div className="form-group">
-          <label>Repository (org/repo)</label>
-          <input
-            type="text"
-            value={repository}
-            placeholder="org/repo"
-            onInput={(e: Event) => this.setState({ repository: (e.target as HTMLInputElement).value })}
-          />
+          <label>Repository (org/repo or git@github.com:org/repo.git)</label>
+          <input id="cp-repo" type="text" placeholder="org/repo" />
         </div>
 
         <div className="form-group">
           <label>SSH Private Key (ed25519)</label>
-          <textarea
-            value={sshPrivateKey}
-            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
-            rows={6}
-            onInput={(e: Event) => this.setState({ sshPrivateKey: (e.target as HTMLTextAreaElement).value })}
-          />
+          <textarea id="cp-key" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..." rows={6}></textarea>
         </div>
 
         <div className="form-group">
           <label>GitHub PAT (fine-grained, repo-scoped)</label>
-          <input
-            type="password"
-            value={githubPAT}
-            placeholder="ghp_..."
-            onInput={(e: Event) => this.setState({ githubPAT: (e.target as HTMLInputElement).value })}
-          />
+          <input id="cp-pat" type="password" placeholder="ghp_..." />
         </div>
 
-        <button onClick={this.handleSubmit} disabled={submitting}>
-          {submitting ? "Creating..." : "Create Project"}
-        </button>
+        <button id="cp-submit" onClick={this.handleSubmit}>Create Project</button>
       </div>
     );
   }
