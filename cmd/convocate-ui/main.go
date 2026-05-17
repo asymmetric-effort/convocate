@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asymmetric-effort/convocate/internal/middleware"
 	"github.com/asymmetric-effort/convocate/internal/mtls"
 	"github.com/asymmetric-effort/convocate/internal/webui"
 )
@@ -167,6 +168,9 @@ func run() int {
 			logger.Printf("DEBUG %s %s %d %s", r.Method, r.URL.Path, rw.status, time.Since(start))
 		})
 	}
+
+	// Apply security headers to all responses.
+	handler = middleware.SecurityHeaders(handler)
 
 	addr := "0.0.0.0:443"
 	listener, listenErr := net.Listen("tcp", addr) //nolint:gosec // must bind all interfaces for container networking
