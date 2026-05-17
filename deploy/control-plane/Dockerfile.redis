@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 ubuntu:latest AS builder
+FROM --platform=linux/amd64 ubuntu:24.04 AS builder
 
 ARG REDIS_VERSION=7.4.4
 
@@ -23,7 +23,7 @@ RUN curl -fsSL "https://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz
     make -j"$(nproc)" && \
     make install PREFIX=/opt/redis
 
-FROM --platform=linux/amd64 ubuntu:latest
+FROM --platform=linux/amd64 ubuntu:24.04
 
 RUN useradd -r -s /usr/sbin/nologin redis && \
     mkdir -p /data && chown redis:redis /data

@@ -1,6 +1,6 @@
 # Builder runs as amd64 so apt uses archive.ubuntu.com (not blocked).
 # Go cross-compiles for the target arch via TARGETARCH.
-FROM --platform=linux/amd64 ubuntu:latest AS builder
+FROM --platform=linux/amd64 ubuntu:24.04 AS builder
 
 ARG GO_VERSION=1.26.3
 ARG TARGETARCH
