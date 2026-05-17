@@ -17,6 +17,8 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/webui"
 )
 
+const caCertPath = "/tls/ca.crt"
+
 // Version is set at build time via -ldflags.
 var Version = "dev"
 
@@ -43,6 +45,15 @@ func run() int {
 		return 1
 	}
 
+	// Build the TLS transport for the reverse proxy.
+	// Prefer the CA trust bundle at /tls/ca.crt for proper verification.
+	// Fall back to InsecureSkipVerify only when the CA file is absent (dev mode).
+	proxyTransport, transportErr := buildProxyTransport(logger)
+	if transportErr != nil {
+		logger.Printf("build proxy transport: %v", transportErr)
+		return 1
+	}
+
 	// Build the reverse proxy for API requests to router-api.
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
@@ -50,11 +61,7 @@ func run() int {
 			req.URL.Host = target.Host
 			req.Host = target.Host
 		},
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, //nolint:gosec // Internal service communication within Docker network.
-			},
-		},
+		Transport: proxyTransport,
 	}
 
 	// Serve embedded Web UI static files.
@@ -186,6 +193,30 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// buildProxyTransport returns an http.Transport whose TLS config trusts the
+// CA bundle at /tls/ca.crt when available. If the file does not exist (dev /
+// self-signed mode) it falls back to InsecureSkipVerify and logs a warning.
+func buildProxyTransport(logger *log.Logger) (*http.Transport, error) {
+	caPEM, readErr := os.ReadFile(caCertPath)
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			logger.Printf("WARNING: %s not found – proxy using InsecureSkipVerify (dev mode only)", caCertPath)
+			return &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true, //nolint:gosec // Dev-mode fallback: CA bundle absent.
+				},
+			}, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", caCertPath, readErr)
+	}
+
+	tlsCfg, tlsErr := mtls.PlainTLSConfig(caPEM)
+	if tlsErr != nil {
+		return nil, fmt.Errorf("build TLS config from %s: %w", caCertPath, tlsErr)
+	}
+	return &http.Transport{TLSClientConfig: tlsCfg}, nil
 }
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
