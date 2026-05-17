@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -219,7 +220,10 @@ func (s *RouterStore) ValidateAPIToken(repository, token string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return stored != "" && stored == token, nil
+	if stored == "" || len(stored) != len(token) {
+		return false, nil
+	}
+	return subtle.ConstantTimeCompare([]byte(stored), []byte(token)) == 1, nil
 }
 
 // DeleteAPIToken removes a CONVOCATE_API_TOKEN for a repository.
