@@ -213,6 +213,23 @@ func readJSON(r *http.Request, v interface{}) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
+// requireJSONContentType checks that POST requests declare Content-Type:
+// application/json. This provides a lightweight CSRF defence for JSON APIs:
+// browsers cannot send a cross-origin POST with this content type without
+// first performing a CORS preflight, which the server does not allow.
+// Returns true if the check passes (or the method is not POST).
+func requireJSONContentType(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return true
+	}
+	ct := r.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/json") {
+		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		return false
+	}
+	return true
+}
+
 // extractBearerToken extracts a bearer token from the Authorization header.
 func extractBearerToken(r *http.Request) string {
 	auth := r.Header.Get("Authorization")

@@ -342,7 +342,7 @@ func TestLogoutClearsSession(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/logout", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
 	req.AddCookie(&http.Cookie{Name: cookieName, Value: sessionID})
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
