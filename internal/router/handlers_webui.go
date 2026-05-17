@@ -215,7 +215,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 // handleClusterAuth handles POST /ui/api/auth — set cluster-wide Claude auth.
 func (s *Server) handleClusterAuth(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		mode, _, err := s.store.GetClusterAuth()
+		mode, err := s.store.GetClusterAuth()
 		if err != nil {
 			s.logger.Printf("router: get cluster auth: %v", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -260,24 +260,24 @@ func (s *Server) handleClusterAuth(w http.ResponseWriter, r *http.Request) {
 		credential = req.SessionToken
 	}
 
-	// Store in Redis (Router API namespace) for fast lookups.
-	err := s.store.SetClusterAuth(req.Mode, credential)
-	if err != nil {
-		s.logger.Printf("router: set cluster auth: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-
-	// Also store in OpenBao as shared credential.
+	// Store the credential securely in OpenBao.
 	// sharedSecretName is the OpenBao path segment for this auth mode — not a credential value.
 	sharedSecretName := "anthropic_api_key" //nolint:gosec // Not a hardcoded credential; this is a vault path name.
 	if req.Mode == protocol.AuthModeClaudeSession {
 		sharedSecretName = "claudeai_session"
 	}
-	err = s.bao.StoreSharedCredential(sharedSecretName, credential)
+	err := s.bao.StoreSharedCredential(sharedSecretName, credential)
 	if err != nil {
 		s.logger.Printf("router: store shared credential: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to store credential")
+		return
+	}
+
+	// Store only the mode in Redis for fast lookups; the credential remains in OpenBao.
+	err = s.store.SetClusterAuth(req.Mode)
+	if err != nil {
+		s.logger.Printf("router: set cluster auth: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 

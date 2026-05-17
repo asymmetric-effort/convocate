@@ -344,36 +344,28 @@ func (s *RouterStore) flushByPrefix(prefix string) error {
 
 // --- Cluster Auth ---
 
-// SetClusterAuth stores the cluster-wide Claude authentication.
-func (s *RouterStore) SetClusterAuth(mode protocol.ClusterAuthMode, credential string) error {
+// SetClusterAuth stores the cluster-wide Claude authentication mode in Redis.
+// The credential is NOT stored in Redis; callers must persist it separately
+// via OpenBao (StoreSharedCredential).
+func (s *RouterStore) SetClusterAuth(mode protocol.ClusterAuthMode) error {
 	_, err := s.conn.Do("SET", s.key("cluster-auth-mode"), string(mode))
-	if err != nil {
-		return err
-	}
-	_, err = s.conn.Do("SET", s.key("cluster-auth-credential"), credential)
 	return err
 }
 
-// GetClusterAuth reads the cluster-wide Claude authentication.
-func (s *RouterStore) GetClusterAuth() (protocol.ClusterAuthMode, string, error) {
+// GetClusterAuth reads the cluster-wide Claude authentication mode from Redis.
+// The credential is not stored in Redis; retrieve it separately from OpenBao
+// via ReadSharedCredential.
+func (s *RouterStore) GetClusterAuth() (protocol.ClusterAuthMode, error) {
 	mode, err := String(s.conn.Do("GET", s.key("cluster-auth-mode")))
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	credential, err := String(s.conn.Do("GET", s.key("cluster-auth-credential")))
-	if err != nil {
-		return "", "", err
-	}
-	return protocol.ClusterAuthMode(mode), credential, nil
+	return protocol.ClusterAuthMode(mode), nil
 }
 
-// DeleteClusterAuth removes the cluster-wide Claude authentication.
+// DeleteClusterAuth removes the cluster-wide Claude authentication mode from Redis.
 func (s *RouterStore) DeleteClusterAuth() error {
 	_, err := s.conn.Do("DEL", s.key("cluster-auth-mode"))
-	if err != nil {
-		return err
-	}
-	_, err = s.conn.Do("DEL", s.key("cluster-auth-credential"))
 	return err
 }
 
