@@ -87,10 +87,16 @@ func run() int {
 			}
 		}))
 	case ghClientID != "" && ghClientSecret != "":
+		callbackURL := "https://localhost:8443/auth/callback"
+		if pubURL := os.Getenv("CONVOCATE_PUBLIC_URL"); pubURL != "" {
+			callbackURL = strings.TrimRight(pubURL, "/") + "/auth/callback"
+		} else {
+			logger.Println("WARNING: CONVOCATE_PUBLIC_URL not set — OAuth callback URL defaulting to https://localhost:8443/auth/callback")
+		}
 		authCfg := &auth.Config{
 			ClientID:     ghClientID,
 			ClientSecret: ghClientSecret,
-			CallbackURL:  "https://localhost:8443/auth/callback",
+			CallbackURL:  callbackURL,
 			Org:          authOrg,
 			RedisConn:    store.Conn(),
 		}
