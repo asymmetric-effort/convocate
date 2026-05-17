@@ -28,37 +28,8 @@ services:
 
   # --- Control Plane ---
 
-  redis:
-    image: convocate-redis:latest
-    container_name: convocate-redis
-    restart: unless-stopped
-    depends_on:
-      tls-init:
-        condition: service_completed_successfully
-    ports:
-      - "127.0.0.1:6379:6379"
-    command: >
-      --bind 127.0.0.1
-      --tls-port 6379
-      --port 0
-      --tls-cert-file /tls/redis.crt
-      --tls-key-file /tls/redis.key
-      --tls-ca-cert-file /tls/ca.crt
-      --tls-auth-clients optional
-    volumes:
-      - redis-data:/data
-      - dev-tls:/tls:ro
-    healthcheck:
-      test: >
-        redis-cli -h 127.0.0.1 --tls
-        --cert /tls/redis.crt
-        --key /tls/redis.key
-        --cacert /tls/ca.crt ping
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    networks:
-      - convocate-dev
+  # Redis is not needed in dev mode — the router uses in-memory MockConn.
+  # The convocate-redis image is built for production deployments only.
 
   openbao:
     image: convocate-openbao:latest
@@ -106,8 +77,6 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - CONVOCATE_AUTH_ORG=${CONVOCATE_AUTH_ORG:-asymmetric-effort}
     depends_on:
-      redis:
-        condition: service_healthy
       openbao:
         condition: service_healthy
     volumes:
@@ -201,7 +170,6 @@ services:
 
 volumes:
   router-data:
-  redis-data:
   openbao-data:
   openbao-agent-data:
   secrets-sockets:

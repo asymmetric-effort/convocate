@@ -139,7 +139,7 @@ test-coverage: test-unit
 
 # --- OCI Images ---
 
-images: image-tls-init image-router-api image-ui image-dispatch-api image-secrets-broker image-agent image-redis image-openbao
+images: image-tls-init image-router-api image-ui image-dispatch-api image-secrets-broker image-agent image-openbao
 	@echo "All images built."
 
 image-tls-init:

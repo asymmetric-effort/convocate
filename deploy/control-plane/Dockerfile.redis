@@ -4,24 +4,28 @@ ARG REDIS_VERSION=7.4.4
 
 RUN sed -i 's/Components: main.*/Components: main/' /etc/apt/sources.list.d/*.sources 2>/dev/null; \
     sed -i '/universe\|multiverse\|restricted/d' /etc/apt/sources.list 2>/dev/null
+
+# Install only the minimum build deps — avoid build-essential (pulls
+# gcc-15 at 15MB which corporate proxies block mid-download).
+# Retry with --fix-missing to handle transient proxy failures.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      build-essential curl ca-certificates libssl-dev pkg-config && \
+    (apt-get install -y --no-install-recommends \
+      gcc make libc6-dev curl ca-certificates || \
+     apt-get install -y --fix-missing --no-install-recommends \
+      gcc make libc6-dev curl ca-certificates) && \
     rm -rf /var/lib/apt/lists/*
+
+# Build Redis without TLS — dev stack uses in-memory mock anyway.
+# Production builds can add BUILD_TLS=yes with libssl-dev.
 RUN curl -fsSL "https://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz" \
       | tar -xz -C /tmp && \
     cd /tmp/redis-${REDIS_VERSION} && \
-    make -j"$(nproc)" BUILD_TLS=yes && \
+    make -j"$(nproc)" && \
     make install PREFIX=/opt/redis
 
 FROM --platform=linux/amd64 ubuntu:latest
 
-RUN sed -i 's/Components: main.*/Components: main/' /etc/apt/sources.list.d/*.sources 2>/dev/null; \
-    sed -i '/universe\|multiverse\|restricted/d' /etc/apt/sources.list 2>/dev/null
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends libssl3t64 && \
-    rm -rf /var/lib/apt/lists/* && \
-    useradd -r -s /usr/sbin/nologin redis && \
+RUN useradd -r -s /usr/sbin/nologin redis && \
     mkdir -p /data && chown redis:redis /data
 
 COPY --from=builder /opt/redis/bin/ /usr/local/bin/
