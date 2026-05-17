@@ -71,7 +71,7 @@ services:
       - "127.0.0.1:8200:8200"
     environment:
       - BAO_DEV_ROOT_TOKEN_ID=dev-root-token
-      - BAO_DEV_LISTEN_ADDRESS=127.0.0.1:8200
+      - BAO_DEV_LISTEN_ADDRESS=0.0.0.0:8200
     command: server -dev
     volumes:
       - openbao-data:/var/lib/openbao
@@ -143,16 +143,17 @@ services:
     depends_on:
       openbao:
         condition: service_healthy
+    environment:
+      - BAO_ADDR=http://openbao:8200
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - sh
-      - -c
       - |
         cat > /tmp/agent.hcl << 'HCL'
         pid_file = "/tmp/bao-agent.pid"
         vault { address = "http://openbao:8200" }
         auto_auth {
-          method "token" {
-            config = { token = "dev-root-token" }
+          method "token_file" {
+            config = { token_file_path = "/tmp/bao-token" }
           }
         }
         cache { use_auto_auth_token = true }
@@ -161,6 +162,7 @@ services:
           tls_disable = true
         }
         HCL
+        echo "dev-root-token" > /tmp/bao-token
         exec bao agent -config=/tmp/agent.hcl
     volumes:
       - openbao-agent-data:/var/lib/openbao

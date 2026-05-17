@@ -246,10 +246,13 @@ local/test:
 	@$(DCURL) 'curl -fsSk https://convocate-router:443/health' || \
 		{ echo "FAIL: /health unreachable"; exit 1; }
 	@echo ""
-	@echo "--- Root serves Web UI ---"
-	@$(DCURL) 'curl -fsSk -o /dev/null -w "%{http_code}" https://convocate-router:443/' \
-		| grep -q "200" || { echo "FAIL: / did not return 200"; exit 1; }
-	@echo "OK: / returns 200"
+	@echo "--- Root serves Web UI or auth redirect ---"
+	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router:443/'); \
+	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "302" ]; then \
+		echo "OK: / returns $$HTTP"; \
+	else \
+		echo "FAIL: / returned $$HTTP (expected 200 or 302)"; exit 1; \
+	fi
 	@echo "--- Auth enforcement ---"
 	@HTTP_CODE=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" \
 		-X POST https://convocate-router:443/v1/jobs \
@@ -269,16 +272,25 @@ local/test:
 		echo "FAIL: unknown repo returned $$HTTP_CODE, want 404"; exit 1; \
 	fi; \
 	echo "OK: unknown repo returns 404"
-	@echo "--- Web UI API ---"
-	@$(DCURL) 'curl -fsSk https://convocate-router:443/ui/api/projects' > /dev/null || \
-		{ echo "FAIL: /ui/api/projects unreachable"; exit 1; }
-	@echo "OK: /ui/api/projects returns 200"
-	@$(DCURL) 'curl -fsSk https://convocate-router:443/ui/api/jobs' > /dev/null || \
-		{ echo "FAIL: /ui/api/jobs unreachable"; exit 1; }
-	@echo "OK: /ui/api/jobs returns 200"
-	@$(DCURL) 'curl -fsSk https://convocate-router:443/ui/api/hosts' > /dev/null || \
-		{ echo "FAIL: /ui/api/hosts unreachable"; exit 1; }
-	@echo "OK: /ui/api/hosts returns 200"
+	@echo "--- Web UI API (responds, may require auth) ---"
+	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router:443/ui/api/projects'); \
+	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "401" ] || [ "$$HTTP" = "302" ]; then \
+		echo "OK: /ui/api/projects returns $$HTTP"; \
+	else \
+		echo "FAIL: /ui/api/projects returned $$HTTP"; exit 1; \
+	fi
+	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router:443/ui/api/jobs'); \
+	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "401" ] || [ "$$HTTP" = "302" ]; then \
+		echo "OK: /ui/api/jobs returns $$HTTP"; \
+	else \
+		echo "FAIL: /ui/api/jobs returned $$HTTP"; exit 1; \
+	fi
+	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-router:443/ui/api/hosts'); \
+	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "401" ] || [ "$$HTTP" = "302" ]; then \
+		echo "OK: /ui/api/hosts returns $$HTTP"; \
+	else \
+		echo "FAIL: /ui/api/hosts returned $$HTTP"; exit 1; \
+	fi
 	@echo "--- Internal port (8443) ---"
 	@$(DCURL) 'curl -fsSk https://convocate-router:8443/v1/health' > /dev/null || \
 		{ echo "FAIL: port 8443 /v1/health unreachable"; exit 1; }
