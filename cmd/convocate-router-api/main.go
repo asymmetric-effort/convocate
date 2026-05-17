@@ -147,28 +147,65 @@ func run() int {
 			return 1
 		}
 
-		cert, err := tls.X509KeyPair(pair.CertPEM, pair.KeyPEM)
-		if err != nil {
-			logger.Printf("load keypair: %v", err)
+		// Public listener: client cert optional (GitHub Actions uses bearer token).
+		publicTLS, pubErr := mtls.ServerTLSConfig(*pair, ca.TrustBundle(), false)
+		if pubErr != nil {
+			logger.Printf("public TLS config: %v", pubErr)
 			return 1
 		}
-		tlsCfg := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS13,
+
+		// Internal listener: require client cert in production, optional in dev.
+		requireClientCert := !isDev
+		internalTLS, intErr := mtls.ServerTLSConfig(*pair, ca.TrustBundle(), requireClientCert)
+		if intErr != nil {
+			logger.Printf("internal TLS config: %v", intErr)
+			return 1
 		}
-		startServers(srv, logger, tlsCfg, tlsCfg)
+		if requireClientCert {
+			logger.Println("internal listener: mTLS required (client cert verification enforced)")
+		} else {
+			logger.Println("internal listener: mTLS optional (dev mode)")
+		}
+
+		startServers(srv, logger, publicTLS, internalTLS)
 	} else {
-		// Load certs from volume.
-		publicCert, err := tls.LoadX509KeyPair(tlsDir+"/router.crt", tlsDir+"/router.key")
+		// Load certs and CA from volume.
+		caPEM, caReadErr := os.ReadFile(tlsDir + "/ca.crt")
+		if caReadErr != nil {
+			logger.Printf("load CA cert: %v", caReadErr)
+			return 1
+		}
+
+		serverPair := mtls.CertKeyPair{}
+		certPEM, err := os.ReadFile(tlsDir + "/router.crt")
 		if err != nil {
 			logger.Printf("load TLS cert: %v", err)
 			return 1
 		}
-		tlsCfg := &tls.Config{
-			Certificates: []tls.Certificate{publicCert},
-			MinVersion:   tls.VersionTLS13,
+		keyPEM, err := os.ReadFile(tlsDir + "/router.key")
+		if err != nil {
+			logger.Printf("load TLS key: %v", err)
+			return 1
 		}
-		startServers(srv, logger, tlsCfg, tlsCfg)
+		serverPair.CertPEM = certPEM
+		serverPair.KeyPEM = keyPEM
+
+		// Public listener: client cert optional.
+		publicTLS, pubErr := mtls.ServerTLSConfig(serverPair, caPEM, false)
+		if pubErr != nil {
+			logger.Printf("public TLS config: %v", pubErr)
+			return 1
+		}
+
+		// Internal listener: require client cert (production).
+		internalTLS, intErr := mtls.ServerTLSConfig(serverPair, caPEM, true)
+		if intErr != nil {
+			logger.Printf("internal TLS config: %v", intErr)
+			return 1
+		}
+		logger.Println("internal listener: mTLS required (client cert verification enforced)")
+
+		startServers(srv, logger, publicTLS, internalTLS)
 	}
 
 	return 0
