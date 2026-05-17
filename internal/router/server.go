@@ -199,10 +199,14 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
 
+// maxRequestBody is the maximum allowed request body size (1 MB).
+const maxRequestBody = 1 << 20
+
 func readJSON(r *http.Request, v interface{}) error {
 	if r.Body == nil {
 		return fmt.Errorf("empty request body")
 	}
+	r.Body = http.MaxBytesReader(nil, r.Body, maxRequestBody)
 	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(v)
 }
