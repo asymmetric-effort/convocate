@@ -72,20 +72,9 @@ func run() int {
 	}
 
 	switch {
-	case ghClientID != "" && ghClientSecret != "":
-		authCfg := &auth.Config{
-			ClientID:     ghClientID,
-			ClientSecret: ghClientSecret,
-			CallbackURL:  "https://localhost:8443/auth/callback",
-			Org:          authOrg,
-			RedisConn:    store.Conn(),
-		}
-		authHandler = auth.Handler(authCfg, logger)
-		authMW = auth.Middleware(auth.Sessions(authCfg))
-		logger.Println("GitHub OAuth authentication enabled")
 	case isDev:
-		logger.Println("WARNING: GITHUB_CLIENT_ID/SECRET not set — auth bypassed in DEV mode")
-		// Stub auth handler returns a fake user so the Web UI loads.
+		// Dev mode always assumes successful authentication.
+		logger.Println("DEV mode: authentication bypassed (all requests authenticated as dev-operator)")
 		authHandler = http.StripPrefix("/auth", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			switch r.URL.Path {
@@ -97,6 +86,17 @@ func run() int {
 				http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 			}
 		}))
+	case ghClientID != "" && ghClientSecret != "":
+		authCfg := &auth.Config{
+			ClientID:     ghClientID,
+			ClientSecret: ghClientSecret,
+			CallbackURL:  "https://localhost:8443/auth/callback",
+			Org:          authOrg,
+			RedisConn:    store.Conn(),
+		}
+		authHandler = auth.Handler(authCfg, logger)
+		authMW = auth.Middleware(auth.Sessions(authCfg))
+		logger.Println("GitHub OAuth authentication enabled")
 	default:
 		logger.Println("WARNING: GITHUB_CLIENT_ID/SECRET not set — auth disabled")
 	}
