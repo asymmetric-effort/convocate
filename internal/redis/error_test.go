@@ -146,33 +146,31 @@ func TestRouterStoreCorruptData(t *testing.T) {
 		}
 	})
 
-	t.Run("SetClusterAuth both keys", func(t *testing.T) {
-		err := store.SetClusterAuth(protocol.AuthModeAnthropicKey, "sk-test")
+	t.Run("SetClusterAuth mode key", func(t *testing.T) {
+		err := store.SetClusterAuth(protocol.AuthModeAnthropicKey)
 		if err != nil {
 			t.Fatalf("SetClusterAuth error: %v", err)
 		}
-		mode, cred, err := store.GetClusterAuth()
+		mode, err := store.GetClusterAuth()
 		if err != nil {
 			t.Fatalf("GetClusterAuth error: %v", err)
 		}
 		if mode != protocol.AuthModeAnthropicKey {
 			t.Errorf("mode: got %q", mode)
 		}
-		if cred != "sk-test" {
-			t.Errorf("credential: got %q", cred)
-		}
 	})
 
-	t.Run("DeleteClusterAuth both keys", func(t *testing.T) {
-		store.SetClusterAuth(protocol.AuthModeAnthropicKey, "sk-test")
+	t.Run("DeleteClusterAuth mode key", func(t *testing.T) {
+		store.SetClusterAuth(protocol.AuthModeAnthropicKey)
 		err := store.DeleteClusterAuth()
 		if err != nil {
 			t.Fatalf("DeleteClusterAuth error: %v", err)
 		}
-		mode, cred, _ := store.GetClusterAuth()
-		if mode != "" || cred != "" {
-			t.Errorf("after delete: mode=%q, cred=%q", mode, cred)
+		mode, err := store.GetClusterAuth()
+		if mode != "" {
+			t.Errorf("after delete: mode=%q", mode)
 		}
+		_ = err
 	})
 
 	t.Run("DeleteProjectInfo both indexes", func(t *testing.T) {

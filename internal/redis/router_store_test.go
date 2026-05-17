@@ -399,36 +399,30 @@ func TestRouterStoreClusterAuth(t *testing.T) {
 	store := newTestRouterStore()
 
 	t.Run("set and get API key mode", func(t *testing.T) {
-		err := store.SetClusterAuth(protocol.AuthModeAnthropicKey, "sk-ant-123")
+		err := store.SetClusterAuth(protocol.AuthModeAnthropicKey)
 		if err != nil {
 			t.Fatalf("SetClusterAuth error: %v", err)
 		}
-		mode, credential, err := store.GetClusterAuth()
+		mode, err := store.GetClusterAuth()
 		if err != nil {
 			t.Fatalf("GetClusterAuth error: %v", err)
 		}
 		if mode != protocol.AuthModeAnthropicKey {
 			t.Errorf("mode: got %q, want %q", mode, protocol.AuthModeAnthropicKey)
 		}
-		if credential != "sk-ant-123" {
-			t.Errorf("credential: got %q, want %q", credential, "sk-ant-123")
-		}
 	})
 
 	t.Run("switch to session mode", func(t *testing.T) {
-		err := store.SetClusterAuth(protocol.AuthModeClaudeSession, "session_token_xyz")
+		err := store.SetClusterAuth(protocol.AuthModeClaudeSession)
 		if err != nil {
 			t.Fatalf("SetClusterAuth error: %v", err)
 		}
-		mode, credential, err := store.GetClusterAuth()
+		mode, err := store.GetClusterAuth()
 		if err != nil {
 			t.Fatalf("GetClusterAuth error: %v", err)
 		}
 		if mode != protocol.AuthModeClaudeSession {
 			t.Errorf("mode: got %q, want %q", mode, protocol.AuthModeClaudeSession)
-		}
-		if credential != "session_token_xyz" {
-			t.Errorf("credential: got %q, want %q", credential, "session_token_xyz")
 		}
 	})
 
@@ -437,15 +431,12 @@ func TestRouterStoreClusterAuth(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DeleteClusterAuth error: %v", err)
 		}
-		mode, credential, err := store.GetClusterAuth()
+		mode, err := store.GetClusterAuth()
 		if err != nil {
 			t.Fatalf("GetClusterAuth error: %v", err)
 		}
 		if mode != "" {
 			t.Errorf("mode after delete: got %q, want empty", mode)
-		}
-		if credential != "" {
-			t.Errorf("credential after delete: got %q, want empty", credential)
 		}
 	})
 }
@@ -583,7 +574,7 @@ func TestRouterStoreFlushNamespace(t *testing.T) {
 	// Add some data.
 	store.AllowlistAdd("org/repo")
 	store.SetAPIToken("org/repo", "tok")
-	store.SetClusterAuth(protocol.AuthModeAnthropicKey, "key")
+	store.SetClusterAuth(protocol.AuthModeAnthropicKey)
 
 	err := store.FlushNamespace()
 	if err != nil {

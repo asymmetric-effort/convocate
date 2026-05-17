@@ -180,39 +180,25 @@ func TestRouterStoreCountContainersBadKeys(t *testing.T) {
 	}
 }
 
-// TestRouterStoreGetClusterAuthSecondError tests the second Get error in GetClusterAuth.
-func TestRouterStoreGetClusterAuthSecondError(t *testing.T) {
-	bd := newBadDoer()
-	// Set the mode first.
-	bd.inner.Do("SET", "router:cluster-auth-mode", "anthropic_api_key")
-	// Make the credential key fail.
-	bd.failOn["router:cluster-auth-credential"] = true
-	store := NewRouterStore(bd)
-	_, _, err := store.GetClusterAuth()
-	if err == nil {
-		t.Error("expected error for second Get failure")
-	}
-}
-
-// TestRouterStoreSetClusterAuthFirstError tests the first Set error.
-func TestRouterStoreSetClusterAuthFirstError(t *testing.T) {
+// TestRouterStoreSetClusterAuthError tests the Set error.
+func TestRouterStoreSetClusterAuthError(t *testing.T) {
 	bd := newBadDoer()
 	bd.failOn["router:cluster-auth-mode"] = true
 	store := NewRouterStore(bd)
-	err := store.SetClusterAuth(protocol.AuthModeAnthropicKey, "key")
+	err := store.SetClusterAuth(protocol.AuthModeAnthropicKey)
 	if err == nil {
-		t.Error("expected error for first Set failure")
+		t.Error("expected error for Set failure")
 	}
 }
 
-// TestRouterStoreDeleteClusterAuthFirstError tests first Del error.
+// TestRouterStoreDeleteClusterAuthFirstError tests Del error.
 func TestRouterStoreDeleteClusterAuthFirstError(t *testing.T) {
 	bd := newBadDoer()
 	bd.failOn["router:cluster-auth-mode"] = true
 	store := NewRouterStore(bd)
 	err := store.DeleteClusterAuth()
 	if err == nil {
-		t.Error("expected error for first Del failure")
+		t.Error("expected error for Del failure")
 	}
 }
 
@@ -553,13 +539,13 @@ func TestCountContainersByHostCorruptEntry(t *testing.T) {
 	}
 }
 
-// TestRouterStoreGetClusterAuthFirstError tests first Get error in GetClusterAuth.
+// TestRouterStoreGetClusterAuthFirstError tests Get error in GetClusterAuth.
 func TestRouterStoreGetClusterAuthFirstError(t *testing.T) {
 	bd := newBadDoer()
 	bd.failOn["router:cluster-auth-mode"] = true
 	store := NewRouterStore(bd)
-	_, _, err := store.GetClusterAuth()
+	_, err := store.GetClusterAuth()
 	if err == nil {
-		t.Error("expected error for first Get failure")
+		t.Error("expected error for Get failure")
 	}
 }
