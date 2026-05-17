@@ -41,7 +41,7 @@ services:
       - "127.0.0.1:6379:6379"
     command: >
       redis-server
-      --bind 127.0.0.1
+      --bind 0.0.0.0
       --tls-port 6379
       --port 0
       --tls-cert-file /tls/redis.crt
