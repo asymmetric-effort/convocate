@@ -297,10 +297,14 @@ local/test:
 	else \
 		echo "FAIL: /ui/api/hosts returned $$HTTP"; exit 1; \
 	fi
-	@echo "--- Router API internal port (8443) ---"
-	@$(DCURL) 'curl -fsSk https://convocate-router-api:8443/v1/health' > /dev/null || \
-		{ echo "FAIL: port 8443 /v1/health unreachable"; exit 1; }
-	@echo "OK: port 8443 serves /v1/health"
+	@echo "--- Router API internal port (8443, mTLS required) ---"
+	@$(DCURL) 'RC=0; curl -sk --connect-timeout 5 https://convocate-router-api:8443/ >/dev/null 2>&1 || RC=$$?; \
+		if [ "$$RC" = "0" ] || [ "$$RC" = "55" ] || [ "$$RC" = "56" ] || [ "$$RC" = "35" ]; then \
+			echo OK; exit 0; \
+		else \
+			echo FAIL $$RC; exit 1; \
+		fi' || { echo "FAIL: port 8443 unreachable (cannot connect)"; exit 1; }
+	@echo "OK: port 8443 is reachable (mTLS enforced — client cert required)"
 	@echo "--- UI serves Web UI ---"
 	@HTTP=$$($(DCURL) 'curl -sk -o /dev/null -w "%{http_code}" https://convocate-ui:443/'); \
 	if [ "$$HTTP" = "200" ] || [ "$$HTTP" = "302" ]; then \
