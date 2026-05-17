@@ -1,10 +1,30 @@
+FROM --platform=linux/amd64 ubuntu:latest AS builder
+
+ARG REDIS_VERSION=7.4.4
+
+RUN sed -i 's/Components: main.*/Components: main/' /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+    sed -i '/universe\|multiverse\|restricted/d' /etc/apt/sources.list 2>/dev/null
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential curl ca-certificates libssl-dev pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL "https://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz" \
+      | tar -xz -C /tmp && \
+    cd /tmp/redis-${REDIS_VERSION} && \
+    make -j"$(nproc)" BUILD_TLS=yes && \
+    make install PREFIX=/opt/redis
+
 FROM --platform=linux/amd64 ubuntu:latest
 
-RUN sed -i 's/Components: main.*/Components: main/' /etc/apt/sources.list.d/*.sources 2>/dev/null; sed -i '/universe\|multiverse\|restricted/d' /etc/apt/sources.list 2>/dev/null
+RUN sed -i 's/Components: main.*/Components: main/' /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+    sed -i '/universe\|multiverse\|restricted/d' /etc/apt/sources.list 2>/dev/null
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends redis-server && \
+    apt-get install -y --no-install-recommends libssl3t64 && \
     rm -rf /var/lib/apt/lists/* && \
+    useradd -r -s /usr/sbin/nologin redis && \
     mkdir -p /data && chown redis:redis /data
+
+COPY --from=builder /opt/redis/bin/ /usr/local/bin/
 
 USER redis
 WORKDIR /data
