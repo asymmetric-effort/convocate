@@ -45,12 +45,15 @@ const DEFAULT_SIDE_NAV: Record<TopNav, string> = {
   console: "adhoc",
 };
 
+const STARTUP_TIMEOUT_MS = 60000;
+
 interface AppState {
   topNav: TopNav;
   sideNav: string;
   authenticated: boolean;
   authChecked: boolean;
   user: MeResponse | null;
+  startupError: string;
 }
 
 export class App extends Component<Record<string, never>, AppState> {
@@ -60,22 +63,48 @@ export class App extends Component<Record<string, never>, AppState> {
     authenticated: false,
     authChecked: false,
     user: null,
+    startupError: "",
   };
 
+  private startupTimer: ReturnType<typeof setTimeout> | null = null;
+
   componentDidMount() {
+    this.startupTimer = setTimeout(() => {
+      if (!this.state.authChecked) {
+        this.setState({
+          authChecked: true,
+          startupError: "Startup timeout: the system did not respond within 60 seconds. "
+            + "Check that the Router API and identity provider (GitHub) are reachable.",
+        });
+      }
+    }, STARTUP_TIMEOUT_MS);
     this.checkAuth();
+  }
+
+  componentWillUnmount() {
+    if (this.startupTimer) {
+      clearTimeout(this.startupTimer);
+      this.startupTimer = null;
+    }
   }
 
   checkAuth = () => {
     api.getMe().then((user) => {
-      this.setState({ authenticated: true, authChecked: true, user });
+      if (this.startupTimer) clearTimeout(this.startupTimer);
+      this.setState({ authenticated: true, authChecked: true, user, startupError: "" });
     }).catch((err) => {
+      if (this.startupTimer) clearTimeout(this.startupTimer);
       if (err instanceof UnauthorizedError) {
-        this.setState({ authenticated: false, authChecked: true, user: null });
+        this.setState({ authenticated: false, authChecked: true, user: null, startupError: "" });
       } else {
-        // Network error or server down — treat as authenticated to avoid
-        // blocking the UI in dev mode without OAuth configured.
-        this.setState({ authenticated: true, authChecked: true, user: null });
+        const message = err instanceof Error ? err.message : "Unknown error";
+        this.setState({
+          authenticated: false,
+          authChecked: true,
+          user: null,
+          startupError: `Unable to connect to the identity provider: ${message}. `
+            + "Verify that the Router API is running and GitHub OAuth is configured correctly.",
+        });
       }
     });
   };
@@ -91,10 +120,31 @@ export class App extends Component<Record<string, never>, AppState> {
   };
 
   render() {
-    const { topNav, sideNav, authenticated, authChecked, user } = this.state;
+    const { topNav, sideNav, authenticated, authChecked, user, startupError } = this.state;
 
     if (!authChecked) {
-      return <div className="loading">Loading...</div>;
+      return (
+        <div className="startup-screen">
+          <div className="startup-spinner">
+            <div className="nav-brand">convocate</div>
+            <p>Connecting to services...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (startupError) {
+      return (
+        <div className="startup-screen">
+          <div className="startup-error-dialog">
+            <div className="nav-brand">convocate</div>
+            <div className="error">{startupError}</div>
+            <button onClick={() => { this.setState({ authChecked: false, startupError: "" }); this.checkAuth(); }}>
+              Retry
+            </button>
+          </div>
+        </div>
+      );
     }
 
     const sideNavItems = authenticated ? SIDE_NAV_ITEMS[topNav] : [];

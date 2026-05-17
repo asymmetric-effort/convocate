@@ -420,3 +420,33 @@ button, .nav-link, .side-nav-link, a, [role="button"] {
 .nav-logout:hover {
   color: var(--color-error);
 }
+
+.startup-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.startup-spinner,
+.startup-error-dialog {
+  text-align: center;
+  padding: 48px;
+  max-width: 500px;
+}
+
+.startup-spinner p {
+  margin-top: 16px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.startup-error-dialog .error {
+  text-align: left;
+  margin: 24px 0;
+}
+
+.startup-error-dialog button {
+  margin-top: 12px;
+}
