@@ -156,6 +156,18 @@ func run() int {
 		}
 	}
 
+	// Wrap handler with debug logging if CONVOCATE_DEBUG=1.
+	var handler http.Handler = mux
+	if os.Getenv("CONVOCATE_DEBUG") == "1" {
+		logger.Println("DEBUG mode: logging all HTTP requests")
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			rw := &responseWriter{ResponseWriter: w, status: 200}
+			mux.ServeHTTP(rw, r)
+			logger.Printf("DEBUG %s %s %d %s", r.Method, r.URL.Path, rw.status, time.Since(start))
+		})
+	}
+
 	addr := "0.0.0.0:443"
 	listener, listenErr := net.Listen("tcp", addr) //nolint:gosec // must bind all interfaces for container networking
 	if listenErr != nil {
@@ -165,7 +177,7 @@ func run() int {
 	logger.Printf("HTTPS on %s (proxying API to %s)", addr, routerAPIURL)
 
 	server := &http.Server{
-		Handler:           mux,
+		Handler:           handler,
 		TLSConfig:         tlsCfg,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
@@ -174,4 +186,15 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+// responseWriter wraps http.ResponseWriter to capture the status code.
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
 }

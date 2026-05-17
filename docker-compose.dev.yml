@@ -93,6 +93,7 @@ services:
       - "127.0.0.1:8443:443"
     environment:
       - CONVOCATE_ROUTER_API_URL=https://router-api:443
+      - CONVOCATE_DEBUG=1
     depends_on:
       - router-api
     volumes:
