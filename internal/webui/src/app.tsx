@@ -5,7 +5,6 @@ import { Projects } from "./pages/Projects";
 import { Agents } from "./pages/Agents";
 import { DevEnvs } from "./pages/DevEnvs";
 import { Console } from "./pages/Console";
-import { api, UnauthorizedError } from "./api/client";
 import type { MeResponse } from "./api/client";
 
 type TopNav = "dashboard" | "projects" | "agents" | "dev-envs" | "console";
@@ -45,109 +44,55 @@ const DEFAULT_SIDE_NAV: Record<TopNav, string> = {
   console: "adhoc",
 };
 
-const STARTUP_TIMEOUT_MS = 60000;
+interface AppProps {
+  initialAuthenticated: boolean;
+  initialUser: MeResponse | null;
+  initialError: string;
+}
 
 interface AppState {
   topNav: TopNav;
   sideNav: string;
-  authenticated: boolean;
-  authChecked: boolean;
-  user: MeResponse | null;
-  startupError: string;
 }
 
-export class App extends Component<Record<string, never>, AppState> {
-  state: AppState = {
-    topNav: "dashboard",
-    sideNav: "",
-    authenticated: false,
-    authChecked: false,
-    user: null,
-    startupError: "",
-  };
-
-  private startupTimer: ReturnType<typeof setTimeout> | null = null;
-
-  componentDidMount() {
-    this.startupTimer = setTimeout(() => {
-      if (!this.state.authChecked) {
-        this.setState({
-          authChecked: true,
-          startupError: "Startup timeout: the system did not respond within 60 seconds. "
-            + "Check that the Router API and identity provider (GitHub) are reachable.",
-        });
-      }
-    }, STARTUP_TIMEOUT_MS);
-    this.checkAuth();
-  }
-
-  componentWillUnmount() {
-    if (this.startupTimer) {
-      clearTimeout(this.startupTimer);
-      this.startupTimer = null;
-    }
-  }
-
-  checkAuth = () => {
-    api.getMe().then((user) => {
-      if (this.startupTimer) clearTimeout(this.startupTimer);
-      this.setState({ authenticated: true, authChecked: true, user, startupError: "" });
-    }).catch((err) => {
-      if (this.startupTimer) clearTimeout(this.startupTimer);
-      if (err instanceof UnauthorizedError) {
-        this.setState({ authenticated: false, authChecked: true, user: null, startupError: "" });
-      } else {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        this.setState({
-          authenticated: false,
-          authChecked: true,
-          user: null,
-          startupError: `Unable to connect to the identity provider: ${message}. `
-            + "Verify that the Router API is running and GitHub OAuth is configured correctly.",
-        });
-      }
-    });
-  };
-
-  handleTopNav = (id: string) => {
-    if (!this.state.authenticated && id !== "dashboard") return;
-    const topNav = id as TopNav;
-    this.setState({ topNav, sideNav: DEFAULT_SIDE_NAV[topNav] });
-  };
-
-  handleSideNav = (id: string) => {
-    this.setState({ sideNav: id });
-  };
+export class App extends Component<AppProps, AppState> {
+  state: AppState = { topNav: "dashboard", sideNav: "" };
 
   render() {
-    const { topNav, sideNav, authenticated, authChecked, user, startupError } = this.state;
+    const { initialAuthenticated: authenticated, initialUser: user, initialError } = this.props;
+    appProps = this.props;
+    const topNav = navState.topNav;
+    const sideNav = navState.sideNav;
 
-    if (!authChecked) {
-      return (
-        <div className="startup-screen">
-          <div className="startup-spinner">
-            <div className="nav-brand">convocate</div>
-            <p>Connecting to services...</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (startupError) {
+    if (initialError) {
       return (
         <div className="startup-screen">
           <div className="startup-error-dialog">
             <div className="nav-brand">convocate</div>
-            <div className="error">{startupError}</div>
-            <button onClick={() => { this.setState({ authChecked: false, startupError: "" }); this.checkAuth(); }}>
-              Retry
-            </button>
+            <div className="error">
+              Unable to connect to services: {initialError}.
+              Verify that the Router API is running and GitHub OAuth is configured.
+            </div>
+            <button onClick={() => window.location.reload()}>Retry</button>
           </div>
         </div>
       );
     }
 
     const sideNavItems = authenticated ? SIDE_NAV_ITEMS[topNav] : [];
+
+    const handleTopNav = (id: string) => {
+      if (!authenticated && id !== "dashboard") return;
+      const nav = id as TopNav;
+      navState.topNav = nav;
+      navState.sideNav = DEFAULT_SIDE_NAV[nav];
+      rerenderApp();
+    };
+
+    const handleSideNav = (id: string) => {
+      navState.sideNav = id;
+      rerenderApp();
+    };
 
     let content: unknown;
     switch (topNav) {
@@ -181,8 +126,8 @@ export class App extends Component<Record<string, never>, AppState> {
         topNav={topNav}
         sideNav={sideNav}
         sideNavItems={sideNavItems}
-        onTopNav={this.handleTopNav}
-        onSideNav={this.handleSideNav}
+        onTopNav={handleTopNav}
+        onSideNav={handleSideNav}
         user={user}
         authenticated={authenticated}
       >
@@ -190,4 +135,25 @@ export class App extends Component<Record<string, never>, AppState> {
       </Layout>
     );
   }
+}
+
+// Global nav state — persists across re-renders since specifyjs creates
+// new component instances on each render.
+const navState = { topNav: "dashboard" as TopNav, sideNav: "" };
+let appRoot: { render(el: unknown): void } | null = null;
+let appProps: AppProps | null = null;
+
+export function setAppRoot(root: { render(el: unknown): void }) {
+  appRoot = root;
+}
+
+function rerenderApp() {
+  if (!appRoot || !appProps) return;
+  appRoot.render(
+    <App
+      initialAuthenticated={appProps.initialAuthenticated}
+      initialUser={appProps.initialUser}
+      initialError={appProps.initialError}
+    />
+  );
 }
