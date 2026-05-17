@@ -1,6 +1,10 @@
 FROM --platform=linux/amd64 ubuntu:latest
 
-RUN apt-get update && \
+# Only use 'main' component — avoids downloading universe/multiverse
+# indices which fail through corporate proxies that intercept large files.
+RUN sed -i 's/Components: main.*/Components: main/' /etc/apt/sources.list.d/*.sources 2>/dev/null; \
+    sed -i '/universe\|multiverse\|restricted/d' /etc/apt/sources.list 2>/dev/null; \
+    apt-get update && \
     apt-get install -y --no-install-recommends openssl curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 

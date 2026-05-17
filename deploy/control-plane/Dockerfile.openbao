@@ -2,6 +2,7 @@ FROM --platform=linux/amd64 ubuntu:latest
 
 ARG OPENBAO_VERSION=2.5.3
 
+RUN sed -i 's/Components: main.*/Components: main/' /etc/apt/sources.list.d/*.sources 2>/dev/null; sed -i '/universe\|multiverse\|restricted/d' /etc/apt/sources.list 2>/dev/null
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \

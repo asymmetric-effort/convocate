@@ -7,6 +7,7 @@ LABEL org.opencontainers.image.title="convocate-agent" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.description="Convocate Agent Container (per-project)"
 
+RUN sed -i 's/Components: main.*/Components: main/' /etc/apt/sources.list.d/*.sources 2>/dev/null; sed -i '/universe\|multiverse\|restricted/d' /etc/apt/sources.list 2>/dev/null
 RUN apt-get update && apt-get install -y \
     git \
     curl \
