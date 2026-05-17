@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 ubuntu:latest
+FROM --platform=linux/amd64 ubuntu:24.04
 
 # Only use 'main' component — avoids downloading universe/multiverse
 # indices which fail through corporate proxies that intercept large files.
