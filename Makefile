@@ -9,7 +9,7 @@ BINARIES := convocate-router convocate-dispatch convocate-secrets-broker convoca
 
 .PHONY: all dev auth build clean lint lint-go lint-yaml lint-vuln test test-unit test-integration test-e2e test-coverage \
         images image-router image-dispatch image-secrets-broker image-agent image-redis image-openbao \
-        local/start local/logs local/stop local/reset local/test hooks verify \
+        local/start local/logs local/stop local/reset local/test local/pdv hooks verify \
         release release/minor release/major
 
 all: lint test build
@@ -296,6 +296,12 @@ local/test:
 		{ echo "FAIL: port 8443 /v1/health unreachable"; exit 1; }
 	@echo "OK: port 8443 serves /v1/health"
 	@echo "=== All local verification tests passed ==="
+
+local/pdv:
+	@echo "=== Running Playwright PDV tests against https://localhost:8443/ ==="
+	cd internal/webui && npx playwright install --with-deps chromium && \
+		npx playwright test --reporter=list
+	@echo "=== Playwright PDV tests passed ==="
 
 # --- Git Hooks ---
 
