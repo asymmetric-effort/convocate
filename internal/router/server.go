@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/asymmetric-effort/convocate/internal/middleware"
 	"github.com/asymmetric-effort/convocate/internal/openbao"
 	"github.com/asymmetric-effort/convocate/internal/protocol"
 	"github.com/asymmetric-effort/convocate/internal/redis"
@@ -109,10 +110,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/ui/api/hosts", s.handleHostsList)
 
 	// Wrap with auth middleware if configured.
+	var handler http.Handler = mux
 	if s.authMW != nil {
-		return s.authMW(mux)
+		handler = s.authMW(mux)
 	}
-	return mux
+	return middleware.SecurityHeaders(handler)
 }
 
 // ListenAndServe starts the Router API on the given listeners.
@@ -146,7 +148,7 @@ func (s *Server) publicHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/jobs", s.handleJobs)
 	mux.HandleFunc("/v1/health", s.handleHealth)
-	return mux
+	return middleware.SecurityHeaders(mux)
 }
 
 // --- Dispatch subscription management ---
