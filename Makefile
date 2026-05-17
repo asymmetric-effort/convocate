@@ -5,10 +5,10 @@ GOFLAGS := -trimpath
 LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
 COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
 
-BINARIES := convocate-router-api convocate-ui convocate-dispatch convocate-secrets-broker convocate-agent-wrapper convocate-cli mock-claude
+BINARIES := convocate-router-api convocate-ui convocate-dispatch-api convocate-secrets-broker convocate-agent-wrapper convocate-cli mock-claude
 
 .PHONY: all dev auth build clean lint lint-go lint-yaml lint-vuln test test-unit test-integration test-e2e test-coverage \
-        images image-router-api image-ui image-dispatch image-secrets-broker image-agent image-redis image-openbao \
+        images image-router-api image-ui image-dispatch-api image-secrets-broker image-agent image-redis image-openbao \
         local/start local/logs local/stop local/reset local/test local/pdv hooks verify \
         release release/minor release/major
 
@@ -139,7 +139,7 @@ test-coverage: test-unit
 
 # --- OCI Images ---
 
-images: image-tls-init image-router-api image-ui image-dispatch image-secrets-broker image-agent image-redis image-openbao
+images: image-tls-init image-router-api image-ui image-dispatch-api image-secrets-broker image-agent image-redis image-openbao
 	@echo "All images built."
 
 image-tls-init:
@@ -161,12 +161,12 @@ image-ui:
 		-t convocate-ui:$(VERSION) \
 		-t convocate-ui:latest .
 
-image-dispatch:
-	@echo "Building convocate-dispatch image $(VERSION)..."
-	docker build -f deploy/agent-host/Dockerfile.dispatch \
+image-dispatch-api:
+	@echo "Building convocate-dispatch-api image $(VERSION)..."
+	docker build -f deploy/agent-host/Dockerfile.dispatch-api \
 		--build-arg VERSION=$(VERSION) \
-		-t convocate-dispatch:$(VERSION) \
-		-t convocate-dispatch:latest .
+		-t convocate-dispatch-api:$(VERSION) \
+		-t convocate-dispatch-api:latest .
 
 image-secrets-broker:
 	@echo "Building convocate-secrets-broker image $(VERSION)..."

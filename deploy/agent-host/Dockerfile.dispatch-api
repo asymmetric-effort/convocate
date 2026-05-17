@@ -19,10 +19,10 @@ COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOARCH=${TARGETARCH:-amd64} go build -trimpath \
     -ldflags "-s -w -X main.Version=${VERSION}" \
-    -o /out/convocate-dispatch ./cmd/convocate-dispatch/
+    -o /out/convocate-dispatch-api ./cmd/convocate-dispatch-api/
 
 FROM gcr.io/distroless/static-debian12
 
-COPY --from=builder /out/convocate-dispatch /usr/local/bin/convocate-dispatch
+COPY --from=builder /out/convocate-dispatch-api /usr/local/bin/convocate-dispatch-api
 
-ENTRYPOINT ["/usr/local/bin/convocate-dispatch"]
+ENTRYPOINT ["/usr/local/bin/convocate-dispatch-api"]

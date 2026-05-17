@@ -16,7 +16,7 @@ func main() {
 		fmt.Println(Version)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "convocate-dispatch %s\n", Version)
+	fmt.Fprintf(os.Stderr, "convocate-dispatch-api %s\n", Version)
 	os.Exit(run())
 }
 

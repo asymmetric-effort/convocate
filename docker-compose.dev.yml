@@ -134,8 +134,8 @@ services:
   # --- Agent Host ---
 
   dispatch:
-    image: convocate-dispatch:${VERSION:-latest}
-    container_name: convocate-dispatch
+    image: convocate-dispatch-api:${VERSION:-latest}
+    container_name: convocate-dispatch-api
     restart: unless-stopped
     environment:
       - CONVOCATE_CONTROL_URL=https://router-api:8443
