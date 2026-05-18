@@ -26,7 +26,7 @@ jobs:
         run: cd internal/webui && npm install && npm run build
       - name: Go lint (golangci-lint)
         run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
           golangci-lint run --config .golangci-lint.yml ./...
       - name: YAML lint
         run: |
