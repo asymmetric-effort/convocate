@@ -26,7 +26,7 @@ services:
       - dev-tls:/tls
     restart: "no"
     networks:
-      - shared-dev
+      - convocate-dev
 
   # --- Control Plane ---
 
@@ -86,7 +86,6 @@ services:
       - dev-tls:/tls
     networks:
       - convocate-dev
-      - shared-dev
 
   ui:
     image: convocate-ui:${VERSION:-latest}
@@ -103,7 +102,6 @@ services:
       - dev-tls:/tls:ro
     networks:
       - convocate-dev
-      - shared-dev
 
   # --- Agent Host ---
 
@@ -182,9 +180,5 @@ volumes:
 
 networks:
   convocate-dev:
-    driver: bridge
-  # Shared network alias so the Makefile health-check (which always references
-  # convocate_convocate-dev) works regardless of which worktree runs compose.
-  shared-dev:
     name: convocate_convocate-dev
     driver: bridge
