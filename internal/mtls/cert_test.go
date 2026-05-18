@@ -284,12 +284,12 @@ func TestKeyPairPEMValid(t *testing.T) {
 	}
 
 	certBlock, _ := pem.Decode(pair.CertPEM)
-	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
+	if certBlock == nil || certBlock.Type != pemCertificate {
 		t.Error("CertPEM is not a valid CERTIFICATE PEM block")
 	}
 
 	keyBlock, _ := pem.Decode(pair.KeyPEM)
-	if keyBlock == nil || keyBlock.Type != "EC PRIVATE KEY" {
+	if keyBlock == nil || keyBlock.Type != pemECKey {
 		t.Error("KeyPEM is not a valid EC PRIVATE KEY PEM block")
 	}
 }

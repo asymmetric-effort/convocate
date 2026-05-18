@@ -28,7 +28,7 @@ func (ca *CA) IssueServerCert(commonName string, dnsNames []string, ips []net.IP
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			CommonName:   commonName,
-			Organization: []string{"convocate"},
+			Organization: []string{orgName},
 		},
 		NotBefore:             now,
 		NotAfter:              now.Add(validity),
@@ -53,7 +53,7 @@ func (ca *CA) IssueClientCert(commonName string, validity time.Duration) (*CertK
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			CommonName:   commonName,
-			Organization: []string{"convocate"},
+			Organization: []string{orgName},
 		},
 		NotBefore:             now,
 		NotAfter:              now.Add(validity),
@@ -77,7 +77,7 @@ func (ca *CA) IssueCombinedCert(commonName string, dnsNames []string, ips []net.
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			CommonName:   commonName,
-			Organization: []string{"convocate"},
+			Organization: []string{orgName},
 		},
 		NotBefore:             now,
 		NotAfter:              now.Add(validity),
@@ -97,8 +97,8 @@ func (ca *CA) signCert(template *x509.Certificate, pub *ecdsa.PublicKey, priv *e
 		return nil, fmt.Errorf("mtls: sign certificate: %w", err)
 	}
 
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: mustMarshalECKey(priv)})
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: pemCertificate, Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: pemECKey, Bytes: mustMarshalECKey(priv)})
 
 	return &CertKeyPair{
 		CertPEM: certPEM,

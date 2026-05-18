@@ -35,7 +35,7 @@ func TestGenerateCA(t *testing.T) {
 	})
 
 	t.Run("organization", func(t *testing.T) {
-		if len(ca.Certificate.Subject.Organization) != 1 || ca.Certificate.Subject.Organization[0] != "convocate" {
+		if len(ca.Certificate.Subject.Organization) != 1 || ca.Certificate.Subject.Organization[0] != orgName {
 			t.Errorf("Organization: got %v, want [convocate]", ca.Certificate.Subject.Organization)
 		}
 	})
@@ -74,7 +74,7 @@ func TestGenerateCA(t *testing.T) {
 		if block == nil {
 			t.Fatal("failed to decode CertPEM")
 		}
-		if block.Type != "CERTIFICATE" {
+		if block.Type != pemCertificate {
 			t.Errorf("CertPEM type: got %q, want CERTIFICATE", block.Type)
 		}
 
@@ -82,7 +82,7 @@ func TestGenerateCA(t *testing.T) {
 		if keyBlock == nil {
 			t.Fatal("failed to decode KeyPEM")
 		}
-		if keyBlock.Type != "EC PRIVATE KEY" {
+		if keyBlock.Type != pemECKey {
 			t.Errorf("KeyPEM type: got %q, want EC PRIVATE KEY", keyBlock.Type)
 		}
 	})
@@ -159,7 +159,7 @@ func TestTrustBundle(t *testing.T) {
 	if block == nil {
 		t.Fatal("TrustBundle is not valid PEM")
 	}
-	if block.Type != "CERTIFICATE" {
+	if block.Type != pemCertificate {
 		t.Errorf("TrustBundle PEM type: got %q, want CERTIFICATE", block.Type)
 	}
 }

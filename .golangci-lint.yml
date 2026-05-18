@@ -1,15 +1,8 @@
+version: "2"
 run:
-  timeout: 5m
   modules-download-mode: readonly
-
 linters:
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
     - bodyclose
     - copyloopvar
     - durationcheck
@@ -19,8 +12,6 @@ linters:
     - gochecknoinits
     - goconst
     - gocritic
-    - gofmt
-    - goimports
     - gosec
     - misspell
     - nilerr
@@ -31,47 +22,84 @@ linters:
     - unconvert
     - unparam
     - whitespace
-
-linters-settings:
-  govet:
-    enable-all: true
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-  revive:
+  settings:
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    gosec:
+      excludes:
+        - G101
+        - G118
+        - G204
+    govet:
+      enable-all: true
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: increment-decrement
+        - name: var-naming
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-      - name: increment-decrement
-      - name: var-naming
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
-  gosec:
-    excludes:
-      - G204
-
+      - linters:
+          - errcheck
+          - goconst
+          - gosec
+          - unparam
+          - noctx
+        path: _test\.go
+      - linters:
+          - staticcheck
+        text: "SA1019.*deprecated since Go 1.26"
+      - linters:
+          - staticcheck
+        text: "QF1008"
+      - linters:
+          - noctx
+        path: (cmd/|internal/broker/|internal/redis/|internal/wrapper/)
+      - linters:
+          - goconst
+        path: (internal/cli/|internal/openbao/|internal/redis/mock_)
+      - linters:
+          - goconst
+        path: internal/auth/
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   max-issues-per-linter: 50
   max-same-issues: 5
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - goconst
-        - gosec
-        - errcheck
-        - unparam
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

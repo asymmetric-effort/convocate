@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+const (
+	orgName        = "convocate"
+	pemCertificate = "CERTIFICATE"
+	pemECKey       = "EC PRIVATE KEY"
+)
+
 // CA holds a certificate authority keypair and certificate.
 type CA struct {
 	Certificate *x509.Certificate
@@ -30,7 +36,7 @@ func GenerateCA(commonName string, validity time.Duration) (*CA, error) {
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			CommonName:   commonName,
-			Organization: []string{"convocate"},
+			Organization: []string{orgName},
 		},
 		NotBefore:             now,
 		NotAfter:              now.Add(validity),
@@ -50,8 +56,8 @@ func GenerateCA(commonName string, validity time.Duration) (*CA, error) {
 		return nil, fmt.Errorf("mtls: parse CA certificate: %w", err)
 	}
 
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: mustMarshalECKey(privateKey)})
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: pemCertificate, Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: pemECKey, Bytes: mustMarshalECKey(privateKey)})
 
 	return &CA{
 		Certificate: cert,
