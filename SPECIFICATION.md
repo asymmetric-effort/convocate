@@ -1,7 +1,7 @@
 # Convocate — Build Specification
 
 > Status: draft v0.1 · Source of truth for implementation
-> Companion artifacts: `api/openapi.yaml` (API contract), `Unity Desktop.dc.html` (interactive reference prototype)
+> Companion artifact: `openapi.yaml` (API contract)
 
 ---
 
@@ -29,7 +29,7 @@ visual + interaction specification, **not** the shippable artifact.
 | Concept   | Summary |
 | --------- | ------------------------------------------------------------------------------------------------- |
 | **Node**  | A compute host (arbitrary SSH-reachable host) running the Convocate runtime. Lifecycle: `online → draining → offline`. Carries load average (1/5/15), memory, disk, tags (`cpu:amd64`, `os:linux`, …), and write-once notes. |
-| **Agent-container** | A container on a Node running the Claude CLI in permission-bypass mode behind a golang wrapper. Has a logical `project` name, owner, status (`running`/`connected`/`stopped`/`migrating`), and an exposed `FQDN:port`. |
+| **Agent-container** | A container on a Node running the Claude CLI in permission-bypass mode behind a golang wrapper. Has a logical `project` name, owner, status (`running`/`connected`/`stopped`/`migrating`/`stopping`), and an exposed `FQDN:port`. |
 | **Project** | A unit of work; owns a git **Repository** and a `SPECIFICATION.md`. |
 | **Project Board** | A free canvas of **Containers** and **Cards** wired by **Edges** into an execution DAG. Persisted as `ProjectBoard.json` in the repo, linked to the spec. |
 | **Card** | A task. Status `todo → active → done`/`fail`, plus `note` (inert). Holds title, content, source-file refs, an implementation note, and links. |
@@ -204,20 +204,26 @@ visual + interaction specification, **not** the shippable artifact.
 
 ## 7. Technology
 
-- **Frontend**: **SpecifyJS** (declarative TypeScript). Desktop shell + 7 applets
-  + cross-cutting auth/RBAC/API-client/window stores. Real-time via WebSocket.
-- **Backend**: control-plane API implementing `api/openapi.yaml`. Owns persistent
-  state; reaches Nodes over SSH; orchestrates agent-containers; integrates GitHub
-  (repos, Actions) and an LLM (spec → board). (Stack TBD.)
+- **Frontend**: **SpecifyJS** (declarative TypeScript, `@asymmetric-effort/specifyjs`)
+  running on **Bun**. Desktop shell + 7 applets + cross-cutting auth/RBAC/API-client/
+  window stores. Real-time via WebSocket (`/api/v1/events/{applet}/{channel}`).
+- **Backend**: **Go 1.26+** control-plane API implementing `openapi.yaml`. Owns
+  persistent state; reaches Nodes over SSH; orchestrates agent-containers; integrates
+  GitHub (repos, Actions) and an LLM (spec → board).
+- **Storage**: tiered — **file-based JSON** for data blobs (boards, specs, card
+  content, docs), **Redis** (`redis/go-redis`) for ephemeral/cache (JWT sessions,
+  refresh tokens, stats cache, event pub/sub), **PostgreSQL** (`database/sql` +
+  `jackc/pgx`) for searchable records and file references.
 - **Data plane**: Convocate runtime + agent-containers on provisioned Nodes.
-- **Shared**: generate TypeScript types from the OpenAPI schemas for end-to-end
-  type safety.
+- **Containers**: all services run in **distroless** containers built via
+  multi-stage Docker builds (build stage: `ubuntu:24.04`). Local development
+  via **Docker Compose** (UI, API, Redis, PostgreSQL).
 
 ---
 
 ## 8. Build sequence
 
-1. **Contracts & types** — finalize `api/openapi.yaml`; generate shared TS types.
+1. **Contracts & types** — finalize `openapi.yaml`; hand-write shared TS types to match the OpenAPI schemas.
 2. **Walking skeleton** — auth/session + RBAC + shell (dock, window manager) +
    one vertical slice (Node Manager: list → provision → detail) proving
    UI ↔ API ↔ datastore ↔ auth end-to-end.

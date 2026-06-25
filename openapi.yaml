@@ -68,9 +68,14 @@ paths:
         Channels are applet-specific (e.g. `nmgr/status`, `amgr/status`,
         `pb/board/{boardId}`, `ide/project/{projectId}`).
 
+        Authorization is enforced per applet: subscribing to an applet's
+        events requires the applet's view role (e.g. `node-view` for `nmgr`,
+        `agent-view` for `amgr`, `pb-view` for `pb`, etc.).
+
         This endpoint is separate from the agent shell WebSocket
         (`/amgr/agent/{agentId}/shell`), which provides bidirectional
         stdin/stdout streaming.
+      x-required-role: '{applet}-view (resolved dynamically per applet)'
       parameters:
         - name: applet
           in: path
@@ -410,12 +415,20 @@ paths:
       tags: [pb]
       summary: List project boards
       x-required-role: pb-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
       responses:
         '200':
-          description: Boards
+          description: Page of boards
           content:
             application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/BoardSummary' } }
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/BoardSummary' } }
     post:
       tags: [pb]
       summary: Create a board (optionally from a rendered specification)
@@ -599,8 +612,20 @@ paths:
       tags: [ide]
       summary: List projects
       x-required-role: ide-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
       responses:
-        '200': { description: Projects, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Project' } } } } }
+        '200':
+          description: Page of projects
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/Project' } }
     post:
       tags: [ide]
       summary: Create a project (creates a repo and a SPECIFICATION.md template)
@@ -612,6 +637,21 @@ paths:
             schema: { type: object, required: [name], properties: { name: { type: string } } }
       responses:
         '201': { description: Project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+  /ide/project/{projectId}/tree:
+    get:
+      tags: [ide]
+      summary: List files and directories in a project (file explorer tree)
+      x-required-role: ide-view
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string } }
+        - { name: path, in: query, schema: { type: string, default: "" }, description: Directory path to list (empty for root) }
+      responses:
+        '200':
+          description: Directory entries
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/RepoFile' } }
+        '404': { $ref: '#/components/responses/NotFound' }
   /ide/project/{projectId}/file/{path}:
     parameters:
       - { name: projectId, in: path, required: true, schema: { type: string } }
@@ -622,15 +662,38 @@ paths:
       x-required-role: ide-view
       responses:
         '200': { description: File, content: { application/json: { schema: { $ref: '#/components/schemas/FileContent' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
     put:
       tags: [ide]
-      summary: Write a file (Project | Save / Save As)
+      summary: Create or overwrite a file
       x-required-role: ide-update
       requestBody:
         required: true
         content: { application/json: { schema: { type: object, required: [content], properties: { content: { type: string } } } } }
       responses:
         '200': { description: Saved, content: { application/json: { schema: { $ref: '#/components/schemas/FileContent' } } } }
+    delete:
+      tags: [ide]
+      summary: Delete a file
+      x-required-role: ide-update
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /ide/project/{projectId}/file/{path}/rename:
+    post:
+      tags: [ide]
+      summary: Rename or move a file
+      x-required-role: ide-update
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string } }
+        - { name: path, in: path, required: true, schema: { type: string }, description: Current file path }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [newPath], properties: { newPath: { type: string } } } } }
+      responses:
+        '200': { description: Renamed, content: { application/json: { schema: { $ref: '#/components/schemas/FileContent' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Destination already exists, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   /ide/project/{projectId}/render-board:
     post:
       tags: [ide]
@@ -651,8 +714,20 @@ paths:
       tags: [repo]
       summary: List repositories
       x-required-role: repo-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
       responses:
-        '200': { description: Repos, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Repo' } } } } }
+        '200':
+          description: Page of repos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/Repo' } }
     post:
       tags: [repo]
       summary: Create a repository (backed by GitHub)
@@ -681,8 +756,19 @@ paths:
       parameters:
         - { name: repoId, in: path, required: true, schema: { type: string } }
         - { name: status, in: query, schema: { $ref: '#/components/schemas/PrStatus' } }
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
       responses:
-        '200': { description: PRs, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PullRequest' } } } } }
+        '200':
+          description: Page of PRs
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/PullRequest' } }
   /repo/repo/{repoId}/pr/{prId}:
     get:
       tags: [repo]
@@ -712,8 +798,20 @@ paths:
       tags: [ac]
       summary: List users
       x-required-role: access-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
       responses:
-        '200': { description: Users, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } }
+        '200':
+          description: Page of users
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/User' } }
     post:
       tags: [ac]
       summary: Create a user
@@ -744,8 +842,20 @@ paths:
       tags: [ac]
       summary: List groups
       x-required-role: access-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
       responses:
-        '200': { description: Groups, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Group' } } } } }
+        '200':
+          description: Page of groups
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/Group' } }
     post:
       tags: [ac]
       summary: Create a group
@@ -762,6 +872,17 @@ paths:
       summary: Delete a (non-builtin) group
       x-required-role: access-update
       responses: { '204': { description: Deleted } }
+  /ac/group/{groupId}/user:
+    put:
+      tags: [ac]
+      summary: Replace a group's user mappings
+      x-required-role: access-update
+      parameters: [ { name: groupId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { userIds: { type: array, items: { type: string } } } } } }
+      responses:
+        '200': { description: Group, content: { application/json: { schema: { $ref: '#/components/schemas/Group' } } } }
   /ac/group/{groupId}/role:
     put:
       tags: [ac]
@@ -778,8 +899,20 @@ paths:
       tags: [ac]
       summary: List assignable roles
       x-required-role: access-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
       responses:
-        '200': { description: Roles, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Role' } } } } }
+        '200':
+          description: Page of roles
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/Role' } }
   /ac/settings:
     get:
       tags: [ac]
@@ -803,8 +936,20 @@ paths:
       tags: [sup]
       summary: List support tickets
       x-required-role: support-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
       responses:
-        '200': { description: Tickets, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Ticket' } } } } }
+        '200':
+          description: Page of tickets
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/Ticket' } }
     post:
       tags: [sup]
       summary: Open a support ticket
@@ -814,13 +959,44 @@ paths:
         content: { application/json: { schema: { $ref: '#/components/schemas/TicketInput' } } }
       responses:
         '201': { description: Ticket, content: { application/json: { schema: { $ref: '#/components/schemas/Ticket' } } } }
+  /sup/ticket/{ticketId}:
+    parameters: [ { name: ticketId, in: path, required: true, schema: { type: string } } ]
+    get:
+      tags: [sup]
+      summary: Get ticket detail
+      x-required-role: support-view
+      responses:
+        '200': { description: Ticket, content: { application/json: { schema: { $ref: '#/components/schemas/Ticket' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [sup]
+      summary: Update a support ticket (status, priority, body)
+      x-required-role: support-view
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TicketInput' } } }
+      responses:
+        '200': { description: Updated ticket, content: { application/json: { schema: { $ref: '#/components/schemas/Ticket' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
   /sup/doc:
     get:
       tags: [sup]
       summary: List documentation articles
       x-required-role: support-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
       responses:
-        '200': { description: Docs, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/DocArticle' } } } } }
+        '200':
+          description: Page of articles
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/DocArticle' } }
 
 components:
   securitySchemes:
@@ -1146,14 +1322,15 @@ components:
         email: { type: string, format: email }
         name: { type: string }
         status: { $ref: '#/components/schemas/UserStatus' }
-        group: { type: string }
+        groups: { type: array, items: { type: string }, description: Group IDs the user belongs to }
     UserInput:
       type: object
       properties:
         email: { type: string, format: email }
         name: { type: string }
+        password: { type: string, format: password, description: Initial password (create only) }
         status: { $ref: '#/components/schemas/UserStatus' }
-        group: { type: string }
+        groups: { type: array, items: { type: string }, description: Group IDs to assign }
     Group:
       type: object
       properties:
