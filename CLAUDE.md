@@ -27,8 +27,6 @@ PostgreSQL only when relational queries are truly necessary.
 - **API contract**: `openapi.yaml` — the controlling authority for all API
   endpoints, schemas, and RBAC roles.
 - **Specification**: `SPECIFICATION.md` — product requirements and domain model.
-- **UI specification**: `docs/convocate_ui.md` — UI behavior and applet details.
-
 ## Build & Run
 
 ```bash
@@ -39,6 +37,16 @@ docker compose up --build
 docker compose build ui
 docker compose build api
 ```
+
+## Make Targets
+
+| Target       | Description |
+|--------------|-------------|
+| `make clean` | Remove all container images and built artifacts in `build/`, recreate `build/` |
+| `make lint`  | Run all linters (Go, TypeScript, SQL, Markdown, Makefiles, JS/CSS/HTML, YAML, JSON, Dockerfiles) |
+| `make test`  | Run all unit, integration and e2e tests including Playwright browser tests |
+| `make build` | Build all container images and GitHub Pages website artifacts |
+| `make cover` | Run code coverage and fail if below 98% |
 
 ## Coding Standards
 

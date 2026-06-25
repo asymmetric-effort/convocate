@@ -40,6 +40,16 @@ with seven applets:
 docker compose up --build
 ```
 
+## Make Targets
+
+| Target       | Description |
+|--------------|-------------|
+| `make clean` | Remove all container images and built artifacts in `build/`, recreate `build/` |
+| `make lint`  | Run all linters (Go, TypeScript, SQL, Markdown, Makefiles, JS/CSS/HTML, YAML, JSON, Dockerfiles) |
+| `make test`  | Run all unit, integration and e2e tests including Playwright browser tests |
+| `make build` | Build all container images and GitHub Pages website artifacts |
+| `make cover` | Run code coverage and fail if below 98% |
+
 ## Documentation
 
 - [SPECIFICATION.md](SPECIFICATION.md) — product specification and UI behavior

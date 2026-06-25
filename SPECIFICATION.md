@@ -229,7 +229,22 @@ visual + interaction specification, **not** the shippable artifact.
 
 ---
 
-## 9. Open decisions
+## 9. Build automation (Makefile)
+
+The project uses a top-level `Makefile` to drive all build, test, lint and
+clean operations. All targets are designed to run locally and in CI.
+
+| Target        | Description |
+|---------------|-------------|
+| `make clean`  | Remove all container images and built artifacts in `build/`, then recreate the empty `build/` directory. |
+| `make lint`   | Run all linters: Go (`gofmt`, `go vet`), TypeScript, SQL, Markdown, Makefiles, JS/CSS/HTML, YAML, JSON, and Dockerfiles (`hadolint`). |
+| `make test`   | Run all unit, integration and end-to-end tests, including Playwright browser tests, locally. |
+| `make build`  | Build all container images (UI, API, Redis, PostgreSQL), the GitHub Pages website artifacts, and any other distributable outputs. |
+| `make cover`  | Run code coverage across Go and TypeScript and **fail if overall test coverage is below 98%**. |
+
+---
+
+## 10. Open decisions
 
 - Agent-container orchestration mechanism on Nodes (Docker/Podman/other).
 - Whether Nodes are user-supplied hosts (prototype assumption) or provisioned via
@@ -238,9 +253,9 @@ visual + interaction specification, **not** the shippable artifact.
 
 ---
 
-## 10. User interface specification
+## 11. User interface specification
 
-### 10.1 Convocate User Desktop
+### 11.1 Convocate User Desktop
 
 The "Convocate User Desktop" is a SpecifyJS SPA UI with hash-based routing, which looks like an Ubuntu unity desktop. In its "locked" state, the UI has a black screen with a modal form in the center prompting the user to login with username, password and MFA token. In its "unlocked" state, the UI has a dock to the left of the screen with the various convocate applets (as determined by user permissions), a black background, a menu bar at the top of the screen with the current date/time in the center of the menu bar and the currently logged in user to the right of the menu bar with a dropdown menu item on the right for user logout, screen lock and settings. The UI menubar will change its context like macOS based on the menu items of the currently active (focused) applet.
 
@@ -250,7 +265,7 @@ When the user first visits the "Convocate User Desktop" user interface, the inte
 
 When a user clicks an applet in the dock, the current user's group/role object will be passed to the applet; and the applet will use this information to determine what features of an applet will be available (visible) to the user.
 
-### 10.2 Convocate Node Manager
+### 11.2 Convocate Node Manager
 
 The top-most applet icon in the dock should be "Convocate Node Manager" applet. When a user clicks this icon in the dock, the applet will start and evaluate the user's permission object; and if the user has at least a node-view role, the applet will load — otherwise the applet will only display a modal message box that reads "Permission denied."
 
@@ -260,7 +275,7 @@ When an authorized user (holding the node-*) role double clicks a node's row in 
 
 The Convocate Node Manager Applet UI will have a "Provision Node" button, and when the user clicks, a modal dialog form will appear which the user will use to specify the connection information to allow the system to connect to the new node virtual machine or physical host via SSH and provision the new Convocate Node. When the form is submitted, the UI will invoke POST /api/v1/nmgr/node, and the Convocate API server will connect to the new host via SSH, install the Convocate Node software, start the services, verify the services and mark the new node as 'online' so that node is available to the scheduler for new agents to be dispatched.
 
-### 10.3 Convocate Agent Manager
+### 11.3 Convocate Agent Manager
 
 The "Convocate Agent Manager" applet will appear below the Convocate Node Manager in the dock. The Convocate Agent Manager will operate much like the Convocate Node Manager, only it will focus on the agent level of control. Convocate Node Manager manages the underlying virtual machines and physical hosts which run convocate agents. The Convocate Agent Manager is used to manage the containers on a convocate node which run claude agents. Each agent runs inside a golang wrapper program within a linux container with full permission bypass giving an agent complete and unfettered control over its container. The Agent Manager applet lists all agents in an accordion list of grid-list containers, where each accordion section represents a Convocate Node (host) containing a grid-list of agent containers running on the given host.
 
@@ -270,7 +285,7 @@ A user may double-click an agent-container row in the displayed list which will 
 
 The Convocate Agent Manager applet screen will also have a button ("Create"); when clicked this button will cause a new window to appear which will allow the user to create/configure a new agent-container instance. This same window will be used when the user later clicks the agent-container's configure button to edit the running container configuration.
 
-### 10.4 Convocate Project Board
+### 11.4 Convocate Project Board
 
 The "Convocate Project Board" will appear third in the dock, below Convocate Agent Manager. This applet will present a free board on which the user may place containers representing agent-containers and cards representing work items (tasks) to be executed against an associated agent-container.
 
@@ -299,11 +314,11 @@ The Project Board uses /api/v1/pb/{card,container,edge} endpoints to operate on 
 - Allow the user to close a Project Board;
 - Allow the user to create a new (blank) Project Board.
 
-### 10.5 Convocate Code IDE
+### 11.5 Convocate Code IDE
 
 The "Convocate Code IDE" will appear fourth in the dock, below the Convocate Project Board. This IDE applet will behave much like VS Code, providing a full-featured integrated development environment which can be used to edit code generated by convocate, configurations created by Project Board or other applets or otherwise allow users to create content.
 
-### 10.6 Convocate Access Control
+### 11.6 Convocate Access Control
 
 The "Convocate Access Control" will appear fifth in the dock, below the Convocate Code IDE. This applet will have a tabbed UI with tabs for "users," "groups," and "global settings."
 
@@ -311,10 +326,10 @@ The "users" tab will display a list of users and buttons to create, disable, ena
 
 The "groups" tab will display a list of built-in and user-defined groups and buttons to create, edit, delete groups. A user can right-click a group (row in the list) and select "map users" from the context menu then map/unmap users to the given group. A user can right-click a group (row in the list) and select "map roles" and map/unmap roles to the given group.
 
-### 10.7 Convocate Repo Manager
+### 11.7 Convocate Repo Manager
 
 The "Convocate Repo Manager" will appear sixth in the dock, below the Convocate Access Control applet. This applet will create and manage git repositories for Convocate projects using the /api/v1/repo API endpoint. Using this applet a user should be able to list all Convocate project repositories, double click the repository to view its contents, double click files in the repository to open them in Convocate Code IDE or Convocate Project Board (as appropriate) or to download files. Convocate Repo Manager will act as a front-end for Github initially with plans to expand to other git-based version control systems.
 
-### 10.8 Convocate Support Tool
+### 11.8 Convocate Support Tool
 
 The "Convocate Support Tool" will appear seventh in the dock, below Convocate Repo Manager. This tool will provide a dialog and use /api/v1/sup/ticket to create, read, update support tickets for the convocate system's internal administrators. The applet will also display convocate online documentation.
