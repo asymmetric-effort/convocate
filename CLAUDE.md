@@ -1,0 +1,86 @@
+# Convocate v2 — Project Instructions
+
+## Overview
+
+Convocate is an agentic software-engineering platform. This is a complete v2
+rewrite. The repository is a monorepo with two primary services:
+
+- **Web UI** — TypeScript + Bun + @asymmetric-effort/specifyjs SPA
+- **API** — Go 1.26+ REST server
+
+## Architecture
+
+Four containers orchestrated via Docker Compose:
+
+| Container  | Language/Runtime | Build Stage    | Runtime Stage |
+|------------|-----------------|----------------|---------------|
+| Web UI     | Bun + SpecifyJS | ubuntu:24.04   | distroless    |
+| API        | Go 1.26+        | ubuntu:24.04   | distroless    |
+| Redis      | —               | ubuntu:24.04   | distroless    |
+| PostgreSQL | —               | ubuntu:24.04   | distroless    |
+
+Storage tiering: file-based JSON first, Redis for key-value/sessions,
+PostgreSQL only when relational queries are truly necessary.
+
+## Authoritative Documents
+
+- **API contract**: `openapi.yaml` — the controlling authority for all API
+  endpoints, schemas, and RBAC roles.
+- **Specification**: `SPECIFICATION.md` — product requirements and domain model.
+- **UI specification**: `docs/convocate_ui.md` — UI behavior and applet details.
+
+## Build & Run
+
+```bash
+# Local development
+docker compose up --build
+
+# Build individual containers
+docker compose build ui
+docker compose build api
+```
+
+## Coding Standards
+
+**Authoritative reference:** <http://coding-standards.asymmetric-effort.com/>
+
+### Go
+
+- No recursion. Go has no tail-call optimization; use loops and explicit
+  work-list patterns.
+- ed25519-only SSH keys. Every key the project generates must be ed25519.
+  No RSA, no ECDSA.
+- Use `gofmt` for formatting.
+- Tests go in `_test.go` files alongside the code they test.
+
+### TypeScript
+
+- Use Bun as the runtime and bundler.
+- All UI components use @asymmetric-effort/specifyjs.
+
+## Dependency Policy
+
+**HARD RULE: Zero third-party dependencies unless explicitly approved.**
+
+### Approved Dependencies
+
+| Package                       | Language | Purpose            |
+|-------------------------------|----------|--------------------|
+| `@asymmetric-effort/specifyjs` | TS      | UI framework       |
+| `redis/go-redis`              | Go       | Redis client       |
+| `jackc/pgx`                   | Go       | PostgreSQL driver  |
+
+Everything else must use language standard libraries. Do not add any
+dependency — including test frameworks, linters, or utility packages —
+without explicit approval.
+
+## API Conventions
+
+- All endpoints: `/api/v1/<applet_shortname>/...`
+- Applet shortnames: `nmgr`, `amgr`, `pb`, `ide`, `repo`, `ac`, `sup`, `auth`
+- Event channels: `/api/v1/events/{applet}/{channel}` (WebSocket)
+- Agent shell: `/api/v1/amgr/agent/{agentId}/shell` (WebSocket)
+- Bearer JWT auth; RBAC per operation; `admin` role implies all.
+- JSON request/response bodies.
+- List endpoints use cursor/offset pagination (`Page<T>`).
+- Timestamps are RFC 3339 UTC.

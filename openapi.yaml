@@ -33,6 +33,8 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: events
+    description: Real-time event channels (WebSocket) — per-applet, per-channel subscriptions
   - name: auth
     description: Identity, sessions, MFA, GitHub OIDC
   - name: nmgr
@@ -51,6 +53,43 @@ tags:
     description: Support Tool — tickets and documentation
 
 paths:
+  # ──────────────────────────── events ─────────────────────────────
+  /events/{applet}/{channel}:
+    get:
+      tags: [events]
+      summary: Subscribe to real-time events for an applet channel (WebSocket upgrade)
+      description: |
+        Upgrades to a WebSocket. The server pushes JSON-framed events for the
+        specified applet and channel. Each message is a JSON object with at
+        minimum `{ type, timestamp, payload }`. The client may send
+        `{ action: "ping" }` to keep the connection alive.
+
+        Applet shortnames: `nmgr`, `amgr`, `pb`, `ide`, `repo`, `ac`, `sup`.
+        Channels are applet-specific (e.g. `nmgr/status`, `amgr/status`,
+        `pb/board/{boardId}`, `ide/project/{projectId}`).
+
+        This endpoint is separate from the agent shell WebSocket
+        (`/amgr/agent/{agentId}/shell`), which provides bidirectional
+        stdin/stdout streaming.
+      parameters:
+        - name: applet
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [nmgr, amgr, pb, ide, repo, ac, sup]
+          description: Applet shortname
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Applet-specific channel identifier (may contain slashes)
+      responses:
+        '101': { description: Switching protocols (WebSocket) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   # ───────────────────────────── auth ─────────────────────────────
   /auth/login:
     post:
@@ -829,6 +868,15 @@ components:
         offset: { type: integer }
         limit: { type: integer }
         total: { type: integer }
+
+    # ---- events ----
+    Event:
+      type: object
+      required: [type, timestamp, payload]
+      properties:
+        type: { type: string, description: 'Event type, e.g. node.status, agent.status, card.updated' }
+        timestamp: { type: string, format: date-time }
+        payload: { type: object, description: Event-specific data }
 
     # ---- auth ----
     LoginRequest:

@@ -1,28 +1,28 @@
 # Binaries
-/convocate
-/convocate-host
-/convocate-agent
-/mock-claude
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+*.test
 
 # Build output
 /build/
 /dist/
 
-# Test binary, built with `go test -c`
-*.test
-
-# Output of the go coverage tool
+# Go
+go.work
+go.work.sum
 *.out
 coverage.html
 
-# Go workspace
-go.work
-go.work.sum
+# Node / Bun
+node_modules/
+bun.lockb
+*.tsbuildinfo
+
+# Docker
+.docker/
 
 # IDE
 .idea/
@@ -38,14 +38,4 @@ Thumbs.db
 # Environment
 .env
 .env.local
-.venv/
-venv/
-TO-DO.md
-
-# SpecifyJS docs site build output
-/site/dist/
-/site/node_modules/
-/site/src/docs-data.ts
-/site/bun.lockb
-/site/test-results/
-/site/playwright-report/
+.env.*.local
