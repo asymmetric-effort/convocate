@@ -1,0 +1,1155 @@
+openapi: 3.1.0
+info:
+  title: Convocate API
+  version: 0.1.0
+  description: |
+    Convocate is an agentic software-engineering platform: it provisions compute
+    **Nodes**, runs **Agent-containers** (Claude CLI in permission-bypass mode) on
+    them, decomposes a natural-language **Specification** into a **Project Board**
+    of Cards/Containers wired into execution DAGs, executes those cards against
+    agents to produce code, and manages the resulting **Repositories**, **Pull
+    Requests** and CI/CD through to merge.
+
+    ## Conventions
+    - All endpoints live under `/api/v1/<applet_shortname>/...`, where
+      `applet_shortname` is the 2–4 letter abbreviation for the owning applet:
+      `nmgr` (Node Manager), `amgr` (Agent Manager), `pb` (Project Board),
+      `ide` (Code IDE), `repo` (Repo Manager), `ac` (Access Control),
+      `sup` (Support Tool), plus `auth` for the session/identity service.
+    - JSON request/response bodies; `application/json` unless noted.
+    - Authentication via Bearer JWT (see `securitySchemes.bearerAuth`).
+    - Mutating endpoints are authorized by RBAC role (see `x-required-role`);
+      a principal holding the `admin` role implicitly satisfies every check.
+    - List endpoints are cursor/offset paginated and return `Page<T>`.
+    - Timestamps are RFC 3339 / ISO 8601 UTC strings.
+
+servers:
+  - url: https://{host}/api/v1
+    variables:
+      host:
+        default: convocate.local
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+    description: Identity, sessions, MFA, GitHub OIDC
+  - name: nmgr
+    description: Node Manager — compute hosts running Convocate
+  - name: amgr
+    description: Agent Manager — agent-containers on nodes
+  - name: pb
+    description: Project Board — cards, containers, execution DAGs
+  - name: ide
+    description: Code IDE — projects, specifications, files
+  - name: repo
+    description: Repo Manager — git repos, pull requests, CI/CD
+  - name: ac
+    description: Access Control — users, groups, roles, settings
+  - name: sup
+    description: Support Tool — tickets and documentation
+
+paths:
+  # ───────────────────────────── auth ─────────────────────────────
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Authenticate with username, password and MFA token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Session established
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/oidc/github/start:
+    get:
+      tags: [auth]
+      summary: Begin GitHub OIDC authorization-code flow
+      security: []
+      responses:
+        '302':
+          description: Redirect to GitHub authorize endpoint
+  /auth/oidc/github/callback:
+    get:
+      tags: [auth]
+      summary: GitHub OIDC redirect callback; exchanges code for a session
+      security: []
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Session established for the federated identity
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Exchange a refresh token for a new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties: { refreshToken: { type: string } }
+      responses:
+        '200':
+          description: Refreshed session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the current session
+      responses:
+        '204': { description: Logged out }
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current principal, effective roles and authorized applets
+      responses:
+        '200':
+          description: Current principal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Principal' }
+
+  # ──────────────────────────── nmgr ──────────────────────────────
+  /nmgr/node:
+    get:
+      tags: [nmgr]
+      summary: List network nodes
+      x-required-role: node-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/NodeStatus' }
+        - name: tag
+          in: query
+          description: Filter by a tag (repeatable)
+          schema: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: Page of nodes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/Node' } }
+    post:
+      tags: [nmgr]
+      summary: Provision a new node over SSH
+      description: |
+        Connects to `host` as `user` (optionally with `password` for the first
+        connection only), installs the Convocate agent runtime, installs a
+        backend-generated SSH public key to `authorized_keys`, then hardens SSH
+        to disable password logins. `host` must be a valid IPv4/IPv6 address or
+        FQDN; `user` must be a valid Linux username.
+      x-required-role: node-create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProvisionNodeRequest' }
+      responses:
+        '202':
+          description: Provisioning accepted; node created in `online`/pending state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Node' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /nmgr/node/{nodeId}:
+    parameters: [ { $ref: '#/components/parameters/nodeId' } ]
+    get:
+      tags: [nmgr]
+      summary: Node detail (incl. live stats and agent summary)
+      x-required-role: node-view
+      responses:
+        '200':
+          description: Node detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NodeDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [nmgr]
+      summary: Update mutable node fields (location, tags)
+      x-required-role: node-update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                location: { type: string }
+                tags: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: Updated node
+          content: { application/json: { schema: { $ref: '#/components/schemas/Node' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [nmgr]
+      summary: Drain, decommission and power down a node
+      description: Drains the node, terminates Convocate services, uninstalls the software and powers off the host. Irreversible.
+      x-required-role: node-delete
+      responses:
+        '202': { description: Decommission started }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /nmgr/node/{nodeId}/start:
+    post:
+      tags: [nmgr]
+      summary: Bring an offline node online
+      x-required-role: node-update
+      parameters: [ { $ref: '#/components/parameters/nodeId' } ]
+      responses:
+        '202': { description: Start requested }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /nmgr/node/{nodeId}/stop:
+    post:
+      tags: [nmgr]
+      summary: Drain a node and migrate its agent-containers
+      description: |
+        Transitions the node to `draining`: the scheduler stops dispatching new
+        agents, running tasks are allowed to finish, then each agent-container is
+        migrated to another online node with adequate capacity. Agent-containers
+        for which no node has capacity are stopped in place. A system note records
+        the migration outcome and the node transitions to `offline`.
+      x-required-role: node-update
+      parameters: [ { $ref: '#/components/parameters/nodeId' } ]
+      responses:
+        '202': { description: Drain started }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /nmgr/node/{nodeId}/note:
+    get:
+      tags: [nmgr]
+      summary: List a node's notes (write-once, read-many)
+      x-required-role: node-view
+      parameters: [ { $ref: '#/components/parameters/nodeId' } ]
+      responses:
+        '200':
+          description: Notes, newest last
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Note' } }
+    post:
+      tags: [nmgr]
+      summary: Append a note to a node (immutable once created)
+      x-required-role: node-update
+      parameters: [ { $ref: '#/components/parameters/nodeId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties: { text: { type: string, minLength: 1 } }
+      responses:
+        '201':
+          description: Note created
+          content: { application/json: { schema: { $ref: '#/components/schemas/Note' } } }
+
+  # ──────────────────────────── amgr ──────────────────────────────
+  /amgr/agent:
+    get:
+      tags: [amgr]
+      summary: List agent-containers (optionally grouped by node)
+      x-required-role: agent-view
+      parameters:
+        - { $ref: '#/components/parameters/offset' }
+        - { $ref: '#/components/parameters/limit' }
+        - name: nodeId
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Page of agents
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/Agent' } }
+    post:
+      tags: [amgr]
+      summary: Create an agent-container
+      x-required-role: agent-update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAgentRequest' }
+      responses:
+        '201':
+          description: Agent created
+          content: { application/json: { schema: { $ref: '#/components/schemas/Agent' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+  /amgr/agent/{agentId}:
+    parameters: [ { $ref: '#/components/parameters/agentId' } ]
+    get:
+      tags: [amgr]
+      summary: Agent detail
+      x-required-role: agent-view
+      responses:
+        '200': { description: Agent, content: { application/json: { schema: { $ref: '#/components/schemas/Agent' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [amgr]
+      summary: Configure an agent (project, node, exposed FQDN:port)
+      description: |
+        `expose` must be `FQDN:port` — the host part must be a DNS name (not an
+        IP address). Validated server-side.
+      x-required-role: agent-update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfigureAgentRequest' }
+      responses:
+        '200': { description: Updated agent, content: { application/json: { schema: { $ref: '#/components/schemas/Agent' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      tags: [amgr]
+      summary: Stop and remove an agent-container
+      x-required-role: agent-update
+      responses:
+        '204': { description: Removed }
+  /amgr/agent/{agentId}/start:
+    post:
+      tags: [amgr]
+      summary: Start a stopped agent-container
+      x-required-role: agent-update
+      parameters: [ { $ref: '#/components/parameters/agentId' } ]
+      responses: { '202': { description: Start requested } }
+  /amgr/agent/{agentId}/stop:
+    post:
+      tags: [amgr]
+      summary: Stop a running agent-container
+      x-required-role: agent-update
+      parameters: [ { $ref: '#/components/parameters/agentId' } ]
+      responses: { '202': { description: Stop requested } }
+  /amgr/agent/{agentId}/shell:
+    get:
+      tags: [amgr]
+      summary: Open the agent's Claude CLI shell stream (WebSocket upgrade)
+      description: |
+        Upgrades to a WebSocket. The server attaches to the agent-container's
+        golang wrapper running `claude --dangerously-skip-permissions` and
+        bidirectionally streams stdout/stderr and stdin.
+      x-required-role: agent-view
+      parameters: [ { $ref: '#/components/parameters/agentId' } ]
+      responses:
+        '101': { description: Switching protocols (WebSocket) }
+
+  # ───────────────────────────── pb ───────────────────────────────
+  /pb/board:
+    get:
+      tags: [pb]
+      summary: List project boards
+      x-required-role: pb-view
+      responses:
+        '200':
+          description: Boards
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/BoardSummary' } }
+    post:
+      tags: [pb]
+      summary: Create a board (optionally from a rendered specification)
+      x-required-role: pb-update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                repoId: { type: string, description: Repository to back this board }
+                specificationFileId: { type: string }
+      responses:
+        '201': { description: Board, content: { application/json: { schema: { $ref: '#/components/schemas/Board' } } } }
+  /pb/board/{boardId}:
+    parameters: [ { $ref: '#/components/parameters/boardId' } ]
+    get:
+      tags: [pb]
+      summary: Full board graph (containers, cards, edges)
+      x-required-role: pb-view
+      responses:
+        '200': { description: Board, content: { application/json: { schema: { $ref: '#/components/schemas/Board' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [pb]
+      summary: Rename the board / project
+      x-required-role: pb-update
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, properties: { name: { type: string } } } }
+      responses:
+        '200': { description: Board, content: { application/json: { schema: { $ref: '#/components/schemas/Board' } } } }
+  /pb/board/{boardId}/save-as-repo:
+    post:
+      tags: [pb]
+      summary: Persist the board as ProjectBoard.json in its repository
+      x-required-role: pb-update
+      parameters: [ { $ref: '#/components/parameters/boardId' } ]
+      responses:
+        '201': { description: Saved; returns the repo + file reference, content: { application/json: { schema: { $ref: '#/components/schemas/Repo' } } } }
+  /pb/board/{boardId}/implement:
+    post:
+      tags: [pb]
+      summary: Implement all eligible cards (dispatch to agent-containers)
+      description: |
+        Sends every container-attached, non-note card to its associated
+        agent-container as a single execution unit. Cards move to `active`,
+        then to `done` (PR opened) or `fail` (unresolved question) and are
+        annotated with source-file references and an implementation note.
+      x-required-role: pb-execute
+      parameters: [ { $ref: '#/components/parameters/boardId' } ]
+      responses:
+        '202': { description: Execution run started, content: { application/json: { schema: { $ref: '#/components/schemas/ExecutionRun' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /pb/board/{boardId}/container:
+    post:
+      tags: [pb]
+      summary: Create a container
+      x-required-role: pb-update
+      parameters: [ { $ref: '#/components/parameters/boardId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ContainerInput' } } }
+      responses:
+        '201': { description: Container, content: { application/json: { schema: { $ref: '#/components/schemas/Container' } } } }
+  /pb/board/{boardId}/container/{containerId}:
+    parameters:
+      - { $ref: '#/components/parameters/boardId' }
+      - { $ref: '#/components/parameters/containerId' }
+    patch:
+      tags: [pb]
+      summary: Update a container (title, geometry, minimized, mapped agent)
+      x-required-role: pb-update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ContainerInput' } } }
+      responses:
+        '200': { description: Container, content: { application/json: { schema: { $ref: '#/components/schemas/Container' } } } }
+    delete:
+      tags: [pb]
+      summary: Delete a container
+      x-required-role: pb-update
+      responses: { '204': { description: Deleted } }
+  /pb/board/{boardId}/card:
+    post:
+      tags: [pb]
+      summary: Create a card
+      x-required-role: pb-update
+      parameters: [ { $ref: '#/components/parameters/boardId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CardInput' } } }
+      responses:
+        '201': { description: Card, content: { application/json: { schema: { $ref: '#/components/schemas/Card' } } } }
+  /pb/board/{boardId}/card/{cardId}:
+    parameters:
+      - { $ref: '#/components/parameters/boardId' }
+      - { $ref: '#/components/parameters/cardId' }
+    get:
+      tags: [pb]
+      summary: Card as a JSON document (title, status, content, links, …)
+      x-required-role: pb-view
+      responses:
+        '200': { description: Card, content: { application/json: { schema: { $ref: '#/components/schemas/Card' } } } }
+    put:
+      tags: [pb]
+      summary: Replace a card from its edited JSON (validated before save)
+      description: |
+        Validates the submitted card document for correctness (status enum,
+        required fields, well-formed links honoring the edge-relationship rules)
+        before persisting. `todo`-status cards are freely editable; `active`/`done`
+        cards reject title/content mutation.
+      x-required-role: pb-update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/Card' } } }
+      responses:
+        '200': { description: Updated card, content: { application/json: { schema: { $ref: '#/components/schemas/Card' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { description: Edit rejected for the card's current status, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [pb]
+      summary: Delete a card
+      x-required-role: pb-update
+      responses: { '204': { description: Deleted } }
+  /pb/board/{boardId}/card/{cardId}/send:
+    post:
+      tags: [pb]
+      summary: Send a single card to its agent-container for processing
+      x-required-role: pb-execute
+      parameters:
+        - { $ref: '#/components/parameters/boardId' }
+        - { $ref: '#/components/parameters/cardId' }
+      responses:
+        '202': { description: Dispatched, content: { application/json: { schema: { $ref: '#/components/schemas/Card' } } } }
+  /pb/board/{boardId}/edge:
+    post:
+      tags: [pb]
+      summary: Create an edge (link) between two cards
+      description: |
+        The relationship is constrained by endpoint status:
+        TODO↔TODO may be `DependsOn` or `RelatesTo`; ACTIVE/DONE↔ACTIVE/DONE
+        may only be `RelatesTo`; a TODO card may `DependsOn` an ACTIVE/DONE card
+        (oriented so the TODO depends on the executed card), otherwise mixed
+        pairs are `RelatesTo`.
+      x-required-role: pb-update
+      parameters: [ { $ref: '#/components/parameters/boardId' } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/EdgeInput' } } }
+      responses:
+        '201': { description: Edge, content: { application/json: { schema: { $ref: '#/components/schemas/Edge' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+  /pb/board/{boardId}/edge/{edgeId}:
+    parameters:
+      - { $ref: '#/components/parameters/boardId' }
+      - { name: edgeId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [pb]
+      summary: Change an edge's relationship type (subject to status rules)
+      x-required-role: pb-update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { type: { $ref: '#/components/schemas/EdgeType' } } } } }
+      responses:
+        '200': { description: Edge, content: { application/json: { schema: { $ref: '#/components/schemas/Edge' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      tags: [pb]
+      summary: Delete an edge
+      x-required-role: pb-update
+      responses: { '204': { description: Deleted } }
+
+  # ───────────────────────────── ide ──────────────────────────────
+  /ide/project:
+    get:
+      tags: [ide]
+      summary: List projects
+      x-required-role: ide-view
+      responses:
+        '200': { description: Projects, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Project' } } } } }
+    post:
+      tags: [ide]
+      summary: Create a project (creates a repo and a SPECIFICATION.md template)
+      x-required-role: ide-update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string } } }
+      responses:
+        '201': { description: Project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+  /ide/project/{projectId}/file/{path}:
+    parameters:
+      - { name: projectId, in: path, required: true, schema: { type: string } }
+      - { name: path, in: path, required: true, schema: { type: string }, description: URL-encoded repo-relative file path }
+    get:
+      tags: [ide]
+      summary: Read a file
+      x-required-role: ide-view
+      responses:
+        '200': { description: File, content: { application/json: { schema: { $ref: '#/components/schemas/FileContent' } } } }
+    put:
+      tags: [ide]
+      summary: Write a file (Project | Save / Save As)
+      x-required-role: ide-update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [content], properties: { content: { type: string } } } } }
+      responses:
+        '200': { description: Saved, content: { application/json: { schema: { $ref: '#/components/schemas/FileContent' } } } }
+  /ide/project/{projectId}/render-board:
+    post:
+      tags: [ide]
+      summary: Render SPECIFICATION.md into a Project Board (LLM decomposition)
+      description: |
+        Sends SPECIFICATION.md to the backend LLM, which rewrites the narrative
+        into a Project Board JSON of Cards and Containers, links it to the spec,
+        and stores it as ProjectBoard.json in the repository.
+      x-required-role: ide-update
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string } }
+      responses:
+        '202': { description: Board rendered, content: { application/json: { schema: { $ref: '#/components/schemas/Board' } } } }
+
+  # ──────────────────────────── repo ──────────────────────────────
+  /repo/repo:
+    get:
+      tags: [repo]
+      summary: List repositories
+      x-required-role: repo-view
+      responses:
+        '200': { description: Repos, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Repo' } } } } }
+    post:
+      tags: [repo]
+      summary: Create a repository (backed by GitHub)
+      x-required-role: repo-update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, visibility: { $ref: '#/components/schemas/Visibility' } } } } }
+      responses:
+        '201': { description: Repo, content: { application/json: { schema: { $ref: '#/components/schemas/Repo' } } } }
+  /repo/repo/{repoId}/file:
+    get:
+      tags: [repo]
+      summary: List repository files at a path
+      x-required-role: repo-view
+      parameters:
+        - { name: repoId, in: path, required: true, schema: { type: string } }
+        - { name: path, in: query, schema: { type: string, default: "" } }
+        - { name: ref, in: query, schema: { type: string }, description: branch or commit }
+      responses:
+        '200': { description: Entries, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/RepoFile' } } } } }
+  /repo/repo/{repoId}/pr:
+    get:
+      tags: [repo]
+      summary: List pull requests
+      x-required-role: repo-view
+      parameters:
+        - { name: repoId, in: path, required: true, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/PrStatus' } }
+      responses:
+        '200': { description: PRs, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/PullRequest' } } } } }
+  /repo/repo/{repoId}/pr/{prId}:
+    get:
+      tags: [repo]
+      summary: Pull request detail with CI checks and changed files
+      x-required-role: repo-view
+      parameters:
+        - { name: repoId, in: path, required: true, schema: { type: string } }
+        - { name: prId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: PR, content: { application/json: { schema: { $ref: '#/components/schemas/PullRequest' } } } }
+  /repo/repo/{repoId}/pr/{prId}/merge:
+    post:
+      tags: [repo]
+      summary: Merge a pull request to main (gated on passing checks)
+      description: Merge is rejected unless all required CI checks pass and merge/deployment gates are satisfied.
+      x-required-role: repo-merge
+      parameters:
+        - { name: repoId, in: path, required: true, schema: { type: string } }
+        - { name: prId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Merged, content: { application/json: { schema: { $ref: '#/components/schemas/PullRequest' } } } }
+        '409': { description: Merge gate not satisfied, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  # ───────────────────────────── ac ───────────────────────────────
+  /ac/user:
+    get:
+      tags: [ac]
+      summary: List users
+      x-required-role: access-view
+      responses:
+        '200': { description: Users, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } }
+    post:
+      tags: [ac]
+      summary: Create a user
+      x-required-role: access-update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UserInput' } } }
+      responses:
+        '201': { description: User, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+  /ac/user/{userId}:
+    parameters: [ { name: userId, in: path, required: true, schema: { type: string } } ]
+    patch:
+      tags: [ac]
+      summary: Update a user (status, group membership)
+      x-required-role: access-update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UserInput' } } }
+      responses:
+        '200': { description: User, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+    delete:
+      tags: [ac]
+      summary: Delete a user
+      x-required-role: access-update
+      responses: { '204': { description: Deleted } }
+  /ac/group:
+    get:
+      tags: [ac]
+      summary: List groups
+      x-required-role: access-view
+      responses:
+        '200': { description: Groups, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Group' } } } } }
+    post:
+      tags: [ac]
+      summary: Create a group
+      x-required-role: access-update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string } } } } }
+      responses:
+        '201': { description: Group, content: { application/json: { schema: { $ref: '#/components/schemas/Group' } } } }
+  /ac/group/{groupId}:
+    parameters: [ { name: groupId, in: path, required: true, schema: { type: string } } ]
+    delete:
+      tags: [ac]
+      summary: Delete a (non-builtin) group
+      x-required-role: access-update
+      responses: { '204': { description: Deleted } }
+  /ac/group/{groupId}/role:
+    put:
+      tags: [ac]
+      summary: Replace a group's role mappings
+      x-required-role: access-update
+      parameters: [ { name: groupId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { roles: { type: array, items: { type: string } } } } } }
+      responses:
+        '200': { description: Group, content: { application/json: { schema: { $ref: '#/components/schemas/Group' } } } }
+  /ac/role:
+    get:
+      tags: [ac]
+      summary: List assignable roles
+      x-required-role: access-view
+      responses:
+        '200': { description: Roles, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Role' } } } } }
+  /ac/settings:
+    get:
+      tags: [ac]
+      summary: Read global security settings
+      x-required-role: access-view
+      responses:
+        '200': { description: Settings, content: { application/json: { schema: { $ref: '#/components/schemas/GlobalSettings' } } } }
+    put:
+      tags: [ac]
+      summary: Update global security settings
+      x-required-role: access-update
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GlobalSettings' } } }
+      responses:
+        '200': { description: Settings, content: { application/json: { schema: { $ref: '#/components/schemas/GlobalSettings' } } } }
+
+  # ───────────────────────────── sup ──────────────────────────────
+  /sup/ticket:
+    get:
+      tags: [sup]
+      summary: List support tickets
+      x-required-role: support-view
+      responses:
+        '200': { description: Tickets, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Ticket' } } } } }
+    post:
+      tags: [sup]
+      summary: Open a support ticket
+      x-required-role: support-view
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TicketInput' } } }
+      responses:
+        '201': { description: Ticket, content: { application/json: { schema: { $ref: '#/components/schemas/Ticket' } } } }
+  /sup/doc:
+    get:
+      tags: [sup]
+      summary: List documentation articles
+      x-required-role: support-view
+      responses:
+        '200': { description: Docs, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/DocArticle' } } } } }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    offset: { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+    limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 25 } }
+    nodeId: { name: nodeId, in: path, required: true, schema: { type: string } }
+    agentId: { name: agentId, in: path, required: true, schema: { type: string } }
+    boardId: { name: boardId, in: path, required: true, schema: { type: string } }
+    cardId: { name: cardId, in: path, required: true, schema: { type: string } }
+    containerId: { name: containerId, in: path, required: true, schema: { type: string } }
+
+  responses:
+    Unauthorized:
+      description: Authentication failed or missing
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Authenticated but lacking the required role
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Resource not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    ValidationError:
+      description: Request failed validation
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: validation_failed }
+        message: { type: string }
+        details:
+          type: array
+          items: { type: object, properties: { field: { type: string }, issue: { type: string } } }
+    Page:
+      type: object
+      properties:
+        offset: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+
+    # ---- auth ----
+    LoginRequest:
+      type: object
+      required: [username, password, mfaToken]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+        mfaToken: { type: string, description: TOTP token, pattern: '^[0-9]{6}$' }
+    Session:
+      type: object
+      required: [accessToken, principal]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresAt: { type: string, format: date-time }
+        principal: { $ref: '#/components/schemas/Principal' }
+    Principal:
+      type: object
+      required: [id, name, roles]
+      properties:
+        id: { type: string }
+        username: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        groups: { type: array, items: { type: string } }
+        roles:
+          type: array
+          items: { type: string }
+          description: Effective roles; `admin` implies all roles.
+        idp: { type: string, enum: [local, github], default: local }
+        authorizedApplets:
+          type: array
+          items: { type: string }
+          description: Applet shortnames this principal may open.
+
+    # ---- nmgr ----
+    NodeStatus: { type: string, enum: [online, draining, offline] }
+    Node:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string, example: cnn-7f3a }
+        location: { type: string, default: unspecified }
+        ip: { type: string, description: IPv4/IPv6/FQDN }
+        status: { $ref: '#/components/schemas/NodeStatus' }
+        agents: { type: integer, description: count of agent-containers }
+        loadAvg:
+          type: object
+          properties:
+            one: { type: number }
+            five: { type: number }
+            fifteen: { type: number }
+        memUsedGB: { type: number }
+        memTotalGB: { type: number }
+        diskUsedGB: { type: number }
+        diskTotalGB: { type: number }
+        tags:
+          type: array
+          items: { type: string }
+          description: 'e.g. cpu:amd64, cpu:arm64, os:linux, os:darwin, plus free-form'
+    NodeDetail:
+      allOf:
+        - $ref: '#/components/schemas/Node'
+        - type: object
+          properties:
+            agentList: { type: array, items: { $ref: '#/components/schemas/Agent' } }
+            notes: { type: array, items: { $ref: '#/components/schemas/Note' } }
+    ProvisionNodeRequest:
+      type: object
+      required: [host, user]
+      properties:
+        host: { type: string, description: Valid IPv4, IPv6 or FQDN }
+        user: { type: string, description: Valid Linux username }
+        password: { type: string, format: password, description: Optional; first connection only }
+        location: { type: string }
+        tags: { type: array, items: { type: string } }
+    Note:
+      type: object
+      required: [author, createdAt, text]
+      properties:
+        author: { type: string }
+        createdAt: { type: string, format: date-time }
+        text: { type: string }
+
+    # ---- amgr ----
+    AgentStatus: { type: string, enum: [running, connected, stopped, migrating, stopping] }
+    Agent:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string, example: agt-7f3a-01 }
+        project: { type: string }
+        nodeId: { type: string }
+        status: { $ref: '#/components/schemas/AgentStatus' }
+        expose: { type: string, description: 'FQDN:port (DNS name, not IP)' }
+        owner: { type: string, description: 'user:team' }
+    CreateAgentRequest:
+      type: object
+      required: [project, nodeId]
+      properties:
+        project: { type: string }
+        nodeId: { type: string }
+        image: { type: string, default: 'convocate/agent:latest' }
+        command: { type: string }
+    ConfigureAgentRequest:
+      type: object
+      properties:
+        project: { type: string }
+        nodeId: { type: string }
+        expose: { type: string, description: 'FQDN:port — host must be a DNS name, not an IP' }
+
+    # ---- pb ----
+    CardStatus: { type: string, enum: [todo, active, done, fail, note] }
+    EdgeType: { type: string, enum: [DependsOn, RelatesTo] }
+    BoardSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        repoId: { type: string }
+        updatedAt: { type: string, format: date-time }
+    Board:
+      allOf:
+        - $ref: '#/components/schemas/BoardSummary'
+        - type: object
+          properties:
+            containers: { type: array, items: { $ref: '#/components/schemas/Container' } }
+            cards: { type: array, items: { $ref: '#/components/schemas/Card' } }
+            edges: { type: array, items: { $ref: '#/components/schemas/Edge' } }
+    Geometry:
+      type: object
+      properties:
+        x: { type: number }
+        y: { type: number }
+        w: { type: number }
+        h: { type: number }
+    Container:
+      type: object
+      required: [id, title]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        agentId: { type: string, nullable: true, description: mapped agent-container }
+        minimized: { type: boolean }
+        geometry: { $ref: '#/components/schemas/Geometry' }
+    ContainerInput:
+      type: object
+      properties:
+        title: { type: string }
+        agentId: { type: string, nullable: true }
+        minimized: { type: boolean }
+        geometry: { $ref: '#/components/schemas/Geometry' }
+    Card:
+      type: object
+      required: [id, title, status, content, links]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/CardStatus' }
+        content: { type: string }
+        containerId: { type: string, nullable: true }
+        position: { type: object, properties: { x: { type: number }, y: { type: number } } }
+        size: { type: object, properties: { w: { type: number }, h: { type: number } } }
+        sourceRefs: { type: array, items: { type: string }, description: source files produced/related }
+        note: { type: string, nullable: true, description: implementation note from the last run }
+        links:
+          type: array
+          items: { $ref: '#/components/schemas/Edge' }
+    CardInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        content: { type: string }
+        status: { $ref: '#/components/schemas/CardStatus' }
+        containerId: { type: string, nullable: true }
+        position: { type: object, properties: { x: { type: number }, y: { type: number } } }
+        size: { type: object, properties: { w: { type: number }, h: { type: number } } }
+    Edge:
+      type: object
+      required: [type, from, to]
+      properties:
+        id: { type: string }
+        type: { $ref: '#/components/schemas/EdgeType' }
+        from: { type: string, description: source card id }
+        to: { type: string, description: target card id }
+    EdgeInput:
+      type: object
+      required: [from, to]
+      properties:
+        from: { type: string }
+        to: { type: string }
+        type: { $ref: '#/components/schemas/EdgeType' }
+    ExecutionRun:
+      type: object
+      properties:
+        id: { type: string }
+        boardId: { type: string }
+        dispatchedCards: { type: array, items: { type: string } }
+        pullRequestId: { type: string, nullable: true }
+        startedAt: { type: string, format: date-time }
+
+    # ---- ide ----
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        repoId: { type: string }
+        specificationFileId: { type: string }
+        boardId: { type: string, nullable: true }
+    FileContent:
+      type: object
+      required: [path, content]
+      properties:
+        path: { type: string }
+        content: { type: string }
+        language: { type: string }
+        updatedAt: { type: string, format: date-time }
+
+    # ---- repo ----
+    Visibility: { type: string, enum: [private, internal, public] }
+    PrStatus: { type: string, enum: [open, merged, closed] }
+    CheckStatus: { type: string, enum: [passing, running, failed] }
+    Repo:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        defaultBranch: { type: string, default: main }
+        visibility: { $ref: '#/components/schemas/Visibility' }
+        updatedAt: { type: string, format: date-time }
+    RepoFile:
+      type: object
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [file, dir] }
+        size: { type: integer }
+        path: { type: string }
+    PullRequest:
+      type: object
+      properties:
+        id: { type: string }
+        repoId: { type: string }
+        title: { type: string }
+        branch: { type: string }
+        targetBranch: { type: string, default: main }
+        status: { $ref: '#/components/schemas/PrStatus' }
+        author: { type: string }
+        files: { type: array, items: { type: string } }
+        checks:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              status: { $ref: '#/components/schemas/CheckStatus' }
+
+    # ---- ac ----
+    UserStatus: { type: string, enum: [active, disabled] }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/UserStatus' }
+        group: { type: string }
+    UserInput:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/UserStatus' }
+        group: { type: string }
+    Group:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        builtin: { type: boolean }
+        userCount: { type: integer }
+        roles: { type: array, items: { type: string } }
+    Role:
+      type: object
+      properties:
+        id: { type: string, description: 'e.g. node-create, agent-update, pb-execute, admin' }
+        description: { type: string }
+        applet: { type: string, description: owning applet shortname }
+    GlobalSettings:
+      type: object
+      properties:
+        requireMfa: { type: boolean }
+        sessionTimeoutMinutes: { type: integer }
+        passwordMinLength: { type: integer }
+        passwordRotationDays: { type: integer }
+
+    # ---- sup ----
+    TicketStatus: { type: string, enum: [open, in-progress, resolved, closed] }
+    TicketPriority: { type: string, enum: [low, medium, high] }
+    Ticket:
+      type: object
+      properties:
+        id: { type: string }
+        subject: { type: string }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        priority: { $ref: '#/components/schemas/TicketPriority' }
+        body: { type: string }
+        updatedAt: { type: string, format: date-time }
+    TicketInput:
+      type: object
+      required: [subject]
+      properties:
+        subject: { type: string }
+        priority: { $ref: '#/components/schemas/TicketPriority' }
+        body: { type: string }
+    DocArticle:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        slug: { type: string }
