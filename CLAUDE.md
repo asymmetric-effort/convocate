@@ -27,15 +27,25 @@ PostgreSQL only when relational queries are truly necessary.
 - **API contract**: `openapi.yaml` — the controlling authority for all API
   endpoints, schemas, and RBAC roles.
 - **Specification**: `SPECIFICATION.md` — product requirements and domain model.
+## Project Layout
+
+```
+api/         — Go API server (module: github.com/asymmetric-effort/convocate)
+ui/          — Bun + SpecifyJS SPA
+docker/      — Dockerfiles (ui.Dockerfile, api.Dockerfile, redis.Dockerfile, pg.Dockerfile)
+build/       — build artifacts (gitignored)
+img/         — icon assets
+```
+
 ## Build & Run
 
 ```bash
-# Local development
-docker compose up --build
+# Local development (no containers needed)
+cd ui && bun install && bun run dev    # UI on :8080
+cd api && go run ./...                 # API on :8443
 
-# Build individual containers
-docker compose build ui
-docker compose build api
+# Docker Compose (full stack)
+docker compose up --build
 ```
 
 ## Make Targets
@@ -72,11 +82,14 @@ docker compose build api
 
 ### Approved Dependencies
 
-| Package                       | Language | Purpose            |
-|-------------------------------|----------|--------------------|
-| `@asymmetric-effort/specifyjs` | TS      | UI framework       |
-| `redis/go-redis`              | Go       | Redis client       |
-| `jackc/pgx`                   | Go       | PostgreSQL driver  |
+| Package                              | Language | Purpose            |
+|--------------------------------------|----------|--------------------|
+| `@asymmetric-effort/specifyjs`       | TS       | UI framework       |
+| `@asymmetric-effort/nogginlessdom`   | TS       | DOM library        |
+| `@asymmetric-effort/yamllint`        | TS       | YAML linter        |
+| `@asymmetric-effort/jsonlint`        | TS       | JSON linter        |
+| `redis/go-redis`                     | Go       | Redis client       |
+| `jackc/pgx`                          | Go       | PostgreSQL driver  |
 
 Everything else must use language standard libraries. Do not add any
 dependency — including test frameworks, linters, or utility packages —
