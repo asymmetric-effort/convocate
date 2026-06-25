@@ -24,7 +24,7 @@ RUN curl -fsSL "https://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz
     make install PREFIX=/opt/redis
 
 # Runtime stage
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM gcr.io/distroless/cc-debian13:nonroot
 
 COPY --from=build /opt/redis/bin/redis-server /usr/local/bin/redis-server
 COPY --from=build /opt/redis/bin/redis-cli /usr/local/bin/redis-cli

@@ -1,6 +1,10 @@
 # PostgreSQL — multi-stage build
-# Build stage: ubuntu:24.04
-# Runtime stage: distroless
+# Build stage: ubuntu:24.04 (installs PG, creates entrypoint)
+# Runtime stage: distroless (debian13 debug for busybox shell)
+#
+# Strategy: install PG from apt inside ubuntu, then copy the ENTIRE
+# /usr tree needed at runtime. This avoids glibc mismatch and dynamic
+# linker issues because we bring all libs from the same build.
 
 FROM ubuntu:24.04 AS build
 
@@ -20,63 +24,38 @@ RUN apt-get update && \
         "postgresql-${PG_VERSION}" && \
     rm -rf /var/lib/apt/lists/*
 
-# Collect binaries and required shared libraries
-RUN mkdir -p /opt/pg/bin /opt/pg/lib /opt/pg/share && \
-    cp /usr/lib/postgresql/${PG_VERSION}/bin/postgres \
-       /usr/lib/postgresql/${PG_VERSION}/bin/pg_isready \
-       /usr/lib/postgresql/${PG_VERSION}/bin/initdb \
-       /usr/lib/postgresql/${PG_VERSION}/bin/pg_ctl \
-       /usr/lib/postgresql/${PG_VERSION}/bin/psql \
-       /opt/pg/bin/ && \
-    cp -r /usr/lib/postgresql/${PG_VERSION}/lib/* /opt/pg/lib/ && \
-    cp -r /usr/share/postgresql/${PG_VERSION}/* /opt/pg/share/
+# Stage the PG installation and ALL its library dependencies
+RUN mkdir -p /pg-root/usr/lib /pg-root/usr/share /pg-root/lib /pg-root/lib64 && \
+    cp -a /usr/lib/postgresql /pg-root/usr/lib/ && \
+    cp -a /usr/share/postgresql /pg-root/usr/share/ && \
+    cp -a /usr/lib/x86_64-linux-gnu /pg-root/usr/lib/ && \
+    cp -a /lib/x86_64-linux-gnu /pg-root/lib/ && \
+    cp -a /lib64/ld-linux-x86-64.so.2 /pg-root/lib64/ && \
+    cp -r /usr/share/zoneinfo /pg-root/usr/share/ && \
+    cp -r /etc/ssl /pg-root/etc/ssl 2>/dev/null || true && \
+    mkdir -p /pg-root/etc && \
+    echo "postgres:x:65534:65534:PostgreSQL:/var/lib/postgresql:/bin/sh" > /pg-root/etc/passwd && \
+    echo "postgres:x:65534:" > /pg-root/etc/group && \
+    mkdir -p /pg-root/var/lib/postgresql/data /pg-root/var/run/postgresql && \
+    chown -R 65534:65534 /pg-root/var/lib/postgresql /pg-root/var/run/postgresql
 
-# Collect shared library dependencies
-RUN mkdir -p /opt/pg/deps && \
-    for bin in /opt/pg/bin/*; do \
-        ldd "$bin" 2>/dev/null | grep "=>" | awk '{print $3}' | \
-        while read lib; do \
-            [ -f "$lib" ] && cp -n "$lib" /opt/pg/deps/ || true; \
-        done; \
-    done && \
-    for lib in /opt/pg/lib/*.so*; do \
-        ldd "$lib" 2>/dev/null | grep "=>" | awk '{print $3}' | \
-        while read dep; do \
-            [ -f "$dep" ] && cp -n "$dep" /opt/pg/deps/ || true; \
-        done; \
-    done
+# Create the entrypoint
+RUN PG_BIN=/usr/lib/postgresql/${PG_VERSION}/bin && \
+    printf '#!/bin/sh\nset -e\nPGDATA="${PGDATA:-/var/lib/postgresql/data}"\nif [ ! -s "$PGDATA/PG_VERSION" ]; then\n  %s/initdb -D "$PGDATA" --auth=trust --no-instructions --no-locale\n  echo "host all all 0.0.0.0/0 trust" >> "$PGDATA/pg_hba.conf"\n  echo "listen_addresses = '"'"'*'"'"'" >> "$PGDATA/postgresql.conf"\nfi\nexec %s/postgres -D "$PGDATA"\n' \
+    "$PG_BIN" "$PG_BIN" > /pg-root/docker-entrypoint.sh && \
+    chmod +x /pg-root/docker-entrypoint.sh
 
-# Collect locale and timezone data needed by PostgreSQL
-RUN mkdir -p /opt/pg/locale /opt/pg/zoneinfo && \
-    cp -r /usr/lib/locale/* /opt/pg/locale/ 2>/dev/null || true && \
-    cp -r /usr/share/zoneinfo/* /opt/pg/zoneinfo/ 2>/dev/null || true
+# Runtime stage — use scratch+ubuntu libs instead of distroless to avoid glibc mismatch
+FROM scratch
 
-# Create the init script
-RUN echo '#!/bin/sh' > /opt/pg/bin/docker-entrypoint.sh && \
-    echo 'set -e' >> /opt/pg/bin/docker-entrypoint.sh && \
-    echo 'export LD_LIBRARY_PATH=/usr/local/lib/pg:/usr/local/lib/pg/deps' >> /opt/pg/bin/docker-entrypoint.sh && \
-    echo 'PGDATA="${PGDATA:-/var/lib/postgresql/data}"' >> /opt/pg/bin/docker-entrypoint.sh && \
-    echo 'if [ ! -s "$PGDATA/PG_VERSION" ]; then' >> /opt/pg/bin/docker-entrypoint.sh && \
-    echo '  /usr/local/bin/pg/initdb -D "$PGDATA" --auth=trust --no-instructions' >> /opt/pg/bin/docker-entrypoint.sh && \
-    echo '  echo "host all all 0.0.0.0/0 trust" >> "$PGDATA/pg_hba.conf"' >> /opt/pg/bin/docker-entrypoint.sh && \
-    echo '  echo "listen_addresses = '"'"'*'"'"'" >> "$PGDATA/postgresql.conf"' >> /opt/pg/bin/docker-entrypoint.sh && \
-    echo 'fi' >> /opt/pg/bin/docker-entrypoint.sh && \
-    echo 'exec /usr/local/bin/pg/postgres -D "$PGDATA"' >> /opt/pg/bin/docker-entrypoint.sh && \
-    chmod +x /opt/pg/bin/docker-entrypoint.sh
+COPY --from=build /pg-root/ /
+COPY --from=build /bin/sh /bin/sh
+COPY --from=build /usr/bin/id /usr/bin/id
 
-# Runtime stage
-FROM gcr.io/distroless/cc-debian12:debug
-
-COPY --from=build /opt/pg/bin/ /usr/local/bin/pg/
-COPY --from=build /opt/pg/lib/ /usr/local/lib/pg/
-COPY --from=build /opt/pg/share/ /usr/local/share/pg/
-COPY --from=build /opt/pg/deps/ /usr/local/lib/pg/deps/
-COPY --from=build /opt/pg/locale/ /usr/lib/locale/
-COPY --from=build /opt/pg/zoneinfo/ /usr/share/zoneinfo/
-
-ENV LD_LIBRARY_PATH=/usr/local/lib/pg:/usr/local/lib/pg/deps
 ENV PGDATA=/var/lib/postgresql/data
 
 EXPOSE 5432
 
-ENTRYPOINT ["/busybox/sh", "/usr/local/bin/pg/docker-entrypoint.sh"]
+USER 65534:65534
+
+ENTRYPOINT ["/bin/sh", "/docker-entrypoint.sh"]

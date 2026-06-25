@@ -4,51 +4,36 @@
 
 FROM ubuntu:24.04 AS build
 
-ARG OPENBAO_VERSION=2.5.0
-ARG TARGETARCH=amd64
+ARG OPENBAO_VERSION=2.5.5
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
-        curl \
-        unzip && \
+        curl && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
-RUN curl -fsSL \
-        "https://github.com/openbao/openbao/releases/download/v${OPENBAO_VERSION}/bao_${OPENBAO_VERSION}_linux_${TARGETARCH}.tar.gz" \
+RUN ARCH=$(uname -m) && \
+    curl -fsSL \
+        "https://github.com/openbao/openbao/releases/download/v${OPENBAO_VERSION}/bao_${OPENBAO_VERSION}_Linux_${ARCH}.tar.gz" \
         -o openbao.tar.gz && \
     tar -xzf openbao.tar.gz && \
     chmod +x bao && \
     mv bao /usr/local/bin/bao
 
 # Create default config for filesystem-backed storage
-RUN mkdir -p /opt/openbao/config && \
-    cat > /opt/openbao/config/config.hcl <<'EOF'
-storage "file" {
-  path = "/openbao/data"
-}
-
-listener "tcp" {
-  address     = "0.0.0.0:8200"
-  tls_disable = true
-}
-
-api_addr     = "http://0.0.0.0:8200"
-disable_mlock = true
-ui            = false
-EOF
+RUN mkdir -p /opt/openbao/config /opt/openbao/data && \
+    printf 'storage "file" {\n  path = "/openbao/data"\n}\n\nlistener "tcp" {\n  address     = "0.0.0.0:8200"\n  tls_disable = true\n}\n\napi_addr      = "http://0.0.0.0:8200"\ndisable_mlock = true\nui            = false\n' > /opt/openbao/config/config.hcl
 
 # Runtime stage
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM gcr.io/distroless/cc-debian13:debug
 
 COPY --from=build /usr/local/bin/bao /usr/local/bin/bao
 COPY --from=build /opt/openbao/config/ /openbao/config/
+COPY --from=build /opt/openbao/data/ /openbao/data/
 
 EXPOSE 8200
-
-USER nonroot:nonroot
 
 ENTRYPOINT ["/usr/local/bin/bao"]
 CMD ["server", "-config=/openbao/config/config.hcl"]

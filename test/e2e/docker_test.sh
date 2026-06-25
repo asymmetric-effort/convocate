@@ -105,8 +105,8 @@ fi
 
 # Test: psql can connect and run a query
 PG_RESULT=$(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
-    exec -T -e LD_LIBRARY_PATH=/usr/local/lib/pg:/usr/local/lib/pg/deps \
-    postgresql /usr/local/bin/pg/psql -U postgres -t -c "SELECT 1" 2>/dev/null) || true
+    exec -T  \
+    postgresql /usr/lib/postgresql/17/bin/psql -U postgres -t -c "SELECT 1" 2>/dev/null) || true
 if echo "$PG_RESULT" | grep -q "1"; then
     log_pass "postgresql SELECT 1 succeeds"
 else
@@ -115,11 +115,11 @@ fi
 
 # Test: create database
 docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
-    exec -T -e LD_LIBRARY_PATH=/usr/local/lib/pg:/usr/local/lib/pg/deps \
-    postgresql /usr/local/bin/pg/psql -U postgres -c "CREATE DATABASE convocate_test" > /dev/null 2>&1 || true
+    exec -T  \
+    postgresql /usr/lib/postgresql/17/bin/psql -U postgres -c "CREATE DATABASE convocate_test" > /dev/null 2>&1 || true
 PG_DB=$(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
-    exec -T -e LD_LIBRARY_PATH=/usr/local/lib/pg:/usr/local/lib/pg/deps \
-    postgresql /usr/local/bin/pg/psql -U postgres -t -c \
+    exec -T  \
+    postgresql /usr/lib/postgresql/17/bin/psql -U postgres -t -c \
     "SELECT datname FROM pg_database WHERE datname = 'convocate_test'" 2>/dev/null) || true
 if echo "$PG_DB" | grep -q "convocate_test"; then
     log_pass "postgresql CREATE DATABASE succeeds"
@@ -129,13 +129,13 @@ fi
 
 # Test: create table, insert, select
 docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
-    exec -T -e LD_LIBRARY_PATH=/usr/local/lib/pg:/usr/local/lib/pg/deps \
-    postgresql /usr/local/bin/pg/psql -U postgres -d convocate_test -c \
+    exec -T  \
+    postgresql /usr/lib/postgresql/17/bin/psql -U postgres -d convocate_test -c \
     "CREATE TABLE test_table (id SERIAL PRIMARY KEY, val TEXT NOT NULL);
      INSERT INTO test_table (val) VALUES ('e2e_check');" > /dev/null 2>&1 || true
 PG_VAL=$(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
-    exec -T -e LD_LIBRARY_PATH=/usr/local/lib/pg:/usr/local/lib/pg/deps \
-    postgresql /usr/local/bin/pg/psql -U postgres -d convocate_test -t -c \
+    exec -T  \
+    postgresql /usr/lib/postgresql/17/bin/psql -U postgres -d convocate_test -t -c \
     "SELECT val FROM test_table WHERE id = 1" 2>/dev/null) || true
 if echo "$PG_VAL" | grep -q "e2e_check"; then
     log_pass "postgresql table create/insert/select round-trip"
@@ -163,8 +163,8 @@ BAO_INIT=$(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
     exec -T -e BAO_ADDR=http://127.0.0.1:8200 \
     openbao /usr/local/bin/bao operator init \
     -key-shares=1 -key-threshold=1 -format=json 2>/dev/null) || true
-UNSEAL_KEY=$(echo "$BAO_INIT" | grep -o '"unseal_keys_b64":\["[^"]*"' | cut -d'"' -f4) || true
-ROOT_TOKEN=$(echo "$BAO_INIT" | grep -o '"root_token":"[^"]*"' | cut -d'"' -f4) || true
+UNSEAL_KEY=$(echo "$BAO_INIT" | tr -d '\n ' | grep -o '"unseal_keys_b64":\["[^"]*"' | cut -d'"' -f4) || true
+ROOT_TOKEN=$(echo "$BAO_INIT" | tr -d '\n ' | grep -o '"root_token":"[^"]*"' | cut -d'"' -f4) || true
 if [ -n "$UNSEAL_KEY" ] && [ -n "$ROOT_TOKEN" ]; then
     log_pass "openbao operator init succeeds"
 else
@@ -176,10 +176,10 @@ if [ -n "$UNSEAL_KEY" ]; then
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
         exec -T -e BAO_ADDR=http://127.0.0.1:8200 \
         openbao /usr/local/bin/bao operator unseal "$UNSEAL_KEY" > /dev/null 2>&1 || true
-    BAO_SEALED=$(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
+    BAO_STATUS=$(docker compose -p "$PROJECT" -f "$COMPOSE_FILE" \
         exec -T -e BAO_ADDR=http://127.0.0.1:8200 \
-        openbao /usr/local/bin/bao status -format=json 2>/dev/null \
-        | grep -o '"sealed":false') || true
+        openbao /usr/local/bin/bao status -format=json 2>/dev/null || true)
+    BAO_SEALED=$(echo "$BAO_STATUS" | tr -d '\n ' | grep -o '"sealed":false') || true
     if [ "$BAO_SEALED" = '"sealed":false' ]; then
         log_pass "openbao unseal succeeds"
     else

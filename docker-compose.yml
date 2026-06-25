@@ -6,7 +6,7 @@ services:
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["/usr/local/bin/redis-cli", "ping"]
+      test: ["CMD", "/usr/local/bin/redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -20,7 +20,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["/usr/local/bin/pg/pg_isready", "-U", "postgres"]
+      test: ["CMD", "/usr/lib/postgresql/17/bin/pg_isready", "-U", "postgres"]
       interval: 5s
       timeout: 3s
       retries: 5
