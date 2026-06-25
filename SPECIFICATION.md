@@ -215,9 +215,12 @@ visual + interaction specification, **not** the shippable artifact.
   refresh tokens, stats cache, event pub/sub), **PostgreSQL** (`database/sql` +
   `jackc/pgx`) for searchable records and file references.
 - **Data plane**: Convocate runtime + agent-containers on provisioned Nodes.
+- **Secrets**: **OpenBao** (`openbao/openbao`) for secret storage (JWT signing
+  keys, database credentials, SSH keys, OAuth client secrets). Filesystem-backed
+  persistence, minimal dependencies.
 - **Containers**: all services run in **distroless** containers built via
   multi-stage Docker builds (build stage: `ubuntu:24.04`). Local development
-  via **Docker Compose** (UI, API, Redis, PostgreSQL).
+  via **Docker Compose** (UI, API, Redis, PostgreSQL, OpenBao).
 
 ---
 

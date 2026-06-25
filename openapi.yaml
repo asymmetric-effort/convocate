@@ -1069,7 +1069,7 @@ components:
       type: object
       required: [name, status]
       properties:
-        name: { type: string, description: 'Service name (e.g. api, redis, postgresql)' }
+        name: { type: string, description: 'Service name (e.g. api, redis, postgresql, openbao)' }
         status: { type: string, enum: [healthy, degraded, unavailable] }
         latencyMs: { type: number, description: Round-trip check latency in milliseconds }
         message: { type: string, description: Optional detail on degraded/unavailable state }

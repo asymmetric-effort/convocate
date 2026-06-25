@@ -10,7 +10,7 @@ rewrite. The repository is a monorepo with two primary services:
 
 ## Architecture
 
-Four containers orchestrated via Docker Compose:
+Five containers orchestrated via Docker Compose:
 
 | Container  | Language/Runtime | Build Stage    | Runtime Stage |
 |------------|-----------------|----------------|---------------|
@@ -18,6 +18,7 @@ Four containers orchestrated via Docker Compose:
 | API        | Go 1.26+        | ubuntu:24.04   | distroless    |
 | Redis      | —               | ubuntu:24.04   | distroless    |
 | PostgreSQL | —               | ubuntu:24.04   | distroless    |
+| OpenBao    | —               | ubuntu:24.04   | distroless    |
 
 Storage tiering: file-based JSON first, Redis for key-value/sessions,
 PostgreSQL only when relational queries are truly necessary.
@@ -32,7 +33,7 @@ PostgreSQL only when relational queries are truly necessary.
 ```
 api/         — Go API server (module: github.com/asymmetric-effort/convocate)
 ui/          — Bun + SpecifyJS SPA
-docker/      — Dockerfiles (ui.Dockerfile, api.Dockerfile, redis.Dockerfile, pg.Dockerfile)
+docker/      — Dockerfiles (ui, api, redis, pg, openbao)
 build/       — build artifacts (gitignored)
 img/         — icon assets
 ```
@@ -90,6 +91,7 @@ docker compose up --build
 | `@asymmetric-effort/jsonlint`        | TS       | JSON linter        |
 | `redis/go-redis`                     | Go       | Redis client       |
 | `jackc/pgx`                          | Go       | PostgreSQL driver  |
+| `openbao/openbao`                    | Go       | Secret store client |
 
 Everything else must use language standard libraries. Do not add any
 dependency — including test frameworks, linters, or utility packages —

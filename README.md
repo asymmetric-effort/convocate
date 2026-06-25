@@ -8,14 +8,15 @@ from a single desktop-style web UI.
 
 ## Architecture
 
-Convocate runs as four containers orchestrated via Docker Compose:
+Convocate runs as five containers orchestrated via Docker Compose:
 
-| Container  | Purpose                          | Runtime     |
-|------------|----------------------------------|-------------|
-| **UI**     | SpecifyJS SPA (Bun)              | distroless  |
-| **API**    | Go REST server                   | distroless  |
-| **Redis**  | In-memory cache and sessions     | distroless  |
-| **PostgreSQL** | Searchable records and references | distroless |
+| Container      | Purpose                          | Runtime     |
+|----------------|----------------------------------|-------------|
+| **UI**         | SpecifyJS SPA (Bun)              | distroless  |
+| **API**        | Go REST server                   | distroless  |
+| **Redis**      | In-memory cache and sessions     | distroless  |
+| **PostgreSQL** | Searchable records and references | distroless  |
+| **OpenBao**    | Secret store (filesystem-backed) | distroless  |
 
 The user-facing product is a **Unity/GNOME-style desktop** in the browser
 with seven applets:
