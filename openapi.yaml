@@ -33,6 +33,8 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: status
+    description: Platform health and connectivity checks
   - name: events
     description: Real-time event channels (WebSocket) — per-applet, per-channel subscriptions
   - name: auth
@@ -53,6 +55,23 @@ tags:
     description: Support Tool — tickets and documentation
 
 paths:
+  # ──────────────────────────── status ─────────────────────────────
+  /status:
+    get:
+      tags: [status]
+      summary: Full platform health check
+      description: |
+        Returns the health and connectivity status of every subsystem:
+        API server, Redis, PostgreSQL, and all registered Nodes. No
+        authentication required so external monitors can poll it.
+      security: []
+      responses:
+        '200':
+          description: Platform status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlatformStatus' }
+
   # ──────────────────────────── events ─────────────────────────────
   /events/{applet}/{channel}:
     get:
@@ -1044,6 +1063,40 @@ components:
         offset: { type: integer }
         limit: { type: integer }
         total: { type: integer }
+
+    # ---- status ----
+    ServiceStatus:
+      type: object
+      required: [name, status]
+      properties:
+        name: { type: string, description: 'Service name (e.g. api, redis, postgresql)' }
+        status: { type: string, enum: [healthy, degraded, unavailable] }
+        latencyMs: { type: number, description: Round-trip check latency in milliseconds }
+        message: { type: string, description: Optional detail on degraded/unavailable state }
+    NodeHealthSummary:
+      type: object
+      required: [nodeId, status]
+      properties:
+        nodeId: { type: string }
+        status: { $ref: '#/components/schemas/NodeStatus' }
+        reachable: { type: boolean, description: Whether the control plane can reach the node via SSH }
+        agents: { type: integer, description: Count of agent-containers on this node }
+    PlatformStatus:
+      type: object
+      required: [status, services, nodes, timestamp]
+      properties:
+        status: { type: string, enum: [healthy, degraded, unavailable], description: Overall platform status }
+        version: { type: string, description: API server version }
+        uptime: { type: string, description: 'Server uptime (e.g. 3d 12h 5m)' }
+        services:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceStatus' }
+          description: Health of each backing service (API, Redis, PostgreSQL)
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/NodeHealthSummary' }
+          description: Connectivity and status of all registered nodes
+        timestamp: { type: string, format: date-time }
 
     # ---- events ----
     Event:
