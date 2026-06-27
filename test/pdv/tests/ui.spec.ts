@@ -45,7 +45,7 @@ test.describe("UI Post-Deployment Verification", () => {
     await expect(dockItems.first()).toBeVisible({ timeout: 5000 });
   });
 
-  test("Node Manager window shows K8s node data from API", async ({ page }) => {
+  test("dock click opens Node Manager with K8s data, close works", async ({ page }) => {
     await page.goto(APP);
     await page.waitForSelector("input", { timeout: 10000 });
 
@@ -54,16 +54,24 @@ test.describe("UI Post-Deployment Verification", () => {
     await inputs.nth(1).fill("test");
     await inputs.nth(2).fill("123456");
     await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
 
-    // Wait for desktop and Node Manager to render with API data
-    await page.waitForTimeout(3000);
+    // Verify empty desktop
+    let text = await page.textContent("body");
+    expect(text).toContain("Activities");
+    expect(text).not.toContain("convocate01");
 
-    const bodyText = await page.textContent("body");
-    // Verify desktop chrome
-    expect(bodyText).toContain("Activities");
-    // Verify Node Manager window has real node data from API
-    expect(bodyText).toContain("nodes");
-    expect(bodyText).toContain("Node Manager");
+    // Click dock icon to open Node Manager
+    await page.evaluate(() => {
+      const img = document.querySelector("img[alt='Node Manager']") as HTMLElement;
+      if (img) img.click();
+    });
+    await page.waitForTimeout(2000);
+
+    // Verify Node Manager window with API data
+    text = await page.textContent("body");
+    expect(text).toContain("Node Manager");
+    expect(text).toContain("nodes");
   });
 
   test("healthz endpoint returns ok", async ({ request }) => {

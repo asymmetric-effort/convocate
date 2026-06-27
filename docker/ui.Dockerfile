@@ -15,7 +15,7 @@ RUN apt-get update && \
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
 
 WORKDIR /build
-COPY ui/package.json ui/bun.lockb* ./
+COPY ui/vendor-specifyjs.tgz ui/package.json ui/bun.lockb* ./
 RUN bun install
 COPY ui/src/ src/
 COPY ui/public/ public/

@@ -5,14 +5,14 @@
     "": {
       "name": "convocate-ui",
       "dependencies": {
+        "@asymmetric-effort/specifyjs": "./vendor-specifyjs.tgz",
         "@asymmetric-effort/nogginlessdom": "^0.0.27",
-        "@asymmetric-effort/specifyjs": "^0.2.165",
       },
     },
   },
   "packages": {
     "@asymmetric-effort/nogginlessdom": ["@asymmetric-effort/nogginlessdom@0.0.27", "", {}, "sha512-CLKqwQbS4UbQieT1C4k6YlgGhweXiuAya2FIqOdNyBMg5w/F920I83kYk0cLN+e3ifoLSyfnob2iSaJPnfe2dw=="],
 
-    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@0.2.165", "", {}, "sha512-9+8sL+PqkuP0t72JPngvFzx7YTf2t9iq5jfrAz8m2tUPDSpEBUO4SaEG3VQ0DQnQ4l/zpdkd+C0GWwdwhe3JAQ=="],
+    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@./vendor-specifyjs.tgz", {}, "sha512-27w7uWINe5k5r8ls3/ViRphrCMjfoGiOFSAAxjgPx5qAkiqqj1AB+8kAfSkmIzZnxfRNq3qei40Hd2MrdyHQ/w=="],
   }
 }

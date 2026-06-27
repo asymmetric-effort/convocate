@@ -137,19 +137,7 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
     user: { name: principal.name },
     onLogout,
     theme: "dark" as const,
-  },
-    // UnityApp children register with WindowManager.
-    // Dock click opens/focuses the matching window.
-    h(UnityApp, {
-      id: "nmgr",
-      title: "Node Manager",
-      icon: "/img/icons/node-manager.png",
-      defaultSize: { width: 900, height: 600 },
-      resizable: true,
-    },
-      h(NodeManagerApplet, null)
-    )
-  );
+  });
 }
 
 // ---------------------------------------------------------------------------
