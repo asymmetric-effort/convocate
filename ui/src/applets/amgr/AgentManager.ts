@@ -11,9 +11,17 @@ export function AgentManager() {
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const [lastRefresh, setLastRefresh] = useState<string>(new Date().toISOString());
   const canUpdate = hasRole("agent-update");
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(() => {
+      loadData();
+      setLastRefresh(new Date().toISOString());
+    }, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   async function loadData() {
     setLoading(true);
@@ -59,7 +67,7 @@ export function AgentManager() {
       h("span", { className: "applet-count" }, `${agents.length} agent${agents.length !== 1 ? "s" : ""}`)
     ),
     Object.keys(agentsByNode).length === 0
-      ? h("div", { className: "muted", style: { padding: "20px" } }, "No agent-containers running")
+      ? h("div", { className: "muted", style: { padding: "20px" } }, `No agent-containers running at ${new Date(lastRefresh).toLocaleString()}`)
       : Object.entries(agentsByNode).map(([nodeId, nodeAgents]) =>
           h("div", { key: nodeId, className: "accordion-section" },
             h("div", { className: "accordion-header" }, `Node: ${nodeId} (${nodeAgents.length} agents)`),

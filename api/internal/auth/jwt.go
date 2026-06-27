@@ -1,24 +1,83 @@
 package auth
 
 import (
-	"crypto/hmac"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"os"
 	"strings"
 	"time"
 )
 
-var jwtSecret []byte
+var (
+	signingKey  *ecdsa.PrivateKey
+	verifyKey   *ecdsa.PublicKey
+)
 
 func InitJWT() {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		secret = "convocate-dev-jwt-secret-change-in-production"
+	keyPEM := os.Getenv("JWT_EC_PRIVATE_KEY")
+	if keyPEM != "" {
+		key, err := parseECPrivateKey([]byte(keyPEM))
+		if err != nil {
+			fmt.Printf("WARNING: failed to parse JWT_EC_PRIVATE_KEY: %v (generating ephemeral key)\n", err)
+			generateEphemeralKey()
+			return
+		}
+		signingKey = key
+		verifyKey = &key.PublicKey
+		return
 	}
-	jwtSecret = []byte(secret)
+
+	// Generate ephemeral key for development
+	generateEphemeralKey()
+}
+
+func generateEphemeralKey() {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		panic(fmt.Sprintf("generate ECDSA key: %v", err))
+	}
+	signingKey = key
+	verifyKey = &key.PublicKey
+	fmt.Println("JWT: using ephemeral ES256 key (set JWT_EC_PRIVATE_KEY for persistence)")
+}
+
+func parseECPrivateKey(pemData []byte) (*ecdsa.PrivateKey, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block found")
+	}
+
+	// Parse SEC 1 / PKCS#8 EC private key
+	var ecKey struct {
+		Version       int
+		PrivateKey    []byte
+		NamedCurveOID asn1.ObjectIdentifier `asn1:"optional,explicit,tag:0"`
+		PublicKey     asn1.BitString        `asn1:"optional,explicit,tag:1"`
+	}
+	if _, err := asn1.Unmarshal(block.Bytes, &ecKey); err != nil {
+		return nil, fmt.Errorf("parse EC key: %w", err)
+	}
+
+	curve := elliptic.P256()
+	d := new(big.Int).SetBytes(ecKey.PrivateKey)
+	x, y := curve.ScalarBaseMult(d.Bytes())
+
+	return &ecdsa.PrivateKey{
+		PublicKey: ecdsa.PublicKey{
+			Curve: curve,
+			X:     x,
+			Y:     y,
+		},
+		D: d,
+	}, nil
 }
 
 type jwtHeader struct {
@@ -41,7 +100,7 @@ func SignJWT(userID, username, name, email string, roles, applets []string, ttl 
 	now := time.Now()
 	exp := now.Add(ttl)
 
-	header := jwtHeader{Alg: "HS256", Typ: "JWT"}
+	header := jwtHeader{Alg: "ES256", Typ: "JWT"}
 	claims := jwtClaims{
 		Sub:      userID,
 		Username: username,
@@ -60,11 +119,24 @@ func SignJWT(userID, username, name, email string, roles, applets []string, ttl 
 	claimsB64 := base64.RawURLEncoding.EncodeToString(claimsJSON)
 
 	signingInput := headerB64 + "." + claimsB64
-	mac := hmac.New(sha256.New, jwtSecret)
-	mac.Write([]byte(signingInput))
-	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 
-	return signingInput + "." + sig, exp, nil
+	// ECDSA sign with SHA-256
+	hash := sha256.Sum256([]byte(signingInput))
+	r, s, err := ecdsa.Sign(rand.Reader, signingKey, hash[:])
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("sign JWT: %w", err)
+	}
+
+	// Encode r,s as fixed-size 32-byte values concatenated (JWS format)
+	sig := make([]byte, 64)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	copy(sig[32-len(rBytes):32], rBytes)
+	copy(sig[64-len(sBytes):64], sBytes)
+
+	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
+
+	return signingInput + "." + sigB64, exp, nil
 }
 
 func VerifyJWT(token string) (*jwtClaims, error) {
@@ -74,11 +146,18 @@ func VerifyJWT(token string) (*jwtClaims, error) {
 	}
 
 	signingInput := parts[0] + "." + parts[1]
-	mac := hmac.New(sha256.New, jwtSecret)
-	mac.Write([]byte(signingInput))
-	expectedSig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 
-	if !hmac.Equal([]byte(parts[2]), []byte(expectedSig)) {
+	// Decode and verify signature
+	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(sigBytes) != 64 {
+		return nil, fmt.Errorf("invalid signature encoding")
+	}
+
+	r := new(big.Int).SetBytes(sigBytes[:32])
+	s := new(big.Int).SetBytes(sigBytes[32:64])
+
+	hash := sha256.Sum256([]byte(signingInput))
+	if !ecdsa.Verify(verifyKey, hash[:], r, s) {
 		return nil, fmt.Errorf("invalid signature")
 	}
 
