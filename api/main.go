@@ -14,6 +14,7 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/events"
 	"github.com/asymmetric-effort/convocate/internal/ide"
 	"github.com/asymmetric-effort/convocate/internal/k8s"
+	"github.com/asymmetric-effort/convocate/internal/llm"
 	"github.com/asymmetric-effort/convocate/internal/middleware"
 	"github.com/asymmetric-effort/convocate/internal/nmgr"
 	"github.com/asymmetric-effort/convocate/internal/pb"
@@ -24,6 +25,7 @@ import (
 
 func main() {
 	auth.InitJWT()
+	llm.Init()
 
 	if err := db.InitPostgres(); err != nil {
 		log.Printf("WARNING: PostgreSQL unavailable: %v (using mock stores)", err)

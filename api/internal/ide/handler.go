@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/asymmetric-effort/convocate/internal/httputil"
+	"github.com/asymmetric-effort/convocate/internal/llm"
 	"github.com/asymmetric-effort/convocate/internal/middleware"
 )
 
@@ -85,6 +86,24 @@ func (h *Handler) renameFile(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, f)
 }
 
-func (h *Handler) renderBoard(w http.ResponseWriter, _ *http.Request) {
-	httputil.WriteError(w, http.StatusNotImplemented, "not_implemented", "LLM board rendering stub")
+func (h *Handler) renderBoard(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("projectId")
+
+	// Find the project's spec file
+	spec, ok := h.store.GetFile(projectID, "SPECIFICATION.md")
+	if !ok {
+		httputil.WriteError(w, http.StatusNotFound, "not_found", "SPECIFICATION.md not found in project")
+		return
+	}
+
+	board, err := llm.DecomposeSpec(spec.Content)
+	if err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "llm_error", err.Error())
+		return
+	}
+
+	board.BoardSummary.ID = "brd-rendered"
+	board.BoardSummary.Name = "Rendered Board"
+
+	httputil.WriteJSON(w, http.StatusAccepted, board)
 }
