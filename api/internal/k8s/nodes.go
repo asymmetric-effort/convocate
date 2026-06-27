@@ -111,6 +111,9 @@ func k8sNodeToNode(n *corev1.Node) types.Node {
 	memCapBytes := n.Status.Capacity.Memory().Value()
 	memAllocBytes := n.Status.Allocatable.Memory().Value()
 
+	diskCapBytes := n.Status.Capacity.StorageEphemeral().Value()
+	diskAllocBytes := n.Status.Allocatable.StorageEphemeral().Value()
+
 	return types.Node{
 		ID:          n.Name,
 		Location:    location,
@@ -119,8 +122,8 @@ func k8sNodeToNode(n *corev1.Node) types.Node {
 		LoadAvg:     types.LoadAvg{One: cpuCap * 0.3, Five: cpuCap * 0.25, Fifteen: cpuCap * 0.2},
 		MemUsedGB:   float64(memCapBytes-memAllocBytes) / (1024 * 1024 * 1024),
 		MemTotalGB:  float64(memCapBytes) / (1024 * 1024 * 1024),
-		DiskUsedGB:  0,
-		DiskTotalGB: 0,
+		DiskUsedGB:  float64(diskCapBytes-diskAllocBytes) / (1024 * 1024 * 1024),
+		DiskTotalGB: float64(diskCapBytes) / (1024 * 1024 * 1024),
 		Tags:        tags,
 	}
 }

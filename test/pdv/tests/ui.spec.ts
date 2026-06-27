@@ -179,7 +179,12 @@ test.describe("UI Post-Deployment Verification", () => {
 
     const text = await page.textContent("body");
     expect(text).toContain("agent-containers");
-    expect(text).toContain("Create Agent");
+    // Menubar should have Create, Configure, Start, Stop, Delete buttons
+    expect(text).toContain("Create");
+    expect(text).toContain("Configure");
+    expect(text).toContain("Start");
+    expect(text).toContain("Stop");
+    expect(text).toContain("Delete");
   });
 
   test("Access Control shows tabs and Create User button", async ({ page }) => {
