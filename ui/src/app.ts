@@ -132,39 +132,19 @@ const DOCK_APPS: UnityDesktopApp[] = [
 ];
 
 function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: () => void }) {
-  const [openApps, setOpenApps] = useState<string[]>([]);
-
-  function handleAppOpen(appId: string) {
-    setOpenApps((prev: string[]) => {
-      if (prev.includes(appId)) return prev;
-      return [...prev, appId];
-    });
-  }
-
-  function handleAppClose(appId: string) {
-    setOpenApps((prev: string[]) => prev.filter((id: string) => id !== appId));
-  }
-
   return h(UnityDesktop, {
     apps: DOCK_APPS,
     user: { name: principal.name },
-    onAppOpen: handleAppOpen,
     onLogout,
     theme: "dark" as const,
   },
-    openApps.map((appId: string) =>
-      h(UnityApp, {
-        key: appId,
-        id: appId,
-        title: "Node Manager",
-        icon: "/img/icons/node-manager.png",
-        defaultSize: { width: 900, height: 600 },
-        resizable: true,
-        onClose: () => handleAppClose(appId),
-      },
-        h(NodeManagerApplet, null)
-      )
-    )
+    h(UnityApp, {
+      id: "nmgr",
+      title: "Node Manager",
+      icon: "/img/icons/node-manager.png",
+      defaultSize: { width: 900, height: 600 },
+      resizable: true,
+    })
   );
 }
 
