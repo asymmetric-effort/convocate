@@ -67,15 +67,10 @@ export function Desktop() {
       label: item.label,
     }));
 
-  const AppletComponent = activeApplet ? APPLET_COMPONENTS[activeApplet] : null;
-
   return h(UnityDesktop, {
     apps,
     user: principal ? { name: principal.name } : undefined,
-    onAppOpen: handleAppOpen,
     onLogout: handleLogout,
     theme: "dark" as const,
-  },
-    AppletComponent ? h(AppletComponent, null) : null
-  );
+  });
 }
