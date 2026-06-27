@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: convocate
+  namespace: convocate
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/websocket-services: "convocate-api"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.convocate.asymmetric-effort.com
+      secretName: convocate-tls
+  rules:
+    - host: app.convocate.asymmetric-effort.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: convocate-api
+                port:
+                  number: 8443
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: convocate-ui
+                port:
+                  number: 8080
