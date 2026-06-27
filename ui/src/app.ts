@@ -129,6 +129,7 @@ function NodeManagerApplet() {
 
 const DOCK_APPS: UnityDesktopApp[] = [
   { id: "nmgr", icon: "/img/icons/node-manager.png", label: "Node Manager" },
+  { id: "amgr", icon: "/img/icons/agent-manager.png", label: "Agent Manager" },
 ];
 
 function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: () => void }) {

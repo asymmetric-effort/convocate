@@ -74,6 +74,26 @@ test.describe("UI Post-Deployment Verification", () => {
     expect(text).toContain("nodes");
   });
 
+  test("dock click opens Agent Manager", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    await page.evaluate(() => {
+      const img = document.querySelector("img[alt='Agent Manager']") as HTMLElement;
+      if (img) img.click();
+    });
+    await page.waitForTimeout(2000);
+
+    const text = await page.textContent("body");
+    expect(text).toContain("Agent Manager");
+  });
+
   test("healthz endpoint returns ok", async ({ request }) => {
     const res = await request.get(`${APP}/healthz`);
     expect(res.status()).toBe(200);

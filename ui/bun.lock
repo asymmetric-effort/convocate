@@ -13,6 +13,6 @@
   "packages": {
     "@asymmetric-effort/nogginlessdom": ["@asymmetric-effort/nogginlessdom@0.0.27", "", {}, "sha512-CLKqwQbS4UbQieT1C4k6YlgGhweXiuAya2FIqOdNyBMg5w/F920I83kYk0cLN+e3ifoLSyfnob2iSaJPnfe2dw=="],
 
-    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@./vendor-specifyjs.tgz", {}, "sha512-27w7uWINe5k5r8ls3/ViRphrCMjfoGiOFSAAxjgPx5qAkiqqj1AB+8kAfSkmIzZnxfRNq3qei40Hd2MrdyHQ/w=="],
+    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@./vendor-specifyjs.tgz", {}, "sha512-0Z1iNhFC4hD8luavJjudOmjGuF5xs8omvuwAmgzOwdDMZ+zxc3IOqDwHb1wiuMiqt6BVDnoIY/mnPMD0C8z/HA=="],
   }
 }
