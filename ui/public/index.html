@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Convocate</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body {
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Ubuntu, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-form {
+      background: #2c2c2c;
+      border-radius: 12px;
+      padding: 40px;
+      width: 360px;
+      text-align: center;
+    }
+    .login-form h1 {
+      font-size: 24px;
+      margin-bottom: 24px;
+      font-weight: 300;
+    }
+    .login-form input {
+      display: block;
+      width: 100%;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      border: 1px solid #555;
+      border-radius: 6px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 14px;
+    }
+    .login-form button {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      background: #e95420;
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .login-form button:hover { background: #c7471a; }
+    .error { color: #e55; font-size: 13px; margin-top: 12px; display: none; }
+  </style>
+</head>
+<body>
+  <div class="login-form" id="login">
+    <h1>Convocate</h1>
+    <input type="text" id="username" placeholder="Username" autocomplete="username">
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password">
+    <input type="text" id="mfa" placeholder="MFA Token" maxlength="6" pattern="[0-9]{6}">
+    <button onclick="handleLogin()">Sign In</button>
+    <div class="error" id="error">User login failed.</div>
+  </div>
+  <script>
+    async function handleLogin() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const mfaToken = document.getElementById('mfa').value;
+      const errorEl = document.getElementById('error');
+      errorEl.style.display = 'none';
+      try {
+        const apiBase = window.location.origin.replace(':8080', ':8443');
+        const res = await fetch(apiBase + '/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, mfaToken }),
+        });
+        if (res.status === 401) {
+          errorEl.style.display = 'block';
+          return;
+        }
+        const session = await res.json();
+        localStorage.setItem('accessToken', session.accessToken);
+        document.getElementById('login').innerHTML = '<h1>Convocate Desktop</h1><p style="margin-top:16px;color:#aaa;">UI scaffold — applets coming soon</p>';
+      } catch (e) {
+        errorEl.textContent = 'Connection error.';
+        errorEl.style.display = 'block';
+      }
+    }
+  </script>
+</body>
+</html>

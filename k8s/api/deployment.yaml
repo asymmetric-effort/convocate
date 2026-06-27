@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: convocate-api
+  namespace: convocate
+  labels:
+    app: convocate-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: convocate-api
+  template:
+    metadata:
+      labels:
+        app: convocate-api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: 192.168.3.90:5000/convocate/api:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 8443
+              name: api
+          readinessProbe:
+            httpGet:
+              path: /api/v1/status
+              port: 8443
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/status
+              port: 8443
+            initialDelaySeconds: 5
+            periodSeconds: 20

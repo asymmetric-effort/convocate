@@ -1,0 +1,12 @@
+{
+  "name": "convocate-pdv",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "test": "bunx playwright test",
+    "install-browsers": "bunx playwright install chromium --with-deps"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}
