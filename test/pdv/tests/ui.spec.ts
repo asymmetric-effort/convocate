@@ -116,6 +116,42 @@ test.describe("UI Post-Deployment Verification", () => {
     expect(text).toContain("Provision Node");
   });
 
+  test("Node Manager DataGrid rows have readable text on dark background", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    const icon = page.locator("img[alt='Node Manager']");
+    const box = await icon.boundingBox();
+    if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(2000);
+
+    // Get all table body cells and check text color has sufficient lightness
+    const cells = page.locator("table tbody td");
+    const cellCount = await cells.count();
+    expect(cellCount).toBeGreaterThan(0);
+
+    // Check at least 3 cells across different rows for light text color
+    for (let i = 0; i < Math.min(cellCount, 6); i++) {
+      const color = await cells.nth(i).evaluate((el) => {
+        return window.getComputedStyle(el).color;
+      });
+      // Parse rgb(r, g, b) and verify lightness > 150 (readable on dark bg)
+      const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      expect(match).not.toBeNull();
+      if (match) {
+        const [, r, g, b] = match.map(Number);
+        const lightness = (r + g + b) / 3;
+        expect(lightness).toBeGreaterThan(150);
+      }
+    }
+  });
+
   test("Node Manager Provision button opens dialog", async ({ page }) => {
     await page.goto(APP);
     await page.waitForSelector("input", { timeout: 10000 });
