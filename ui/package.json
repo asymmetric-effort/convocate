@@ -6,5 +6,9 @@
     "dev": "bun run src/server.ts",
     "build": "bun build src/app.ts --outdir dist --minify",
     "start": "bun run src/server.ts"
+  },
+  "dependencies": {
+    "@asymmetric-effort/nogginlessdom": "^0.0.27",
+    "@asymmetric-effort/specifyjs": "^0.2.165"
   }
 }

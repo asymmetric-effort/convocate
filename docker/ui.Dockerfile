@@ -1,6 +1,25 @@
 # Convocate UI — multi-stage build
-# Build stage: ubuntu:24.04 with Go (static file server)
-# Runtime stage: distroless
+# Stage 1: Bun bundles the SpecifyJS app
+# Stage 2: Go compiles the static file server
+# Runtime: distroless
+
+FROM ubuntu:24.04 AS bundle
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        unzip && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
+
+WORKDIR /build
+COPY ui/package.json ui/bun.lockb* ./
+RUN bun install
+COPY ui/src/ src/
+COPY ui/public/ public/
+RUN bun build src/app.ts --outdir public --minify --target=browser
 
 FROM ubuntu:24.04 AS build
 
@@ -29,7 +48,8 @@ RUN go build -o /convocate-ui .
 FROM gcr.io/distroless/cc-debian13:nonroot
 
 COPY --from=build /convocate-ui /usr/local/bin/convocate-ui
-COPY ui/public/ /app/public/
+COPY --from=bundle /build/public/ /app/public/
+COPY img/icons/ /app/public/img/icons/
 
 WORKDIR /app
 
