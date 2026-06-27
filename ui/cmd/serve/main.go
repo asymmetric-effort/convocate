@@ -25,13 +25,13 @@ func main() {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		path := "public" + r.URL.Path
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			http.ServeFile(w, r, "public/index.html")
 			return
 		}
 		// Hashed assets get long cache; index.html gets no-cache
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
-			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		} else {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
