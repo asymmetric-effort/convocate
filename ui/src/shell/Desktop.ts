@@ -1,9 +1,5 @@
 import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
-import {
-  UnityDesktop,
-  UnityApp,
-  useMessageBus,
-} from "@asymmetric-effort/specifyjs/components";
+import { UnityDesktop, UnityApp } from "@asymmetric-effort/specifyjs/components";
 import type { UnityDesktopApp } from "@asymmetric-effort/specifyjs/components";
 import type { Principal } from "../types/api";
 import { fetchMe, hasApplet, logout as doLogout } from "../lib/auth";
@@ -100,9 +96,6 @@ export function Desktop() {
     onLogout: handleLogout,
     theme: "dark" as const,
   },
-    // Render UnityApp windows for each opened applet.
-    // UnityApp registers with the WindowManagerProvider and renders as
-    // a draggable/resizable window within the desktop workspace.
     openApps.map((appId: string) => {
       const Component = APPLET_COMPONENTS[appId];
       if (!Component) return null;
