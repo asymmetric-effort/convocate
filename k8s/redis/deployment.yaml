@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: convocate
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: 192.168.3.90:5000/convocate/redis:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 6379
+              name: redis
+          args: ["--bind", "0.0.0.0", "--port", "6379", "--protected-mode", "no", "--save", "", "--appendonly", "no", "--dir", "/tmp"]
+          readinessProbe:
+            exec:
+              command: ["/usr/local/bin/redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["/usr/local/bin/redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 20

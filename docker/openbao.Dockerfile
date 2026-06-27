@@ -30,10 +30,12 @@ RUN mkdir -p /opt/openbao/config /opt/openbao/data && \
 FROM gcr.io/distroless/cc-debian13:debug
 
 COPY --from=build /usr/local/bin/bao /usr/local/bin/bao
-COPY --from=build /opt/openbao/config/ /openbao/config/
-COPY --from=build /opt/openbao/data/ /openbao/data/
+COPY --from=build --chown=65534:65534 /opt/openbao/config/ /openbao/config/
+COPY --from=build --chown=65534:65534 /opt/openbao/data/ /openbao/data/
 
 EXPOSE 8200
+
+USER 65534:65534
 
 ENTRYPOINT ["/usr/local/bin/bao"]
 CMD ["server", "-config=/openbao/config/config.hcl"]
