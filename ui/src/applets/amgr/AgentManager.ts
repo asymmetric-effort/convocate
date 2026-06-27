@@ -1,4 +1,6 @@
 import { createElement, useState, useEffect } from "@asymmetric-effort/specifyjs";
+import { Accordion, DataGrid, Modal, Toolbar } from "@asymmetric-effort/specifyjs/components";
+import type { AccordionSection, DataGridColumn } from "@asymmetric-effort/specifyjs/components";
 import type { Agent, Page, Node } from "../../types/api";
 import { apiGet, apiPost, apiDelete } from "../../lib/api";
 import { hasRole } from "../../lib/auth";

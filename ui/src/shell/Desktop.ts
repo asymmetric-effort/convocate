@@ -1,12 +1,11 @@
 import { createElement, useState, useEffect } from "@asymmetric-effort/specifyjs";
-import type { AppWindow } from "../types/desktop";
+import { UnityDesktop, UnityApp } from "@asymmetric-effort/specifyjs/components";
+import type { UnityDesktopApp } from "@asymmetric-effort/specifyjs/components";
 import type { Principal } from "../types/api";
-import { fetchMe, hasRole } from "../lib/auth";
+import { fetchMe, hasApplet, logout as doLogout } from "../lib/auth";
 import { getAccessToken } from "../lib/api";
 import { Login } from "./Login";
-import { Dock } from "./Dock";
-import { MenuBar } from "./MenuBar";
-import { WindowManager } from "./WindowManager";
+import { DOCK_ITEMS } from "../types/desktop";
 import { NodeManager } from "../applets/nmgr/NodeManager";
 import { AgentManager } from "../applets/amgr/AgentManager";
 import { ProjectBoard } from "../applets/pb/ProjectBoard";
@@ -17,25 +16,38 @@ import { SupportTool } from "../applets/sup/SupportTool";
 
 const h = createElement;
 
-let nextZIndex = 1;
-let windowId = 0;
+const APPLET_COMPONENTS: Record<string, any> = {
+  nmgr: NodeManager,
+  amgr: AgentManager,
+  pb: ProjectBoard,
+  ide: CodeIDE,
+  ac: AccessControl,
+  repo: RepoManager,
+  sup: SupportTool,
+};
+
+const APPLET_TITLES: Record<string, string> = {
+  nmgr: "Node Manager",
+  amgr: "Agent Manager",
+  pb: "Project Board",
+  ide: "Code IDE",
+  ac: "Access Control",
+  repo: "Repo Manager",
+  sup: "Support Tool",
+};
 
 export function Desktop() {
   const [state, setState] = useState<"locked" | "unlocked">(
     getAccessToken() ? "unlocked" : "locked"
   );
-  const [windows, setWindows] = useState<AppWindow[]>([]);
   const [principal, setPrincipal] = useState<Principal | null>(null);
+  const [openApps, setOpenApps] = useState<string[]>([]);
 
   useEffect(() => {
     if (getAccessToken()) {
       fetchMe().then((p) => {
-        if (p) {
-          setPrincipal(p);
-          setState("unlocked");
-        } else {
-          setState("locked");
-        }
+        if (p) { setPrincipal(p); setState("unlocked"); }
+        else { setState("locked"); }
       });
     }
   }, []);
@@ -47,111 +59,55 @@ export function Desktop() {
     });
   }
 
-  function handleLock() {
+  function handleLogout() {
+    doLogout();
     setState("locked");
-    setWindows([]);
+    setOpenApps([]);
+    setPrincipal(null);
   }
 
-  function openApplet(applet: string) {
-    const existing = windows.find((w) => w.applet === applet);
-    if (existing) {
-      focusWindow(existing.id);
-      return;
+  function handleAppOpen(appId: string) {
+    if (!openApps.includes(appId)) {
+      setOpenApps((prev: string[]) => [...prev, appId]);
     }
-    const id = `win-${++windowId}`;
-    const win: AppWindow = {
-      id,
-      applet,
-      title: APPLET_TITLES[applet] || applet,
-      x: 100 + (windowId % 5) * 30,
-      y: 60 + (windowId % 5) * 30,
-      width: 900,
-      height: 600,
-      minimized: false,
-      maximized: false,
-      focused: true,
-      zIndex: ++nextZIndex,
-    };
-    setWindows((prev: AppWindow[]) => [
-      ...prev.map((w: AppWindow) => ({ ...w, focused: false })),
-      win,
-    ]);
   }
 
-  function focusWindow(id: string) {
-    setWindows((prev: AppWindow[]) =>
-      prev.map((w: AppWindow) => ({
-        ...w,
-        focused: w.id === id,
-        minimized: w.id === id ? false : w.minimized,
-        zIndex: w.id === id ? ++nextZIndex : w.zIndex,
-      }))
-    );
-  }
-
-  function closeWindow(id: string) {
-    setWindows((prev: AppWindow[]) => prev.filter((w: AppWindow) => w.id !== id));
-  }
-
-  function minimizeWindow(id: string) {
-    setWindows((prev: AppWindow[]) =>
-      prev.map((w: AppWindow) => w.id === id ? { ...w, minimized: true, focused: false } : w)
-    );
-  }
-
-  function maximizeWindow(id: string) {
-    setWindows((prev: AppWindow[]) =>
-      prev.map((w: AppWindow) => w.id === id ? { ...w, maximized: !w.maximized } : w)
-    );
-  }
-
-  function renderApplet(applet: string) {
-    switch (applet) {
-      case "nmgr":
-        return h(NodeManager, null);
-      case "amgr":
-        return h(AgentManager, null);
-      case "pb":
-        return h(ProjectBoard, null);
-      case "ide":
-        return h(CodeIDE, null);
-      case "ac":
-        return h(AccessControl, null);
-      case "repo":
-        return h(RepoManager, null);
-      case "sup":
-        return h(SupportTool, null);
-      default:
-        return h("div", null, "Unknown applet");
-    }
+  function handleAppClose(appId: string) {
+    setOpenApps((prev: string[]) => prev.filter((id: string) => id !== appId));
   }
 
   if (state === "locked") {
     return h(Login, { onSuccess: handleLoginSuccess });
   }
 
-  const activeApplet = windows.find((w: AppWindow) => w.focused)?.applet || null;
+  const apps: UnityDesktopApp[] = DOCK_ITEMS
+    .filter((item) => hasApplet(item.applet))
+    .map((item) => ({
+      id: item.applet,
+      icon: `/${item.icon}`,
+      label: item.label,
+    }));
 
-  return h("div", { className: "desktop" },
-    h(MenuBar, { activeApplet, onLock: handleLock }),
-    h(Dock, { onAppletClick: openApplet, activeApplet }),
-    h(WindowManager, {
-      windows,
-      onClose: closeWindow,
-      onFocus: focusWindow,
-      onMinimize: minimizeWindow,
-      onMaximize: maximizeWindow,
-      renderApplet,
+  return h(UnityDesktop, {
+    apps,
+    user: principal ? { name: principal.name } : undefined,
+    onAppOpen: handleAppOpen,
+    onLogout: handleLogout,
+    theme: "dark" as const,
+  },
+    openApps.map((appId: string) => {
+      const Component = APPLET_COMPONENTS[appId];
+      if (!Component) return null;
+      return h(UnityApp, {
+        key: appId,
+        id: appId,
+        title: APPLET_TITLES[appId] || appId,
+        icon: `/${DOCK_ITEMS.find((d) => d.applet === appId)?.icon || ""}`,
+        defaultSize: { width: 900, height: 600 },
+        onClose: () => handleAppClose(appId),
+      },
+        h(Component, null)
+      );
     })
   );
 }
-
-const APPLET_TITLES: Record<string, string> = {
-  nmgr: "Node Manager",
-  amgr: "Agent Manager",
-  pb: "Project Board",
-  ide: "Code IDE",
-  ac: "Access Control",
-  repo: "Repo Manager",
-  sup: "Support Tool",
-};

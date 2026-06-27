@@ -1,4 +1,6 @@
 import { createElement, useState, useEffect } from "@asymmetric-effort/specifyjs";
+import { Tabs, DataGrid, Modal } from "@asymmetric-effort/specifyjs/components";
+import type { TabDefinition, DataGridColumn } from "@asymmetric-effort/specifyjs/components";
 import type { User, Group, Role, GlobalSettings, Page } from "../../types/api";
 import { apiGet, apiPost, apiPatch, apiDelete, apiPut } from "../../lib/api";
 import { hasRole } from "../../lib/auth";

@@ -2,5 +2,8 @@ import { createElement } from "@asymmetric-effort/specifyjs";
 import { createRoot } from "@asymmetric-effort/specifyjs/dom";
 import { Desktop } from "./shell/Desktop";
 
-const root = createRoot(document.getElementById("app")!);
-root.render(createElement(Desktop, null));
+const container = document.getElementById("app");
+if (container) {
+  const root = createRoot(container);
+  root.render(createElement(Desktop, null));
+}

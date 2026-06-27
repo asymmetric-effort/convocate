@@ -1,6 +1,8 @@
 import { createElement, useState, useEffect } from "@asymmetric-effort/specifyjs";
+import { DataGrid, Modal, Toolbar } from "@asymmetric-effort/specifyjs/components";
+import type { DataGridColumn, ToolbarItem } from "@asymmetric-effort/specifyjs/components";
 import type { Node, Page, NodeDetail, Note } from "../../types/api";
-import { apiGet, apiPost, apiPatch, apiDelete } from "../../lib/api";
+import { apiGet, apiPost, apiDelete } from "../../lib/api";
 import { hasRole } from "../../lib/auth";
 
 const h = createElement;
