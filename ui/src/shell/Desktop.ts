@@ -8,6 +8,12 @@ import { Dock } from "./Dock";
 import { MenuBar } from "./MenuBar";
 import { WindowManager } from "./WindowManager";
 import { NodeManager } from "../applets/nmgr/NodeManager";
+import { AgentManager } from "../applets/amgr/AgentManager";
+import { ProjectBoard } from "../applets/pb/ProjectBoard";
+import { CodeIDE } from "../applets/ide/CodeIDE";
+import { AccessControl } from "../applets/ac/AccessControl";
+import { RepoManager } from "../applets/repo/RepoManager";
+import { SupportTool } from "../applets/sup/SupportTool";
 
 const h = createElement;
 
@@ -104,17 +110,17 @@ export function Desktop() {
       case "nmgr":
         return h(NodeManager, null);
       case "amgr":
-        return h("div", { className: "applet-placeholder" }, "Agent Manager — coming soon");
+        return h(AgentManager, null);
       case "pb":
-        return h("div", { className: "applet-placeholder" }, "Project Board — coming soon");
+        return h(ProjectBoard, null);
       case "ide":
-        return h("div", { className: "applet-placeholder" }, "Code IDE — coming soon");
+        return h(CodeIDE, null);
       case "ac":
-        return h("div", { className: "applet-placeholder" }, "Access Control — coming soon");
+        return h(AccessControl, null);
       case "repo":
-        return h("div", { className: "applet-placeholder" }, "Repo Manager — coming soon");
+        return h(RepoManager, null);
       case "sup":
-        return h("div", { className: "applet-placeholder" }, "Support Tool — coming soon");
+        return h(SupportTool, null);
       default:
         return h("div", null, "Unknown applet");
     }

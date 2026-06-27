@@ -220,3 +220,32 @@ body {
   height: 100%; color: #666; font-size: 16px;
 }
 .applet-loading { padding: 20px; color: #888; }
+
+/* Tabs */
+.tab-bar { display: flex; gap: 0; border-bottom: 1px solid #444; margin-bottom: 12px; }
+.tab {
+  padding: 8px 16px; border: none; background: transparent; color: #aaa;
+  cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent;
+}
+.tab:hover { color: #fff; }
+.tab.active { color: #e95420; border-bottom-color: #e95420; }
+
+/* Accordion */
+.accordion-section { margin-bottom: 8px; }
+.accordion-header {
+  padding: 8px 12px; background: #2a2a2a; font-weight: 600;
+  font-size: 13px; border-radius: 4px 4px 0 0; border: 1px solid #444;
+}
+
+/* File items */
+.file-item:hover { background: rgba(255,255,255,0.05); }
+
+/* Select */
+select {
+  display: block; width: 100%; padding: 8px 12px;
+  border: 1px solid #555; border-radius: 4px;
+  background: #1a1a1a; color: #fff; font-size: 14px;
+}
+
+/* Textarea */
+textarea { font-family: monospace; }
