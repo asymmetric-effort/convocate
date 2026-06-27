@@ -1,5 +1,5 @@
 import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
-import { UnityDesktop } from "@asymmetric-effort/specifyjs/components";
+import { UnityDesktop, UnityApp } from "@asymmetric-effort/specifyjs/components";
 import type { UnityDesktopApp } from "@asymmetric-effort/specifyjs/components";
 import type { Principal } from "../types/api";
 import { fetchMe, hasApplet, logout as doLogout } from "../lib/auth";
@@ -21,12 +21,17 @@ const APPLET_COMPONENTS: Record<string, any> = {
   ide: CodeIDE, ac: AccessControl, repo: RepoManager, sup: SupportTool,
 };
 
+const APPLET_TITLES: Record<string, string> = {
+  nmgr: "Node Manager", amgr: "Agent Manager", pb: "Project Board",
+  ide: "Code IDE", ac: "Access Control", repo: "Repo Manager", sup: "Support Tool",
+};
+
 export function Desktop() {
   const [state, setState] = useState<"locked" | "unlocked">(
     getAccessToken() ? "unlocked" : "locked"
   );
   const [principal, setPrincipal] = useState<Principal | null>(null);
-  const [activeApplet, setActiveApplet] = useState<string | null>(null);
+  const [openApps, setOpenApps] = useState<string[]>([]);
 
   useEffect(() => {
     if (getAccessToken()) {
@@ -48,12 +53,20 @@ export function Desktop() {
     doLogout();
     setState("locked");
     setPrincipal(null);
-    setActiveApplet(null);
+    setOpenApps([]);
   }
 
+  // When a dock icon is clicked, track it so we render a UnityApp child
   const handleAppOpen = useCallback((appId: string) => {
-    setActiveApplet(appId);
+    setOpenApps((prev: string[]) => {
+      if (prev.includes(appId)) return prev;
+      return [...prev, appId];
+    });
   }, []);
+
+  function handleAppClose(appId: string) {
+    setOpenApps((prev: string[]) => prev.filter((id: string) => id !== appId));
+  }
 
   if (state === "locked") {
     return h(Login, { onSuccess: handleLoginSuccess });
@@ -67,10 +80,34 @@ export function Desktop() {
       label: item.label,
     }));
 
+  // Pattern: UnityDesktop provides dock + desktop chrome.
+  // onAppOpen tells us which dock icon was clicked.
+  // We render UnityApp children with our applet content inside.
+  // Each UnityApp registers with WindowManagerProvider and renders
+  // as a draggable/resizable window. Each applet fetches its own
+  // data from the API via useRest/createRestClient.
   return h(UnityDesktop, {
     apps,
     user: principal ? { name: principal.name } : undefined,
+    onAppOpen: handleAppOpen,
     onLogout: handleLogout,
     theme: "dark" as const,
-  });
+  },
+    openApps.map((appId: string) => {
+      const Component = APPLET_COMPONENTS[appId];
+      if (!Component) return null;
+      const item = DOCK_ITEMS.find((d) => d.applet === appId);
+      return h(UnityApp, {
+        key: appId,
+        id: appId,
+        title: APPLET_TITLES[appId] || appId,
+        icon: item ? `/${item.icon}` : "",
+        defaultSize: { width: 900, height: 600 },
+        onClose: () => handleAppClose(appId),
+        resizable: true,
+      },
+        h(Component, null)
+      );
+    })
+  );
 }
