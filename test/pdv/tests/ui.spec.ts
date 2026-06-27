@@ -66,6 +66,20 @@ test.describe("UI Post-Deployment Verification", () => {
     expect(text).toContain("nodes");
   });
 
+  test("all 7 dock icons present after login", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    const icons = await page.locator("[class*='dock'] img, [class*='launcher'] img").count();
+    expect(icons).toBeGreaterThanOrEqual(7);
+  });
+
   test("healthz endpoint returns ok", async ({ request }) => {
     const res = await request.get(`${APP}/healthz`);
     expect(res.status()).toBe(200);
