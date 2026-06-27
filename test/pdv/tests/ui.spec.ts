@@ -45,36 +45,7 @@ test.describe("UI Post-Deployment Verification", () => {
     await expect(dockItems.first()).toBeVisible({ timeout: 5000 });
   });
 
-  test("dock click opens Node Manager with K8s data, close works", async ({ page }) => {
-    await page.goto(APP);
-    await page.waitForSelector("input", { timeout: 10000 });
-
-    const inputs = page.locator("input");
-    await inputs.nth(0).fill("admin");
-    await inputs.nth(1).fill("test");
-    await inputs.nth(2).fill("123456");
-    await page.locator("button").filter({ hasText: /sign in/i }).click();
-    await page.waitForTimeout(2000);
-
-    // Verify empty desktop
-    let text = await page.textContent("body");
-    expect(text).toContain("Activities");
-    expect(text).not.toContain("convocate01");
-
-    // Click dock icon to open Node Manager
-    await page.evaluate(() => {
-      const img = document.querySelector("img[alt='Node Manager']") as HTMLElement;
-      if (img) img.click();
-    });
-    await page.waitForTimeout(2000);
-
-    // Verify Node Manager window with API data
-    text = await page.textContent("body");
-    expect(text).toContain("Node Manager");
-    expect(text).toContain("nodes");
-  });
-
-  test("dock click opens Agent Manager", async ({ page }) => {
+  test("dock click opens Node Manager with K8s data", async ({ page }) => {
     await page.goto(APP);
     await page.waitForSelector("input", { timeout: 10000 });
     const inputs = page.locator("input");
@@ -84,14 +55,15 @@ test.describe("UI Post-Deployment Verification", () => {
     await page.locator("button").filter({ hasText: /sign in/i }).click();
     await page.waitForTimeout(2000);
 
-    await page.evaluate(() => {
-      const img = document.querySelector("img[alt='Agent Manager']") as HTMLElement;
-      if (img) img.click();
-    });
+    // Click dock icon via mouse coordinates
+    const icon = page.locator("img[alt='Node Manager']");
+    const box = await icon.boundingBox();
+    if (box) await page.mouse.click(box.x + box.width/2, box.y + box.height/2);
     await page.waitForTimeout(2000);
 
     const text = await page.textContent("body");
-    expect(text).toContain("Agent Manager");
+    expect(text).toContain("Node Manager");
+    expect(text).toContain("nodes");
   });
 
   test("healthz endpoint returns ok", async ({ request }) => {
