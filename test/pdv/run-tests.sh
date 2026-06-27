@@ -1,8 +1,6 @@
 #!/bin/sh
 # Convocate Post-Deployment Verification Tests
 # Uses only busybox tools (wget, grep, sh) — no jq, no AVX-dependent binaries
-set -e
-
 API="${API_URL:-http://convocate-api.convocate.svc:8443}"
 UI="${UI_URL:-http://convocate-ui.convocate.svc:8080}"
 PASS=0
@@ -114,11 +112,11 @@ else
     log_fail "GET / does not contain Convocate"
 fi
 
-# Login form elements
-if echo "$BODY" | /busybox/grep -q 'id="username"'; then
-    log_pass "Login form contains username field"
+# App container and JS bundle
+if echo "$BODY" | /busybox/grep -q 'id="app"' && echo "$BODY" | /busybox/grep -q 'app.js'; then
+    log_pass "Page loads SpecifyJS app with bundle"
 else
-    log_fail "Login form missing username field"
+    log_fail "Page missing app container or JS bundle"
 fi
 
 # SPA fallback

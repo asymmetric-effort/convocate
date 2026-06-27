@@ -4,7 +4,7 @@ metadata:
   name: verify-pdv
   namespace: convocate
 spec:
-  backoffLimit: 2
+  backoffLimit: 1
   ttlSecondsAfterFinished: 600
   template:
     metadata:
