@@ -137,15 +137,7 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
     user: { name: principal.name },
     onLogout,
     theme: "dark" as const,
-  },
-    h(UnityApp, {
-      id: "nmgr",
-      title: "Node Manager",
-      icon: "/img/icons/node-manager.png",
-      defaultSize: { width: 900, height: 600 },
-      resizable: true,
-    })
-  );
+  });
 }
 
 // ---------------------------------------------------------------------------
