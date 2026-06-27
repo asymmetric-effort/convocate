@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/asymmetric-effort/convocate/internal/ac"
 	"github.com/asymmetric-effort/convocate/internal/amgr"
 	"github.com/asymmetric-effort/convocate/internal/auth"
+	"github.com/asymmetric-effort/convocate/internal/db"
 	"github.com/asymmetric-effort/convocate/internal/events"
 	"github.com/asymmetric-effort/convocate/internal/ide"
+	"github.com/asymmetric-effort/convocate/internal/k8s"
 	"github.com/asymmetric-effort/convocate/internal/middleware"
 	"github.com/asymmetric-effort/convocate/internal/nmgr"
 	"github.com/asymmetric-effort/convocate/internal/pb"
@@ -19,6 +23,28 @@ import (
 )
 
 func main() {
+	auth.InitJWT()
+
+	if err := db.InitPostgres(); err != nil {
+		log.Printf("WARNING: PostgreSQL unavailable: %v (using mock stores)", err)
+	} else {
+		if err := db.RunMigrations(); err != nil {
+			log.Printf("WARNING: migration failed: %v", err)
+		}
+	}
+
+	if err := db.InitRedis(); err != nil {
+		log.Printf("WARNING: Redis unavailable: %v", err)
+	}
+
+	if err := k8s.Init(); err != nil {
+		log.Printf("WARNING: K8s API unavailable: %v (node/agent management disabled)", err)
+	} else {
+		if err := k8s.EnsureAgentNamespace(context.Background()); err != nil {
+			log.Printf("WARNING: could not ensure agent namespace: %v", err)
+		}
+	}
+
 	mux := http.NewServeMux()
 
 	status.Register(mux)
@@ -34,7 +60,11 @@ func main() {
 
 	handler := middleware.CORS(mux)
 
-	addr := ":8443"
+	addr := os.Getenv("LISTEN_ADDR")
+	if addr == "" {
+		addr = ":8443"
+	}
+
 	fmt.Printf("Convocate API server listening on %s\n", addr)
 	log.Fatal(http.ListenAndServe(addr, handler))
 }

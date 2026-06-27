@@ -15,6 +15,7 @@ spec:
       labels:
         app: convocate-api
     spec:
+      serviceAccountName: convocate-api
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -23,6 +24,7 @@ spec:
       containers:
         - name: api
           image: 192.168.3.90:5000/convocate/api:latest
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
