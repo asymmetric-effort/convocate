@@ -41,8 +41,8 @@ type Store struct {
 func NewStore() *Store {
 	return &Store{
 		nodes: []Node{
-			{ID: "cnn-7f3a", Location: "us-east-1", IP: "10.0.1.10", Status: "online", Agents: 3, LoadAvg: LoadAvg{0.5, 0.7, 0.6}, MemUsedGB: 12.5, MemTotalGB: 32, DiskUsedGB: 80, DiskTotalGB: 500, Tags: []string{"cpu:amd64", "os:linux"}},
-			{ID: "cnn-a1b2", Location: "us-west-2", IP: "10.0.2.20", Status: "offline", Agents: 0, LoadAvg: LoadAvg{0, 0, 0}, MemUsedGB: 0, MemTotalGB: 64, DiskUsedGB: 120, DiskTotalGB: 1000, Tags: []string{"cpu:amd64", "os:linux", "gpu:nvidia"}},
+			{ID: "cnn-7f3a", Location: "us-east-1", IP: "10.0.1.10", Status: "Ready", Agents: 3, LoadAvg: LoadAvg{0.5, 0.7, 0.6}, MemUsedGB: 12.5, MemTotalGB: 32, DiskUsedGB: 80, DiskTotalGB: 500, Tags: []string{"cpu:amd64", "os:linux"}},
+			{ID: "cnn-a1b2", Location: "us-west-2", IP: "10.0.2.20", Status: "NotReady", Agents: 0, LoadAvg: LoadAvg{0, 0, 0}, MemUsedGB: 0, MemTotalGB: 64, DiskUsedGB: 120, DiskTotalGB: 1000, Tags: []string{"cpu:amd64", "os:linux", "gpu:nvidia"}},
 		},
 		notes: map[string][]Note{
 			"cnn-7f3a": {{Author: "system", CreatedAt: time.Now().UTC().Format(time.RFC3339), Text: "Node provisioned successfully"}},
@@ -73,7 +73,7 @@ func (s *Store) Create(n Node) Node {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n.ID = fmt.Sprintf("cnn-%04d", len(s.nodes)+1)
-	n.Status = "online"
+	n.Status = "Ready"
 	s.nodes = append(s.nodes, n)
 	return n
 }

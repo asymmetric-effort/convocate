@@ -79,14 +79,14 @@ func CountAgentPodsOnNode(ctx context.Context, nodeName string) (int, error) {
 }
 
 func k8sNodeToNode(n *corev1.Node) types.Node {
-	status := types.NodeOnline
+	status := types.NodeReady
 	for _, cond := range n.Status.Conditions {
 		if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-			status = types.NodeOffline
+			status = types.NodeNotReady
 		}
 	}
 	if n.Spec.Unschedulable {
-		status = types.NodeDraining
+		status = types.NodeSchedulingDisabled
 	}
 
 	location := n.Labels["convocate.io/location"]

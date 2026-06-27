@@ -145,7 +145,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	if !h.store.SetStatus(id, "online") {
+	if !h.store.SetStatus(id, "Ready") {
 		httputil.WriteError(w, http.StatusNotFound, "not_found", "node not found")
 		return
 	}
@@ -164,7 +164,7 @@ func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
-	if !h.store.SetStatus(id, "draining") {
+	if !h.store.SetStatus(id, "SchedulingDisabled") {
 		httputil.WriteError(w, http.StatusNotFound, "not_found", "node not found")
 		return
 	}

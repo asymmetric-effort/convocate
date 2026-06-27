@@ -25,9 +25,9 @@ type FieldDetail struct {
 type NodeStatus string
 
 const (
-	NodeOnline   NodeStatus = "online"
-	NodeDraining NodeStatus = "draining"
-	NodeOffline  NodeStatus = "offline"
+	NodeReady               NodeStatus = "Ready"
+	NodeNotReady            NodeStatus = "NotReady"
+	NodeSchedulingDisabled  NodeStatus = "SchedulingDisabled"
 )
 
 // AgentStatus enumerates valid agent-container states.

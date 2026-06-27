@@ -1143,7 +1143,7 @@ components:
           description: Applet shortnames this principal may open.
 
     # ---- nmgr ----
-    NodeStatus: { type: string, enum: [online, draining, offline] }
+    NodeStatus: { type: string, enum: [Ready, NotReady, SchedulingDisabled] }
     Node:
       type: object
       required: [id, status]
