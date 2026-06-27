@@ -92,6 +92,7 @@ docker compose up --build
 | `redis/go-redis`                     | Go       | Redis client       |
 | `jackc/pgx`                          | Go       | PostgreSQL driver  |
 | `openbao/openbao`                    | Go       | Secret store client |
+| `k8s.io/client-go`                  | Go       | Kubernetes API client |
 
 Everything else must use language standard libraries. Do not add any
 dependency — including test frameworks, linters, or utility packages —

@@ -28,8 +28,8 @@ visual + interaction specification, **not** the shippable artifact.
 
 | Concept   | Summary |
 | --------- | ------------------------------------------------------------------------------------------------- |
-| **Node**  | A compute host (arbitrary SSH-reachable host) running the Convocate runtime. Lifecycle: `online → draining → offline`. Carries load average (1/5/15), memory, disk, tags (`cpu:amd64`, `os:linux`, …), and write-once notes. |
-| **Agent-container** | A container on a Node running the Claude CLI in permission-bypass mode behind a golang wrapper. Has a logical `project` name, owner, status (`running`/`connected`/`stopped`/`migrating`/`stopping`), and an exposed `FQDN:port`. |
+| **Node**  | A K8s cluster node (virtual or physical machine). Lifecycle managed via K8s API: `Ready → SchedulingDisabled (cordoned) → drained`. Carries resource capacity (CPU, memory, disk), labels (location, arch, os), taints, and write-once notes. |
+| **Agent-container** | A K8s pod in the `convocate-agents` namespace running the Claude CLI in permission-bypass mode. Has a logical `project` name (label), owner (label), status (maps to K8s pod phase: `Running`/`Pending`/`Succeeded`/`Failed`), and optional K8s Service for network exposure. |
 | **Project** | A unit of work; owns a git **Repository** and a `SPECIFICATION.md`. |
 | **Project Board** | A free canvas of **Containers** and **Cards** wired by **Edges** into an execution DAG. Persisted as `ProjectBoard.json` in the repo, linked to the spec. |
 | **Card** | A task. Status `todo → active → done`/`fail`, plus `note` (inert). Holds title, content, source-file refs, an implementation note, and links. |
@@ -44,11 +44,13 @@ visual + interaction specification, **not** the shippable artifact.
 ## 3. Architecture
 
 ### 3.1 Two planes
-- **Control plane** — the Convocate API + SpecifyJS UI. Stateless-ish; owns all
-  persistent state in a database.
-- **Data plane** — the **Nodes**: arbitrary hosts the control plane provisions
-  over SSH and on which it orchestrates agent-containers. Nodes are *not* part of
-  the backend host; the control plane reaches them via outbound SSH.
+- **Control plane** — the Convocate API + SpecifyJS UI running in the `convocate`
+  K8s namespace. Stateless-ish; owns all persistent state in a database.
+- **Data plane** — **Agent-containers** running as K8s pods in the
+  `convocate-agents` namespace. The control plane manages them via the K8s API
+  (`k8s.io/client-go`). **Nodes** are K8s cluster nodes (virtual or physical
+  machines). Node provisioning means adding machines to the K8s cluster. Agent
+  migration, scheduling, and resource management are handled by K8s natively.
 
 ### 3.2 Layers
 1. **Shell** — desktop chrome: top bar (Activities, clock, user menu), dock,
@@ -99,31 +101,35 @@ visual + interaction specification, **not** the shippable artifact.
 ## 5. Applet specifications
 
 ### 5.1 Node Manager (`nmgr`)
-- Paginated node list: id, location (default `unspecified`), IP, status dot,
-  agent count, **load average 1/5/15**, memory, controls.
-- **Location** is inline-editable (double-click the cell).
-- **Provision Node** dialog: host (valid IPv4/IPv6/FQDN), SSH user (valid Linux
-  username), optional password (first connection only), location, **tags**
-  (comma-separated; seeded with `cpu:<arch>` and `os:<os>`). Backend generates
-  its own SSH keypair, installs the public key to `authorized_keys`, then hardens
-  SSH to disable password logins. Client- and server-side validation.
-- **Start** (offline→online) and **Stop** (drain): on stop the scheduler stops
-  dispatching new agents, running tasks drain, then agent-containers **migrate to
-  other nodes with capacity**; any that cannot be placed are **stopped in place**.
-  A system note records the outcome; node goes `offline`.
-- **Detail** dialog: full stats incl. load average + tags, agent-container list,
-  and **write-once / read-many notes** with an "Add Note" composer that includes
-  a **Capture Stats** button (appends a structured stats snapshot to the note).
-- **Delete**: confirm → drain, terminate services, uninstall, power off.
+- Paginated node list sourced from the **K8s API** (`k8s.io/client-go`): node
+  name, location (label), IP, status (Ready/NotReady/SchedulingDisabled),
+  agent-container count, resource usage (CPU, memory, disk), controls.
+- **Location** is stored as a K8s node label, inline-editable (double-click the
+  cell; updates via K8s API).
+- **Provision Node**: adding a machine to the K8s cluster. The dialog captures
+  connection information; the backend orchestrates `kubeadm join` or equivalent.
+- **Cordon** (SchedulingDisabled): prevents new agent-container pods from being
+  scheduled. **Drain**: evicts existing pods; K8s reschedules them to other nodes
+  with capacity automatically.
+- **Uncordon**: re-enables scheduling on a cordoned node.
+- **Detail** dialog: K8s node conditions, resource capacity/allocatable,
+  agent-container pod list, labels/taints, and **write-once / read-many notes**.
+- **Delete**: confirm → drain → remove node from the K8s cluster.
 
 ### 5.2 Agent Manager (`amgr`)
-- Accordion grouped by node; each agent row: id, project, status, ip:port, owner,
-  controls (Start/Stop/Config/Shell).
+- Accordion grouped by node; each agent row shows the **K8s pod** status:
+  id (pod name), project (label), status (Running/Pending/Succeeded/Failed),
+  node assignment, owner (label), controls (Start/Stop/Config/Shell).
+- Agent-containers run as pods in the **`convocate-agents` namespace**, separate
+  from core Convocate services in the `convocate` namespace.
 - **Shell**: opens a terminal window streaming the agent's **Claude CLI in
-  permission-bypass mode** (`claude --dangerously-skip-permissions`).
-- **Create Agent**: project, node, image, startup command.
-- **Configure Agent**: project, node, and **Expose `FQDN:port`** — host must be a
-  DNS name, **not** an IP address (validated). No startup command in configure.
+  permission-bypass mode** via **K8s pod exec** (WebSocket).
+- **Create Agent**: creates a pod in `convocate-agents` with the specified image,
+  project label, and optional node selector.
+- **Configure Agent**: updates pod labels, node affinity, and **Expose** creates
+  a K8s Service for the agent pod (`FQDN:port` via Ingress or NodePort).
+- **Start/Stop**: creates or deletes the agent pod.
+- **Migration**: handled natively by K8s pod eviction and rescheduling.
 
 ### 5.3 Project Board (`pb`)
 - Dotted canvas of **Containers** (mapped to agent-containers) and **Cards**.
@@ -208,16 +214,20 @@ visual + interaction specification, **not** the shippable artifact.
   running on **Bun**. Desktop shell + 7 applets + cross-cutting auth/RBAC/API-client/
   window stores. Real-time via WebSocket (`/api/v1/events/{applet}/{channel}`).
 - **Backend**: **Go 1.26+** control-plane API implementing `openapi.yaml`. Owns
-  persistent state; reaches Nodes over SSH; orchestrates agent-containers; integrates
-  GitHub (repos, Actions) and an LLM (spec → board).
+  persistent state; manages K8s nodes and agent-container pods via `k8s.io/client-go`;
+  integrates GitHub (repos, Actions) and an LLM (spec → board).
 - **Storage**: tiered — **file-based JSON** for data blobs (boards, specs, card
   content, docs), **Redis** (`redis/go-redis`) for ephemeral/cache (JWT sessions,
   refresh tokens, stats cache, event pub/sub), **PostgreSQL** (`database/sql` +
   `jackc/pgx`) for searchable records and file references.
-- **Data plane**: Convocate runtime + agent-containers on provisioned Nodes.
+- **Data plane**: Agent-containers as K8s pods in the `convocate-agents` namespace,
+  scheduled across cluster worker nodes. K8s handles migration, scaling, and
+  resource management natively.
 - **Secrets**: **OpenBao** (`openbao/openbao`) for secret storage (JWT signing
-  keys, database credentials, SSH keys, OAuth client secrets). Filesystem-backed
-  persistence, minimal dependencies.
+  keys, database credentials, OAuth client secrets). Filesystem-backed persistence.
+- **Orchestration**: **K8s API** (`k8s.io/client-go`) for node management
+  (cordon/drain/uncordon), agent-container pod lifecycle (create/delete/exec),
+  and service exposure.
 - **Containers**: all services run in **distroless** containers built via
   multi-stage Docker builds (build stage: `ubuntu:24.04`). Local development
   via **Docker Compose** (UI, API, Redis, PostgreSQL, OpenBao).
@@ -255,10 +265,8 @@ clean operations. All targets are designed to run locally and in CI.
 
 ## 10. Open decisions
 
-- Agent-container orchestration mechanism on Nodes (Docker/Podman/other).
-- Whether Nodes are user-supplied hosts (prototype assumption) or provisioned via
-  a cloud API.
 - LLM provider/runtime for spec→board rendering and the agent CLI.
+- Node provisioning mechanism (kubeadm join, cloud provider API, manual).
 
 ---
 
