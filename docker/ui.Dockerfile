@@ -19,7 +19,10 @@ COPY ui/vendor-specifyjs.tgz ui/package.json ui/bun.lockb* ./
 RUN bun install
 COPY ui/src/ src/
 COPY ui/public/ public/
-RUN bun build src/app.ts --outdir public --minify --target=browser
+RUN bun build src/app.ts --outdir public --minify --target=browser && \
+    HASH=$(sha256sum public/app.js | cut -c1-8) && \
+    mv public/app.js "public/app.${HASH}.js" && \
+    sed -i "s|/app.js|/app.${HASH}.js|g" public/index.html
 
 FROM ubuntu:24.04 AS build
 
