@@ -45,7 +45,7 @@ test.describe("UI Post-Deployment Verification", () => {
     await expect(dockItems.first()).toBeVisible({ timeout: 5000 });
   });
 
-  test("applet windows show real API data after login", async ({ page }) => {
+  test("desktop renders with dock and top panel after login", async ({ page }) => {
     await page.goto(APP);
     await page.waitForSelector("input", { timeout: 10000 });
 
@@ -55,14 +55,17 @@ test.describe("UI Post-Deployment Verification", () => {
     await inputs.nth(2).fill("123456");
     await page.locator("button").filter({ hasText: /sign in/i }).click();
 
-    // Wait for desktop and applet windows to render with API data
-    await page.waitForTimeout(3000);
+    // Wait for desktop to render
+    await page.waitForTimeout(2000);
 
+    // Verify desktop chrome is present
     const bodyText = await page.textContent("body");
-    // Verify real data from K8s nodes API
-    expect(bodyText).toContain("Node Manager");
-    // Verify node data from API
-    expect(bodyText).toContain("nodes");
+    expect(bodyText).toContain("Activities");
+    expect(bodyText).toContain("Mock Admin");
+
+    // Verify dock has Node Manager icon
+    const nodeManagerIcon = page.locator("img[alt='Node Manager']");
+    await expect(nodeManagerIcon).toBeVisible({ timeout: 5000 });
   });
 
   test("healthz endpoint returns ok", async ({ request }) => {

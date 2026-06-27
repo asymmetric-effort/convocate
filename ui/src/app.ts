@@ -7,7 +7,7 @@ import type { UnityDesktopApp } from "@asymmetric-effort/specifyjs/components";
 const h = createElement;
 
 // ---------------------------------------------------------------------------
-// REST client — all API calls go through this
+// REST client
 // ---------------------------------------------------------------------------
 
 const api = createRestClient({
@@ -88,70 +88,10 @@ function LoginScreen({ onSuccess }: { onSuccess: (principal: any) => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Convocate Desktop (unlocked state)
+// Node Manager — fetches from API, renders node list
 // ---------------------------------------------------------------------------
 
-const DOCK_APPS: UnityDesktopApp[] = [
-  { id: "nmgr", icon: "/img/icons/node-manager.png", label: "Node Manager" },
-  { id: "amgr", icon: "/img/icons/agent-manager.png", label: "Agent Manager" },
-  { id: "pb", icon: "/img/icons/productboard.png", label: "Project Board" },
-  { id: "ide", icon: "/img/icons/ide-monkey.png", label: "Code IDE" },
-  { id: "ac", icon: "/img/icons/access-control.png", label: "Access Control" },
-  { id: "repo", icon: "/img/icons/repo-man.png", label: "Repo Manager" },
-  { id: "sup", icon: "/img/icons/support-tool.png", label: "Support Tool" },
-];
-
-function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: () => void }) {
-  const authorizedApps = DOCK_APPS.filter((app) =>
-    principal.authorizedApplets.includes(app.id)
-  );
-
-  return h(UnityDesktop, {
-    apps: authorizedApps,
-    user: { name: principal.name },
-    onLogout,
-    theme: "dark" as const,
-  },
-    // All authorized UnityApp children are always mounted.
-    // Each UnityApp registers with WindowManagerProvider on mount.
-    // The dock click focuses/restores existing windows.
-    authorizedApps.map((app: UnityDesktopApp) =>
-      h(UnityApp, {
-        key: app.id,
-        id: app.id,
-        title: app.label,
-        icon: app.icon,
-        defaultSize: { width: 900, height: 600 },
-        resizable: true,
-      },
-        h(AppletContent, { appId: app.id, api })
-      )
-    )
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Applet content — each applet fetches data from the API
-// ---------------------------------------------------------------------------
-
-function AppletContent({ appId, api }: { appId: string; api: any }) {
-  switch (appId) {
-    case "nmgr": return h(NodeManagerApplet, { api });
-    case "amgr": return h(AgentManagerApplet, { api });
-    case "ac": return h(AccessControlApplet, { api });
-    case "repo": return h(RepoManagerApplet, { api });
-    case "sup": return h(SupportToolApplet, { api });
-    case "ide": return h("div", { style: { padding: "16px", color: "#888" } }, "Code IDE — coming soon");
-    case "pb": return h("div", { style: { padding: "16px", color: "#888" } }, "Project Board — coming soon");
-    default: return h("div", { style: { padding: "16px" } }, `Unknown applet: ${appId}`);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Node Manager — DataGrid of K8s nodes from API
-// ---------------------------------------------------------------------------
-
-function NodeManagerApplet({ api }: { api: any }) {
+function NodeManagerApplet() {
   const { data, loading, error } = useRest(api, "/nmgr/node?limit=100");
   if (loading) return h("div", { style: { padding: "16px", color: "#888" } }, "Loading nodes...");
   if (error) return h("div", { style: { padding: "16px", color: "#e55" } }, `Error: ${error.message}`);
@@ -184,94 +124,52 @@ function NodeManagerApplet({ api }: { api: any }) {
 }
 
 // ---------------------------------------------------------------------------
-// Agent Manager
+// Convocate Desktop (unlocked state) — only Node Manager for now
 // ---------------------------------------------------------------------------
 
-function AgentManagerApplet({ api }: { api: any }) {
-  const { data, loading } = useRest(api, "/amgr/agent?limit=200");
-  if (loading) return h("div", { style: { padding: "16px", color: "#888" } }, "Loading agents...");
-  const agents = data?.items || [];
-  if (agents.length === 0) {
-    return h("div", { style: { padding: "16px", color: "#888" } },
-      `No agent-containers running at ${new Date().toLocaleString()}`);
+const DOCK_APPS: UnityDesktopApp[] = [
+  { id: "nmgr", icon: "/img/icons/node-manager.png", label: "Node Manager" },
+];
+
+function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: () => void }) {
+  const [openApps, setOpenApps] = useState<string[]>([]);
+
+  function handleAppOpen(appId: string) {
+    setOpenApps((prev: string[]) => {
+      if (prev.includes(appId)) return prev;
+      return [...prev, appId];
+    });
   }
-  return h("div", { style: { padding: "8px", fontSize: "13px" } },
-    h("div", { style: { marginBottom: "8px", color: "#888" } }, `${data?.total || 0} agents`),
-    ...agents.map((a: any) =>
-      h("div", { key: a.id, style: { padding: "8px", borderBottom: "1px solid #333" } },
-        h("span", { style: { color: "#7eb8da", fontFamily: "monospace" } }, a.id),
-        " — ", a.project || "no project", " — ", a.status)
+
+  function handleAppClose(appId: string) {
+    setOpenApps((prev: string[]) => prev.filter((id: string) => id !== appId));
+  }
+
+  return h(UnityDesktop, {
+    apps: DOCK_APPS,
+    user: { name: principal.name },
+    onAppOpen: handleAppOpen,
+    onLogout,
+    theme: "dark" as const,
+  },
+    openApps.map((appId: string) =>
+      h(UnityApp, {
+        key: appId,
+        id: appId,
+        title: "Node Manager",
+        icon: "/img/icons/node-manager.png",
+        defaultSize: { width: 900, height: 600 },
+        resizable: true,
+        onClose: () => handleAppClose(appId),
+      },
+        h(NodeManagerApplet, null)
+      )
     )
   );
 }
 
 // ---------------------------------------------------------------------------
-// Access Control
-// ---------------------------------------------------------------------------
-
-function AccessControlApplet({ api }: { api: any }) {
-  const users = useRest(api, "/ac/user?limit=200");
-  const groups = useRest(api, "/ac/group?limit=200");
-  const settings = useRest(api, "/ac/settings");
-
-  if (users.loading) return h("div", { style: { padding: "16px", color: "#888" } }, "Loading...");
-
-  return h("div", { style: { padding: "8px", fontSize: "13px" } },
-    h("h3", null, "Users"),
-    ...(users.data?.items || []).map((u: any) =>
-      h("div", { key: u.id, style: { padding: "4px 0", borderBottom: "1px solid #333" } },
-        `${u.name} — ${u.email} — ${u.status}`)
-    ),
-    h("h3", { style: { marginTop: "16px" } }, "Groups"),
-    ...(groups.data?.items || []).map((g: any) =>
-      h("div", { key: g.id, style: { padding: "4px 0", borderBottom: "1px solid #333" } },
-        `${g.name} (${g.builtin ? "built-in" : "custom"}) — ${(g.roles || []).join(", ")}`)
-    ),
-    h("h3", { style: { marginTop: "16px" } }, "Settings"),
-    settings.data ? h("div", null,
-      h("div", null, `Session timeout: ${settings.data.sessionTimeoutMinutes} min`),
-      h("div", null, `Require MFA: ${settings.data.requireMfa}`),
-      h("div", null, `Min password length: ${settings.data.passwordMinLength}`),
-    ) : null,
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Repo Manager
-// ---------------------------------------------------------------------------
-
-function RepoManagerApplet({ api }: { api: any }) {
-  const { data, loading } = useRest(api, "/repo/repo?limit=200");
-  if (loading) return h("div", { style: { padding: "16px", color: "#888" } }, "Loading repos...");
-  return h("div", { style: { padding: "8px", fontSize: "13px" } },
-    h("div", { style: { marginBottom: "8px", color: "#888" } }, `${data?.total || 0} repositories`),
-    ...(data?.items || []).map((r: any) =>
-      h("div", { key: r.id, style: { padding: "6px 0", borderBottom: "1px solid #333" } },
-        h("span", { style: { fontWeight: "600" } }, r.name),
-        ` — ${r.description || ""} — ${r.visibility}`)
-    )
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Support Tool
-// ---------------------------------------------------------------------------
-
-function SupportToolApplet({ api }: { api: any }) {
-  const { data, loading } = useRest(api, "/sup/ticket?limit=200");
-  if (loading) return h("div", { style: { padding: "16px", color: "#888" } }, "Loading tickets...");
-  return h("div", { style: { padding: "8px", fontSize: "13px" } },
-    h("div", { style: { marginBottom: "8px", color: "#888" } }, `${data?.total || 0} tickets`),
-    ...(data?.items || []).map((t: any) =>
-      h("div", { key: t.id, style: { padding: "6px 0", borderBottom: "1px solid #333" } },
-        h("span", { style: { fontFamily: "monospace", color: "#7eb8da" } }, t.id),
-        ` — ${t.subject} — ${t.priority} — ${t.status}`)
-    )
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Root App — manages locked/unlocked state
+// Root App
 // ---------------------------------------------------------------------------
 
 function App() {
