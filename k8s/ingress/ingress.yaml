@@ -4,7 +4,6 @@ metadata:
   name: convocate
   namespace: convocate
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/websocket-services: "convocate-api"
 spec:
