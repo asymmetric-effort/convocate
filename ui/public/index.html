@@ -71,7 +71,7 @@
       const errorEl = document.getElementById('error');
       errorEl.style.display = 'none';
       try {
-        const apiBase = window.location.origin.replace(':8080', ':8443');
+        const apiBase = window.location.origin;
         const res = await fetch(apiBase + '/api/v1/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
