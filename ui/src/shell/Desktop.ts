@@ -41,8 +41,6 @@ export function Desktop() {
     getAccessToken() ? "unlocked" : "locked"
   );
   const [principal, setPrincipal] = useState<Principal | null>(null);
-  const [openApps, setOpenApps] = useState<string[]>([]);
-
   useEffect(() => {
     if (getAccessToken()) {
       fetchMe().then((p) => {
@@ -62,49 +60,39 @@ export function Desktop() {
   function handleLogout() {
     doLogout();
     setState("locked");
-    setOpenApps([]);
     setPrincipal(null);
-  }
-
-  function handleAppOpen(appId: string) {
-    if (!openApps.includes(appId)) {
-      setOpenApps((prev: string[]) => [...prev, appId]);
-    }
-  }
-
-  function handleAppClose(appId: string) {
-    setOpenApps((prev: string[]) => prev.filter((id: string) => id !== appId));
   }
 
   if (state === "locked") {
     return h(Login, { onSuccess: handleLoginSuccess });
   }
 
-  const apps: UnityDesktopApp[] = DOCK_ITEMS
-    .filter((item) => hasApplet(item.applet))
-    .map((item) => ({
-      id: item.applet,
-      icon: `/${item.icon}`,
-      label: item.label,
-    }));
+  // Filter dock items by user permissions
+  const authorizedApplets = DOCK_ITEMS.filter((item) => hasApplet(item.applet));
+
+  const apps: UnityDesktopApp[] = authorizedApplets.map((item) => ({
+    id: item.applet,
+    icon: `/${item.icon}`,
+    label: item.label,
+  }));
 
   return h(UnityDesktop, {
     apps,
     user: principal ? { name: principal.name } : undefined,
-    onAppOpen: handleAppOpen,
     onLogout: handleLogout,
     theme: "dark" as const,
   },
-    openApps.map((appId: string) => {
-      const Component = APPLET_COMPONENTS[appId];
+    // Always render all authorized UnityApp children — the window manager
+    // handles open/close/focus visibility internally via dock clicks
+    authorizedApplets.map((item) => {
+      const Component = APPLET_COMPONENTS[item.applet];
       if (!Component) return null;
       return h(UnityApp, {
-        key: appId,
-        id: appId,
-        title: APPLET_TITLES[appId] || appId,
-        icon: `/${DOCK_ITEMS.find((d) => d.applet === appId)?.icon || ""}`,
+        key: item.applet,
+        id: item.applet,
+        title: APPLET_TITLES[item.applet] || item.label,
+        icon: `/${item.icon}`,
         defaultSize: { width: 900, height: 600 },
-        onClose: () => handleAppClose(appId),
       },
         h(Component, null)
       );
