@@ -2,17 +2,10 @@ import type { LoginRequest, Session, Principal } from "../types/api";
 import { apiPost, apiGet, setAccessToken, getAccessToken } from "./api";
 
 let currentPrincipal: Principal | null = null;
-let onAuthChange: ((principal: Principal | null) => void) | null = null;
+let onAuthChange: ((p: Principal | null) => void) | null = null;
 
-export function setAuthChangeListener(
-  listener: (principal: Principal | null) => void
-): void {
-  onAuthChange = listener;
-}
-
-export function getPrincipal(): Principal | null {
-  return currentPrincipal;
-}
+export function setAuthChangeListener(fn: (p: Principal | null) => void) { onAuthChange = fn; }
+export function getPrincipal(): Principal | null { return currentPrincipal; }
 
 export async function login(req: LoginRequest): Promise<Session> {
   const session = await apiPost<Session>("/auth/login", req);
@@ -23,11 +16,7 @@ export async function login(req: LoginRequest): Promise<Session> {
 }
 
 export async function logout(): Promise<void> {
-  try {
-    await apiPost("/auth/logout");
-  } catch {
-    // Ignore errors on logout
-  }
+  try { await apiPost("/auth/logout"); } catch {}
   setAccessToken(null);
   currentPrincipal = null;
   onAuthChange?.(null);
