@@ -1,5 +1,9 @@
 import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
-import { UnityDesktop } from "@asymmetric-effort/specifyjs/components";
+import {
+  UnityDesktop,
+  UnityApp,
+  useMessageBus,
+} from "@asymmetric-effort/specifyjs/components";
 import type { UnityDesktopApp } from "@asymmetric-effort/specifyjs/components";
 import type { Principal } from "../types/api";
 import { fetchMe, hasApplet, logout as doLogout } from "../lib/auth";
@@ -41,7 +45,7 @@ export function Desktop() {
     getAccessToken() ? "unlocked" : "locked"
   );
   const [principal, setPrincipal] = useState<Principal | null>(null);
-  const [activeApplet, setActiveApplet] = useState<string | null>(null);
+  const [openApps, setOpenApps] = useState<string[]>([]);
 
   useEffect(() => {
     if (getAccessToken()) {
@@ -63,12 +67,19 @@ export function Desktop() {
     doLogout();
     setState("locked");
     setPrincipal(null);
-    setActiveApplet(null);
+    setOpenApps([]);
   }
 
   const handleAppOpen = useCallback((appId: string) => {
-    setActiveApplet(appId);
+    setOpenApps((prev: string[]) => {
+      if (prev.includes(appId)) return prev;
+      return [...prev, appId];
+    });
   }, []);
+
+  function handleAppClose(appId: string) {
+    setOpenApps((prev: string[]) => prev.filter((id: string) => id !== appId));
+  }
 
   if (state === "locked") {
     return h(Login, { onSuccess: handleLoginSuccess });
@@ -82,46 +93,31 @@ export function Desktop() {
       label: item.label,
     }));
 
-  // Render applet content as a full-screen overlay on the desktop workspace
-  // when UnityDesktop opens a window. The framework's built-in window
-  // provides the chrome; we overlay our real applet content.
-  const appletOverlay = activeApplet && APPLET_COMPONENTS[activeApplet]
-    ? h("div", {
-        style: {
-          position: "absolute",
-          top: 0, left: 0, right: 0, bottom: 0,
-          zIndex: 50,
-          background: "#1e1e1e",
-          overflow: "auto",
-          padding: "12px",
-        },
-      },
-        h("div", {
-          style: {
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "8px 12px", marginBottom: "12px",
-            background: "#2c2c2c", borderRadius: "6px",
-          },
-        },
-          h("span", { style: { fontWeight: 600, fontSize: "14px" } },
-            APPLET_TITLES[activeApplet] || activeApplet),
-          h("button", {
-            onClick: () => setActiveApplet(null),
-            style: {
-              background: "none", border: "1px solid #555", borderRadius: "4px",
-              color: "#fff", padding: "4px 12px", cursor: "pointer", fontSize: "12px",
-            },
-          }, "Close")
-        ),
-        h(APPLET_COMPONENTS[activeApplet], null)
-      )
-    : null;
-
   return h(UnityDesktop, {
     apps,
     user: principal ? { name: principal.name } : undefined,
     onAppOpen: handleAppOpen,
     onLogout: handleLogout,
     theme: "dark" as const,
-  }, appletOverlay);
+  },
+    // Render UnityApp windows for each opened applet.
+    // UnityApp registers with the WindowManagerProvider and renders as
+    // a draggable/resizable window within the desktop workspace.
+    openApps.map((appId: string) => {
+      const Component = APPLET_COMPONENTS[appId];
+      if (!Component) return null;
+      const item = DOCK_ITEMS.find((d) => d.applet === appId);
+      return h(UnityApp, {
+        key: appId,
+        id: appId,
+        title: APPLET_TITLES[appId] || appId,
+        icon: item ? `/${item.icon}` : "",
+        defaultSize: { width: 900, height: 600 },
+        onClose: () => handleAppClose(appId),
+        resizable: true,
+      },
+        h(Component, null)
+      );
+    })
+  );
 }
