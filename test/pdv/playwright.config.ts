@@ -1,24 +1,18 @@
 import { defineConfig } from "@playwright/test";
 
-const API_URL = process.env.API_URL || "http://convocate-api.convocate.svc:8443";
-const UI_URL = process.env.UI_URL || "http://convocate-ui.convocate.svc:8080";
+const APP_URL = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
 
 export default defineConfig({
   testDir: "./tests",
   timeout: 30000,
   retries: 1,
   use: {
-    baseURL: UI_URL,
+    baseURL: APP_URL,
     headless: true,
+    ignoreHTTPSErrors: true,
   },
   projects: [
-    {
-      name: "api",
-      testMatch: /api\.spec\.ts/,
-    },
-    {
-      name: "ui",
-      testMatch: /ui\.spec\.ts/,
-    },
+    { name: "api", testMatch: /api\.spec\.ts/ },
+    { name: "ui", testMatch: /ui\.spec\.ts/ },
   ],
 });
