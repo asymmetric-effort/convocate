@@ -2,6 +2,7 @@ package nmgr
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -70,6 +71,31 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
 	}
+
+	if h.useK8s && req.Host != "" && req.Password != "" {
+		// Real provisioning: SSH to target, install K8s, join cluster
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		httputil.WriteJSON(w, http.StatusAccepted, map[string]string{
+			"status": "provisioning",
+			"host":   req.Host,
+		})
+
+		// Run provisioning asynchronously
+		go func() {
+			provReq := k8s.ProvisionRequest{
+				Host:     req.Host,
+				User:     req.User,
+				Password: req.Password,
+				Location: req.Location,
+			}
+			if err := k8s.ProvisionNode(context.Background(), provReq); err != nil {
+				log.Printf("[provision] ERROR: %v", err)
+			}
+		}()
+		return
+	}
+
 	node := h.store.Create(Node{IP: req.Host, Location: req.Location, Tags: req.Tags})
 	httputil.WriteJSON(w, http.StatusAccepted, node)
 }
@@ -126,6 +152,19 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) del(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("nodeId")
+
+	if h.useK8s {
+		// Real K8s: drain all pods then remove node from cluster
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		if err := k8s.DrainAndDeleteNode(ctx, id); err != nil {
+			httputil.WriteError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
 	if !h.store.Delete(id) {
 		httputil.WriteError(w, http.StatusNotFound, "not_found", "node not found")
 		return

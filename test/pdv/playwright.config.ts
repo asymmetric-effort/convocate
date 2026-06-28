@@ -14,5 +14,6 @@ export default defineConfig({
   projects: [
     { name: "api", testMatch: /api\.spec\.ts/ },
     { name: "ui", testMatch: /ui\.spec\.ts/ },
+    { name: "node-lifecycle", testMatch: /node-lifecycle\.spec\.ts/, retries: 0, timeout: 600000 },
   ],
 });

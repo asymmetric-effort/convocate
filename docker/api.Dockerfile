@@ -25,8 +25,15 @@ WORKDIR /build
 COPY api/ .
 RUN go build -o /convocate-api .
 
-# Runtime stage
-FROM gcr.io/distroless/cc-debian13:nonroot
+# Runtime stage — needs openssh-client and sshpass for node provisioning
+FROM ubuntu:24.04 AS runtime
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        openssh-client \
+        sshpass && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /convocate-api /usr/local/bin/convocate-api
 
