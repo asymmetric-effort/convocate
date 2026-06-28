@@ -43,7 +43,7 @@ func Register(mux *http.ServeMux) {
 // to the nmgr/status event channel so connected clients get real-time
 // updates for memory, load average, and disk usage.
 func (h *Handler) publishMetrics() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
