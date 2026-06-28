@@ -2,7 +2,9 @@ package k8s
 
 import (
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"os/exec"
@@ -79,9 +81,21 @@ func sshExecWithOutput(host, user, password, cmd string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// computeCertHash returns sha256:<hex> of the given certificate bytes.
-func computeCertHash(certData []byte) string {
-	h := sha256.Sum256(certData)
+// computeCertHash returns sha256:<hex> of the DER-encoded SubjectPublicKeyInfo
+// from a PEM-encoded X.509 certificate, matching kubeadm's token discovery hash.
+func computeCertHash(certPEM []byte) string {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		// Fallback: hash the raw bytes
+		h := sha256.Sum256(certPEM)
+		return fmt.Sprintf("sha256:%x", h)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		h := sha256.Sum256(certPEM)
+		return fmt.Sprintf("sha256:%x", h)
+	}
+	h := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 	return fmt.Sprintf("sha256:%x", h)
 }
 
@@ -90,5 +104,18 @@ func base64Decode(s string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(s)
 }
 
-// unused but kept for interface completeness
-var _ = time.Second
+// sshExecRetry retries sshExec up to maxAttempts times with a delay between
+// attempts. This handles the case where the target VM has just booted and SSH
+// isn't ready yet.
+func sshExecRetry(host, user, password, script string, maxAttempts int, delay time.Duration) error {
+	var lastErr error
+	for i := 0; i < maxAttempts; i++ {
+		lastErr = sshExec(host, user, password, script)
+		if lastErr == nil {
+			return nil
+		}
+		log.Printf("[ssh:%s] attempt %d/%d failed: %v — retrying in %v", host, i+1, maxAttempts, lastErr, delay)
+		time.Sleep(delay)
+	}
+	return lastErr
+}

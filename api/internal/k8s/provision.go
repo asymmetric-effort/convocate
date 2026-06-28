@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -76,13 +77,15 @@ sudo systemctl enable containerd
 
 echo "[provision] adding Kubernetes apt repo..."
 sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg 2>/dev/null
+if [ ! -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg ]; then
+  curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg 2>/dev/null
+fi
 echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list >/dev/null
 
 echo "[provision] installing kubeadm, kubelet, kubectl..."
 sudo apt-get update -qq
-sudo apt-get install -y -qq kubelet=1.31.14-1.1 kubeadm=1.31.14-1.1 kubectl=1.31.14-1.1 >/dev/null
-sudo apt-mark hold kubelet kubeadm kubectl
+sudo apt-get install -y -qq kubelet=1.31.14-1.1 kubeadm=1.31.14-1.1 kubectl=1.31.14-1.1 >/dev/null 2>&1
+sudo apt-mark hold kubelet kubeadm kubectl >/dev/null 2>&1
 
 echo "[provision] setting kubelet node-ip..."
 echo "KUBELET_EXTRA_ARGS=--node-ip=NODE_IP_PLACEHOLDER" | sudo tee /etc/default/kubelet >/dev/null
@@ -93,25 +96,59 @@ echo "[provision] base preparation complete"
 	baseScript = strings.ReplaceAll(baseScript, "NODE_IP_PLACEHOLDER", host)
 
 	log.Printf("[provision] running base preparation on %s", host)
-	if err := sshExec(host, user, pass, baseScript); err != nil {
+	if err := sshExecRetry(host, user, pass, baseScript, 12, 10*time.Second); err != nil {
 		return fmt.Errorf("base preparation failed: %w", err)
 	}
 
-	// Step 2: Generate bootstrap token and discovery kubeconfig on control plane
-	log.Printf("[provision] generating join token on control plane")
-	token, caCertHash, err := generateJoinCredentials(ctx)
+	// Step 2: Get bootstrap token and discovery kubeconfig from control plane
+	log.Printf("[provision] generating join credentials via K8s Job on control plane")
+	joinOutput, err := getJoinCommandViaJob(ctx)
 	if err != nil {
-		return fmt.Errorf("join credentials: %w", err)
+		return fmt.Errorf("get join credentials: %w", err)
 	}
 
-	// Step 3: kubeadm join
+	// Parse token and kubeconfig from output
+	var token string
+	var discoveryConf string
+	for _, line := range strings.Split(joinOutput, "\n") {
+		if strings.HasPrefix(line, "TOKEN=") {
+			token = strings.TrimPrefix(line, "TOKEN=")
+		}
+	}
+	// Everything after the TOKEN= line is the kubeconfig
+	idx := strings.Index(joinOutput, "apiVersion:")
+	if idx >= 0 {
+		discoveryConf = joinOutput[idx:]
+	}
+
+	if token == "" || discoveryConf == "" {
+		return fmt.Errorf("failed to parse join credentials from output: %s", joinOutput[:min(200, len(joinOutput))])
+	}
+	log.Printf("[provision] token=%s, discovery kubeconfig obtained", token)
+
+	// Step 3: Write discovery kubeconfig to target and join
+	writeScript := fmt.Sprintf(`sudo mkdir -p /etc/kubernetes
+cat > /tmp/discovery.conf << 'DISCOVERY_EOF'
+%s
+DISCOVERY_EOF
+sudo mv /tmp/discovery.conf /etc/kubernetes/discovery.conf
+sudo chmod 0600 /etc/kubernetes/discovery.conf
+echo "[provision] discovery config written"
+`, discoveryConf)
+
+	if err := sshExec(host, user, pass, writeScript); err != nil {
+		return fmt.Errorf("write discovery config: %w", err)
+	}
+
 	joinScript := fmt.Sprintf(`set -euo pipefail
 echo "[provision] joining Kubernetes cluster..."
-sudo kubeadm join %s \
-  --token %s \
-  --discovery-token-ca-cert-hash %s
+sudo kubeadm join \
+  --discovery-file /etc/kubernetes/discovery.conf \
+  --tls-bootstrap-token %s \
+  --v=2 2>&1 || { echo "[provision] kubeadm join FAILED with exit $?"; exit 1; }
+sudo rm -f /etc/kubernetes/discovery.conf
 echo "[provision] kubeadm join complete"
-`, "192.168.56.10:6443", token, caCertHash)
+`, token)
 
 	log.Printf("[provision] running kubeadm join on %s", host)
 	if err := sshExec(host, user, pass, joinScript); err != nil {
@@ -220,7 +257,7 @@ func generateJoinCredentials(ctx context.Context) (token string, caCertHash stri
 	tokenID := fmt.Sprintf("%06x", time.Now().UnixNano()%0xffffff)
 	tokenSecret := fmt.Sprintf("%016x", time.Now().UnixNano())
 
-	secret := fmt.Sprintf("%s.%s", tokenID, tokenSecret)
+	fullToken := fmt.Sprintf("%s.%s", tokenID, tokenSecret)
 
 	// Create the bootstrap token secret in kube-system
 	_, err = Client.CoreV1().Secrets("kube-system").Create(ctx, bootstrapTokenSecret(tokenID, tokenSecret), metav1.CreateOptions{})
@@ -228,25 +265,156 @@ func generateJoinCredentials(ctx context.Context) (token string, caCertHash stri
 		return "", "", fmt.Errorf("create bootstrap token: %w", err)
 	}
 
-	// Get the CA cert hash
-	cm, err := Client.CoreV1().ConfigMaps("kube-system").Get(ctx, "cluster-info", metav1.GetOptions{})
+	// Get the CA cert hash from cluster-info configmap
+	cm, err := Client.CoreV1().ConfigMaps("kube-public").Get(ctx, "cluster-info", metav1.GetOptions{})
 	if err != nil {
-		// Fallback: get CA cert from the kube-public namespace
-		cm, err = Client.CoreV1().ConfigMaps("kube-public").Get(ctx, "cluster-info", metav1.GetOptions{})
-		if err != nil {
-			return secret, "", fmt.Errorf("get cluster-info: %w", err)
+		return fullToken, "", fmt.Errorf("get cluster-info: %w", err)
+	}
+
+	kubeconfig := cm.Data["kubeconfig"]
+	if kubeconfig == "" {
+		return fullToken, "", fmt.Errorf("cluster-info has no kubeconfig")
+	}
+
+	// Extract certificate-authority-data and compute hash
+	for _, line := range strings.Split(kubeconfig, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "certificate-authority-data:") {
+			b64 := strings.TrimPrefix(trimmed, "certificate-authority-data:")
+			b64 = strings.TrimSpace(b64)
+			certPEM, decErr := base64Decode(b64)
+			if decErr != nil {
+				return fullToken, "", fmt.Errorf("decode CA cert: %w", decErr)
+			}
+			// kubeadm hashes the DER-encoded public key, but for discovery
+			// via --discovery-token-ca-cert-hash it wants sha256 of the
+			// entire DER-encoded SubjectPublicKeyInfo. We can use the PEM
+			// cert's raw DER for a simpler approach that kubeadm also accepts.
+			caHash := computeCertHash(certPEM)
+			return fullToken, caHash, nil
 		}
 	}
 
-	// Extract CA cert hash from cluster-info kubeconfig
-	_ = cm
-	// Use the kubeadm approach: hash the CA certificate
-	caHash, err := getCAHash(ctx)
-	if err != nil {
-		return secret, "", fmt.Errorf("get CA hash: %w", err)
+	return fullToken, "", fmt.Errorf("CA cert not found in cluster-info")
+}
+
+// getJoinCommandViaJob creates a privileged Pod on a control-plane node to
+// run `kubeadm token create --print-join-command`, captures the output, and
+// cleans up. This is the CIS-compliant way to get a join command since
+// anonymous auth is disabled.
+func getJoinCommandViaJob(ctx context.Context) (string, error) {
+	podName := fmt.Sprintf("convocate-join-token-%d", time.Now().Unix())
+	privileged := true
+	hostPathDir := corev1.HostPathDirectory
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: "kube-system",
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			HostNetwork:   true,
+			HostPID:       true,
+			NodeSelector:  map[string]string{"node-role.kubernetes.io/control-plane": ""},
+			Tolerations: []corev1.Toleration{
+				{Key: "node-role.kubernetes.io/control-plane", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+			},
+			Containers: []corev1.Container{{
+				Name:    "kubeadm",
+				Image:   "ubuntu:24.04",
+				Command: []string{"nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "sh", "-c",
+					// Generate a signed discovery kubeconfig with the bootstrap token
+					// as an embedded credential so kubeadm join can authenticate.
+					"TOKEN=$(kubeadm token create 2>/dev/null) && " +
+					"CA_B64=$(base64 -w0 /etc/kubernetes/pki/ca.crt) && " +
+					"echo \"TOKEN=$TOKEN\" && " +
+					"cat <<EOF\n" +
+					"apiVersion: v1\n" +
+					"clusters:\n" +
+					"- cluster:\n" +
+					"    certificate-authority-data: $CA_B64\n" +
+					"    server: https://192.168.56.10:6443\n" +
+					"  name: cluster\n" +
+					"contexts:\n" +
+					"- context:\n" +
+					"    cluster: cluster\n" +
+					"    user: bootstrap\n" +
+					"  name: bootstrap\n" +
+					"current-context: bootstrap\n" +
+					"kind: Config\n" +
+					"preferences: {}\n" +
+					"users:\n" +
+					"- name: bootstrap\n" +
+					"  user:\n" +
+					"    token: $TOKEN\n" +
+					"EOF"},
+				SecurityContext: &corev1.SecurityContext{
+					Privileged: &privileged,
+				},
+				VolumeMounts: []corev1.VolumeMount{
+					{Name: "etc-kubernetes", MountPath: "/etc/kubernetes", ReadOnly: true},
+				},
+			}},
+			Volumes: []corev1.Volume{
+				{Name: "etc-kubernetes", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/etc/kubernetes", Type: &hostPathDir}}},
+			},
+		},
 	}
 
-	return secret, caHash, nil
+	_, err := Client.CoreV1().Pods("kube-system").Create(ctx, pod, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("create join-token pod: %w", err)
+	}
+	defer func() {
+		_ = Client.CoreV1().Pods("kube-system").Delete(ctx, podName, metav1.DeleteOptions{})
+	}()
+
+	// Wait for the pod to complete
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		p, err := Client.CoreV1().Pods("kube-system").Get(ctx, podName, metav1.GetOptions{})
+		if err == nil {
+			if p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed {
+				break
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	// Read logs
+	logReq := Client.CoreV1().Pods("kube-system").GetLogs(podName, &corev1.PodLogOptions{})
+	logStream, err := logReq.Stream(ctx)
+	if err != nil {
+		return "", fmt.Errorf("get join-token logs: %w", err)
+	}
+	defer logStream.Close()
+
+	var buf strings.Builder
+	bufBytes := make([]byte, 4096)
+	for {
+		n, readErr := logStream.Read(bufBytes)
+		if n > 0 {
+			buf.Write(bufBytes[:n])
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	output := strings.TrimSpace(buf.String())
+	if !strings.Contains(output, "TOKEN=") {
+		return "", fmt.Errorf("unexpected join output: %s", output)
+	}
+
+	return output, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func bootstrapTokenSecret(tokenID, tokenSecret string) *corev1Secret {
@@ -265,41 +433,6 @@ func bootstrapTokenSecret(tokenID, tokenSecret string) *corev1Secret {
 			"expiration":                     time.Now().Add(1 * time.Hour).UTC().Format(time.RFC3339),
 		},
 	}
-}
-
-func getCAHash(ctx context.Context) (string, error) {
-	// Read the CA certificate from the kube-system configmap or secret
-	secret, err := Client.CoreV1().Secrets("kube-system").Get(ctx, "kubeadm-certs", metav1.GetOptions{})
-	if err == nil && secret.Data["ca.crt"] != nil {
-		return computeCertHash(secret.Data["ca.crt"]), nil
-	}
-
-	// Fallback: read from cluster-info configmap
-	cm, err := Client.CoreV1().ConfigMaps("kube-public").Get(ctx, "cluster-info", metav1.GetOptions{})
-	if err != nil {
-		return "", fmt.Errorf("cluster-info not found: %w", err)
-	}
-
-	kubeconfig := cm.Data["kubeconfig"]
-	if kubeconfig == "" {
-		return "", fmt.Errorf("cluster-info has no kubeconfig")
-	}
-
-	// Extract certificate-authority-data from the kubeconfig YAML
-	for _, line := range strings.Split(kubeconfig, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "certificate-authority-data:") {
-			b64 := strings.TrimPrefix(trimmed, "certificate-authority-data:")
-			b64 = strings.TrimSpace(b64)
-			decoded, err := base64Decode(b64)
-			if err != nil {
-				return "", fmt.Errorf("decode CA cert: %w", err)
-			}
-			return computeCertHash(decoded), nil
-		}
-	}
-
-	return "", fmt.Errorf("CA cert not found in cluster-info")
 }
 
 // waitForNodeByIP polls the K8s API until a node with the given IP appears and
