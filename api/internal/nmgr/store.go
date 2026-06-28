@@ -2,6 +2,8 @@ package nmgr
 
 import (
 	"fmt"
+	"math"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -136,4 +138,22 @@ func (s *Store) AddNote(nodeID string, note Note) Note {
 	note.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	s.notes[nodeID] = append(s.notes[nodeID], note)
 	return note
+}
+
+// JitterMetrics applies small random changes to node metrics to
+// simulate real-time resource usage in mock mode.
+func (s *Store) JitterMetrics() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.nodes {
+		if s.nodes[i].Status != "Ready" {
+			continue
+		}
+		n := &s.nodes[i]
+		n.LoadAvg.One = math.Max(0, n.LoadAvg.One+(rand.Float64()-0.5)*0.3)
+		n.LoadAvg.Five = math.Max(0, n.LoadAvg.Five+(rand.Float64()-0.5)*0.2)
+		n.LoadAvg.Fifteen = math.Max(0, n.LoadAvg.Fifteen+(rand.Float64()-0.5)*0.1)
+		n.MemUsedGB = math.Max(0, math.Min(n.MemTotalGB, n.MemUsedGB+(rand.Float64()-0.5)*1.0))
+		n.DiskUsedGB = math.Max(0, math.Min(n.DiskTotalGB, n.DiskUsedGB+(rand.Float64()-0.5)*0.5))
+	}
 }

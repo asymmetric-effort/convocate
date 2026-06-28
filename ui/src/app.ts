@@ -1,4 +1,4 @@
-import { createElement, useState, useEffect, useRef } from "@asymmetric-effort/specifyjs";
+import { createElement, useState, useEffect } from "@asymmetric-effort/specifyjs";
 import { createRoot } from "@asymmetric-effort/specifyjs/dom";
 import { UnityDesktop, UnityApp, TextField, Button, Card, Modal } from "@asymmetric-effort/specifyjs/components";
 import { createRestClient, useRest } from "@asymmetric-effort/specifyjs/client";
@@ -100,36 +100,37 @@ function NodeManagerApplet() {
   const [provLocation, setProvLocation] = useState("");
   const [provError, setProvError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [localNodes, setLocalNodes] = useState<any[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
+  const [liveNodes, setLiveNodes] = useState<any[] | null>(null);
 
-  // Connect to nmgr/status event feed for real-time status updates
+  // Subscribe to nmgr/status SSE for real-time metric and status updates.
+  // Auth token is passed as query param since EventSource cannot send headers.
   useEffect(() => {
     const token = localStorage.getItem("accessToken");
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${location.host}/api/v1/events/nmgr/status`;
-    const ws = new WebSocket(url, token ? [token] : undefined);
-
-    ws.onmessage = (msg) => {
+    if (!token) return;
+    const es = new EventSource(`/api/v1/events/nmgr/status?token=${encodeURIComponent(token)}`);
+    es.onmessage = (msg) => {
       try {
         const evt = JSON.parse(msg.data);
-        if (evt.type === "node.ready" || evt.type === "node.error") {
-          // Remove from local pending list — refetch will pick up the real node
-          setLocalNodes((prev: any[]) => prev.filter((n: any) => n.id !== evt.payload.id && n.ip !== evt.payload.id));
+        if (evt.type === "node.metrics") {
+          setLiveNodes(evt.payload);
+        } else if (evt.type === "node.ready" || evt.type === "node.error" || evt.type === "node.pending") {
           refetch();
         }
       } catch { /* ignore parse errors */ }
     };
-
-    wsRef.current = ws;
-    return () => { ws.close(); };
+    return () => es.close();
   }, []);
 
   if (loading) return h("div", { style: { padding: "16px", color: "#888" } }, "Loading nodes...");
   if (error) return h("div", { style: { padding: "16px", color: "#e55" } }, `Error: ${error.message}`);
 
-  const apiNodes = data?.items || [];
-  const allNodes = [...apiNodes, ...localNodes];
+  // Merge live metrics (from SSE) over REST data for real-time updates.
+  const apiNodes: any[] = data?.items || [];
+  const nodes = apiNodes.map((n: any) => {
+    if (!liveNodes) return n;
+    const live = liveNodes.find((ln: any) => ln.id === n.id);
+    return live ? { ...n, ...live } : n;
+  });
 
   function resetForm() {
     setProvHost("");
@@ -166,18 +167,10 @@ function NodeManagerApplet() {
         setSubmitting(false);
         return;
       }
-      const node = await res.json();
-      // Optimistically add the pending node to the local list
-      setLocalNodes((prev: any[]) => [...prev, {
-        id: node.id || provHost.trim(),
-        ip: node.ip || provHost.trim(),
-        status: node.status || "Pending",
-        agents: 0,
-        memUsedGB: 0,
-        memTotalGB: 0,
-      }]);
       resetForm();
       setShowProvision(false);
+      // Refetch to pick up the pending node from the API
+      refetch();
     } catch {
       setProvError("Connection error");
       setSubmitting(false);
@@ -195,7 +188,7 @@ function NodeManagerApplet() {
   return h("div", { style: { padding: "8px", fontSize: "13px" } },
     // Toolbar
     h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" } },
-      h("div", { style: { color: "#888" } }, `${allNodes.length} nodes`),
+      h("div", { style: { color: "#888" } }, `${nodes.length} nodes`),
       h(Button, { variant: "primary", onClick: () => setShowProvision(true) }, "Provision Node"),
     ),
     // Node table
@@ -206,22 +199,28 @@ function NodeManagerApplet() {
           h("th", { style: { padding: "6px" } }, "IP"),
           h("th", { style: { padding: "6px" } }, "Status"),
           h("th", { style: { padding: "6px" } }, "Agents"),
+          h("th", { style: { padding: "6px" } }, "Load Avg"),
           h("th", { style: { padding: "6px" } }, "Memory"),
+          h("th", { style: { padding: "6px" } }, "Disk"),
           h("th", { style: { padding: "6px" } }, "Actions"),
         )
       ),
       h("tbody", null,
-        ...allNodes.map((n: any, i: number) =>
+        ...nodes.map((n: any, i: number) =>
           h("tr", { key: n.id, style: { borderBottom: "1px solid #333", background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent" } },
             h("td", { style: { padding: "6px", color: "#7eb8da", fontFamily: "monospace" } }, n.id),
             h("td", { style: { padding: "6px" } }, n.ip),
             h("td", { style: { padding: "6px", color: statusColor(n.status) } }, n.status),
             h("td", { style: { padding: "6px" } }, String(n.agents ?? 0)),
+            h("td", { style: { padding: "6px", fontFamily: "monospace" } },
+              n.loadAvg ? `${n.loadAvg.one?.toFixed(2)} / ${n.loadAvg.five?.toFixed(2)} / ${n.loadAvg.fifteen?.toFixed(2)}` : "--"),
             h("td", { style: { padding: "6px" } },
               n.memTotalGB ? `${n.memUsedGB?.toFixed(1)} / ${n.memTotalGB?.toFixed(0)} GB` : "--"),
             h("td", { style: { padding: "6px" } },
-              n.status === "Pending" ? h("span", { style: { color: "#888", fontSize: "11px" } }, "Provisioning...") :
-              h("span", { style: { display: "flex", gap: "4px" } },
+              n.diskTotalGB ? `${n.diskUsedGB?.toFixed(1)} / ${n.diskTotalGB?.toFixed(0)} GB` : "--"),
+            h("td", { style: { padding: "6px" } },
+              n.status === "Pending" ? h("div", { style: { color: "#888", fontSize: "11px" } }, "Provisioning...") :
+              h("div", { style: { display: "flex", gap: "4px" } },
                 h(Button, {
                   variant: "secondary" as const,
                   size: "sm" as const,

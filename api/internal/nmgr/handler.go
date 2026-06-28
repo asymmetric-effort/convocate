@@ -35,6 +35,51 @@ func Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/nmgr/node/{nodeId}/stop", middleware.Chain(http.HandlerFunc(h.stop), auth, middleware.RBAC("node-update")))
 	mux.Handle("GET /api/v1/nmgr/node/{nodeId}/note", middleware.Chain(http.HandlerFunc(h.listNotes), auth, middleware.RBAC("node-view")))
 	mux.Handle("POST /api/v1/nmgr/node/{nodeId}/note", middleware.Chain(http.HandlerFunc(h.addNote), auth, middleware.RBAC("node-update")))
+
+	go h.publishMetrics()
+}
+
+// publishMetrics periodically fetches node metrics and publishes them
+// to the nmgr/status event channel so connected clients get real-time
+// updates for memory, load average, and disk usage.
+func (h *Handler) publishMetrics() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		var nodes []types.Node
+
+		if h.useK8s {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			k8sNodes, err := k8s.ListNodes(ctx)
+			cancel()
+			if err != nil {
+				continue
+			}
+			nodes = k8sNodes
+		} else {
+			// Mock mode: jitter metrics to simulate real activity
+			h.store.JitterMetrics()
+			storeNodes := h.store.List()
+			for _, sn := range storeNodes {
+				nodes = append(nodes, types.Node{
+					ID:          sn.ID,
+					IP:          sn.IP,
+					Status:      types.NodeStatus(sn.Status),
+					Agents:      sn.Agents,
+					LoadAvg:     types.LoadAvg(sn.LoadAvg),
+					MemUsedGB:   sn.MemUsedGB,
+					MemTotalGB:  sn.MemTotalGB,
+					DiskUsedGB:  sn.DiskUsedGB,
+					DiskTotalGB: sn.DiskTotalGB,
+				})
+			}
+		}
+
+		if len(nodes) > 0 {
+			events.DefaultHub.Publish("nmgr/status", "node.metrics", nodes)
+		}
+	}
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +96,23 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		for i := range nodes {
 			count, _ := k8s.CountAgentPodsOnNode(ctx, nodes[i].ID)
 			nodes[i].Agents = count
+		}
+		// Merge in pending/provisioning nodes from the store that
+		// are not yet visible in K8s.
+		k8sIDs := make(map[string]bool, len(nodes))
+		for _, n := range nodes {
+			k8sIDs[n.ID] = true
+			k8sIDs[n.IP] = true
+		}
+		for _, sn := range h.store.List() {
+			if !k8sIDs[sn.ID] && !k8sIDs[sn.IP] {
+				nodes = append(nodes, types.Node{
+					ID:     sn.ID,
+					IP:     sn.IP,
+					Status: types.NodeStatus(sn.Status),
+					Agents: sn.Agents,
+				})
+			}
 		}
 		httputil.WriteJSON(w, http.StatusOK, httputil.Paginate(nodes, offset, limit))
 		return
@@ -83,14 +145,17 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.useK8s && req.Password != "" {
-		// Real provisioning: SSH to target, install K8s, join cluster
-		pendingNode := map[string]any{
-			"id":     req.Host,
-			"ip":     req.Host,
-			"status": "Pending",
-		}
-		events.DefaultHub.Publish("nmgr/status", "node.pending", pendingNode)
-		httputil.WriteJSON(w, http.StatusAccepted, pendingNode)
+		// Real provisioning: SSH to target, install K8s, join cluster.
+		// Store the pending node so it appears in list responses while
+		// provisioning is in progress.
+		node := h.store.Create(Node{
+			IP:       req.Host,
+			Location: req.Location,
+			Tags:     req.Tags,
+			Status:   "Pending",
+		})
+		events.DefaultHub.Publish("nmgr/status", "node.pending", node)
+		httputil.WriteJSON(w, http.StatusAccepted, node)
 
 		// Run provisioning asynchronously
 		go func() {
@@ -102,14 +167,17 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := k8s.ProvisionNode(context.Background(), provReq); err != nil {
 				log.Printf("[provision] ERROR: %v", err)
+				h.store.SetStatus(node.ID, "Error")
 				events.DefaultHub.Publish("nmgr/status", "node.error", map[string]string{
-					"id":    req.Host,
+					"id":    node.ID,
 					"error": err.Error(),
 				})
 				return
 			}
+			// Node is now in K8s — remove from pending store
+			h.store.Delete(node.ID)
 			events.DefaultHub.Publish("nmgr/status", "node.ready", map[string]string{
-				"id":     req.Host,
+				"id":     node.ID,
 				"status": "Ready",
 			})
 		}()

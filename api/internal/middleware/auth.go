@@ -23,6 +23,11 @@ var mockPrincipal = &httputil.Principal{
 func Auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
+		// Fallback: accept ?token= query param for EventSource/WebSocket
+		// (browser APIs cannot send custom headers on these connections).
+		if (!strings.HasPrefix(auth, "Bearer ") || len(auth) <= 7) && r.URL.Query().Get("token") != "" {
+			auth = "Bearer " + r.URL.Query().Get("token")
+		}
 		if !strings.HasPrefix(auth, "Bearer ") || len(auth) <= 7 {
 			httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid bearer token")
 			return
