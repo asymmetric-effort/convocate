@@ -306,6 +306,252 @@ test.describe("UI Post-Deployment Verification", () => {
     expect(text).toContain("New Board");
   });
 
+  // -- Node Manager: column correctness, provisioning, and metrics ------------
+
+  test("Node Manager table has correct column headers", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    const icon = page.locator("img[alt='Node Manager']");
+    const box = await icon.boundingBox();
+    if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(2000);
+
+    // Collect all column headers from the node table
+    const headers = page.locator("table thead th");
+    const headerCount = await headers.count();
+    const headerTexts: string[] = [];
+    for (let i = 0; i < headerCount; i++) {
+      headerTexts.push((await headers.nth(i).textContent() || "").trim());
+    }
+
+    // Required columns — must appear in exact form
+    expect(headerTexts).toContain("Name");
+    expect(headerTexts).toContain("IP");
+    expect(headerTexts).toContain("Status");
+    expect(headerTexts).toContain("Load Avg");
+    expect(headerTexts).toContain("Memory");
+    expect(headerTexts).toContain("Disk");
+    expect(headerTexts).toContain("Actions");
+  });
+
+  test("Node Manager node rows display valid metric values or 'no data'", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    const icon = page.locator("img[alt='Node Manager']");
+    const box = await icon.boundingBox();
+    if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    // Wait for initial load + one SSE metric update cycle (3s)
+    await page.waitForTimeout(5000);
+
+    const rows = page.locator("table tbody tr");
+    const rowCount = await rows.count();
+    expect(rowCount).toBeGreaterThan(0);
+
+    for (let r = 0; r < rowCount; r++) {
+      const cells = rows.nth(r).locator("td");
+      const cellCount = await cells.count();
+
+      for (let c = 0; c < cellCount; c++) {
+        const text = (await cells.nth(c).textContent() || "").trim();
+
+        // No cell should ever display raw -1 values from missing metrics
+        expect(text).not.toMatch(/-1\.?\d*/);
+
+        // No cell should display "undefined" or "NaN"
+        expect(text).not.toContain("undefined");
+        expect(text).not.toContain("NaN");
+      }
+    }
+  });
+
+  test("Node Manager load average column shows valid format", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    const icon = page.locator("img[alt='Node Manager']");
+    const box = await icon.boundingBox();
+    if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(5000);
+
+    // Find the Load Avg column index from headers
+    const headers = page.locator("table thead th");
+    const headerCount = await headers.count();
+    let loadCol = -1;
+    for (let i = 0; i < headerCount; i++) {
+      const h = (await headers.nth(i).textContent() || "").trim();
+      if (h === "Load Avg") { loadCol = i; break; }
+    }
+    expect(loadCol).toBeGreaterThan(-1);
+
+    // Each row's load avg cell must be either "no data" or "X.XX / X.XX / X.XX"
+    const rows = page.locator("table tbody tr");
+    const rowCount = await rows.count();
+    for (let r = 0; r < rowCount; r++) {
+      const cell = rows.nth(r).locator("td").nth(loadCol);
+      const text = (await cell.textContent() || "").trim();
+      const valid = text === "no data" || /^\d+\.\d+ \/ \d+\.\d+ \/ \d+\.\d+$/.test(text);
+      expect(valid).toBe(true);
+    }
+  });
+
+  test("Node Manager memory column shows valid format", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    const icon = page.locator("img[alt='Node Manager']");
+    const box = await icon.boundingBox();
+    if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(5000);
+
+    // Find the Memory column index
+    const headers = page.locator("table thead th");
+    const headerCount = await headers.count();
+    let memCol = -1;
+    for (let i = 0; i < headerCount; i++) {
+      const h = (await headers.nth(i).textContent() || "").trim();
+      if (h === "Memory") { memCol = i; break; }
+    }
+    expect(memCol).toBeGreaterThan(-1);
+
+    // Each row's memory cell must be "no data" or "X.X / XX GB"
+    const rows = page.locator("table tbody tr");
+    const rowCount = await rows.count();
+    for (let r = 0; r < rowCount; r++) {
+      const cell = rows.nth(r).locator("td").nth(memCol);
+      const text = (await cell.textContent() || "").trim();
+      const valid = text === "no data" || /^\d+\.\d+ \/ \d+ GB$/.test(text);
+      expect(valid).toBe(true);
+    }
+  });
+
+  test("Node Manager disk column shows valid format", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    const icon = page.locator("img[alt='Node Manager']");
+    const box = await icon.boundingBox();
+    if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(5000);
+
+    // Find the Disk column index
+    const headers = page.locator("table thead th");
+    const headerCount = await headers.count();
+    let diskCol = -1;
+    for (let i = 0; i < headerCount; i++) {
+      const h = (await headers.nth(i).textContent() || "").trim();
+      if (h === "Disk") { diskCol = i; break; }
+    }
+    expect(diskCol).toBeGreaterThan(-1);
+
+    // Each row's disk cell must be "no data" or "X.X / XX GB"
+    const rows = page.locator("table tbody tr");
+    const rowCount = await rows.count();
+    for (let r = 0; r < rowCount; r++) {
+      const cell = rows.nth(r).locator("td").nth(diskCol);
+      const text = (await cell.textContent() || "").trim();
+      const valid = text === "no data" || /^\d+\.\d+ \/ \d+ GB$/.test(text);
+      expect(valid).toBe(true);
+    }
+  });
+
+  test("Provision dialog validates required fields", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    const icon = page.locator("img[alt='Node Manager']");
+    const box = await icon.boundingBox();
+    if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(2000);
+
+    // Open provision dialog
+    await page.locator("button").filter({ hasText: /Provision Node/i }).click();
+    await page.waitForTimeout(500);
+
+    // Submit with empty fields — should show validation error
+    await page.locator("button").filter({ hasText: /^Provision$/i }).click();
+    await page.waitForTimeout(500);
+    const text = await page.textContent("body");
+    expect(text).toContain("Host is required");
+  });
+
+  test("Provision form submission creates a pending node in list", async ({ page }) => {
+    await page.goto(APP);
+    await page.waitForSelector("input", { timeout: 10000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+    await page.waitForTimeout(2000);
+
+    const icon = page.locator("img[alt='Node Manager']");
+    const box = await icon.boundingBox();
+    if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(2000);
+
+    // Count nodes before provisioning
+    const countBefore = await page.locator("table tbody tr").count();
+
+    // Open provision dialog and fill form
+    await page.locator("button").filter({ hasText: /Provision Node/i }).click();
+    await page.waitForTimeout(1000);
+
+    // Fill Host and SSH User in the modal form inputs
+    const allInputs = page.locator("input");
+    const inputCount = await allInputs.count();
+    await allInputs.nth(inputCount - 4).fill("10.99.99.99");
+    await allInputs.nth(inputCount - 3).fill("testuser");
+
+    await page.locator("button").filter({ hasText: /^Provision$/i }).click();
+    await page.waitForTimeout(3000);
+
+    // Node list should have one more row with Pending status
+    const countAfter = await page.locator("table tbody tr").count();
+    expect(countAfter).toBeGreaterThan(countBefore);
+    const bodyText = await page.textContent("body");
+    expect(bodyText).toContain("Pending");
+  });
+
+  // -- End Node Manager tests -------------------------------------------------
+
   test("Code IDE opens and renders editor", async ({ page }) => {
     await page.goto(APP);
     await page.waitForSelector("input", { timeout: 10000 });
