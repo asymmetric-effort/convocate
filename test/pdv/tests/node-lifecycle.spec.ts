@@ -34,12 +34,17 @@ function ssh(cmd: string, timeout = 60_000): string {
 // ---------------------------------------------------------------------------
 async function login(page: import("@playwright/test").Page) {
   await page.goto(APP);
-  await page.waitForSelector("input", { timeout: 10000 });
-  const inputs = page.locator("input");
-  await inputs.nth(0).fill("admin");
-  await inputs.nth(1).fill("test");
-  await inputs.nth(2).fill("123456");
-  await page.locator("button").filter({ hasText: /sign in/i }).click();
+  // If already logged in (token in localStorage), the desktop renders directly
+  try {
+    await page.waitForSelector("input", { timeout: 5000 });
+    const inputs = page.locator("input");
+    await inputs.nth(0).fill("admin");
+    await inputs.nth(1).fill("test");
+    await inputs.nth(2).fill("123456");
+    await page.locator("button").filter({ hasText: /sign in/i }).click();
+  } catch {
+    // Already logged in — desktop is visible
+  }
   await page.waitForSelector("[class*='dock'], [class*='unity-desktop']", {
     timeout: 10000,
   });
@@ -265,11 +270,9 @@ test.describe("Node Manager — full provision/cordon/delete lifecycle", () => {
     // ──────────────────────────────────────────────────────────────────────
     console.log("[step 7] testing Delete button...");
 
-    // Reload to get fresh UI with Uncordon button visible
-    await page.reload();
-    await login(page);
-    await openNodeManager(page);
-    await page.waitForTimeout(2000);
+    // The UI should still show Node Manager from step 6.
+    // Wait for the node list to refresh after cordon.
+    await page.waitForTimeout(3000);
 
     // Find and click Delete for convocate07
     const deleteBtn = page.locator("tr", { hasText: NODE_NAME }).locator("button", { hasText: /Delete/i });
