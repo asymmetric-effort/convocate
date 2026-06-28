@@ -73,7 +73,9 @@ func (s *Store) Create(n Node) Node {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n.ID = fmt.Sprintf("cnn-%04d", len(s.nodes)+1)
-	n.Status = "Ready"
+	if n.Status == "" {
+		n.Status = "Pending"
+	}
 	s.nodes = append(s.nodes, n)
 	return n
 }

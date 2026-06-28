@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/db"
+	"github.com/asymmetric-effort/convocate/internal/events"
 	"github.com/asymmetric-effort/convocate/internal/httputil"
 	"github.com/asymmetric-effort/convocate/internal/k8s"
 	"github.com/asymmetric-effort/convocate/internal/middleware"
@@ -14,8 +15,8 @@ import (
 )
 
 type Handler struct {
-	store    *Store
-	useK8s   bool
+	store  *Store
+	useK8s bool
 }
 
 func Register(mux *http.ServeMux) {
@@ -72,14 +73,24 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.useK8s && req.Host != "" && req.Password != "" {
+	if req.Host == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "host is required")
+		return
+	}
+	if req.User == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "user is required")
+		return
+	}
+
+	if h.useK8s && req.Password != "" {
 		// Real provisioning: SSH to target, install K8s, join cluster
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		httputil.WriteJSON(w, http.StatusAccepted, map[string]string{
-			"status": "provisioning",
-			"host":   req.Host,
-		})
+		pendingNode := map[string]any{
+			"id":     req.Host,
+			"ip":     req.Host,
+			"status": "Pending",
+		}
+		events.DefaultHub.Publish("nmgr/status", "node.pending", pendingNode)
+		httputil.WriteJSON(w, http.StatusAccepted, pendingNode)
 
 		// Run provisioning asynchronously
 		go func() {
@@ -91,12 +102,32 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := k8s.ProvisionNode(context.Background(), provReq); err != nil {
 				log.Printf("[provision] ERROR: %v", err)
+				events.DefaultHub.Publish("nmgr/status", "node.error", map[string]string{
+					"id":    req.Host,
+					"error": err.Error(),
+				})
+				return
 			}
+			events.DefaultHub.Publish("nmgr/status", "node.ready", map[string]string{
+				"id":     req.Host,
+				"status": "Ready",
+			})
 		}()
 		return
 	}
 
 	node := h.store.Create(Node{IP: req.Host, Location: req.Location, Tags: req.Tags})
+	events.DefaultHub.Publish("nmgr/status", "node.pending", node)
+
+	// Mock mode: transition to Ready after a short delay
+	go func() {
+		time.Sleep(3 * time.Second)
+		if h.store.SetStatus(node.ID, "Ready") {
+			node.Status = "Ready"
+			events.DefaultHub.Publish("nmgr/status", "node.ready", node)
+		}
+	}()
+
 	httputil.WriteJSON(w, http.StatusAccepted, node)
 }
 
