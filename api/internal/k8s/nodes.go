@@ -207,18 +207,16 @@ func k8sNodeToNode(n *corev1.Node, metrics map[string]metricsUsage) types.Node {
 		tags = append(tags, k+"="+v)
 	}
 
-	cpuCap := n.Status.Capacity.Cpu().AsApproximateFloat64()
 	memCapBytes := n.Status.Capacity.Memory().Value()
-	memAllocBytes := n.Status.Allocatable.Memory().Value()
-
 	diskCapBytes := n.Status.Capacity.StorageEphemeral().Value()
-	diskAllocBytes := n.Status.Allocatable.StorageEphemeral().Value()
-
-	// Use live metrics from the Metrics API when available;
-	// fall back to capacity-based estimates otherwise.
-	var loadAvg types.LoadAvg
-	memUsedGB := float64(memCapBytes-memAllocBytes) / (1024 * 1024 * 1024)
 	memTotalGB := float64(memCapBytes) / (1024 * 1024 * 1024)
+	diskTotalGB := float64(diskCapBytes) / (1024 * 1024 * 1024)
+
+	// Use live metrics from the Metrics API only.
+	// When unavailable, use -1 sentinel so the UI displays "no data".
+	loadAvg := types.LoadAvg{One: -1, Five: -1, Fifteen: -1}
+	memUsedGB := -1.0
+	diskUsedGB := -1.0
 
 	if metrics != nil {
 		if m, ok := metrics[n.Name]; ok {
@@ -227,9 +225,6 @@ func k8sNodeToNode(n *corev1.Node, metrics map[string]metricsUsage) types.Node {
 				memUsedGB = float64(m.MemBytes) / (1024 * 1024 * 1024)
 			}
 		}
-	}
-	if loadAvg.One == 0 && cpuCap > 0 {
-		loadAvg = types.LoadAvg{One: cpuCap * 0.3, Five: cpuCap * 0.25, Fifteen: cpuCap * 0.2}
 	}
 
 	return types.Node{
@@ -240,8 +235,8 @@ func k8sNodeToNode(n *corev1.Node, metrics map[string]metricsUsage) types.Node {
 		LoadAvg:     loadAvg,
 		MemUsedGB:   memUsedGB,
 		MemTotalGB:  memTotalGB,
-		DiskUsedGB:  float64(diskCapBytes-diskAllocBytes) / (1024 * 1024 * 1024),
-		DiskTotalGB: float64(diskCapBytes) / (1024 * 1024 * 1024),
+		DiskUsedGB:  diskUsedGB,
+		DiskTotalGB: diskTotalGB,
 		Tags:        tags,
 	}
 }
