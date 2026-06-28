@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 
 const APP = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
 const SVR00 = "192.168.3.159";
@@ -15,16 +15,14 @@ const NODE_LOCATION = "test-machine";
 // SSH helper: run a command on svr00 via SSH
 // ---------------------------------------------------------------------------
 function ssh(cmd: string, timeout = 60_000): string {
-  const sshCmd = [
-    "ssh",
+  return execFileSync("ssh", [
     "-o", "StrictHostKeyChecking=no",
     "-o", "UserKnownHostsFile=/dev/null",
     "-o", "ConnectTimeout=10",
     "-i", SSH_KEY,
     `${SVR00_USER}@${SVR00}`,
     cmd,
-  ].join(" ");
-  return execSync(sshCmd, {
+  ], {
     timeout,
     encoding: "utf-8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -100,6 +98,14 @@ test.describe("Node Manager — full provision/cordon/delete lifecycle", () => {
     );
     expect(vmStatus).toContain("running");
     console.log("[step 1] VM is running");
+
+    // Enable sudo for the convocate user via vagrant user (has sudo)
+    console.log("[step 1b] enabling sudo for convocate user...");
+    ssh(
+      `cd /home/${SVR00_USER}/git/svr00 && vagrant ssh ${NODE_NAME} -c "sudo sh -c 'echo \\\"convocate ALL=(ALL) NOPASSWD:ALL\\\" > /etc/sudoers.d/convocate && chmod 0440 /etc/sudoers.d/convocate'"`,
+      30_000
+    );
+    console.log("[step 1b] sudo configured");
 
     // ──────────────────────────────────────────────────────────────────────
     // Step 2: Verify convocate07 does NOT appear in Node Manager

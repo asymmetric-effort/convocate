@@ -7,152 +7,220 @@
 # Test info
 
 - Name: node-lifecycle.spec.ts >> Node Manager — full provision/cordon/delete lifecycle >> provision → verify → cordon → delete lifecycle
-- Location: tests/node-lifecycle.spec.ts:87:7
+- Location: tests/node-lifecycle.spec.ts:85:7
 
 # Error details
 
 ```
-Error: Command failed: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -i /home/claude/.ssh/id_ed25519 samcaldwell@192.168.3.159 sudo su -l samcaldwell -c 'cd ~/git/svr00 && vagrant up convocate07 --provision'
-Warning: Permanently added '192.168.3.159' (ED25519) to the list of known hosts.
-bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
-bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
-A Vagrant environment or target machine is required to run this
-command. Run `vagrant init` to create a new Vagrant environment. Or,
-get an ID of a target machine from `vagrant global-status` to run
-this command on. A final option is to change to a directory with a
-Vagrantfile and to try again.
+Error: expect(received).toBe(expected) // Object.is equality
 
+Expected: true
+Received: false
 ```
 
 # Test source
 
 ```ts
-  1   | import { test, expect } from "@playwright/test";
-  2   | import { execSync } from "child_process";
-  3   | 
-  4   | const APP = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
-  5   | const SVR00 = "192.168.3.159";
-  6   | const SVR00_USER = "samcaldwell";
-  7   | const SSH_KEY = process.env.SSH_KEY || `${process.env.HOME}/.ssh/id_ed25519`;
-  8   | const NODE_IP = "192.168.56.17";
-  9   | const NODE_NAME = "convocate07";
-  10  | const NODE_USER = "convocate";
-  11  | const NODE_PASS = "Elocin3125!";
-  12  | const NODE_LOCATION = "test-machine";
-  13  | 
-  14  | // ---------------------------------------------------------------------------
-  15  | // SSH helper: run a command on svr00 via SSH
-  16  | // ---------------------------------------------------------------------------
-  17  | function ssh(cmd: string, timeout = 60_000): string {
-  18  |   const sshCmd = [
-  19  |     "ssh",
-  20  |     "-o", "StrictHostKeyChecking=no",
-  21  |     "-o", "UserKnownHostsFile=/dev/null",
-  22  |     "-o", "ConnectTimeout=10",
-  23  |     "-i", SSH_KEY,
-  24  |     `${SVR00_USER}@${SVR00}`,
-  25  |     cmd,
-  26  |   ].join(" ");
-> 27  |   return execSync(sshCmd, {
-      |                  ^ Error: Command failed: ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -i /home/claude/.ssh/id_ed25519 samcaldwell@192.168.3.159 sudo su -l samcaldwell -c 'cd ~/git/svr00 && vagrant up convocate07 --provision'
-  28  |     timeout,
-  29  |     encoding: "utf-8",
-  30  |     stdio: ["pipe", "pipe", "pipe"],
-  31  |   }).trim();
-  32  | }
-  33  | 
-  34  | // ---------------------------------------------------------------------------
-  35  | // Login helper
-  36  | // ---------------------------------------------------------------------------
-  37  | async function login(page: import("@playwright/test").Page) {
-  38  |   await page.goto(APP);
-  39  |   await page.waitForSelector("input", { timeout: 10000 });
-  40  |   const inputs = page.locator("input");
-  41  |   await inputs.nth(0).fill("admin");
-  42  |   await inputs.nth(1).fill("test");
-  43  |   await inputs.nth(2).fill("123456");
-  44  |   await page.locator("button").filter({ hasText: /sign in/i }).click();
-  45  |   await page.waitForSelector("[class*='dock'], [class*='unity-desktop']", {
-  46  |     timeout: 10000,
-  47  |   });
-  48  | }
-  49  | 
-  50  | // ---------------------------------------------------------------------------
-  51  | // Open Node Manager
-  52  | // ---------------------------------------------------------------------------
-  53  | async function openNodeManager(page: import("@playwright/test").Page) {
-  54  |   const icon = page.locator("img[alt='Node Manager']");
-  55  |   const box = await icon.boundingBox();
-  56  |   if (box)
-  57  |     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  58  |   await page.waitForTimeout(3000);
-  59  | }
-  60  | 
-  61  | // ---------------------------------------------------------------------------
-  62  | // Test
-  63  | // ---------------------------------------------------------------------------
-  64  | test.describe("Node Manager — full provision/cordon/delete lifecycle", () => {
-  65  |   // Increase overall test timeout: provisioning a real node takes minutes
-  66  |   test.setTimeout(600_000); // 10 minutes
-  67  | 
-  68  |   // Cleanup: always destroy convocate07 on pass or fail
-  69  |   test.afterAll(() => {
-  70  |     try {
-  71  |       // Remove from K8s if still present (ignore errors)
-  72  |       try {
-  73  |         ssh(`kubectl delete node ${NODE_NAME} --ignore-not-found=true`, 30_000);
-  74  |       } catch {
-  75  |         /* already gone */
-  76  |       }
-  77  |       // Destroy the vagrant VM
-  78  |       ssh(
-  79  |         `sudo su -l ${SVR00_USER} -c 'cd ~/git/svr00 && vagrant destroy ${NODE_NAME} --force'`,
-  80  |         120_000
-  81  |       );
-  82  |     } catch (e) {
-  83  |       console.error("cleanup failed:", e);
-  84  |     }
-  85  |   });
-  86  | 
-  87  |   test("provision → verify → cordon → delete lifecycle", async ({ page, request }) => {
-  88  |     // ──────────────────────────────────────────────────────────────────────
-  89  |     // Step 1: Provision the VM via Vagrant
-  90  |     // ──────────────────────────────────────────────────────────────────────
-  91  |     console.log("[step 1] provisioning convocate07 VM via vagrant...");
-  92  |     ssh(
-  93  |       `sudo su -l ${SVR00_USER} -c 'cd ~/git/svr00 && vagrant up ${NODE_NAME} --provision'`,
-  94  |       300_000 // 5 minutes
-  95  |     );
-  96  | 
-  97  |     // Verify the VM is running
-  98  |     const vmStatus = ssh(
-  99  |       `sudo su -l ${SVR00_USER} -c 'cd ~/git/svr00 && vagrant status ${NODE_NAME}' | grep ${NODE_NAME}`
-  100 |     );
-  101 |     expect(vmStatus).toContain("running");
-  102 |     console.log("[step 1] VM is running");
-  103 | 
-  104 |     // ──────────────────────────────────────────────────────────────────────
-  105 |     // Step 2: Verify convocate07 does NOT appear in Node Manager
-  106 |     // ──────────────────────────────────────────────────────────────────────
-  107 |     console.log("[step 2] verifying convocate07 is NOT in node list...");
-  108 |     await login(page);
-  109 |     await openNodeManager(page);
-  110 | 
-  111 |     let bodyText = await page.textContent("body");
-  112 |     expect(bodyText).not.toContain(NODE_NAME);
-  113 |     console.log("[step 2] confirmed: convocate07 not in node list");
-  114 | 
-  115 |     // ──────────────────────────────────────────────────────────────────────
-  116 |     // Step 3: Use UI to provision the node
-  117 |     // ──────────────────────────────────────────────────────────────────────
-  118 |     console.log("[step 3] clicking Provision Node button...");
-  119 |     await page.locator("button").filter({ hasText: /Provision Node/i }).click();
-  120 |     await page.waitForTimeout(1000);
-  121 | 
-  122 |     // Fill in the provision form
-  123 |     // Find the modal inputs by their labels
-  124 |     const hostInput = page.locator("input").filter({ has: page.locator("..").locator("text=Host") }).first();
-  125 |     const userInput = page.locator("input").filter({ has: page.locator("..").locator("text=SSH User") }).first();
-  126 |     const passInput = page.locator("input[type='password']").last();
-  127 |     const locationInput = page.locator("input").filter({ has: page.locator("..").locator("text=Location") }).first();
+  99  |     expect(vmStatus).toContain("running");
+  100 |     console.log("[step 1] VM is running");
+  101 | 
+  102 |     // Enable sudo for the convocate user via vagrant user (has sudo)
+  103 |     console.log("[step 1b] enabling sudo for convocate user...");
+  104 |     ssh(
+  105 |       `cd /home/${SVR00_USER}/git/svr00 && vagrant ssh ${NODE_NAME} -c "sudo sh -c 'echo \\\"convocate ALL=(ALL) NOPASSWD:ALL\\\" > /etc/sudoers.d/convocate && chmod 0440 /etc/sudoers.d/convocate'"`,
+  106 |       30_000
+  107 |     );
+  108 |     console.log("[step 1b] sudo configured");
+  109 | 
+  110 |     // ──────────────────────────────────────────────────────────────────────
+  111 |     // Step 2: Verify convocate07 does NOT appear in Node Manager
+  112 |     // ──────────────────────────────────────────────────────────────────────
+  113 |     console.log("[step 2] verifying convocate07 is NOT in node list...");
+  114 |     await login(page);
+  115 |     await openNodeManager(page);
+  116 | 
+  117 |     let bodyText = await page.textContent("body");
+  118 |     expect(bodyText).not.toContain(NODE_NAME);
+  119 |     console.log("[step 2] confirmed: convocate07 not in node list");
+  120 | 
+  121 |     // ──────────────────────────────────────────────────────────────────────
+  122 |     // Step 3: Use UI to provision the node
+  123 |     // ──────────────────────────────────────────────────────────────────────
+  124 |     console.log("[step 3] clicking Provision Node button...");
+  125 |     await page.locator("button").filter({ hasText: /Provision Node/i }).click();
+  126 |     await page.waitForTimeout(1000);
+  127 | 
+  128 |     // Fill in the provision form
+  129 |     // Find the modal inputs by their labels
+  130 |     const hostInput = page.locator("input").filter({ has: page.locator("..").locator("text=Host") }).first();
+  131 |     const userInput = page.locator("input").filter({ has: page.locator("..").locator("text=SSH User") }).first();
+  132 |     const passInput = page.locator("input[type='password']").last();
+  133 |     const locationInput = page.locator("input").filter({ has: page.locator("..").locator("text=Location") }).first();
+  134 | 
+  135 |     // Fall back to filling by order if label-based selection doesn't work
+  136 |     const allModalInputs = page.locator("[role='dialog'] input, [class*='modal'] input");
+  137 |     const modalInputCount = await allModalInputs.count();
+  138 | 
+  139 |     if (modalInputCount >= 4) {
+  140 |       await allModalInputs.nth(0).fill(NODE_IP);
+  141 |       await allModalInputs.nth(1).fill(NODE_USER);
+  142 |       await allModalInputs.nth(2).fill(NODE_PASS);
+  143 |       await allModalInputs.nth(3).fill(NODE_LOCATION);
+  144 |     } else {
+  145 |       // Try with all visible inputs in the page
+  146 |       const pageInputs = page.locator("input:visible");
+  147 |       const count = await pageInputs.count();
+  148 |       // The provision dialog inputs come after the login inputs
+  149 |       // Find inputs that are empty (not the login form)
+  150 |       for (let i = 0; i < count; i++) {
+  151 |         const val = await pageInputs.nth(i).inputValue();
+  152 |         if (val === "") {
+  153 |           const placeholder = await pageInputs.nth(i).getAttribute("placeholder");
+  154 |           if (placeholder?.includes("192.168")) {
+  155 |             await pageInputs.nth(i).fill(NODE_IP);
+  156 |           } else if (placeholder?.includes("root")) {
+  157 |             await pageInputs.nth(i).fill(NODE_USER);
+  158 |           } else if (placeholder?.includes("password")) {
+  159 |             await pageInputs.nth(i).fill(NODE_PASS);
+  160 |           } else if (placeholder?.includes("rack") || placeholder?.includes("east")) {
+  161 |             await pageInputs.nth(i).fill(NODE_LOCATION);
+  162 |           }
+  163 |         }
+  164 |       }
+  165 |     }
+  166 | 
+  167 |     // Click the Provision button in the dialog
+  168 |     await page.locator("button").filter({ hasText: /^Provision$/i }).click();
+  169 |     console.log("[step 3] provision request submitted");
+  170 | 
+  171 |     // ──────────────────────────────────────────────────────────────────────
+  172 |     // Step 4: Wait for convocate07 to appear in Node Manager as Ready
+  173 |     // ──────────────────────────────────────────────────────────────────────
+  174 |     console.log("[step 4] waiting for convocate07 to come online...");
+  175 | 
+  176 |     // Poll the API directly for up to 5 minutes
+  177 |     let nodeFound = false;
+  178 |     const deadline = Date.now() + 300_000;
+  179 |     while (Date.now() < deadline) {
+  180 |       const res = await request.get(`${APP}/api/v1/nmgr/node?limit=100`, {
+  181 |         headers: { Authorization: "Bearer mock-token" },
+  182 |       });
+  183 |       const body = await res.json();
+  184 |       const node = (body.items || []).find(
+  185 |         (n: { id: string }) => n.id === NODE_NAME
+  186 |       );
+  187 |       if (node && node.status === "Ready") {
+  188 |         nodeFound = true;
+  189 |         // Verify memory and disk
+  190 |         expect(node.memTotalGB).toBeGreaterThan(1); // 2 GB VM
+  191 |         expect(node.diskTotalGB).toBeGreaterThan(5); // 20 GB disk
+  192 |         console.log(
+  193 |           `[step 4] ${NODE_NAME} is Ready — mem: ${node.memTotalGB.toFixed(1)} GB, disk: ${node.diskTotalGB.toFixed(1)} GB`
+  194 |         );
+  195 |         break;
+  196 |       }
+  197 |       await page.waitForTimeout(10_000);
+  198 |     }
+> 199 |     expect(nodeFound).toBe(true);
+      |                       ^ Error: expect(received).toBe(expected) // Object.is equality
+  200 | 
+  201 |     // Refresh the UI and verify the node appears
+  202 |     await page.reload();
+  203 |     await login(page);
+  204 |     await openNodeManager(page);
+  205 |     bodyText = await page.textContent("body");
+  206 |     expect(bodyText).toContain(NODE_NAME);
+  207 | 
+  208 |     // ──────────────────────────────────────────────────────────────────────
+  209 |     // Step 5: Verify via kubectl that convocate07 is properly configured
+  210 |     // ──────────────────────────────────────────────────────────────────────
+  211 |     console.log("[step 5] verifying node via kubectl...");
+  212 | 
+  213 |     const kubectlNode = ssh(`kubectl get node ${NODE_NAME} -o wide`);
+  214 |     expect(kubectlNode).toContain(NODE_NAME);
+  215 |     expect(kubectlNode).toContain("Ready");
+  216 |     expect(kubectlNode).toContain(NODE_IP);
+  217 | 
+  218 |     // Check node labels
+  219 |     const labels = ssh(
+  220 |       `kubectl get node ${NODE_NAME} -o jsonpath='{.metadata.labels}'`
+  221 |     );
+  222 |     expect(labels).toContain("kubernetes.io/os");
+  223 | 
+  224 |     // Verify kubelet is running on the node
+  225 |     const kubeletCheck = ssh(
+  226 |       `kubectl get node ${NODE_NAME} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'`
+  227 |     );
+  228 |     expect(kubeletCheck).toBe("True");
+  229 |     console.log("[step 5] kubectl verification passed");
+  230 | 
+  231 |     // ──────────────────────────────────────────────────────────────────────
+  232 |     // Step 6: Verify the Cordon button works
+  233 |     // ──────────────────────────────────────────────────────────────────────
+  234 |     console.log("[step 6] testing Cordon button...");
+  235 | 
+  236 |     // Find the convocate07 row and click its Cordon button
+  237 |     const cordonBtn = page.locator("tr", { hasText: NODE_NAME }).locator("button", { hasText: /Cordon/i });
+  238 |     await cordonBtn.click();
+  239 |     await page.waitForTimeout(500);
+  240 | 
+  241 |     // Confirm the cordon action in the dialog
+  242 |     await page.locator("button").filter({ hasText: /Confirm/i }).click();
+  243 |     await page.waitForTimeout(3000);
+  244 | 
+  245 |     // Verify via kubectl
+  246 |     const cordonStatus = ssh(
+  247 |       `kubectl get node ${NODE_NAME} -o jsonpath='{.spec.unschedulable}'`
+  248 |     );
+  249 |     expect(cordonStatus).toBe("true");
+  250 | 
+  251 |     // Verify in the API response
+  252 |     const cordonRes = await request.get(`${APP}/api/v1/nmgr/node?limit=100`, {
+  253 |       headers: { Authorization: "Bearer mock-token" },
+  254 |     });
+  255 |     const cordonBody = await cordonRes.json();
+  256 |     const cordonedNode = (cordonBody.items || []).find(
+  257 |       (n: { id: string }) => n.id === NODE_NAME
+  258 |     );
+  259 |     expect(cordonedNode.status).toBe("SchedulingDisabled");
+  260 |     console.log("[step 6] Cordon verified");
+  261 | 
+  262 |     // ──────────────────────────────────────────────────────────────────────
+  263 |     // Step 7: Verify the Delete button removes convocate07 from K8s
+  264 |     //         but the VM remains running
+  265 |     // ──────────────────────────────────────────────────────────────────────
+  266 |     console.log("[step 7] testing Delete button...");
+  267 | 
+  268 |     // Reload to get fresh UI with Uncordon button visible
+  269 |     await page.reload();
+  270 |     await login(page);
+  271 |     await openNodeManager(page);
+  272 |     await page.waitForTimeout(2000);
+  273 | 
+  274 |     // Find and click Delete for convocate07
+  275 |     const deleteBtn = page.locator("tr", { hasText: NODE_NAME }).locator("button", { hasText: /Delete/i });
+  276 |     await deleteBtn.click();
+  277 |     await page.waitForTimeout(500);
+  278 | 
+  279 |     // Confirm the delete action
+  280 |     await page.locator("button").filter({ hasText: /Confirm/i }).click();
+  281 |     await page.waitForTimeout(10_000); // Wait for drain + delete
+  282 | 
+  283 |     // Verify node is gone from K8s
+  284 |     const nodesAfterDelete = ssh("kubectl get nodes -o name");
+  285 |     expect(nodesAfterDelete).not.toContain(NODE_NAME);
+  286 | 
+  287 |     // Verify the VM is still running (SSH should still work)
+  288 |     const vmStatusAfter = ssh(
+  289 |       `cd /home/${SVR00_USER}/git/svr00 && vagrant status ${NODE_NAME} | grep ${NODE_NAME}`
+  290 |     );
+  291 |     expect(vmStatusAfter).toContain("running");
+  292 |     console.log("[step 7] Delete verified — node removed from K8s, VM still running");
+  293 | 
+  294 |     // ──────────────────────────────────────────────────────────────────────
+  295 |     // Step 8: Cleanup is handled by afterAll
+  296 |     // ──────────────────────────────────────────────────────────────────────
+  297 |     console.log("[step 8] test complete — cleanup will run in afterAll");
+  298 |   });
+  299 | });
 ```

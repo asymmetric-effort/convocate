@@ -24,14 +24,18 @@ func sshExec(host, user, password, script string) error {
 	}
 	hostOnly := strings.Split(addr, ":")[0]
 
+	// Pass the entire script as a single remote command.
+	// exec.Command handles argument quoting — each element is one argv entry,
+	// so the script (including spaces, pipes, etc.) is a single argument to SSH.
 	args := []string{
 		"-p", password,
 		"ssh",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "ConnectTimeout=10",
+		"-o", "ServerAliveInterval=30",
 		fmt.Sprintf("%s@%s", user, hostOnly),
-		"bash", "-c", script,
+		script,
 	}
 
 	cmd := exec.Command("sshpass", args...)

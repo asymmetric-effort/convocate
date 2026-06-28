@@ -34,6 +34,10 @@ func ProvisionNode(ctx context.Context, req ProvisionRequest) error {
 
 	log.Printf("[provision] starting provisioning of %s as %s", host, user)
 
+	// The target machine must have passwordless sudo configured for the
+	// provisioning user before calling this function. The Convocate UI
+	// provision flow expects this to be set up during VM creation.
+
 	// Step 1: Base OS preparation (swap, kernel modules, sysctl, packages)
 	baseScript := `set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
