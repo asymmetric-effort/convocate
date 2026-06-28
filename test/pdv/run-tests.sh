@@ -113,7 +113,7 @@ else
 fi
 
 # App container and JS bundle
-if echo "$BODY" | /busybox/grep -q 'id="app"' && echo "$BODY" | /busybox/grep -q 'app.js'; then
+if echo "$BODY" | /busybox/grep -q 'id="app"' && echo "$BODY" | /busybox/grep -q 'app\..*\.js'; then
     log_pass "Page loads SpecifyJS app with bundle"
 else
     log_fail "Page missing app container or JS bundle"
