@@ -283,24 +283,7 @@ function NodeManagerApplet() {
 
 const DOCK_APPS: UnityDesktopApp[] = [
   { id: "nmgr", icon: "/img/icons/node-manager.png", label: "Node Manager" },
-  { id: "amgr", icon: "/img/icons/agent-manager.png", label: "Agent Manager" },
-  { id: "pb", icon: "/img/icons/productboard.png", label: "Convocate Project Board" },
-  { id: "ide", icon: "/img/icons/ide-monkey.png", label: "Code IDE" },
-  { id: "ac", icon: "/img/icons/access-control.png", label: "Access Control" },
-  { id: "repo", icon: "/img/icons/repo-man.png", label: "Repo Manager" },
-  { id: "sup", icon: "/img/icons/support-tool.png", label: "Support Tool" },
 ];
-
-function appletContent(appId: string) {
-  if (appId === "nmgr") return h(NodeManagerApplet, null);
-  if (appId === "amgr") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Agent Manager — coming soon");
-  if (appId === "pb") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Project Board — coming soon");
-  if (appId === "ide") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Code IDE — coming soon");
-  if (appId === "ac") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Access Control — coming soon");
-  if (appId === "repo") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Repo Manager — coming soon");
-  if (appId === "sup") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Support Tool — coming soon");
-  return null;
-}
 
 function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: () => void }) {
   return h(UnityDesktop, {
@@ -309,10 +292,8 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
     onLogout,
     theme: "dark" as const,
   },
-    ...DOCK_APPS.map((app) =>
-      h(UnityApp, { id: app.id, title: app.label, icon: app.icon },
-        appletContent(app.id)),
-    ),
+    h(UnityApp, { id: "nmgr", title: "Node Manager", icon: "/img/icons/node-manager.png" },
+      h(NodeManagerApplet, null)),
   );
 }
 
