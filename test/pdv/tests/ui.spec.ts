@@ -24,8 +24,8 @@ test.describe("UI Post-Deployment Verification", () => {
     // Click sign in button
     await page.locator("button").filter({ hasText: /sign in/i }).click();
 
-    // Wait for desktop to render (dock should appear)
-    await page.waitForSelector("[class*='dock'], [class*='unity-desktop']", { timeout: 10000 });
+    // Wait for desktop to render (dock icons should appear)
+    await page.waitForSelector("img[alt='Node Manager']", { timeout: 10000 });
   });
 
   test("dock shows applet icons after login", async ({ page }) => {
@@ -38,10 +38,10 @@ test.describe("UI Post-Deployment Verification", () => {
     await inputs.nth(2).fill("123456");
     await page.locator("button").filter({ hasText: /sign in/i }).click();
 
-    await page.waitForSelector("[class*='dock'], [class*='unity-desktop']", { timeout: 10000 });
+    await page.waitForSelector("img[alt='Node Manager']", { timeout: 10000 });
 
     // Should have dock items (applet icons)
-    const dockItems = page.locator("[class*='dock'] img, [class*='launcher'] img");
+    const dockItems = page.locator("img[alt='Node Manager'], img[alt='Agent Manager'], img[alt='Code IDE'], img[alt='Access Control'], img[alt='Repo Manager'], img[alt='Support Tool'], img[alt='Convocate Project Board']");
     await expect(dockItems.first()).toBeVisible({ timeout: 5000 });
   });
 
@@ -76,7 +76,7 @@ test.describe("UI Post-Deployment Verification", () => {
     await page.locator("button").filter({ hasText: /sign in/i }).click();
     await page.waitForTimeout(2000);
 
-    const icons = await page.locator("[class*='dock'] img, [class*='launcher'] img").count();
+    const icons = await page.locator("img[alt='Node Manager'], img[alt='Agent Manager'], img[alt='Code IDE'], img[alt='Access Control'], img[alt='Repo Manager'], img[alt='Support Tool'], img[alt='Convocate Project Board']").count();
     expect(icons).toBeGreaterThanOrEqual(7);
   });
 

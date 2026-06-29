@@ -178,10 +178,10 @@ function NodeManagerApplet() {
   }
 
   const statusColor = (s: string) => {
-    if (s === "Ready") return "#4a4";
+    if (s === "Ready") return "#7d7";
     if (s === "Pending") return "#da5";
-    if (s === "NotReady") return "#e55";
-    if (s === "SchedulingDisabled") return "#888";
+    if (s === "NotReady") return "#e77";
+    if (s === "SchedulingDisabled") return "#aaa";
     return "#ccc";
   };
 
@@ -208,15 +208,15 @@ function NodeManagerApplet() {
         ...nodes.map((n: any, i: number) =>
           h("tr", { key: n.id, style: { borderBottom: "1px solid #333", background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent" } },
             h("td", { style: { padding: "6px", color: "#7eb8da", fontFamily: "monospace" } }, n.id),
-            h("td", { style: { padding: "6px" } }, n.ip),
+            h("td", { style: { padding: "6px", color: "#ccc" } }, n.ip),
             h("td", { style: { padding: "6px", color: statusColor(n.status) } }, n.status),
-            h("td", { style: { padding: "6px", fontFamily: "monospace" } },
+            h("td", { style: { padding: "6px", fontFamily: "monospace", color: "#ccc" } },
               n.loadAvg && n.loadAvg.one >= 0 ? `${n.loadAvg.one?.toFixed(2)} / ${n.loadAvg.five?.toFixed(2)} / ${n.loadAvg.fifteen?.toFixed(2)}` : "no data"),
-            h("td", { style: { padding: "6px" } },
+            h("td", { style: { padding: "6px", color: "#ccc" } },
               n.memUsedGB >= 0 && n.memTotalGB ? `${n.memUsedGB?.toFixed(1)} / ${n.memTotalGB?.toFixed(0)} GB` : "no data"),
-            h("td", { style: { padding: "6px" } },
+            h("td", { style: { padding: "6px", color: "#ccc" } },
               n.diskUsedGB >= 0 && n.diskTotalGB ? `${n.diskUsedGB?.toFixed(1)} / ${n.diskTotalGB?.toFixed(0)} GB` : "no data"),
-            h("td", { style: { padding: "6px" } },
+            h("td", { style: { padding: "6px", color: "#ccc" } },
               n.status === "Pending" ? h("div", { style: { color: "#888", fontSize: "11px" } }, "Provisioning...") :
               h("div", { style: { display: "flex", gap: "4px" } },
                 h(Button, {
@@ -291,6 +291,17 @@ const DOCK_APPS: UnityDesktopApp[] = [
   { id: "sup", icon: "/img/icons/support-tool.png", label: "Support Tool" },
 ];
 
+function appletContent(appId: string) {
+  if (appId === "nmgr") return h(NodeManagerApplet, null);
+  if (appId === "amgr") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Agent Manager — coming soon");
+  if (appId === "pb") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Project Board — coming soon");
+  if (appId === "ide") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Code IDE — coming soon");
+  if (appId === "ac") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Access Control — coming soon");
+  if (appId === "repo") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Repo Manager — coming soon");
+  if (appId === "sup") return h("div", { style: { padding: "16px", color: "#ccc" } }, "Support Tool — coming soon");
+  return null;
+}
+
 function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: () => void }) {
   return h(UnityDesktop, {
     apps: DOCK_APPS,
@@ -298,20 +309,10 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
     onLogout,
     theme: "dark" as const,
   },
-    h(UnityApp, { id: "nmgr", title: "Node Manager", icon: "/img/icons/node-manager.png" },
-      h(NodeManagerApplet, null)),
-    h(UnityApp, { id: "amgr", title: "Agent Manager", icon: "/img/icons/agent-manager.png" },
-      h("div", { style: { padding: "16px", color: "#ccc" } }, "Agent Manager — coming soon")),
-    h(UnityApp, { id: "pb", title: "Convocate Project Board", icon: "/img/icons/productboard.png" },
-      h("div", { style: { padding: "16px", color: "#ccc" } }, "Project Board — coming soon")),
-    h(UnityApp, { id: "ide", title: "Code IDE", icon: "/img/icons/ide-monkey.png" },
-      h("div", { style: { padding: "16px", color: "#ccc" } }, "Code IDE — coming soon")),
-    h(UnityApp, { id: "ac", title: "Access Control", icon: "/img/icons/access-control.png" },
-      h("div", { style: { padding: "16px", color: "#ccc" } }, "Access Control — coming soon")),
-    h(UnityApp, { id: "repo", title: "Repo Manager", icon: "/img/icons/repo-man.png" },
-      h("div", { style: { padding: "16px", color: "#ccc" } }, "Repo Manager — coming soon")),
-    h(UnityApp, { id: "sup", title: "Support Tool", icon: "/img/icons/support-tool.png" },
-      h("div", { style: { padding: "16px", color: "#ccc" } }, "Support Tool — coming soon")),
+    ...DOCK_APPS.map((app) =>
+      h(UnityApp, { id: app.id, title: app.label, icon: app.icon },
+        appletContent(app.id)),
+    ),
   );
 }
 
