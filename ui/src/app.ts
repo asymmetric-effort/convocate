@@ -297,7 +297,22 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
     user: { name: principal.name },
     onLogout,
     theme: "dark" as const,
-  });
+  },
+    h(UnityApp, { id: "nmgr", title: "Node Manager", icon: "/img/icons/node-manager.png" },
+      h(NodeManagerApplet, null)),
+    h(UnityApp, { id: "amgr", title: "Agent Manager", icon: "/img/icons/agent-manager.png" },
+      h("div", { style: { padding: "16px", color: "#ccc" } }, "Agent Manager — coming soon")),
+    h(UnityApp, { id: "pb", title: "Convocate Project Board", icon: "/img/icons/productboard.png" },
+      h("div", { style: { padding: "16px", color: "#ccc" } }, "Project Board — coming soon")),
+    h(UnityApp, { id: "ide", title: "Code IDE", icon: "/img/icons/ide-monkey.png" },
+      h("div", { style: { padding: "16px", color: "#ccc" } }, "Code IDE — coming soon")),
+    h(UnityApp, { id: "ac", title: "Access Control", icon: "/img/icons/access-control.png" },
+      h("div", { style: { padding: "16px", color: "#ccc" } }, "Access Control — coming soon")),
+    h(UnityApp, { id: "repo", title: "Repo Manager", icon: "/img/icons/repo-man.png" },
+      h("div", { style: { padding: "16px", color: "#ccc" } }, "Repo Manager — coming soon")),
+    h(UnityApp, { id: "sup", title: "Support Tool", icon: "/img/icons/support-tool.png" },
+      h("div", { style: { padding: "16px", color: "#ccc" } }, "Support Tool — coming soon")),
+  );
 }
 
 // ---------------------------------------------------------------------------
