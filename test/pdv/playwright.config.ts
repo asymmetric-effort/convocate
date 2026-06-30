@@ -18,5 +18,6 @@ export default defineConfig({
     { name: "node-lifecycle", testMatch: /node-lifecycle\.spec\.ts/, retries: 0, timeout: 120000 },
     { name: "node-metrics", testMatch: /node-metrics\.spec\.ts/, timeout: 60000 },
     { name: "provision-validation", testMatch: /provision-validation\.spec\.ts/ },
+    { name: "agent-manager", testMatch: /agent-manager\.spec\.ts/ },
   ],
 });
