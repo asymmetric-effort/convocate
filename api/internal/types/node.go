@@ -27,11 +27,39 @@ type LoadAvg struct {
 	Fifteen float64 `json:"fifteen"`
 }
 
-// NodeDetail extends Node with agent list and notes.
+// NodeCondition represents a single K8s node condition.
+type NodeCondition struct {
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
+// NodeTaint represents a K8s taint on a node.
+type NodeTaint struct {
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Effect string `json:"effect"`
+}
+
+// NodeResources holds capacity and allocatable resource values.
+type NodeResources struct {
+	CPUCores    float64 `json:"cpuCores"`
+	MemoryGB    float64 `json:"memoryGB"`
+	EphemeralGB float64 `json:"ephemeralGB"`
+	Pods        int     `json:"pods"`
+}
+
+// NodeDetail extends Node with agent list, notes, and K8s metadata.
 type NodeDetail struct {
 	Node
-	AgentList []Agent `json:"agentList"`
-	Notes     []Note  `json:"notes"`
+	AgentList   []Agent           `json:"agentList"`
+	Notes       []Note            `json:"notes"`
+	Conditions  []NodeCondition   `json:"conditions"`
+	Labels      map[string]string `json:"labels"`
+	Taints      []NodeTaint       `json:"taints"`
+	Capacity    NodeResources     `json:"capacity"`
+	Allocatable NodeResources     `json:"allocatable"`
 }
 
 // Note represents a write-once note on a node.

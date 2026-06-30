@@ -302,13 +302,13 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		node, err := k8s.GetNode(ctx, id)
+		detail, err := k8s.GetNodeDetail(ctx, id)
 		if err == nil {
 			agents, _ := k8s.ListAgentPodsOnNode(ctx, id)
-			node.Agents = len(agents)
-			h.mergeNodeMetrics(node)
-			notes := h.getNotesFromDB(id)
-			detail := types.NodeDetail{Node: *node, AgentList: agents, Notes: notes}
+			detail.Node.Agents = len(agents)
+			h.mergeNodeMetrics(&detail.Node)
+			detail.AgentList = agents
+			detail.Notes = h.getNotesFromDB(id)
 			httputil.WriteJSON(w, http.StatusOK, detail)
 			return
 		}

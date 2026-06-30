@@ -35,19 +35,49 @@ interface Node {
   id: string;
   location: string;
   ip: string;
-  status: "Ready" | "NotReady" | "SchedulingDisabled";
+  status: "Ready" | "NotReady" | "SchedulingDisabled" | "Pending" | "Error";
   agents: number;
   loadAvg: { one: number; five: number; fifteen: number };
   memUsedGB: number;
   memTotalGB: number;
+  swapUsedGB: number;
+  swapTotalGB: number;
   diskUsedGB: number;
   diskTotalGB: number;
+  uptimeSeconds: number;
+  kubeletVersion: string;
+  cpuCount: number;
   tags: string[];
+}
+
+interface NodeCondition {
+  type: string;
+  status: string;
+  reason: string;
+  message: string;
+}
+
+interface NodeTaint {
+  key: string;
+  value: string;
+  effect: string;
+}
+
+interface NodeResources {
+  cpuCores: number;
+  memoryGB: number;
+  ephemeralGB: number;
+  pods: number;
 }
 
 interface NodeDetail extends Node {
   agentList: any[];
   notes: Note[];
+  conditions: NodeCondition[];
+  labels: Record<string, string>;
+  taints: NodeTaint[];
+  capacity: NodeResources;
+  allocatable: NodeResources;
 }
 
 interface Note {
@@ -138,6 +168,17 @@ async function deleteNode(nodeId: string): Promise<void> {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+}
+
+/** Update a node's location or tags via PATCH */
+async function updateNode(nodeId: string, data: { location?: string; tags?: string[] }): Promise<Node> {
+  const res = await fetch(`/api/v1/nmgr/node/${nodeId}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Update failed: ${res.status}`);
+  return res.json();
 }
 
 /** Add a note to a node */
@@ -473,62 +514,62 @@ function NodeDetailDialog({
 
   if (!detail) return null;
 
+  // Helper for labeled field
+  const field = (label: string, value: string) =>
+    h("div", null,
+      h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, label),
+      h("div", null, value || "—")
+    );
+
+  const fmtGB = (used: number, total: number) =>
+    used >= 0 && total >= 0 ? `${used.toFixed(1)} / ${total.toFixed(1)} GB` : "—";
+
   // Build tab content — all tabs use dark background for consistent contrast
   const overviewTab = h(
     "div",
     { style: { ...darkContent, padding: "16px", display: "flex", flexDirection: "column", gap: "12px" } },
     // Resource summary
-    h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" } },
+    h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" } },
       h("div", null,
         h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "STATUS"),
         statusBadge(detail.status)
       ),
-      h("div", null,
-        h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "IP ADDRESS"),
-        h("div", null, detail.ip || "—")
-      ),
-      h("div", null,
-        h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "LOCATION"),
-        h("div", null, detail.location || "unspecified")
-      ),
-      h("div", null,
-        h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "AGENTS"),
-        h("div", null, String(detail.agents ?? 0))
-      ),
-      h("div", null,
-        h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "LOAD AVG"),
-        h("div", null, detail.loadAvg && detail.loadAvg.one >= 0
-          ? `${detail.loadAvg.one.toFixed(2)} / ${detail.loadAvg.five.toFixed(2)} / ${detail.loadAvg.fifteen.toFixed(2)}`
-          : "—")
-      ),
-      h("div", null,
-        h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "MEMORY"),
-        h("div", null,
-          detail.memUsedGB != null && detail.memUsedGB >= 0 && detail.memTotalGB != null && detail.memTotalGB >= 0
-            ? `${detail.memUsedGB.toFixed(1)} / ${detail.memTotalGB.toFixed(1)} GB`
-            : "—")
-      ),
-      h("div", null,
-        h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "DISK"),
-        h("div", null,
-          detail.diskUsedGB != null && detail.diskUsedGB >= 0 && detail.diskTotalGB != null && detail.diskTotalGB >= 0
-            ? `${detail.diskUsedGB.toFixed(1)} / ${detail.diskTotalGB.toFixed(1)} GB`
-            : "—")
-      )
+      field("IP ADDRESS", detail.ip),
+      field("LOCATION", detail.location || "unspecified"),
+      field("AGENTS", String(detail.agents ?? 0)),
+      field("K8S VERSION", detail.kubeletVersion || "—"),
+      field("CPU COUNT", detail.cpuCount ? String(detail.cpuCount) : "—"),
+      field("UPTIME", detail.uptimeSeconds > 0 ? `${Math.floor(detail.uptimeSeconds / 86400)}d ${Math.floor((detail.uptimeSeconds % 86400) / 3600)}h` : "—"),
+      field("LOAD AVG (1/5/15m)", detail.loadAvg && detail.loadAvg.one >= 0
+        ? `${detail.loadAvg.one.toFixed(2)} / ${detail.loadAvg.five.toFixed(2)} / ${detail.loadAvg.fifteen.toFixed(2)}`
+        : "—"),
+      field("MEMORY", fmtGB(detail.memUsedGB, detail.memTotalGB)),
+      field("SWAP", fmtGB(detail.swapUsedGB, detail.swapTotalGB)),
+      field("DISK", fmtGB(detail.diskUsedGB, detail.diskTotalGB)),
     ),
+    // Capacity vs Allocatable
+    detail.capacity ? h("div", null,
+      h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px", marginTop: "8px" } }, "CAPACITY / ALLOCATABLE"),
+      h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "8px", fontSize: "12px" } },
+        field("CPU", `${detail.capacity.cpuCores} / ${detail.allocatable.cpuCores} cores`),
+        field("Memory", `${detail.capacity.memoryGB.toFixed(1)} / ${detail.allocatable.memoryGB.toFixed(1)} GB`),
+        field("Ephemeral", `${detail.capacity.ephemeralGB.toFixed(1)} / ${detail.allocatable.ephemeralGB.toFixed(1)} GB`),
+        field("Pods", `${detail.capacity.pods} / ${detail.allocatable.pods}`)
+      )
+    ) : null,
     // Tags
     detail.tags && detail.tags.length > 0
       ? h("div", null,
           h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "TAGS"),
           h("div", { style: { display: "flex", gap: "4px", flexWrap: "wrap" } },
-            ...detail.tags.map((t: string) => h(Tag, { key: t }, t))
+            ...detail.tags.map((t: string) => h(Tag, { label: t, color: "#4b5563", variant: "solid" as const, size: "sm" as const }))
           )
         )
       : null,
-    // Action buttons — context-sensitive based on node status:
-    //   Ready           → Stop + Delete
-    //   SchedulingDisabled → Start + Delete
-    //   Pending / NotReady → Start (disabled) + Delete
+    // Action buttons — uses K8s terminology:
+    //   Ready           → Cordon + Delete
+    //   SchedulingDisabled → Uncordon + Delete
+    //   Pending / NotReady → Uncordon (disabled) + Delete
     //   Error            → Delete only (cleanup)
     h(
       "div",
@@ -536,7 +577,6 @@ function NodeDetailDialog({
         style: { display: "flex", gap: "8px", marginTop: "8px" },
         "data-testid": "node-detail-actions",
       },
-      // Error status: only show Delete for cleanup, no Start/Stop
       detail.status === "Error"
         ? null
         : detail.status === "Ready"
@@ -544,12 +584,12 @@ function NodeDetailDialog({
               variant: "warning" as const,
               onClick: () => handleAction("stop"),
               disabled: actionLoading || !canStopOrDelete,
-            }, "Stop")
+            }, "Cordon")
           : h(Button, {
               variant: "primary" as const,
               onClick: () => handleAction("start"),
               disabled: actionLoading || detail.status === "Pending" || detail.status === "NotReady",
-            }, "Start"),
+            }, "Uncordon"),
       h(Button, {
         variant: "danger" as const,
         onClick: () => setConfirmDelete(true),
@@ -558,6 +598,62 @@ function NodeDetailDialog({
       }, "Delete")
     ),
     error ? h("div", { style: { color: "#e55", fontSize: "13px" } }, error) : null
+  );
+
+  // Conditions tab — K8s node conditions
+  const conditionsTab = h(
+    "div",
+    { style: { ...darkContent, padding: "8px" } },
+    detail.conditions && detail.conditions.length > 0
+      ? h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
+          h(DataGrid, {
+            columns: [
+              { key: "type", header: "Type", width: 150 },
+              { key: "status", header: "Status", width: 80, render: (v: string) =>
+                h(Tag, { label: v, color: v === "True" ? "green" : v === "False" ? "#b91c1c" : "gray", variant: "solid" as const, size: "sm" as const })
+              },
+              { key: "reason", header: "Reason", width: 150 },
+              { key: "message", header: "Message", width: 250 },
+            ],
+            data: detail.conditions.map((c: NodeCondition) => ({ id: c.type, type: c.type, status: c.status, reason: c.reason, message: c.message })),
+          })
+        )
+      : h("div", { style: { color: "#aaa", fontSize: "13px", padding: "16px" } }, "No conditions available.")
+  );
+
+  // Labels & Taints tab
+  const labelsTab = h(
+    "div",
+    { style: { ...darkContent, padding: "16px", display: "flex", flexDirection: "column", gap: "16px" } },
+    // Labels
+    h("div", null,
+      h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "8px" } }, "LABELS"),
+      detail.labels && Object.keys(detail.labels).length > 0
+        ? h("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
+            ...Object.entries(detail.labels).map(([k, v]) =>
+              h("div", { key: k, style: { display: "flex", gap: "8px", fontSize: "12px" } },
+                h("span", { style: { color: "#93c5fd", fontFamily: "monospace" } }, k),
+                h("span", { style: { color: "#aaa" } }, "="),
+                h("span", { style: { color: "#e0e0e0", fontFamily: "monospace" } }, v as string)
+              )
+            )
+          )
+        : h("div", { style: { color: "#aaa", fontSize: "13px" } }, "No labels.")
+    ),
+    // Taints
+    h("div", null,
+      h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "8px" } }, "TAINTS"),
+      detail.taints && detail.taints.length > 0
+        ? h("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
+            ...detail.taints.map((t: NodeTaint, i: number) =>
+              h("div", { key: i, style: { fontSize: "12px" } },
+                h("span", { style: { color: "#e0e0e0", fontFamily: "monospace" } }, `${t.key}=${t.value}`),
+                h("span", { style: { color: "#aaa", marginLeft: "8px" } }, `(${t.effect})`)
+              )
+            )
+          )
+        : h("div", { style: { color: "#aaa", fontSize: "13px" } }, "No taints.")
+    )
   );
 
   // Notes tab
@@ -663,6 +759,8 @@ function NodeDetailDialog({
       h(Tabs, {
         tabs: [
           { id: "overview", label: "Overview", content: overviewTab },
+          { id: "conditions", label: "Conditions", content: conditionsTab },
+          { id: "labels", label: "Labels & Taints", content: labelsTab },
           { id: "notes", label: "Notes", content: notesTab },
           { id: "agents", label: "Agents", content: agentsTab },
         ],
@@ -771,7 +869,24 @@ export function NodeManager() {
           "data-testid": `node-link-${value}`,
         }, value),
     },
-    { key: "location", header: "Location", width: 120 },
+    {
+      key: "location",
+      header: "Location",
+      width: 120,
+      render: (value: string, row: any) =>
+        h("span", {
+          style: { cursor: "pointer", borderBottom: "1px dashed #666" },
+          title: "Double-click to edit",
+          onDblClick: () => {
+            const newLoc = prompt("Edit location:", value === "unspecified" ? "" : value);
+            if (newLoc !== null) {
+              updateNode(row.id, { location: newLoc || "unspecified" })
+                .then(loadNodes)
+                .catch((err: any) => setError(err.message));
+            }
+          },
+        }, value),
+    },
     { key: "ip", header: "IP", width: 130 },
     {
       key: "status",
@@ -799,26 +914,26 @@ export function NodeManager() {
             },
           }, "Delete");
         }
-        // Ready → Stop (disabled if fewer than 4 Ready nodes)
+        // Ready → Cordon (disabled if fewer than 4 Ready nodes)
         if (st === "Ready") {
           return h(Button, {
             variant: "warning" as any,
             onClick: (e: Event) => { e.stopPropagation(); handleQuickAction(row.id, "stop"); },
             disabled: !canStopOrDelete,
-          }, "Stop");
+          }, "Cordon");
         }
-        // SchedulingDisabled → Start (enabled)
+        // SchedulingDisabled → Uncordon
         if (st === "SchedulingDisabled") {
           return h(Button, {
             variant: "primary" as any,
             onClick: (e: Event) => { e.stopPropagation(); handleQuickAction(row.id, "start"); },
-          }, "Start");
+          }, "Uncordon");
         }
-        // Pending / NotReady → Start (disabled)
+        // Pending / NotReady → Uncordon (disabled)
         return h(Button, {
           variant: "primary" as any,
           disabled: true,
-        }, "Start");
+        }, "Uncordon");
       },
     },
   ];

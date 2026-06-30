@@ -182,7 +182,7 @@ test.describe("Node stop/start lifecycle", () => {
 
     // Click Stop button
     const stopBtn = page.locator(
-      '[data-testid="node-detail-actions"] button:has-text("Stop")'
+      '[data-testid="node-detail-actions"] button:has-text("Cordon")'
     );
     await expect(stopBtn).toBeVisible({ timeout: 3000 });
     await stopBtn.click();

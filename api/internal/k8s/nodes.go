@@ -130,6 +130,69 @@ func GetNode(ctx context.Context, name string) (*types.Node, error) {
 	return &node, nil
 }
 
+// GetNodeDetail returns a full NodeDetail including K8s conditions,
+// labels, taints, and capacity/allocatable resources.
+func GetNodeDetail(ctx context.Context, name string) (*types.NodeDetail, error) {
+	k8sNode, err := Client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get node %s: %w", name, err)
+	}
+	cpuUsage := fetchNodeMetrics(ctx)
+	node := k8sNodeToNode(k8sNode, cpuUsage)
+
+	// Build conditions
+	var conditions []types.NodeCondition
+	for _, c := range k8sNode.Status.Conditions {
+		conditions = append(conditions, types.NodeCondition{
+			Type:    string(c.Type),
+			Status:  string(c.Status),
+			Reason:  c.Reason,
+			Message: c.Message,
+		})
+	}
+
+	// Build labels (excluding internal K8s labels for cleaner display)
+	labels := make(map[string]string)
+	for k, v := range k8sNode.Labels {
+		labels[k] = v
+	}
+
+	// Build taints
+	var taints []types.NodeTaint
+	for _, t := range k8sNode.Spec.Taints {
+		taints = append(taints, types.NodeTaint{
+			Key:    t.Key,
+			Value:  t.Value,
+			Effect: string(t.Effect),
+		})
+	}
+
+	// Build capacity and allocatable
+	toGB := func(v int64) float64 { return float64(v) / (1024 * 1024 * 1024) }
+	capacity := types.NodeResources{
+		CPUCores:    float64(k8sNode.Status.Capacity.Cpu().MilliValue()) / 1000,
+		MemoryGB:    toGB(k8sNode.Status.Capacity.Memory().Value()),
+		EphemeralGB: toGB(k8sNode.Status.Capacity.StorageEphemeral().Value()),
+		Pods:        int(k8sNode.Status.Capacity.Pods().Value()),
+	}
+	allocatable := types.NodeResources{
+		CPUCores:    float64(k8sNode.Status.Allocatable.Cpu().MilliValue()) / 1000,
+		MemoryGB:    toGB(k8sNode.Status.Allocatable.Memory().Value()),
+		EphemeralGB: toGB(k8sNode.Status.Allocatable.StorageEphemeral().Value()),
+		Pods:        int(k8sNode.Status.Allocatable.Pods().Value()),
+	}
+
+	detail := &types.NodeDetail{
+		Node:        node,
+		Conditions:  conditions,
+		Labels:      labels,
+		Taints:      taints,
+		Capacity:    capacity,
+		Allocatable: allocatable,
+	}
+	return detail, nil
+}
+
 func CordonNode(ctx context.Context, name string) error {
 	k8sNode, err := Client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {

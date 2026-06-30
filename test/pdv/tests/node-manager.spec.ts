@@ -198,7 +198,7 @@ test.describe("Node Manager detail dialog", () => {
     await expect(page.getByText('DISK', { exact: true })).toBeVisible();
   });
 
-  test("detail dialog has Start or Stop button and Delete button", async ({ page }) => {
+  test("detail dialog has Cordon or Uncordon button and Delete button", async ({ page }) => {
     await expect(page.locator('text=/\\d+ nodes?/')).toBeVisible({ timeout: 10000 });
     await page.locator('[data-testid="node-manager"] a').first().click();
     await expect(page.locator('text=/Node: /')).toBeVisible({ timeout: 5000 });
@@ -207,9 +207,9 @@ test.describe("Node Manager detail dialog", () => {
     await expect(page.locator('[data-testid="node-detail-actions"]')).toBeVisible();
 
     // Should have either Start or Stop, and always Delete
-    const hasStart = await page.locator('[data-testid="node-detail-actions"] button:has-text("Start")').isVisible();
-    const hasStop = await page.locator('[data-testid="node-detail-actions"] button:has-text("Stop")').isVisible();
-    expect(hasStart || hasStop).toBeTruthy();
+    const hasUncordon = await page.locator('[data-testid="node-detail-actions"] button:has-text("Uncordon")').isVisible();
+    const hasCordon = await page.locator('[data-testid="node-detail-actions"] button:has-text("Cordon")').isVisible();
+    expect(hasUncordon || hasCordon).toBeTruthy();
 
     await expect(
       page.locator('[data-testid="node-detail-actions"] button:has-text("Delete")')
@@ -243,6 +243,48 @@ test.describe("Node Manager detail dialog", () => {
     // Close via escape or close button
     await page.keyboard.press("Escape");
     await expect(detailTitle).not.toBeVisible({ timeout: 3000 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Conditions tab
+// ---------------------------------------------------------------------------
+
+test.describe("Node Manager conditions tab", () => {
+  test("conditions tab shows K8s node conditions", async ({ page }) => {
+    await login(page);
+    await openNodeManager(page);
+    await expect(page.locator('text=/\\d+ nodes?/')).toBeVisible({ timeout: 10000 });
+    await page.locator('[data-testid="node-manager"] a').first().click();
+    await expect(page.locator('text=/Node: /')).toBeVisible({ timeout: 5000 });
+
+    // Switch to Conditions tab
+    await page.locator('[role="tab"]:has-text("Conditions")').click();
+
+    // Should show condition types like Ready, MemoryPressure, etc.
+    await expect(page.locator('text=Ready').first()).toBeVisible({ timeout: 3000 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Labels & Taints tab
+// ---------------------------------------------------------------------------
+
+test.describe("Node Manager labels and taints tab", () => {
+  test("labels tab shows K8s labels", async ({ page }) => {
+    await login(page);
+    await openNodeManager(page);
+    await expect(page.locator('text=/\\d+ nodes?/')).toBeVisible({ timeout: 10000 });
+    await page.locator('[data-testid="node-manager"] a').first().click();
+    await expect(page.locator('text=/Node: /')).toBeVisible({ timeout: 5000 });
+
+    // Switch to Labels & Taints tab
+    await page.locator('[role="tab"]:has-text("Labels")').click();
+
+    // Should show LABELS heading
+    await expect(page.getByText('LABELS', { exact: true })).toBeVisible({ timeout: 3000 });
+    // And TAINTS heading
+    await expect(page.getByText('TAINTS', { exact: true })).toBeVisible();
   });
 });
 
