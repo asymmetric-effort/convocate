@@ -19,6 +19,7 @@ import {
   useBoardReducer,
 } from "@asymmetric-effort/specifyjs/components";
 import { useMenuBar } from "./use-menu-bar";
+import { fetchProjects, createProject as createIdeProject, updateProject, UnifiedProject } from "./shared-projects";
 
 const h = createElement;
 
@@ -73,32 +74,17 @@ function authHeaders(): Record<string, string> {
   };
 }
 
-async function fetchBoards(): Promise<BoardSummary[]> {
-  // Fetch boards from the Project Board API
-  const res = await fetch("/api/v1/pb/board?limit=100", { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to fetch boards: ${res.status}`);
-  const page = await res.json();
-  const boards: BoardSummary[] = page.items || [];
-
-  // Also fetch IDE projects and create board references for any that
-  // have an associated board — ensures both applets share the same
-  // project list
-  try {
-    const ideRes = await fetch("/api/v1/ide/project?limit=100", { headers: authHeaders() });
-    if (ideRes.ok) {
-      const idePage = await ideRes.json();
-      const existingIds = new Set(boards.map((b) => b.id));
-      for (const proj of (idePage.items || [])) {
-        if (proj.boardId && !existingIds.has(proj.boardId)) {
-          boards.push({ id: proj.boardId, name: proj.name });
-        }
-      }
-    }
-  } catch {
-    // IDE projects are supplementary — don't fail if unavailable
-  }
-
-  return boards;
+/** Fetch the unified project list and map to BoardSummary entries.
+ *  Projects with a boardId reference an existing board; projects
+ *  without one are still shown (board can be created on demand). */
+async function fetchBoardProjects(): Promise<{ projects: UnifiedProject[]; boards: BoardSummary[] }> {
+  const projects = await fetchProjects();
+  const boards: BoardSummary[] = projects.map((p) => ({
+    id: p.boardId || `__project__${p.id}`,
+    name: p.name,
+    updatedAt: undefined,
+  }));
+  return { projects, boards };
 }
 
 async function fetchBoard(id: string): Promise<BoardData> {
@@ -170,6 +156,24 @@ async function deleteCard(boardId: string, cardId: string): Promise<void> {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`Failed to delete card: ${res.status}`);
+}
+
+async function createEdge(boardId: string, from: string, to: string, type: string = "RelatesTo"): Promise<Edge> {
+  const res = await fetch(`/api/v1/pb/board/${boardId}/edge`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ from, to, type }),
+  });
+  if (!res.ok) throw new Error(`Failed to create edge: ${res.status}`);
+  return res.json();
+}
+
+async function deleteEdge(boardId: string, edgeId: string): Promise<void> {
+  const res = await fetch(`/api/v1/pb/board/${boardId}/edge/${edgeId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to delete edge: ${res.status}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -477,24 +481,52 @@ function apiBoardToBoardState(board: BoardData): any {
 function CanvasView({
   board,
   onSelectCard,
+  onReloadBoard,
 }: {
   board: BoardData;
   onSelectCard: (card: BoardCard) => void;
+  onReloadBoard: () => void;
 }) {
-  // Convert API data to Board state
+  // Convert API data to Board state only on initial mount or board ID change
+  const boardIdRef = useRef<string>("");
   const initialState = apiBoardToBoardState(board);
-  const { state, dispatch, undo, redo, canUndo, canRedo } = useBoardReducer(initialState);
+  const { state, dispatch } = useBoardReducer(initialState);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const boardStateRef = useRef(initialState);
+  const [contextMenu, setContextMenu] = useState<{ cardId: string; x: number; y: number } | null>(null);
 
-  // Update board state when API data changes
+  // Only reset Board state when the board ID changes (switching boards),
+  // not on every API data refresh — this lets the Board component own its
+  // own drag/layout state between reloads.
   useEffect(() => {
-    const newState = apiBoardToBoardState(board);
-    if (JSON.stringify(newState.collection) !== JSON.stringify(boardStateRef.current.collection)) {
-      dispatch({ type: "SET_BOARD", state: newState });
-      boardStateRef.current = newState;
+    if (board.id !== boardIdRef.current) {
+      boardIdRef.current = board.id;
+      dispatch({ type: "SET_BOARD", state: apiBoardToBoardState(board) });
     }
-  }, [board, dispatch]);
+  }, [board.id, dispatch]);
+
+  // Persist card position/size changes back to the API after drag-end.
+  // The Board dispatches actions that update `state`; we watch for
+  // position or size changes and push them to the server.
+  const prevCollectionRef = useRef<string>("");
+  useEffect(() => {
+    const serialized = JSON.stringify(state.collection);
+    if (prevCollectionRef.current && serialized !== prevCollectionRef.current) {
+      const syncCards = (items: any[]) => {
+        for (const item of items) {
+          if (item.type === "card") {
+            updateCard(board.id, item.card_id, {
+              position: { x: item.position.x, y: item.position.y },
+              size: { w: item.size.width, h: item.size.height },
+            } as any).catch(() => { /* position sync is best-effort */ });
+          } else if (item.type === "container" && item.children) {
+            syncCards(item.children);
+          }
+        }
+      };
+      syncCards(state.collection);
+    }
+    prevCollectionRef.current = serialized;
+  }, [state.collection, board.id]);
 
   // Handle card selection — find the matching API card and open detail
   const handleSelectItem = useCallback((itemId: string | null) => {
@@ -507,13 +539,93 @@ function CanvasView({
     }
   }, [board.cards, onSelectCard]);
 
-  return h("div", { style: { flex: 1, overflow: "hidden" } },
+  // Right-click context menu on cards
+  const handleCardContextMenu = useCallback((cardId: string, x: number, y: number) => {
+    setContextMenu({ cardId, x, y });
+  }, []);
+
+  // Save card title/content edits from the Board's inline editing
+  const handleUpdateItem = useCallback((itemId: string, updates: any) => {
+    const data: Partial<BoardCard> = {};
+    if (updates.card_title !== undefined) data.title = updates.card_title;
+    if (updates.content?.text !== undefined) data.content = updates.content.text;
+    if (Object.keys(data).length === 0) return;
+    updateCard(board.id, itemId, data)
+      .then(() => onReloadBoard())
+      .catch(() => { /* silent */ });
+  }, [board.id, onReloadBoard]);
+
+  // Context menu actions
+  const handleDeleteCard = useCallback(async () => {
+    if (!contextMenu) return;
+    try {
+      await deleteCard(board.id, contextMenu.cardId);
+      setContextMenu(null);
+      onReloadBoard();
+    } catch { /* silent */ }
+  }, [contextMenu, board.id, onReloadBoard]);
+
+  const handleChangeStatus = useCallback(async (newStatus: string) => {
+    if (!contextMenu) return;
+    try {
+      await updateCard(board.id, contextMenu.cardId, { status: newStatus });
+      setContextMenu(null);
+      onReloadBoard();
+    } catch { /* silent */ }
+  }, [contextMenu, board.id, onReloadBoard]);
+
+  return h("div", { style: { flex: 1, overflow: "hidden", position: "relative" } },
     h(Board, {
       state,
       dispatch,
       selectedId,
       onSelectItem: handleSelectItem,
-    })
+      gridEnabled: true,
+      onCardContextMenu: handleCardContextMenu,
+      onUpdateItem: handleUpdateItem,
+    }),
+    // Context menu overlay
+    contextMenu ? h("div", {
+      style: { position: "fixed", inset: 0, zIndex: 1000 },
+      onClick: () => setContextMenu(null),
+    },
+      h("div", {
+        style: {
+          position: "absolute", left: `${contextMenu.x}px`, top: `${contextMenu.y}px`,
+          backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.4)", minWidth: "160px", zIndex: 1001,
+        },
+        onClick: (e: Event) => e.stopPropagation(),
+      },
+        h("div", { style: { padding: "6px 12px", fontSize: "11px", color: "#888", borderBottom: "1px solid #444" } },
+          "Card Actions"
+        ),
+        ...STATUS_ORDER.map((s) =>
+          h("div", {
+            key: s,
+            style: {
+              padding: "6px 12px", fontSize: "12px", color: "#e0e0e0",
+              cursor: "pointer", display: "flex", alignItems: "center", gap: "8px",
+            },
+            onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+            onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+            onClick: () => handleChangeStatus(s),
+          },
+            h("span", { style: { width: "8px", height: "8px", borderRadius: "50%", backgroundColor: STATUS_COLORS[s], display: "inline-block" } }),
+            h("span", null, `Set ${s}`)
+          )
+        ),
+        h("div", { style: { borderTop: "1px solid #444" } }),
+        h("div", {
+          style: {
+            padding: "6px 12px", fontSize: "12px", color: "#ff8888", cursor: "pointer",
+          },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: handleDeleteCard,
+        }, "Delete Card")
+      )
+    ) : null
   );
 }
 
@@ -526,6 +638,7 @@ function renderCard(
   card: BoardCard,
   onSelectCard: (c: BoardCard) => void,
   onDragStart?: (cardId: string) => void,
+  onCardContextMenu?: (e: MouseEvent, card: BoardCard) => void,
 ) {
   return h("div", {
     key: card.id,
@@ -534,6 +647,10 @@ function renderCard(
       e.dataTransfer?.setData("text/plain", card.id);
       if (onDragStart) onDragStart(card.id);
     },
+    onContextMenu: onCardContextMenu ? (e: MouseEvent) => {
+      e.preventDefault();
+      onCardContextMenu(e, card);
+    } : undefined,
     style: {
       padding: "8px 10px", backgroundColor: "#2d2d2d", borderRadius: "4px",
       borderLeft: `3px solid ${STATUS_COLORS[card.status]}`,
@@ -564,6 +681,7 @@ function StatusView({
 }) {
   const [dragOverCell, setDragOverCell] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ containerId: string; x: number; y: number } | null>(null);
+  const [cardContextMenu, setCardContextMenu] = useState<{ cardId: string; containerId: string | undefined; x: number; y: number } | null>(null);
   const [agents, setAgents] = useState<Array<{ id: string; project: string; status: string }>>([]);
 
   // Fetch agents when context menu opens
@@ -675,11 +793,59 @@ function StatusView({
               if (cardId) onMoveCard(cardId, containerId, status);
             },
           },
-            ...cellCards.map((card) => renderCard(card, onSelectCard))
+            ...cellCards.map((card) => renderCard(card, onSelectCard, undefined, (e: MouseEvent, c: BoardCard) => {
+              setCardContextMenu({ cardId: c.id, containerId: c.containerId, x: e.clientX, y: e.clientY });
+            }))
           );
         })
       );
     }).filter(Boolean),
+    // Card context menu overlay
+    cardContextMenu ? h("div", {
+      style: { position: "fixed", inset: 0, zIndex: 1000 },
+      onClick: () => setCardContextMenu(null),
+    },
+      h("div", {
+        style: {
+          position: "absolute", left: `${cardContextMenu.x}px`, top: `${cardContextMenu.y}px`,
+          backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.4)", minWidth: "160px", zIndex: 1001,
+        },
+        onClick: (e: Event) => e.stopPropagation(),
+      },
+        h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            const card = board.cards.find((c) => c.id === cardContextMenu.cardId);
+            if (card) onSelectCard(card);
+            setCardContextMenu(null);
+          },
+        }, "View in Editor"),
+        cardContextMenu.containerId ? h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            onMoveCard(cardContextMenu.cardId, null);
+            setCardContextMenu(null);
+          },
+        }, "Detach from Container") : null,
+        h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#ef4444", borderTop: "1px solid #444" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: async () => {
+            try {
+              await deleteCard(board.id, cardContextMenu.cardId);
+              onMoveCard(cardContextMenu.cardId, null); // triggers reload via parent
+            } catch { /* handled by parent */ }
+            setCardContextMenu(null);
+          },
+        }, "Delete")
+      )
+    ) : null,
     // Context menu overlay for "Attach to" agent
     contextMenu ? h("div", {
       style: { position: "fixed", inset: 0, zIndex: 1000 },
@@ -772,6 +938,7 @@ function NewContainerDialog({
 // ---------------------------------------------------------------------------
 
 export function ProjectBoard({ principal }: { principal?: any } = {}) {
+  const [ideProjects, setIdeProjects] = useState<UnifiedProject[]>([]);
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [activeBoard, setActiveBoard] = useState<BoardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -796,13 +963,18 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
     ]},
   ]);
 
-  // Load boards on mount
+  // Load IDE projects on mount — projects are the canonical list
   useEffect(() => {
     setLoading(true);
-    fetchBoards()
-      .then((b) => {
+    fetchBoardProjects()
+      .then(({ projects, boards: b }) => {
+        setIdeProjects(projects);
         setBoards(b);
-        if (b.length > 0) return fetchBoard(b[0].id);
+        // Auto-select the first project that has a board
+        const firstWithBoard = projects.find((p) => p.boardId);
+        if (firstWithBoard) {
+          return fetchBoard(firstWithBoard.boardId);
+        }
         return null;
       })
       .then((board) => { if (board) setActiveBoard(board); })
@@ -913,21 +1085,45 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
     }
   }, [activeBoard, reloadBoard]);
 
-  /** Handle board created */
+  /** Handle board created — creates IDE project first if needed,
+   *  then links the board to the project. */
   const handleBoardCreated = useCallback(async (board: BoardData) => {
+    // Create an IDE project and link the board
+    try {
+      const project = await createIdeProject(board.name);
+      await updateProject(project.id, { boardId: board.id });
+      setIdeProjects((prev) => [...prev, { ...project, boardId: board.id }]);
+    } catch {
+      // Non-fatal — the board was still created
+    }
     setBoards((prev) => [...prev, { id: board.id, name: board.name }]);
     setActiveBoard(board);
   }, []);
 
-  /** Switch board */
+  /** Switch board — if the selected entry is a project without a
+   *  board yet, create a board on demand and link it. */
   const switchBoard = useCallback(async (id: string) => {
     try {
+      // Check if this is a placeholder for a project with no board
+      if (id.startsWith("__project__")) {
+        const projectId = id.replace("__project__", "");
+        const proj = ideProjects.find((p) => p.id === projectId);
+        if (!proj) return;
+        // Create a board for this project
+        const board = await createBoard(proj.name);
+        await updateProject(proj.id, { boardId: board.id });
+        // Update local state
+        setIdeProjects((prev) => prev.map((p) => p.id === proj.id ? { ...p, boardId: board.id } : p));
+        setBoards((prev) => prev.map((b) => b.id === id ? { ...b, id: board.id } : b));
+        setActiveBoard(board);
+        return;
+      }
       const board = await fetchBoard(id);
       setActiveBoard(board);
     } catch (err: any) {
       setError(err.message);
     }
-  }, []);
+  }, [ideProjects]);
 
   if (loading) {
     return h("div", {
@@ -997,7 +1193,7 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
     activeBoard
       ? viewMode === "status"
         ? h(StatusView, { board: activeBoard, onSelectCard: setSelectedCard, onMoveCard: handleMoveCard, onAttachAgent: handleAttachAgent })
-        : h(CanvasView, { board: activeBoard, onSelectCard: setSelectedCard })
+        : h(CanvasView, { board: activeBoard, onSelectCard: setSelectedCard, onReloadBoard: reloadBoard })
       : h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" } }, "No board selected"),
     // Footer
     h("div", {

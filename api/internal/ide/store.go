@@ -38,7 +38,7 @@ func NewStore() *Store {
 	now := time.Now().UTC().Format(time.RFC3339)
 	return &Store{
 		projects: []Project{
-			{ID: "prj-001", Name: "demo-app", RepoID: "repo-001", SpecificationFileID: "SPECIFICATION.md"},
+			{ID: "prj-001", Name: "demo-app", RepoID: "repo-001", SpecificationFileID: "SPECIFICATION.md", BoardID: "brd-001"},
 		},
 		files: map[string]map[string]FileContent{
 			"prj-001": {
@@ -67,6 +67,26 @@ func (s *Store) CreateProject(name string) Project {
 		"SPECIFICATION.md": {Path: "SPECIFICATION.md", Content: fmt.Sprintf("# %s\n\nDescribe your application here.", name), Language: "markdown", UpdatedAt: now},
 	}
 	return p
+}
+
+func (s *Store) UpdateProject(id string, name, repoID, boardID *string) (Project, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, p := range s.projects {
+		if p.ID == id {
+			if name != nil {
+				s.projects[i].Name = *name
+			}
+			if repoID != nil {
+				s.projects[i].RepoID = *repoID
+			}
+			if boardID != nil {
+				s.projects[i].BoardID = *boardID
+			}
+			return s.projects[i], true
+		}
+	}
+	return Project{}, false
 }
 
 func (s *Store) ListTree(projectID string) []FileEntry {

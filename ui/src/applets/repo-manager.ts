@@ -9,6 +9,7 @@
 import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
 import { Button, Modal, TextField, Spinner, Tag, DataGrid, Tabs } from "@asymmetric-effort/specifyjs/components";
 import { useMenuBar } from "./use-menu-bar";
+import { fetchProjects, createProject as createIdeProject, updateProject, UnifiedProject } from "./shared-projects";
 
 const h = createElement;
 
@@ -30,10 +31,33 @@ function authHeaders(): Record<string, string> {
   return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
-async function fetchRepos(): Promise<Repo[]> {
-  const res = await fetch("/api/v1/repo/repo?limit=200", { headers: authHeaders() });
+async function fetchRepo(repoId: string): Promise<Repo> {
+  const res = await fetch(`/api/v1/repo/repo/${repoId}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
-  return (await res.json()).items || [];
+  return res.json();
+}
+
+/** Fetch IDE projects and resolve each project's linked repo.
+ *  Returns parallel arrays: unified projects and their resolved repos. */
+async function fetchProjectRepos(): Promise<{ projects: UnifiedProject[]; repos: Repo[] }> {
+  const projects = await fetchProjects();
+  const repos: Repo[] = [];
+  for (const proj of projects) {
+    if (proj.repoId) {
+      try {
+        const repo = await fetchRepo(proj.repoId);
+        repos.push(repo);
+      } catch {
+        // Repo may have been deleted — show a placeholder
+        repos.push({ id: proj.repoId, name: proj.name, description: "", defaultBranch: "main", visibility: "private", updatedAt: "" });
+      }
+    } else {
+      // Project with no repo — placeholder entry so the selector
+      // still lists it (repo can be created on demand)
+      repos.push({ id: `__project__${proj.id}`, name: proj.name, description: "(no repo linked)", defaultBranch: "", visibility: "", updatedAt: "" });
+    }
+  }
+  return { projects, repos };
 }
 
 async function createRepo(name: string, description: string): Promise<Repo> {
@@ -64,6 +88,7 @@ async function mergePR(repoId: string, prId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function RepoManager({ principal }: { principal?: any } = {}) {
+  const [ideProjects, setIdeProjects] = useState<UnifiedProject[]>([]);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [activeRepo, setActiveRepo] = useState<Repo | null>(null);
   const [files, setFiles] = useState<RepoFile[]>([]);
@@ -71,6 +96,7 @@ export function RepoManager({ principal }: { principal?: any } = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showNewRepo, setShowNewRepo] = useState(false);
+  const [fileContextMenu, setFileContextMenu] = useState<{ name: string; path: string; x: number; y: number } | null>(null);
 
   useMenuBar("repo", [
     { label: "Repository", items: [
@@ -80,17 +106,29 @@ export function RepoManager({ principal }: { principal?: any } = {}) {
   const [newRepoName, setNewRepoName] = useState("");
   const [newRepoDesc, setNewRepoDesc] = useState("");
 
+  // Load IDE projects as canonical source, resolve linked repos
   useEffect(() => {
     setLoading(true);
-    fetchRepos()
-      .then((r) => { setRepos(r); if (r.length > 0) setActiveRepo(r[0]); })
+    fetchProjectRepos()
+      .then(({ projects, repos: r }) => {
+        setIdeProjects(projects);
+        setRepos(r);
+        // Auto-select the first project that has a real repo
+        const firstReal = r.find((repo) => !repo.id.startsWith("__project__"));
+        if (firstReal) setActiveRepo(firstReal);
+        else if (r.length > 0) setActiveRepo(r[0]);
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
 
-  // Load files and PRs when active repo changes
+  // Load files and PRs when active repo changes (skip placeholders)
   useEffect(() => {
-    if (!activeRepo) return;
+    if (!activeRepo || activeRepo.id.startsWith("__project__")) {
+      setFiles([]);
+      setPrs([]);
+      return;
+    }
     Promise.all([fetchFiles(activeRepo.id), fetchPRs(activeRepo.id)])
       .then(([f, p]) => { setFiles(f); setPrs(p); })
       .catch((err) => setError(err.message));
@@ -100,6 +138,14 @@ export function RepoManager({ principal }: { principal?: any } = {}) {
     if (!newRepoName.trim()) { setError("Repository name is required."); return; }
     try {
       const repo = await createRepo(newRepoName.trim(), newRepoDesc.trim());
+      // Create a canonical IDE project and link the repo
+      try {
+        const project = await createIdeProject(newRepoName.trim());
+        await updateProject(project.id, { repoId: repo.id });
+        setIdeProjects((prev) => [...prev, { ...project, repoId: repo.id }]);
+      } catch {
+        // Non-fatal — repo was still created
+      }
       setRepos((prev) => [...prev, repo]);
       setActiveRepo(repo);
       setNewRepoName(""); setNewRepoDesc(""); setShowNewRepo(false);
@@ -122,12 +168,28 @@ export function RepoManager({ principal }: { principal?: any } = {}) {
   // Files tab
   const filesTab = h("div", { style: { backgroundColor: "#1e1e1e", color: "#e0e0e0", padding: "8px" } },
     files.length > 0
-      ? h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
+      ? h("div", {
+          style: { backgroundColor: "#fff", borderRadius: "4px" },
+          onContextMenu: (e: MouseEvent) => {
+            let el = e.target as HTMLElement | null;
+            while (el && !el.dataset?.filepath) el = el.parentElement;
+            if (el?.dataset?.filepath && el?.dataset?.filetype === "file") {
+              e.preventDefault();
+              setFileContextMenu({ name: el.dataset.filename || "", path: el.dataset.filepath, x: e.clientX, y: e.clientY });
+            }
+          },
+        },
           h(DataGrid, {
             columns: [
               { key: "name", header: "Name", width: 250, render: (v: string, row: any) =>
                 row.type === "file"
-                  ? h("span", { style: { color: "#2563eb", cursor: "pointer" }, title: "Open in Code Monkey IDE" }, v)
+                  ? h("span", {
+                      style: { color: "#2563eb", cursor: "pointer" },
+                      title: "Open in Code Monkey IDE",
+                      "data-filepath": row.path,
+                      "data-filename": v,
+                      "data-filetype": "file",
+                    }, v)
                   : h("span", { style: { fontWeight: "600" } }, v)
               },
               { key: "type", header: "Type", width: 80 },
@@ -182,8 +244,8 @@ export function RepoManager({ principal }: { principal?: any } = {}) {
       h("select", {
         style: { backgroundColor: "#333", color: "#e0e0e0", border: "1px solid #555", borderRadius: "4px", padding: "4px 8px", fontSize: "13px" },
         value: activeRepo?.id || "",
-        onChange: (e: Event) => { const r = repos.find((r) => r.id === (e.target as HTMLSelectElement).value); if (r) setActiveRepo(r); },
-      }, ...repos.map((r) => h("option", { key: r.id, value: r.id }, r.name))),
+        onChange: (e: Event) => { const r = repos.find((repo) => repo.id === (e.target as HTMLSelectElement).value); if (r) setActiveRepo(r); },
+      }, ...repos.map((r) => h("option", { key: r.id, value: r.id }, r.name + (r.id.startsWith("__project__") ? " (no repo)" : "")))),
       h("div", { style: { display: "flex", gap: "8px" } },
         h(Button, { variant: "primary" as const, onClick: () => setShowNewRepo(true) }, "New Repo"),
       )
@@ -202,6 +264,39 @@ export function RepoManager({ principal }: { principal?: any } = {}) {
           h(Button, { variant: "secondary" as const, onClick: () => setShowNewRepo(false) }, "Cancel"),
           h(Button, { variant: "primary" as const, onClick: handleCreateRepo }, "Create")
         )
+      )
+    ) : null,
+    // File context menu overlay
+    fileContextMenu ? h("div", {
+      style: { position: "fixed", inset: 0, zIndex: 1000 },
+      onClick: () => setFileContextMenu(null),
+    },
+      h("div", {
+        style: {
+          position: "absolute", left: `${fileContextMenu.x}px`, top: `${fileContextMenu.y}px`,
+          backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.4)", minWidth: "160px",
+        },
+        onClick: (e: Event) => e.stopPropagation(),
+      },
+        h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            // Open in IDE — placeholder
+            setFileContextMenu(null);
+          },
+        }, "Open in IDE"),
+        h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            // Download — placeholder
+            setFileContextMenu(null);
+          },
+        }, "Download"),
       )
     ) : null,
   );

@@ -23,18 +23,16 @@ import {
   TreeNav,
 } from "@asymmetric-effort/specifyjs/components";
 import { useMenuBar } from "./use-menu-bar";
+import { fetchProjects, createProject, UnifiedProject } from "./shared-projects";
 
 const h = createElement;
+
+// Re-export the Project type from the shared module for local use
+type Project = UnifiedProject;
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface Project {
-  id: string;
-  name: string;
-  repoId: string;
-}
 
 interface RepoFile {
   name: string;
@@ -67,23 +65,6 @@ function authHeaders(): Record<string, string> {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
-}
-
-async function fetchProjects(): Promise<Project[]> {
-  const res = await fetch("/api/v1/ide/project?limit=100", { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to fetch projects: ${res.status}`);
-  const page = await res.json();
-  return page.items || [];
-}
-
-async function createProject(name: string): Promise<Project> {
-  const res = await fetch("/api/v1/ide/project", {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ name }),
-  });
-  if (!res.ok) throw new Error(`Failed to create project: ${res.status}`);
-  return res.json();
 }
 
 async function fetchTree(projectId: string, path: string = ""): Promise<RepoFile[]> {
@@ -391,6 +372,8 @@ export function CodeIDE({ principal }: { principal?: any } = {}) {
   const [showNewProject, setShowNewProject] = useState(false);
   const [showNewFile, setShowNewFile] = useState(false);
   const [sidebarWidth] = useState(220);
+  const [fileContextMenu, setFileContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
+  const [tabContextMenu, setTabContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
 
   // Register applet menu bar
   useMenuBar("ide", [
@@ -614,6 +597,10 @@ export function CodeIDE({ principal }: { principal?: any } = {}) {
                   onClick: () => {
                     if (file.type === "file") openFile(file.path);
                   },
+                  onContextMenu: file.type === "file" ? (e: MouseEvent) => {
+                    e.preventDefault();
+                    setFileContextMenu({ path: file.path, x: e.clientX, y: e.clientY });
+                  } : undefined,
                 },
                   h("span", { style: { fontSize: "12px" } }, file.type === "dir" ? "📁" : "📄"),
                   h("span", { style: { flex: 1 } }, file.name),
@@ -658,6 +645,10 @@ export function CodeIDE({ principal }: { principal?: any } = {}) {
                 whiteSpace: "nowrap",
               },
               onClick: () => setActiveTabPath(tab.path),
+              onContextMenu: (e: MouseEvent) => {
+                e.preventDefault();
+                setTabContextMenu({ path: tab.path, x: e.clientX, y: e.clientY });
+              },
             },
               h("span", null, tab.path.split("/").pop()),
               tab.modified ? h("span", { style: { color: "#e8e8e8", marginLeft: "4px" } }, "●") : null,
@@ -685,6 +676,88 @@ export function CodeIDE({ principal }: { principal?: any } = {}) {
       activeTab ? h("span", null, `${activeTab.content.split("\n").length} lines`) : null,
       activeTab?.modified ? h("span", null, "Modified") : null,
     ),
+    // File context menu overlay
+    fileContextMenu ? h("div", {
+      style: { position: "fixed", inset: 0, zIndex: 1000 },
+      onClick: () => setFileContextMenu(null),
+    },
+      h("div", {
+        style: {
+          position: "absolute", left: `${fileContextMenu.x}px`, top: `${fileContextMenu.y}px`,
+          backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.4)", minWidth: "160px",
+        },
+        onClick: (e: Event) => e.stopPropagation(),
+      },
+        h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            if (activeProject) {
+              deleteFile(activeProject.id, fileContextMenu.path)
+                .then(() => fetchTree(activeProject.id).then(setTree))
+                .catch((err: any) => setError(err.message));
+              closeTab(fileContextMenu.path);
+            }
+            setFileContextMenu(null);
+          },
+        }, "Delete File"),
+        h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#888" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            // Rename placeholder — API exists but not wired yet
+            setFileContextMenu(null);
+          },
+        }, "Rename"),
+      )
+    ) : null,
+    // Tab context menu overlay
+    tabContextMenu ? h("div", {
+      style: { position: "fixed", inset: 0, zIndex: 1000 },
+      onClick: () => setTabContextMenu(null),
+    },
+      h("div", {
+        style: {
+          position: "absolute", left: `${tabContextMenu.x}px`, top: `${tabContextMenu.y}px`,
+          backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.4)", minWidth: "160px",
+        },
+        onClick: (e: Event) => e.stopPropagation(),
+      },
+        h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            closeTab(tabContextMenu.path);
+            setTabContextMenu(null);
+          },
+        }, "Close"),
+        h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            setTabs((prev) => prev.filter((t) => t.path === tabContextMenu.path));
+            setActiveTabPath(tabContextMenu.path);
+            setTabContextMenu(null);
+          },
+        }, "Close Others"),
+        h("div", {
+          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            setTabs([]);
+            setActiveTabPath(null);
+            setTabContextMenu(null);
+          },
+        }, "Close All"),
+      )
+    ) : null,
     // Dialogs
     h(NewProjectDialog, { open: showNewProject, onClose: () => setShowNewProject(false), onCreated: handleProjectCreated }),
     h(NewFileDialog, { open: showNewFile, onClose: () => setShowNewFile(false), onCreated: handleNewFile }),

@@ -21,6 +21,7 @@ func Register(mux *http.ServeMux) {
 	mux.Handle("PUT /api/v1/ide/project/{projectId}/file/{path...}", middleware.Chain(http.HandlerFunc(h.putFile), auth, middleware.RBAC("ide-update")))
 	mux.Handle("DELETE /api/v1/ide/project/{projectId}/file/{path...}", middleware.Chain(http.HandlerFunc(h.deleteFile), auth, middleware.RBAC("ide-update")))
 	mux.Handle("POST /api/v1/ide/project/{projectId}/rename-file", middleware.Chain(http.HandlerFunc(h.renameFile), auth, middleware.RBAC("ide-update")))
+	mux.Handle("PATCH /api/v1/ide/project/{projectId}", middleware.Chain(http.HandlerFunc(h.updateProject), auth, middleware.RBAC("ide-update")))
 	mux.Handle("POST /api/v1/ide/project/{projectId}/render-board", middleware.Chain(http.HandlerFunc(h.renderBoard), auth, middleware.RBAC("ide-update")))
 }
 
@@ -38,6 +39,25 @@ func (h *Handler) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteJSON(w, http.StatusCreated, h.store.CreateProject(req.Name))
+}
+
+func (h *Handler) updateProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("projectId")
+	var req struct {
+		Name    *string `json:"name,omitempty"`
+		RepoID  *string `json:"repoId,omitempty"`
+		BoardID *string `json:"boardId,omitempty"`
+	}
+	if err := httputil.ReadJSON(r, &req); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
+		return
+	}
+	p, ok := h.store.UpdateProject(id, req.Name, req.RepoID, req.BoardID)
+	if !ok {
+		httputil.WriteError(w, http.StatusNotFound, "not_found", "project not found")
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, p)
 }
 
 func (h *Handler) tree(w http.ResponseWriter, r *http.Request) {
