@@ -518,14 +518,23 @@ function CanvasView({
 // Kanban Status View — columns grouped by card status
 // ---------------------------------------------------------------------------
 
-/** Render a single card in a kanban cell */
-function renderCard(card: BoardCard, onSelectCard: (c: BoardCard) => void) {
+/** Render a single draggable card in a kanban cell */
+function renderCard(
+  card: BoardCard,
+  onSelectCard: (c: BoardCard) => void,
+  onDragStart?: (cardId: string) => void,
+) {
   return h("div", {
     key: card.id,
+    draggable: true,
+    onDragStart: (e: DragEvent) => {
+      e.dataTransfer?.setData("text/plain", card.id);
+      if (onDragStart) onDragStart(card.id);
+    },
     style: {
       padding: "8px 10px", backgroundColor: "#2d2d2d", borderRadius: "4px",
       borderLeft: `3px solid ${STATUS_COLORS[card.status]}`,
-      cursor: "pointer", fontSize: "13px",
+      cursor: "grab", fontSize: "13px",
     },
     onClick: () => onSelectCard(card),
   },
@@ -542,10 +551,13 @@ function renderCard(card: BoardCard, onSelectCard: (c: BoardCard) => void) {
 function StatusView({
   board,
   onSelectCard,
+  onMoveCard,
 }: {
   board: Board;
   onSelectCard: (card: BoardCard) => void;
+  onMoveCard: (cardId: string, containerId: string | null) => void;
 }) {
+  const [dragOverLane, setDragOverLane] = useState<string | null>(null);
   // Build swim lanes: one per container + one for unassigned cards
   const lanes: Array<{ id: string; label: string }> = [];
   for (const cont of board.containers) {
@@ -582,11 +594,24 @@ function StatusView({
       // Skip empty unassigned lane if all cards are in containers
       if (lane.id === "__unassigned__" && laneCards.length === 0 && board.containers.length > 0) return null;
 
+      const isDropTarget = dragOverLane === lane.id;
+      const containerId = lane.id === "__unassigned__" ? null : lane.id;
+
       return h("div", {
         key: lane.id,
         style: {
           display: "flex", gap: "1px",
           borderBottom: "1px solid #333", minHeight: "80px",
+          backgroundColor: isDropTarget ? "rgba(59, 130, 246, 0.1)" : "transparent",
+          transition: "background-color 150ms",
+        },
+        onDragOver: (e: DragEvent) => { e.preventDefault(); setDragOverLane(lane.id); },
+        onDragLeave: () => setDragOverLane(null),
+        onDrop: (e: DragEvent) => {
+          e.preventDefault();
+          setDragOverLane(null);
+          const cardId = e.dataTransfer?.getData("text/plain");
+          if (cardId) onMoveCard(cardId, containerId);
         },
       },
         // Lane label
@@ -715,6 +740,22 @@ export function ProjectBoard() {
     }
   }, [activeBoard, reloadBoard]);
 
+  /** Move a card to a different container (drag-and-drop) */
+  const handleMoveCard = useCallback(async (cardId: string, containerId: string | null) => {
+    if (!activeBoard) return;
+    const card = activeBoard.cards.find((c) => c.id === cardId);
+    if (!card) return;
+    try {
+      await updateCard(activeBoard.id, cardId, {
+        ...card,
+        containerId: containerId || undefined,
+      });
+      await reloadBoard();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }, [activeBoard, reloadBoard]);
+
   /** Handle board created */
   const handleBoardCreated = useCallback(async (board: Board) => {
     setBoards((prev) => [...prev, { id: board.id, name: board.name }]);
@@ -798,7 +839,7 @@ export function ProjectBoard() {
     // View — status kanban or canvas
     activeBoard
       ? viewMode === "status"
-        ? h(StatusView, { board: activeBoard, onSelectCard: setSelectedCard })
+        ? h(StatusView, { board: activeBoard, onSelectCard: setSelectedCard, onMoveCard: handleMoveCard })
         : h(CanvasView, { board: activeBoard, onSelectCard: setSelectedCard })
       : h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" } }, "No board selected"),
     // Footer
