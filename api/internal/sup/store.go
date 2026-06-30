@@ -12,6 +12,7 @@ type Ticket struct {
 	Status    string `json:"status"`
 	Priority  string `json:"priority"`
 	Body      string `json:"body"`
+	Reporter  string `json:"reporter"`
 	UpdatedAt string `json:"updatedAt"`
 }
 
@@ -28,12 +29,8 @@ type Store struct {
 }
 
 func NewStore() *Store {
-	now := time.Now().UTC().Format(time.RFC3339)
 	return &Store{
-		tickets: []Ticket{
-			{ID: "tkt-001", Subject: "Cannot provision node", Status: "open", Priority: "high", Body: "SSH connection fails on provision", UpdatedAt: now},
-			{ID: "tkt-002", Subject: "Agent container stuck in migrating", Status: "in-progress", Priority: "medium", Body: "Agent agt-7f3a-01 shows migrating for 2 hours", UpdatedAt: now},
-		},
+		tickets: []Ticket{},
 		articles: []DocArticle{
 			{ID: "doc-001", Title: "Getting Started", Slug: "getting-started"},
 			{ID: "doc-002", Title: "Node Provisioning Guide", Slug: "node-provisioning"},
@@ -100,4 +97,16 @@ func (s *Store) UpdateTicket(id string, t Ticket) (Ticket, bool) {
 		}
 	}
 	return Ticket{}, false
+}
+
+func (s *Store) DeleteTicket(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, t := range s.tickets {
+		if t.ID == id {
+			s.tickets = append(s.tickets[:i], s.tickets[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
