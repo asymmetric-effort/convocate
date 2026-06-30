@@ -18,6 +18,7 @@ import { UnityDesktop, UnityApp, TextField, Button, Card } from "@asymmetric-eff
 import { createRestClient } from "@asymmetric-effort/specifyjs/client";
 import { NodeManager } from "./applets/node-manager";
 import { AgentManager } from "./applets/agent-manager";
+import { CodeIDE } from "./applets/code-ide";
 
 const h = createElement;
 
@@ -37,7 +38,7 @@ const APPLETS: {
   { id: "nmgr", label: "Node Manager", icon: "/img/icons/node-manager.png", component: NodeManager },
   { id: "amgr", label: "Agent Manager", icon: "/img/icons/agent-manager.png", component: AgentManager },
   { id: "pb", label: "Convocate Project Board", icon: "/img/icons/productboard.png" },
-  { id: "ide", label: "Code IDE", icon: "/img/icons/ide-monkey.png" },
+  { id: "ide", label: "Code IDE", icon: "/img/icons/ide-monkey.png", component: CodeIDE },
   { id: "ac", label: "Access Control", icon: "/img/icons/access-control.png" },
   { id: "repo", label: "Repo Manager", icon: "/img/icons/repo-man.png" },
   { id: "sup", label: "Support Tool", icon: "/img/icons/support-tool.png" },
