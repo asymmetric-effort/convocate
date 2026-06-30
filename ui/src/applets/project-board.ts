@@ -72,10 +72,31 @@ function authHeaders(): Record<string, string> {
 }
 
 async function fetchBoards(): Promise<BoardSummary[]> {
+  // Fetch boards from the Project Board API
   const res = await fetch("/api/v1/pb/board?limit=100", { headers: authHeaders() });
   if (!res.ok) throw new Error(`Failed to fetch boards: ${res.status}`);
   const page = await res.json();
-  return page.items || [];
+  const boards: BoardSummary[] = page.items || [];
+
+  // Also fetch IDE projects and create board references for any that
+  // have an associated board — ensures both applets share the same
+  // project list
+  try {
+    const ideRes = await fetch("/api/v1/ide/project?limit=100", { headers: authHeaders() });
+    if (ideRes.ok) {
+      const idePage = await ideRes.json();
+      const existingIds = new Set(boards.map((b) => b.id));
+      for (const proj of (idePage.items || [])) {
+        if (proj.boardId && !existingIds.has(proj.boardId)) {
+          boards.push({ id: proj.boardId, name: proj.name });
+        }
+      }
+    }
+  } catch {
+    // IDE projects are supplementary — don't fail if unavailable
+  }
+
+  return boards;
 }
 
 async function fetchBoard(id: string): Promise<Board> {

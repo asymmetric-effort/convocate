@@ -510,17 +510,18 @@ export function CodeIDE() {
 
   return h("div", {
     style: {
-      display: "flex", flexDirection: "column", height: "100%",
+      display: "flex", flexDirection: "column", width: "100%", height: "100%",
       backgroundColor: "#1e1e1e", color: "#cccccc", fontFamily: "monospace",
+      overflow: "hidden",
     },
     "data-testid": "code-ide",
   },
-    // Menu bar
+    // Menu bar — spans full width
     h("div", {
       style: {
         display: "flex", alignItems: "center", gap: "4px",
         padding: "0 8px", height: "28px", backgroundColor: "#3c3c3c",
-        fontSize: "13px", flexShrink: 0,
+        fontSize: "13px", flexShrink: 0, width: "100%", boxSizing: "border-box",
       },
     },
       // Project selector
@@ -562,13 +563,15 @@ export function CodeIDE() {
       style: { padding: "4px 8px", backgroundColor: "#3d1c1c", color: "#ff8888", fontSize: "12px", flexShrink: 0 },
       onClick: () => setError(""),
     }, error) : null,
-    // Main content area
-    h("div", { style: { display: "flex", flex: 1, overflow: "hidden" } },
-      // Sidebar — file explorer
+    // Main content area — sidebar pinned left, editor fills remaining space
+    h("div", { style: { display: "flex", flex: 1, overflow: "hidden", width: "100%" } },
+      // Sidebar — file explorer, always pinned to the left
       h("div", {
         style: {
-          width: `${sidebarWidth}px`, backgroundColor: "#252526",
-          borderRight: "1px solid #333", overflow: "auto", flexShrink: 0,
+          width: `${sidebarWidth}px`, minWidth: `${sidebarWidth}px`,
+          backgroundColor: "#252526",
+          borderRight: "1px solid #333", overflowY: "auto", overflowX: "hidden",
+          flexShrink: 0, flexGrow: 0,
         },
       },
         h("div", {
