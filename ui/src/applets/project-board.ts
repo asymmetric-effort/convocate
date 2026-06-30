@@ -145,6 +145,23 @@ async function createContainer(boardId: string, title: string): Promise<Containe
   return res.json();
 }
 
+async function fetchAgents(): Promise<Array<{ id: string; project: string; nodeId: string; status: string }>> {
+  const res = await fetch("/api/v1/amgr/agent?limit=200", { headers: authHeaders() });
+  if (!res.ok) return [];
+  const page = await res.json();
+  return page.items || [];
+}
+
+async function updateContainer(boardId: string, containerId: string, data: Partial<Container>): Promise<Container> {
+  const res = await fetch(`/api/v1/pb/board/${boardId}/container/${containerId}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to update container: ${res.status}`);
+  return res.json();
+}
+
 async function deleteCard(boardId: string, cardId: string): Promise<void> {
   const res = await fetch(`/api/v1/pb/board/${boardId}/card/${cardId}`, {
     method: "DELETE",
@@ -552,12 +569,23 @@ function StatusView({
   board,
   onSelectCard,
   onMoveCard,
+  onAttachAgent,
 }: {
   board: Board;
   onSelectCard: (card: BoardCard) => void;
   onMoveCard: (cardId: string, containerId: string | null, newStatus?: string) => void;
+  onAttachAgent: (containerId: string, agentId: string) => void;
 }) {
   const [dragOverCell, setDragOverCell] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ containerId: string; x: number; y: number } | null>(null);
+  const [agents, setAgents] = useState<Array<{ id: string; project: string; status: string }>>([]);
+
+  // Fetch agents when context menu opens
+  useEffect(() => {
+    if (contextMenu) {
+      fetchAgents().then(setAgents);
+    }
+  }, [contextMenu]);
   // Build swim lanes: one per container + one for unassigned cards
   const lanes: Array<{ id: string; label: string }> = [];
   for (const cont of board.containers) {
@@ -604,15 +632,31 @@ function StatusView({
           borderBottom: "1px solid #333", minHeight: "80px",
         },
       },
-        // Lane label
+        // Lane label — right-click for container context menu
         h("div", {
           style: {
             width: "120px", flexShrink: 0, padding: "8px",
             fontSize: "12px", fontWeight: "600", color: "#aaa",
-            backgroundColor: "#1e1e1e", display: "flex", alignItems: "flex-start",
-            borderRight: "1px solid #333",
+            backgroundColor: "#1e1e1e", display: "flex", flexDirection: "column",
+            alignItems: "flex-start", borderRight: "1px solid #333", cursor: isUnassigned ? "default" : "context-menu",
           },
-        }, lane.label),
+          onContextMenu: isUnassigned ? undefined : (e: MouseEvent) => {
+            e.preventDefault();
+            setContextMenu({ containerId: lane.id, x: e.clientX, y: e.clientY });
+          },
+        },
+          h("span", null, lane.label),
+          // Show attached agent if any
+          (() => {
+            const cont = board.containers.find((c) => c.id === lane.id);
+            if (cont?.agentId) {
+              return h("span", { style: { fontSize: "10px", color: "#6b7280", marginTop: "2px" } },
+                `→ ${cont.agentId}`
+              );
+            }
+            return null;
+          })()
+        ),
         // Cells per status column — each cell is a drop target
         ...STATUS_ORDER.map((status) => {
           const cellCards = laneCards.filter((c) => c.status === status);
@@ -649,7 +693,55 @@ function StatusView({
           );
         })
       );
-    }).filter(Boolean)
+    }).filter(Boolean),
+    // Context menu overlay for "Attach to" agent
+    contextMenu ? h("div", {
+      style: { position: "fixed", inset: 0, zIndex: 1000 },
+      onClick: () => setContextMenu(null),
+    },
+      h("div", {
+        style: {
+          position: "absolute", left: `${contextMenu.x}px`, top: `${contextMenu.y}px`,
+          backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.4)", minWidth: "180px", zIndex: 1001,
+        },
+        onClick: (e: Event) => e.stopPropagation(),
+      },
+        h("div", { style: { padding: "6px 12px", fontSize: "11px", color: "#888", borderBottom: "1px solid #444" } },
+          "Attach to Agent"
+        ),
+        agents.length === 0
+          ? h("div", { style: { padding: "8px 12px", fontSize: "12px", color: "#666" } }, "No agents available")
+          : null,
+        ...agents.map((agent) =>
+          h("div", {
+            key: agent.id,
+            style: {
+              padding: "6px 12px", fontSize: "12px", color: "#e0e0e0",
+              cursor: "pointer", display: "flex", justifyContent: "space-between",
+            },
+            onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+            onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+            onClick: () => {
+              onAttachAgent(contextMenu.containerId, agent.id);
+              setContextMenu(null);
+            },
+          },
+            h("span", null, agent.id),
+            h("span", { style: { color: "#888", fontSize: "10px" } }, agent.status)
+          )
+        ),
+        h("div", {
+          style: { padding: "6px 12px", fontSize: "12px", color: "#888", borderTop: "1px solid #444", cursor: "pointer" },
+          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
+          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
+          onClick: () => {
+            onAttachAgent(contextMenu.containerId, "");
+            setContextMenu(null);
+          },
+        }, "Detach")
+      )
+    ) : null
   );
 }
 
@@ -810,6 +902,17 @@ export function ProjectBoard() {
     }
   }, [activeBoard, reloadBoard]);
 
+  /** Attach or detach an agent to/from a container */
+  const handleAttachAgent = useCallback(async (containerId: string, agentId: string) => {
+    if (!activeBoard) return;
+    try {
+      await updateContainer(activeBoard.id, containerId, { agentId: agentId || undefined });
+      await reloadBoard();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }, [activeBoard, reloadBoard]);
+
   /** Handle board created */
   const handleBoardCreated = useCallback(async (board: Board) => {
     setBoards((prev) => [...prev, { id: board.id, name: board.name }]);
@@ -893,7 +996,7 @@ export function ProjectBoard() {
     // View — status kanban or canvas
     activeBoard
       ? viewMode === "status"
-        ? h(StatusView, { board: activeBoard, onSelectCard: setSelectedCard, onMoveCard: handleMoveCard })
+        ? h(StatusView, { board: activeBoard, onSelectCard: setSelectedCard, onMoveCard: handleMoveCard, onAttachAgent: handleAttachAgent })
         : h(CanvasView, { board: activeBoard, onSelectCard: setSelectedCard })
       : h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" } }, "No board selected"),
     // Footer

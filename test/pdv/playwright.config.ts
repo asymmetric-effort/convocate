@@ -21,5 +21,8 @@ export default defineConfig({
     { name: "agent-manager", testMatch: /agent-manager\.spec\.ts/ },
     { name: "code-ide", testMatch: /code-ide\.spec\.ts/ },
     { name: "project-board", testMatch: /project-board\.spec\.ts/ },
+    { name: "access-control", testMatch: /access-control\.spec\.ts/ },
+    { name: "repo-manager", testMatch: /repo-manager\.spec\.ts/ },
+    { name: "support-tool", testMatch: /support-tool\.spec\.ts/ },
   ],
 });

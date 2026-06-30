@@ -20,6 +20,9 @@ import { NodeManager } from "./applets/node-manager";
 import { AgentManager } from "./applets/agent-manager";
 import { CodeIDE } from "./applets/code-ide";
 import { ProjectBoard } from "./applets/project-board";
+import { AccessControl } from "./applets/access-control";
+import { RepoManager } from "./applets/repo-manager";
+import { SupportTool } from "./applets/support-tool";
 
 const h = createElement;
 
@@ -40,9 +43,9 @@ const APPLETS: {
   { id: "amgr", label: "Agent Manager", icon: "/img/icons/agent-manager.png", component: AgentManager },
   { id: "pb", label: "Convocate Project Board", icon: "/img/icons/productboard.png", component: ProjectBoard },
   { id: "ide", label: "Code Monkey IDE", icon: "/img/icons/ide-monkey.png", component: CodeIDE },
-  { id: "ac", label: "Access Control", icon: "/img/icons/access-control.png" },
-  { id: "repo", label: "Repo Manager", icon: "/img/icons/repo-man.png" },
-  { id: "sup", label: "Support Tool", icon: "/img/icons/support-tool.png" },
+  { id: "ac", label: "Access Control", icon: "/img/icons/access-control.png", component: AccessControl },
+  { id: "repo", label: "Repo Manager", icon: "/img/icons/repo-man.png", component: RepoManager },
+  { id: "sup", label: "Support Tool", icon: "/img/icons/support-tool.png", component: SupportTool },
 ];
 
 // ---------------------------------------------------------------------------
