@@ -789,8 +789,16 @@ export function NodeManager() {
       width: 80,
       render: (_: string, row: any) => {
         const st = row._status;
-        // Error → no inline action (use detail dialog Delete)
-        if (st === "Error") return null;
+        // Error → Delete button for cleanup
+        if (st === "Error") {
+          return h(Button, {
+            variant: "danger" as any,
+            onClick: (e: Event) => {
+              e.stopPropagation();
+              deleteNode(row.id).then(loadNodes).catch((err: any) => setError(err.message));
+            },
+          }, "Delete");
+        }
         // Ready → Stop (disabled if fewer than 4 Ready nodes)
         if (st === "Ready") {
           return h(Button, {
