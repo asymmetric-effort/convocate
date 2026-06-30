@@ -14,14 +14,14 @@
 ```
 Error: expect(locator).toBeVisible() failed
 
-Locator: locator('[data-testid="agent-manager"]')
+Locator: locator('input[placeholder*="Node ID"]')
 Expected: visible
-Timeout: 10000ms
+Timeout: 5000ms
 Error: element(s) not found
 
 Call log:
-  - Expect "toBeVisible" with timeout 10000ms
-  - waiting for locator('[data-testid="agent-manager"]')
+  - Expect "toBeVisible" with timeout 5000ms
+  - waiting for locator('input[placeholder*="Node ID"]')
 
 ```
 
@@ -29,14 +29,13 @@ Call log:
 - menubar "System panel":
   - button "Activities"
   - text: Agent Manager
-  - timer "System clock": Tue, Jun 30 21:23:29
+  - timer "System clock": Tue, Jun 30 21:30:51
   - button "Mock Admin"
 - toolbar "Application launcher":
   - button "Node Manager":
     - img "Node Manager"
   - button "Agent Manager" [pressed]:
     - img "Agent Manager"
-    - tooltip "Agent Manager"
   - button "Convocate Project Board":
     - img "Convocate Project Board"
   - button "Code Monkey IDE":
@@ -55,12 +54,39 @@ Call log:
         - button "Minimize"
         - button "Maximize"
         - button "Close"
+      - text: Agents
+      - button "Create Agent"
+      - button "Refresh"
+      - text: No agents running. 0 agents
+      - dialog "Create Agent":
+        - document:
+          - heading "Create Agent" [level=2]
+          - button "Close modal": ×
+          - text: Project
+          - textbox "Project name"
+          - text: Claude CLI
+          - textbox "Claude flags (space-separated)": "--dangerously-skip-permissions"
+          - textbox "Anthropic API Key (optional, for headless auth)"
+          - text: Resources
+          - textbox "CPU limit (e.g. 2)": "2"
+          - textbox "Memory limit (e.g. 2Gi)": 2Gi
+          - textbox "Storage (e.g. 2Gi)": 2Gi
+          - text: K8s Capabilities (admin)
+          - textbox "Linux capabilities (comma-separated, e.g. NET_ADMIN,SYS_PTRACE)"
+          - text: Network Policy
+          - textbox "Additional egress hosts (comma-separated, e.g. my-registry.io,db.internal)"
+          - text: "Default: Anthropic API, GitHub, npm, PyPI. Add extra hosts here. CLAUDE.md Guardrails"
+          - textbox "# Agent Instructions Custom guardrails for this agent...":
+            - /placeholder: "# Agent Instructions\nCustom guardrails for this agent..."
+          - checkbox "Enable I/O logging (stdout/stderr forwarded to K8s logging)"
+          - text: Enable I/O logging (stdout/stderr forwarded to K8s logging)
+          - button "Cancel"
+          - button "Create"
 ```
 
 # Test source
 
 ```ts
-  1   | /**
   2   |  * Agent Manager Applet — Post-Deployment Verification Tests
   3   |  *
   4   |  * Validates that the Agent Manager applet loads, displays agent data
@@ -102,8 +128,7 @@ Call log:
   40  |   ).toBeVisible({ timeout: 5000 });
   41  |   await expect(
   42  |     page.locator('[data-testid="agent-manager"]')
-> 43  |   ).toBeVisible({ timeout: 10000 });
-      |     ^ Error: expect(locator).toBeVisible() failed
+  43  |   ).toBeVisible({ timeout: 10000 });
   44  | }
   45  | 
   46  | // ---------------------------------------------------------------------------
@@ -162,7 +187,8 @@ Call log:
   99  |     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
   100 |     await expect(page.locator('text=Create Agent').first()).toBeVisible({ timeout: 5000 });
   101 |     await expect(page.locator('input[placeholder="Project name"]')).toBeVisible();
-  102 |     await expect(page.locator('input[placeholder*="Node ID"]')).toBeVisible();
+> 102 |     await expect(page.locator('input[placeholder*="Node ID"]')).toBeVisible();
+      |                                                                 ^ Error: expect(locator).toBeVisible() failed
   103 |   });
   104 | 
   105 |   test("validates required fields", async ({ page }) => {
@@ -204,4 +230,63 @@ Call log:
   141 |     // Cleanup: delete the test agent if it was created
   142 |     if (testAgentId) {
   143 |       await fetch(`${BASE}/api/v1/amgr/agent/${testAgentId}`, {
+  144 |         method: "DELETE",
+  145 |         headers: authHeaders(),
+  146 |       }).catch(() => {});
+  147 |       testAgentId = null;
+  148 |     }
+  149 |   });
+  150 | 
+  151 |   test("can create, view, and delete an agent via API", async () => {
+  152 |     // Use unique project name to avoid conflicts
+  153 |     const project = `pdv-${Date.now().toString(36)}`;
+  154 | 
+  155 |     // Create
+  156 |     const createRes = await fetch(`${BASE}/api/v1/amgr/agent`, {
+  157 |       method: "POST",
+  158 |       headers: authHeaders(),
+  159 |       body: JSON.stringify({ project, nodeId: "convocate04" }),
+  160 |     });
+  161 |     expect(createRes.status).toBe(201);
+  162 |     const agent = await createRes.json();
+  163 |     testAgentId = agent.id;
+  164 |     expect(agent.project).toBe(project);
+  165 | 
+  166 |     // Get
+  167 |     const getRes = await fetch(`${BASE}/api/v1/amgr/agent/${testAgentId}`, {
+  168 |       headers: authHeaders(),
+  169 |     });
+  170 |     expect(getRes.status).toBe(200);
+  171 |     const detail = await getRes.json();
+  172 |     expect(detail.id).toBe(testAgentId);
+  173 | 
+  174 |     // Delete
+  175 |     const delRes = await fetch(`${BASE}/api/v1/amgr/agent/${testAgentId}`, {
+  176 |       method: "DELETE",
+  177 |       headers: authHeaders(),
+  178 |     });
+  179 |     expect(delRes.status).toBe(204);
+  180 | 
+  181 |     // Wait briefly for K8s to process the deletion
+  182 |     await new Promise((r) => setTimeout(r, 2000));
+  183 | 
+  184 |     // Verify gone (K8s delete is async; pod may still be terminating)
+  185 |     const verifyRes = await fetch(`${BASE}/api/v1/amgr/agent/${agent.id}`, {
+  186 |       headers: authHeaders(),
+  187 |     });
+  188 |     // Accept 404 (gone) or 200 with stopping status (still terminating)
+  189 |     expect([200, 404]).toContain(verifyRes.status);
+  190 |     testAgentId = null;
+  191 |   });
+  192 | 
+  193 |   test("list endpoint returns paginated results", async () => {
+  194 |     const res = await fetch(`${BASE}/api/v1/amgr/agent?limit=10`, {
+  195 |       headers: authHeaders(),
+  196 |     });
+  197 |     expect(res.status).toBe(200);
+  198 |     const page = await res.json();
+  199 |     expect(page).toHaveProperty("items");
+  200 |     expect(page).toHaveProperty("total");
+  201 |     expect(page).toHaveProperty("offset");
+  202 |     expect(page).toHaveProperty("limit");
 ```

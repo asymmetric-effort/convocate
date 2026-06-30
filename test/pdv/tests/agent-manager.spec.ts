@@ -97,9 +97,9 @@ test.describe("Agent Manager create dialog", () => {
 
   test("opens when Create Agent is clicked", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('text=Create Agent').first()).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('input[placeholder="Project name"]')).toBeVisible();
-    await expect(page.locator('input[placeholder*="Node ID"]')).toBeVisible();
+    await expect(page.locator('input[placeholder="Project name"]')).toBeVisible({ timeout: 5000 });
+    // Network policy field should be visible
+    await expect(page.locator('input[placeholder*="Additional egress"]')).toBeVisible();
   });
 
   test("validates required fields", async ({ page }) => {

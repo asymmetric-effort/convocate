@@ -190,7 +190,7 @@ function CreateAgentDialog({
     } finally {
       setSubmitting(false);
     }
-  }, [project, nodeId, claudeFlags, cpuLimit, memoryLimit, storageSize, claudeMd, apiKey, logging, onCreated, onClose]);
+  }, [project, claudeFlags, cpuLimit, memoryLimit, storageSize, capabilities, additionalEgress, claudeMd, apiKey, logging, isAdmin, onCreated, onClose]);
 
   if (!open) return null;
 
