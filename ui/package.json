@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "@asymmetric-effort/nogginlessdom": "^0.0.27",
-    "@asymmetric-effort/specifyjs": "^0.2.169"
+    "@asymmetric-effort/specifyjs": "^0.3.1"
   }
 }
