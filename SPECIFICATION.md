@@ -121,14 +121,22 @@ visual + interaction specification, **not** the shippable artifact.
   id (pod name), project (label), status (Running/Pending/Succeeded/Failed),
   node assignment, owner (label), controls (Start/Stop/Config/Shell).
 - Agent-containers run as pods in the **`convocate-agents` namespace**, separate
-  from core Convocate services in the `convocate` namespace.
-- **Shell**: opens a terminal window streaming the agent's **Claude CLI in
-  permission-bypass mode** via **K8s pod exec** (WebSocket).
-- **Create Agent**: creates a pod in `convocate-agents` with the specified image,
-  project label, and optional node selector.
-- **Configure Agent**: updates pod labels, node affinity, and **Expose** creates
-  a K8s Service for the agent pod (`FQDN:port` via Ingress or NodePort).
-- **Start/Stop**: creates or deletes the agent pod.
+  from core Convocate services in the `convocate` namespace. Each pod runs the
+  `convocate/agent` container image (see §12 for full container specification).
+- **Shell**: opens a terminal window streaming the agent's **Claude CLI**
+  stdout/stderr via WebSocket and accepting stdin input — relayed by the Go
+  wrapper inside the agent-container.
+- **Create Agent**: creates a pod in `convocate-agents`. The create API accepts
+  K8s pod configuration (resource limits, node selector, security overrides)
+  and Claude CLI flags (e.g. `--dangerously-skip-permissions`). See §12.5.
+- **Configure Agent**: updates pod labels, node affinity, resource limits,
+  security overrides (admin-only), network policy rules, logging settings,
+  and **Expose** (creates a K8s Service for the agent pod). Configuration
+  changes that affect the Claude CLI (e.g. CLAUDE.md guardrails) are applied
+  via ConfigMap update; the Go wrapper detects the change and restarts Claude
+  CLI without restarting the pod.
+- **Start/Stop**: creates or deletes the agent pod. PVC persists across
+  stop/start cycles, preserving Claude memories and session state.
 - **Migration**: handled natively by K8s pod eviction and rescheduling.
 
 ### 5.3 Project Board (`pb`)
@@ -222,7 +230,10 @@ visual + interaction specification, **not** the shippable artifact.
   `jackc/pgx`) for searchable records and file references.
 - **Data plane**: Agent-containers as K8s pods in the `convocate-agents` namespace,
   scheduled across cluster worker nodes. K8s handles migration, scaling, and
-  resource management natively.
+  resource management natively. Each agent-container runs a Go wrapper binary
+  managing a single Claude CLI instance (see §12).
+- **Node metrics**: `node-metrics` DaemonSet on every cluster node reads
+  `/proc` and filesystem stats, pushes to the API every 3 seconds.
 - **Secrets**: **OpenBao** (`openbao/openbao`) for secret storage (JWT signing
   keys, database credentials, OAuth client secrets). Filesystem-backed persistence.
 - **Orchestration**: **K8s API** (`k8s.io/client-go`) for node management
@@ -350,3 +361,357 @@ The "Convocate Repo Manager" will appear sixth in the dock, below the Convocate 
 ### 11.8 Convocate Support Tool
 
 The "Convocate Support Tool" will appear seventh in the dock, below Convocate Repo Manager. This tool will provide a dialog and use /api/v1/sup/ticket to create, read, update support tickets for the convocate system's internal administrators. The applet will also display convocate online documentation.
+
+---
+
+## 12. Agent-Container Specification (`convocate/agent`)
+
+An **agent-container** is the unit of AI compute in Convocate. Each agent-container
+runs as a K8s pod in the `convocate-agents` namespace, encapsulating a single
+Claude CLI instance managed by a Go wrapper binary. Convocate can run many
+agent-containers concurrently, each operating independently on a dedicated task
+or project.
+
+### 12.1 Container Image
+
+The `convocate/agent` image is built via a multi-stage Docker process:
+
+| Stage | Base Image | Purpose |
+|-------|-----------|---------|
+| Build | `ubuntu:24.04` | Install Go 1.26+, Node.js, npm. Compile the Go wrapper binary. Install Claude CLI via `npm install -g @anthropic-ai/claude-code@<pinned-version>`. |
+| Runtime | `ubuntu:24.04` (minimal) | Copy Go binary, Claude CLI, Node.js runtime. Strip unnecessary packages, docs, caches to minimize attack surface and image size. No compilers, no dev tools, no package manager caches. |
+
+The Claude CLI version is **pinned at build time**. Upgrading Claude Code requires
+rebuilding the container image, ensuring the CLI lifecycle is managed through the
+container lifecycle.
+
+**Runtime user**: `claude` (UID 1337, GID 1337). The Go wrapper and Claude CLI
+both run as this non-root user.
+
+**ENTRYPOINT**: `/usr/bin/convocate-agent-wrapper`
+
+### 12.2 Go Wrapper Binary (`convocate-agent-wrapper`)
+
+The Go wrapper is the agent-container's main process and sole ENTRYPOINT. It:
+
+1. Starts the Claude CLI in a shell as a background process (via goroutine).
+2. Manages stdin/stdout/stderr communication with Claude CLI via Go channels.
+3. Exposes an HTTPS API for authenticated control and I/O relay.
+4. Watches for configuration changes (CLAUDE.md) and restarts Claude CLI
+   without restarting the pod.
+5. Handles graceful shutdown on SIGTERM.
+
+#### 12.2.1 I/O Architecture
+
+The wrapper is a **transparent bidirectional relay** between the Convocate API
+and the Claude CLI process. No parsing, no prompt detection, no transformation.
+Raw bytes in, raw bytes out.
+
+```
+Convocate API                    Go Wrapper                     Claude CLI
+                                 (convocate-agent-wrapper)       (shell)
+
+POST /stdin    ──────────────►   go channel ──► process.stdin
+WS   /stdout   ◄──────────────   go channel ◄── process.stdout
+WS   /stderr   ◄──────────────   go channel ◄── process.stderr
+POST /control  ──────────────►   (restart, signal, config)
+```
+
+- **stdin**: API posts raw bytes; wrapper writes them to the shell's stdin
+  exactly as received.
+- **stdout**: Wrapper reads the shell's stdout and streams raw bytes to
+  subscribers via a dedicated WebSocket channel.
+- **stderr**: Same as stdout but on a separate WebSocket channel.
+- **control**: Separate API endpoints for lifecycle operations (restart
+  Claude CLI, send OS signals, update configuration).
+
+This design supports a future web-based terminal emulator applet in Convocate
+that opens stdout/stderr WebSocket streams and posts keystrokes to the stdin
+endpoint.
+
+#### 12.2.2 Wrapper API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/healthz` | GET | Liveness probe — returns 200 if wrapper process is running |
+| `/readyz` | GET | Readiness probe — returns 200 only when Claude CLI is running and stdin is writable |
+| `/metrics` | GET | Usage and performance statistics (see §12.2.3) |
+| `/stdin` | POST | Write raw bytes to Claude CLI's stdin |
+| `/stdout` | GET (WebSocket) | Stream Claude CLI's stdout in real-time |
+| `/stderr` | GET (WebSocket) | Stream Claude CLI's stderr in real-time |
+| `/control/restart` | POST | Gracefully restart Claude CLI (finish current output, then restart) |
+| `/control/signal` | POST | Send an OS signal to the Claude CLI process |
+
+#### 12.2.3 Metrics Endpoint
+
+The `/metrics` endpoint returns a JSON object with usage and performance
+statistics:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stdinBytes` | int64 | Cumulative bytes written to stdin |
+| `stdoutBytes` | int64 | Cumulative bytes read from stdout |
+| `stderrBytes` | int64 | Cumulative bytes read from stderr |
+| `stdinMessages` | int64 | Number of stdin write operations |
+| `stdoutMessages` | int64 | Number of stdout read operations |
+| `stderrMessages` | int64 | Number of stderr read operations |
+| `claudeRestarts` | int | Number of Claude CLI restarts (config change, crash, etc.) |
+| `wrapperVersion` | string | Go binary version (compiled in at build time) |
+| `claudeCodeVersion` | string | Claude CLI version (read at startup) |
+| `uptimeSeconds` | int64 | Wrapper process uptime |
+| `claudeUptimeSeconds` | int64 | Current Claude CLI process uptime (resets on restart) |
+| `activeConnections` | int | Number of open WebSocket subscribers |
+| `podName` | string | K8s pod name |
+| `nodeName` | string | K8s node the pod is running on |
+
+#### 12.2.4 Configuration Watch
+
+The Go wrapper monitors the CLAUDE.md configuration file (mounted read-only
+from a K8s ConfigMap) for changes using `fsnotify`. When a change is detected:
+
+1. The wrapper waits for any in-flight Claude CLI response to complete.
+2. Sends SIGTERM to the Claude CLI process.
+3. Waits for graceful exit (up to 10 seconds).
+4. Starts a new Claude CLI process with the updated configuration.
+5. Increments the `claudeRestarts` metric counter.
+
+This allows the Agent Manager to update guardrails without restarting the pod
+or losing the PVC state.
+
+**Note**: `fsnotify` is an allowed third-party dependency, flagged for eventual
+replacement with a stdlib-based solution.
+
+### 12.3 Authentication & Security
+
+Agent-containers enforce three layers of security:
+
+#### 12.3.1 TLS (encryption in-flight)
+
+All communication between the Convocate API and agent-container wrapper uses
+TLS. Certificates are issued per-pod by **K8s cert-manager**. The wrapper
+loads its TLS certificate and key from a K8s Secret volume mount provisioned
+by cert-manager.
+
+#### 12.3.2 K8s ServiceAccount Authentication
+
+Container-to-container authenticity is verified using K8s projected service
+account tokens. The Convocate API validates the agent pod's K8s SA token, and
+the agent wrapper validates the API's K8s SA token. This ensures only
+authorized Convocate components can communicate with agent-containers.
+
+#### 12.3.3 Per-Agent JWT RBAC
+
+The Go wrapper validates user JWT tokens to enforce that the requesting user
+has permission to interact with the specific agent-container. This is
+consistent with Convocate's RBAC model:
+
+- `agent-view` — can open stdout/stderr streams, view metrics
+- `agent-update` — can write to stdin, send control commands, modify config
+- `admin` — can modify security context and relaxed settings
+
+The wrapper requires access to the JWT signing public key (mounted from a
+K8s Secret) to validate tokens.
+
+#### 12.3.4 Claude CLI Authentication
+
+Agent-containers support two methods for authenticating Claude CLI with
+Anthropic:
+
+- **API key mode**: `ANTHROPIC_API_KEY` environment variable set from a K8s
+  Secret. Claude CLI starts immediately without user interaction.
+- **OAuth mode**: No API key configured. Claude CLI initiates the OAuth device
+  code flow. The Go wrapper relays the device code and URL through the
+  stdout WebSocket. The user completes authentication in their browser. The
+  OAuth token is stored on the PVC and persists across restarts.
+
+### 12.4 K8s Pod Specification
+
+#### 12.4.1 Filesystem Layout
+
+```
+/usr/bin/convocate-agent-wrapper     ← Go binary (ENTRYPOINT)
+/usr/lib/node_modules/              ← Claude CLI (pinned version)
+/home/claude/
+├── CLAUDE.md                       ← ConfigMap (read-only, managed by Agent Manager)
+├── workspace/                      ← PVC (per-instance, persistent, 2Gi default)
+│   ├── .claude/                    ← Claude memories, sessions, projects
+│   └── <project files>/            ← working directory
+/tmp/                               ← tmpfs (writable, ephemeral)
+```
+
+- The PVC at `/home/claude/workspace/` is **dedicated to a single agent
+  instance** and inaccessible to other agent-containers.
+- Claude CLI's working directory is `/home/claude/workspace/`.
+- Claude memories and sessions persist on the PVC across stop/start cycles.
+- The CLAUDE.md ConfigMap is mounted at `/home/claude/CLAUDE.md` as a
+  read-only file. It is **strictly immutable** from the agent-container's
+  perspective — only the Agent Manager can update it.
+
+#### 12.4.2 Resource Defaults
+
+| Resource | Request | Limit | Configurable |
+|----------|---------|-------|-------------|
+| CPU | 500m | 2 cores | Yes, at create and update time |
+| Memory | 512Mi | 2Gi | Yes, at create and update time |
+| PVC storage | — | 2Gi | Yes, at create time |
+
+All resource values are configurable per agent via the Agent Manager API,
+both at creation time and during the agent's lifecycle.
+
+#### 12.4.3 Security Context (Defaults)
+
+The following security settings are applied to every agent pod by default.
+These follow the K8s **restricted** Pod Security Standard:
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1337
+  runAsGroup: 1337
+  seccompProfile:
+    type: RuntimeDefault
+containers:
+  - securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+```
+
+Writable paths: PVC at `/home/claude/workspace/` and tmpfs at `/tmp/`.
+
+**Admin-only overrides**: Users holding the `admin` role can relax security
+settings per agent via the Agent Manager API. This includes:
+
+- Adding specific Linux capabilities
+- Granting Docker/containerd socket access (for container image builds)
+- Mounting additional host paths
+- Modifying the seccomp profile
+
+Non-admin users can create and manage agents but **cannot modify security
+context, capabilities, or grant Docker/containerd access**.
+
+All security overrides are audit-logged (who, what, when).
+
+#### 12.4.4 Network Policy
+
+Agent-containers follow **least-privilege** networking by default:
+
+**Default egress (outbound) allow list**:
+- `api.anthropic.com` — Anthropic API (Claude)
+- Convocate API service — control plane communication
+- `github.com`, `api.github.com` — Git operations (HTTPS + SSH)
+- `npm.pkg.github.com`, `registry.npmjs.org` — npm packages
+- `pypi.org`, `files.pythonhosted.org` — Python packages
+
+**Default ingress (inbound) allow list**:
+- Convocate API service pods only
+
+**Default deny**: all other traffic, including inter-agent communication
+and access to other cluster services.
+
+The Agent Manager API can **add or remove egress rules per agent** (e.g.
+allow a private registry, allow a database endpoint). Network policy changes
+are applied as per-agent K8s NetworkPolicy objects.
+
+### 12.5 Agent Manager API Extensions
+
+The Agent Manager create and update APIs accept the following additional
+fields for agent-container configuration:
+
+#### 12.5.1 Create Agent Request
+
+```json
+{
+  "project": "my-project",
+  "nodeId": "convocate04",
+  "image": "convocate/agent:latest",
+  "claudeFlags": ["--dangerously-skip-permissions"],
+  "resources": {
+    "cpuRequest": "500m",
+    "cpuLimit": "2",
+    "memoryRequest": "512Mi",
+    "memoryLimit": "2Gi",
+    "storageSize": "2Gi"
+  },
+  "security": {
+    "capabilities": [],
+    "dockerAccess": false,
+    "additionalMounts": []
+  },
+  "network": {
+    "additionalEgress": []
+  },
+  "logging": false,
+  "anthropicApiKey": "sk-...",
+  "claudeMd": "# Custom guardrails\n..."
+}
+```
+
+- `claudeFlags` — array of CLI flags passed to Claude CLI on startup.
+- `resources` — overrides for CPU, memory, and storage defaults.
+- `security` — admin-only fields; rejected with 403 if caller lacks `admin`.
+- `network` — additional egress rules beyond the default allow list.
+- `logging` — when `true`, Claude I/O is logged as structured JSON to the
+  pod's stdout/stderr for collection by the cluster logging service.
+- `anthropicApiKey` — stored as a K8s Secret, injected as env var.
+- `claudeMd` — custom CLAUDE.md content for this agent's ConfigMap.
+
+#### 12.5.2 Update Agent Request
+
+All fields from the create request can be updated during the agent's
+lifecycle, with the following behaviors:
+
+- `resources` — applied via K8s pod patch (may require pod restart for
+  some fields like PVC size).
+- `security` — admin-only; applied via pod spec update.
+- `network` — applied by updating the per-agent NetworkPolicy object.
+- `logging` — toggled without restart (wrapper reads from config).
+- `claudeMd` — applied by updating the ConfigMap; wrapper detects the
+  change and restarts Claude CLI without restarting the pod.
+- `claudeFlags` — requires Claude CLI restart (wrapper handles this).
+
+### 12.6 Lifecycle
+
+#### 12.6.1 Pod Startup Sequence
+
+1. K8s schedules the pod on a node with available resources.
+2. cert-manager provisions a TLS certificate for the pod.
+3. The PVC is mounted (created if first run, reattached if existing).
+4. The ConfigMap is mounted at `/home/claude/CLAUDE.md`.
+5. The Go wrapper starts, loads TLS certs, and begins listening on HTTPS.
+6. The wrapper spawns Claude CLI in a shell with the configured flags.
+7. The wrapper reports readiness via `/readyz` once Claude CLI is accepting
+   stdin.
+
+#### 12.6.2 Graceful Shutdown
+
+When K8s sends SIGTERM to the pod:
+
+1. The Go wrapper catches SIGTERM.
+2. Forwards SIGTERM to the Claude CLI shell process.
+3. Waits for Claude CLI to exit (up to the `terminationGracePeriodSeconds`,
+   default 30 seconds).
+4. Closes all WebSocket connections.
+5. Exits with code 0.
+
+If Claude CLI does not exit within the grace period, K8s sends SIGKILL.
+
+#### 12.6.3 Persistence
+
+- **PVC**: Claude memories, sessions, project files, and OAuth tokens
+  persist across stop/start cycles. Each agent-container has a dedicated
+  PVC that is **not shared** with other agent-containers.
+- **ConfigMap**: Guardrails (CLAUDE.md) are managed by the Agent Manager
+  and updated independently of the pod lifecycle.
+- **Metrics**: Wrapper metrics are ephemeral (reset on pod restart).
+  Historical metrics are available through the K8s cluster monitoring
+  stack if configured.
+
+#### 12.6.4 Scaling
+
+Convocate scales AI compute horizontally by spawning more agent-container
+pods, not by multiplexing within a single pod. Each pod runs exactly one
+Claude CLI instance. The K8s scheduler distributes pods across nodes based
+on resource availability and any node selector constraints specified at
+agent creation time.
