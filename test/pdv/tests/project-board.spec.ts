@@ -67,6 +67,32 @@ test.describe("Project Board applet", () => {
   test("shows card and edge count in footer", async ({ page }) => {
     await expect(page.locator('text=/\\d+ cards?/')).toBeVisible({ timeout: 5000 });
   });
+
+  test("has Status and Canvas view toggle buttons", async ({ page }) => {
+    await expect(page.locator('[data-testid="project-board"] button:has-text("Status")')).toBeVisible();
+    await expect(page.locator('[data-testid="project-board"] button:has-text("Canvas")')).toBeVisible();
+  });
+
+  test("can switch to Canvas view", async ({ page }) => {
+    // Click Canvas toggle
+    await page.locator('[data-testid="project-board"] button:has-text("Canvas")').click();
+
+    // Canvas view should show cards positioned on a dark background
+    // and the footer should still show card count
+    await expect(page.locator('text=/\\d+ cards?/')).toBeVisible({ timeout: 5000 });
+  });
+
+  test("can switch back to Status view", async ({ page }) => {
+    // Switch to Canvas
+    await page.locator('[data-testid="project-board"] button:has-text("Canvas")').click();
+    await page.waitForTimeout(500);
+
+    // Switch back to Status
+    await page.locator('[data-testid="project-board"] button:has-text("Status")').click();
+
+    // Should show kanban columns again
+    await expect(page.locator('[data-testid="project-board"] >> text=TODO')).toBeVisible({ timeout: 3000 });
+  });
 });
 
 // ---------------------------------------------------------------------------

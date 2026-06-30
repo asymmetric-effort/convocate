@@ -332,7 +332,214 @@ function CardDetailDialog({
 }
 
 // ---------------------------------------------------------------------------
-// Main Project Board Component — Kanban-style columns by status
+// Canvas View — free-form board with positioned cards and SVG edges
+// ---------------------------------------------------------------------------
+
+function CanvasView({
+  board,
+  onSelectCard,
+}: {
+  board: Board;
+  onSelectCard: (card: BoardCard) => void;
+}) {
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  // Pan the canvas by dragging on the background
+  const handleMouseDown = useCallback((e: MouseEvent) => {
+    if ((e.target as HTMLElement).dataset.canvas) {
+      setDragging(true);
+      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    }
+  }, [pan]);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (dragging) {
+      setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+    }
+  }, [dragging, dragStart]);
+
+  const handleMouseUp = useCallback(() => {
+    setDragging(false);
+  }, []);
+
+  // Default card positions if not set — arrange in a grid
+  const cardPositions: Record<string, { x: number; y: number }> = {};
+  board.cards.forEach((card, i) => {
+    if (card.containerId) {
+      // Position inside container area
+      const contIdx = board.containers.findIndex((c) => c.id === card.containerId);
+      cardPositions[card.id] = { x: 50 + (contIdx * 350), y: 80 + (i % 5) * 140 };
+    } else {
+      const col = i % 4;
+      const row = Math.floor(i / 4);
+      cardPositions[card.id] = { x: 50 + col * 250, y: 50 + row * 140 };
+    }
+  });
+
+  // Build SVG edges
+  const edgeLines = board.edges.map((edge) => {
+    const from = cardPositions[edge.from];
+    const to = cardPositions[edge.to];
+    if (!from || !to) return null;
+    const isDep = edge.type === "DependsOn";
+    return h("line", {
+      key: edge.id,
+      x1: from.x + 90, y1: from.y + 50,
+      x2: to.x + 90, y2: to.y + 50,
+      stroke: isDep ? "#3b82f6" : "#6b7280",
+      strokeWidth: isDep ? 2 : 1,
+      strokeDasharray: isDep ? "none" : "4,4",
+      markerEnd: isDep ? "url(#arrowhead)" : undefined,
+    });
+  }).filter(Boolean);
+
+  return h("div", {
+    style: {
+      flex: 1, position: "relative", overflow: "hidden",
+      backgroundColor: "#1a1a2e", cursor: dragging ? "grabbing" : "grab",
+    },
+    onMouseDown: handleMouseDown,
+    onMouseMove: handleMouseMove,
+    onMouseUp: handleMouseUp,
+    onMouseLeave: handleMouseUp,
+    "data-canvas": "true",
+  },
+    // SVG layer for edges
+    h("svg", {
+      style: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" },
+    },
+      h("defs", null,
+        h("marker", {
+          id: "arrowhead", markerWidth: 10, markerHeight: 7, refX: 10, refY: 3.5, orient: "auto",
+        },
+          h("polygon", { points: "0 0, 10 3.5, 0 7", fill: "#3b82f6" })
+        )
+      ),
+      h("g", { transform: `translate(${pan.x},${pan.y})` }, ...edgeLines)
+    ),
+    // Cards layer
+    h("div", {
+      style: { position: "absolute", top: 0, left: 0, transform: `translate(${pan.x}px,${pan.y}px)` },
+    },
+      // Containers (background rectangles)
+      ...board.containers.map((cont, ci) =>
+        h("div", {
+          key: cont.id,
+          style: {
+            position: "absolute", left: `${30 + ci * 350}px`, top: "20px",
+            width: "300px", minHeight: "400px",
+            backgroundColor: "rgba(255,255,255,0.05)", border: "1px dashed #555",
+            borderRadius: "8px", padding: "8px",
+          },
+        },
+          h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px", fontWeight: "600" } },
+            cont.title
+          )
+        )
+      ),
+      // Cards (positioned absolutely)
+      ...board.cards.map((card) => {
+        const pos = cardPositions[card.id] || { x: 0, y: 0 };
+        const borderColor = STATUS_COLORS[card.status] || "#666";
+        return h("div", {
+          key: card.id,
+          style: {
+            position: "absolute", left: `${pos.x}px`, top: `${pos.y}px`,
+            width: "180px", minHeight: "80px",
+            backgroundColor: "#2d2d2d", borderRadius: "6px",
+            border: `2px solid ${borderColor}`,
+            padding: "8px 10px", cursor: "pointer",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          },
+          onClick: (e: Event) => { e.stopPropagation(); onSelectCard(card); },
+        },
+          h("div", { style: { fontSize: "12px", fontWeight: "600", color: "#e0e0e0", marginBottom: "4px" } }, card.title),
+          card.content
+            ? h("div", { style: { fontSize: "11px", color: "#aaa", overflow: "hidden", maxHeight: "40px" } },
+                card.content.substring(0, 80)
+              )
+            : null,
+          h("div", { style: { display: "flex", justifyContent: "space-between", marginTop: "6px" } },
+            statusTag(card.status),
+            h("span", { style: { fontSize: "9px", color: "#666" } }, card.id)
+          )
+        );
+      })
+    )
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Kanban Status View — columns grouped by card status
+// ---------------------------------------------------------------------------
+
+function StatusView({
+  board,
+  onSelectCard,
+}: {
+  board: Board;
+  onSelectCard: (card: BoardCard) => void;
+}) {
+  const cardsByStatus: Record<string, BoardCard[]> = {};
+  for (const s of STATUS_ORDER) cardsByStatus[s] = [];
+  for (const card of board.cards) {
+    const col = cardsByStatus[card.status] || (cardsByStatus[card.status] = []);
+    col.push(card);
+  }
+
+  return h("div", {
+    style: { display: "flex", flex: 1, gap: "8px", padding: "8px", overflowX: "auto", overflowY: "hidden" },
+  },
+    ...STATUS_ORDER.map((status) =>
+      h("div", {
+        key: status,
+        style: {
+          flex: "1", minWidth: "180px", display: "flex", flexDirection: "column",
+          backgroundColor: "#252526", borderRadius: "6px", overflow: "hidden",
+        },
+      },
+        h("div", {
+          style: {
+            padding: "8px 12px", fontWeight: "600", fontSize: "13px",
+            borderBottom: `2px solid ${STATUS_COLORS[status]}`,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          },
+        },
+          h("span", null, status.toUpperCase()),
+          h("span", { style: { fontSize: "11px", color: "#aaa" } }, String(cardsByStatus[status]?.length || 0))
+        ),
+        h("div", {
+          style: { flex: 1, overflowY: "auto", padding: "8px", display: "flex", flexDirection: "column", gap: "6px" },
+        },
+          ...(cardsByStatus[status] || []).map((card) =>
+            h("div", {
+              key: card.id,
+              style: {
+                padding: "8px 10px", backgroundColor: "#2d2d2d", borderRadius: "4px",
+                borderLeft: `3px solid ${STATUS_COLORS[card.status]}`,
+                cursor: "pointer", fontSize: "13px",
+              },
+              onClick: () => onSelectCard(card),
+            },
+              h("div", { style: { fontWeight: "500", marginBottom: "4px" } }, card.title),
+              card.content
+                ? h("div", { style: { fontSize: "11px", color: "#aaa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                    card.content.substring(0, 60)
+                  )
+                : null,
+              h("div", { style: { fontSize: "10px", color: "#666", marginTop: "4px" } }, card.id)
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Project Board Component
 // ---------------------------------------------------------------------------
 
 export function ProjectBoard() {
@@ -343,6 +550,7 @@ export function ProjectBoard() {
   const [showNewBoard, setShowNewBoard] = useState(false);
   const [showNewCard, setShowNewCard] = useState(false);
   const [selectedCard, setSelectedCard] = useState<BoardCard | null>(null);
+  const [viewMode, setViewMode] = useState<"status" | "canvas">("status");
 
   // Load boards on mount
   useEffect(() => {
@@ -396,16 +604,6 @@ export function ProjectBoard() {
     }
   }, []);
 
-  // Group cards by status for kanban columns
-  const cardsByStatus: Record<string, BoardCard[]> = {};
-  for (const s of STATUS_ORDER) cardsByStatus[s] = [];
-  if (activeBoard) {
-    for (const card of activeBoard.cards) {
-      const col = cardsByStatus[card.status] || (cardsByStatus[card.status] = []);
-      col.push(card);
-    }
-  }
-
   if (loading) {
     return h("div", {
       style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", backgroundColor: "#1e1e1e" },
@@ -440,7 +638,24 @@ export function ProjectBoard() {
           h("option", { key: b.id, value: b.id }, b.name)
         )),
       ),
-      h("div", { style: { display: "flex", gap: "8px" } },
+      h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
+        // View toggle
+        h("div", { style: { display: "flex", borderRadius: "4px", overflow: "hidden", border: "1px solid #555" } },
+          h("button", {
+            style: {
+              padding: "4px 10px", border: "none", cursor: "pointer", fontSize: "12px",
+              backgroundColor: viewMode === "status" ? "#007acc" : "#333", color: "#fff",
+            },
+            onClick: () => setViewMode("status"),
+          }, "Status"),
+          h("button", {
+            style: {
+              padding: "4px 10px", border: "none", cursor: "pointer", fontSize: "12px",
+              backgroundColor: viewMode === "canvas" ? "#007acc" : "#333", color: "#fff",
+            },
+            onClick: () => setViewMode("canvas"),
+          }, "Canvas"),
+        ),
         h(Button, { variant: "primary" as const, onClick: () => setShowNewCard(true) }, "New Card"),
         h(Button, { variant: "secondary" as const, onClick: () => setShowNewBoard(true) }, "New Board"),
         h(Button, { variant: "secondary" as const, onClick: reloadBoard }, "Refresh"),
@@ -451,61 +666,12 @@ export function ProjectBoard() {
       style: { padding: "4px 8px", backgroundColor: "#3d1c1c", color: "#ff8888", fontSize: "12px", flexShrink: 0 },
       onClick: () => setError(""),
     }, error) : null,
-    // Kanban columns
-    h("div", {
-      style: {
-        display: "flex", flex: 1, gap: "8px", padding: "8px",
-        overflowX: "auto", overflowY: "hidden",
-      },
-    },
-      ...STATUS_ORDER.map((status) =>
-        h("div", {
-          key: status,
-          style: {
-            flex: "1", minWidth: "180px", display: "flex", flexDirection: "column",
-            backgroundColor: "#252526", borderRadius: "6px", overflow: "hidden",
-          },
-        },
-          // Column header
-          h("div", {
-            style: {
-              padding: "8px 12px", fontWeight: "600", fontSize: "13px",
-              borderBottom: `2px solid ${STATUS_COLORS[status]}`,
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-            },
-          },
-            h("span", null, status.toUpperCase()),
-            h("span", { style: { fontSize: "11px", color: "#aaa" } },
-              String(cardsByStatus[status]?.length || 0)
-            )
-          ),
-          // Cards in column
-          h("div", {
-            style: { flex: 1, overflowY: "auto", padding: "8px", display: "flex", flexDirection: "column", gap: "6px" },
-          },
-            ...(cardsByStatus[status] || []).map((card) =>
-              h("div", {
-                key: card.id,
-                style: {
-                  padding: "8px 10px", backgroundColor: "#2d2d2d", borderRadius: "4px",
-                  borderLeft: `3px solid ${STATUS_COLORS[card.status]}`,
-                  cursor: "pointer", fontSize: "13px",
-                },
-                onClick: () => setSelectedCard(card),
-              },
-                h("div", { style: { fontWeight: "500", marginBottom: "4px" } }, card.title),
-                card.content
-                  ? h("div", { style: { fontSize: "11px", color: "#aaa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
-                      card.content.substring(0, 60)
-                    )
-                  : null,
-                h("div", { style: { fontSize: "10px", color: "#666", marginTop: "4px" } }, card.id)
-              )
-            )
-          )
-        )
-      )
-    ),
+    // View — status kanban or canvas
+    activeBoard
+      ? viewMode === "status"
+        ? h(StatusView, { board: activeBoard, onSelectCard: setSelectedCard })
+        : h(CanvasView, { board: activeBoard, onSelectCard: setSelectedCard })
+      : h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" } }, "No board selected"),
     // Footer
     h("div", {
       style: {
