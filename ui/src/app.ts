@@ -220,6 +220,12 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
   // Track which applets have been opened via the dock
   const [openApplets, setOpenApplets] = useState<Set<string>>(new Set());
 
+  // Filter applets to only show those the user is authorized for
+  const authorizedApplets = principal.authorizedApplets || [];
+  const visibleApplets = APPLETS.filter((a) =>
+    authorizedApplets.includes(a.id) || principal.roles?.includes("admin")
+  );
+
   /** Called when a dock icon is clicked and a window opens */
   const handleAppOpen = useCallback((appId: string) => {
     setOpenApplets((prev) => {
@@ -231,7 +237,7 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
   }, []);
 
   // Build portal components for implemented applets that have been opened
-  const portals = APPLETS
+  const portals = visibleApplets
     .filter((a) => a.component && openApplets.has(a.id))
     .map((a) =>
       h(AppletPortal, {
@@ -245,7 +251,7 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
   return h(
     UnityDesktop,
     {
-      apps: APPLETS.map((a) => ({ id: a.id, label: a.label, icon: a.icon })),
+      apps: visibleApplets.map((a) => ({ id: a.id, label: a.label, icon: a.icon })),
       user: { name: principal.name },
       onAppOpen: handleAppOpen,
       onLogout,

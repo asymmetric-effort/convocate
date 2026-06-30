@@ -22,6 +22,7 @@ import {
   Spinner,
   TreeNav,
 } from "@asymmetric-effort/specifyjs/components";
+import { useMenuBar } from "./use-menu-bar";
 
 const h = createElement;
 
@@ -390,6 +391,17 @@ export function CodeIDE() {
   const [showNewProject, setShowNewProject] = useState(false);
   const [showNewFile, setShowNewFile] = useState(false);
   const [sidebarWidth] = useState(220);
+
+  // Register applet menu bar
+  useMenuBar("ide", [
+    { label: "File", items: [
+      { label: "New File", onClick: () => setShowNewFile(true) },
+      { label: "Save", onClick: () => handleSave() },
+    ]},
+    { label: "Project", items: [
+      { label: "New Project", onClick: () => setShowNewProject(true) },
+    ]},
+  ]);
 
   // Load projects on mount
   useEffect(() => {

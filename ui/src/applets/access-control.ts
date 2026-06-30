@@ -7,6 +7,7 @@
 
 import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
 import { Button, Modal, TextField, Spinner, Tabs, Tag, DataGrid, Toggle } from "@asymmetric-effort/specifyjs/components";
+import { useMenuBar } from "./use-menu-bar";
 
 const h = createElement;
 
@@ -79,6 +80,13 @@ export function AccessControl() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAddUser, setShowAddUser] = useState(false);
+
+  useMenuBar("ac", [
+    { label: "Admin", items: [
+      { label: "Add User", onClick: () => setShowAddUser(true) },
+      { label: "Add Group", onClick: () => setShowAddGroup(true) },
+    ]},
+  ]);
   const [showAddGroup, setShowAddGroup] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserName, setNewUserName] = useState("");

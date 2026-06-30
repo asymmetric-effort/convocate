@@ -14,6 +14,7 @@
 
 import { createElement, useState, useEffect, useCallback, useRef } from "@asymmetric-effort/specifyjs";
 import { useWebSocket, ServerEvent } from "./use-websocket";
+import { useMenuBar } from "./use-menu-bar";
 import {
   DataGrid,
   Button,
@@ -787,6 +788,14 @@ export function NodeManager() {
   const [showProvision, setShowProvision] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const limit = 25;
+
+  // Register applet menu bar
+  useMenuBar("nmgr", [
+    { label: "Node", items: [
+      { label: "Provision Node", onClick: () => setShowProvision(true) },
+      { label: "Refresh", onClick: () => loadNodes() },
+    ]},
+  ]);
 
   // ---------------------------------------------------------------------------
   // Live metrics via WebSocket — merges incoming node.metrics events into

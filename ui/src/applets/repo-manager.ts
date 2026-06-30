@@ -8,6 +8,7 @@
 
 import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
 import { Button, Modal, TextField, Spinner, Tag, DataGrid, Tabs } from "@asymmetric-effort/specifyjs/components";
+import { useMenuBar } from "./use-menu-bar";
 
 const h = createElement;
 
@@ -70,6 +71,12 @@ export function RepoManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showNewRepo, setShowNewRepo] = useState(false);
+
+  useMenuBar("repo", [
+    { label: "Repository", items: [
+      { label: "New Repository", onClick: () => setShowNewRepo(true) },
+    ]},
+  ]);
   const [newRepoName, setNewRepoName] = useState("");
   const [newRepoDesc, setNewRepoDesc] = useState("");
 

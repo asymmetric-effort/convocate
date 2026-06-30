@@ -8,15 +8,17 @@
  * Data source: /api/v1/pb/board, /api/v1/pb/board/{id}/card, etc.
  */
 
-import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
+import { createElement, useState, useEffect, useCallback, useRef } from "@asymmetric-effort/specifyjs";
 import {
+  Board,
   Button,
   Modal,
   TextField,
   Spinner,
   Tag,
-  Card as CardComponent,
+  useBoardReducer,
 } from "@asymmetric-effort/specifyjs/components";
+import { useMenuBar } from "./use-menu-bar";
 
 const h = createElement;
 
@@ -53,7 +55,7 @@ interface Edge {
   to: string;
 }
 
-interface Board extends BoardSummary {
+interface BoardData extends BoardSummary {
   containers: Container[];
   cards: BoardCard[];
   edges: Edge[];
@@ -99,13 +101,13 @@ async function fetchBoards(): Promise<BoardSummary[]> {
   return boards;
 }
 
-async function fetchBoard(id: string): Promise<Board> {
+async function fetchBoard(id: string): Promise<BoardData> {
   const res = await fetch(`/api/v1/pb/board/${id}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`Failed to fetch board: ${res.status}`);
   return res.json();
 }
 
-async function createBoard(name: string): Promise<Board> {
+async function createBoard(name: string): Promise<BoardData> {
   const res = await fetch("/api/v1/pb/board", {
     method: "POST",
     headers: authHeaders(),
@@ -198,7 +200,7 @@ function NewBoardDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated: (board: Board) => void;
+  onCreated: (board: BoardData) => void;
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -395,139 +397,123 @@ function CardDetailDialog({
 // Canvas View — free-form board with positioned cards and SVG edges
 // ---------------------------------------------------------------------------
 
+// Convert API board data to SpecifyJS Board state format
+function apiBoardToBoardState(board: BoardData): any {
+  const now = Date.now();
+  const collection: any[] = [];
+
+  // Add containers
+  board.containers.forEach((cont, ci) => {
+    collection.push({
+      type: "container",
+      container_id: cont.id,
+      name: cont.title,
+      position: { x: 30 + ci * 400, y: 20 },
+      size: { width: 360, height: 500 },
+      color: "#334155",
+      minimized: cont.minimized || false,
+      children: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  // Add cards — nest inside containers if containerId is set
+  board.cards.forEach((card, i) => {
+    const color = STATUS_COLORS[card.status] || "#6b7280";
+    const col = i % 4;
+    const row = Math.floor(i / 4);
+    const cardItem: any = {
+      type: "card",
+      card_id: card.id,
+      card_type: "text",
+      card_title: card.title,
+      card_link: [],
+      content: { text: card.content || "" },
+      color,
+      position: { x: 50 + col * 220, y: 50 + row * 150 },
+      size: { width: 180, height: 120 },
+      priority: card.status === "fail" ? "critical" : card.status === "active" ? "high" : "medium",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Build links from edges
+    board.edges
+      .filter((e) => e.from === card.id)
+      .forEach((e) => {
+        cardItem.card_link.push({
+          link_id: e.id,
+          link_name: e.type === "DependsOn" ? "depends on" : "relates to",
+          target_card_id: e.to,
+          color: e.type === "DependsOn" ? "#3b82f6" : "#94a3b8",
+          attributes: {},
+        });
+      });
+
+    if (card.containerId) {
+      // Nest inside the container
+      const cont = collection.find((c) => c.type === "container" && c.container_id === card.containerId);
+      if (cont) {
+        cont.children.push(cardItem);
+      } else {
+        collection.push(cardItem);
+      }
+    } else {
+      collection.push(cardItem);
+    }
+  });
+
+  return {
+    id: board.id,
+    name: board.name,
+    collection,
+    viewport: { panX: 0, panY: 0, zoom: 1 },
+  };
+}
+
+// Canvas view using the SpecifyJS Board component with drag-and-drop,
+// card linking, and container management.
 function CanvasView({
   board,
   onSelectCard,
 }: {
-  board: Board;
+  board: BoardData;
   onSelectCard: (card: BoardCard) => void;
 }) {
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  // Convert API data to Board state
+  const initialState = apiBoardToBoardState(board);
+  const { state, dispatch, undo, redo, canUndo, canRedo } = useBoardReducer(initialState);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const boardStateRef = useRef(initialState);
 
-  // Pan the canvas by dragging on the background
-  const handleMouseDown = useCallback((e: MouseEvent) => {
-    if ((e.target as HTMLElement).dataset.canvas) {
-      setDragging(true);
-      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  // Update board state when API data changes
+  useEffect(() => {
+    const newState = apiBoardToBoardState(board);
+    if (JSON.stringify(newState.collection) !== JSON.stringify(boardStateRef.current.collection)) {
+      dispatch({ type: "SET_BOARD", state: newState });
+      boardStateRef.current = newState;
     }
-  }, [pan]);
+  }, [board, dispatch]);
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (dragging) {
-      setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  // Handle card selection — find the matching API card and open detail
+  const handleSelectItem = useCallback((itemId: string | null) => {
+    setSelectedId(itemId);
+    if (itemId) {
+      const apiCard = board.cards.find((c) => c.id === itemId);
+      if (apiCard) {
+        onSelectCard(apiCard);
+      }
     }
-  }, [dragging, dragStart]);
+  }, [board.cards, onSelectCard]);
 
-  const handleMouseUp = useCallback(() => {
-    setDragging(false);
-  }, []);
-
-  // Default card positions if not set — arrange in a grid
-  const cardPositions: Record<string, { x: number; y: number }> = {};
-  board.cards.forEach((card, i) => {
-    if (card.containerId) {
-      // Position inside container area
-      const contIdx = board.containers.findIndex((c) => c.id === card.containerId);
-      cardPositions[card.id] = { x: 50 + (contIdx * 350), y: 80 + (i % 5) * 140 };
-    } else {
-      const col = i % 4;
-      const row = Math.floor(i / 4);
-      cardPositions[card.id] = { x: 50 + col * 250, y: 50 + row * 140 };
-    }
-  });
-
-  // Build SVG edges
-  const edgeLines = board.edges.map((edge) => {
-    const from = cardPositions[edge.from];
-    const to = cardPositions[edge.to];
-    if (!from || !to) return null;
-    const isDep = edge.type === "DependsOn";
-    return h("line", {
-      key: edge.id,
-      x1: from.x + 90, y1: from.y + 50,
-      x2: to.x + 90, y2: to.y + 50,
-      stroke: isDep ? "#3b82f6" : "#6b7280",
-      strokeWidth: isDep ? 2 : 1,
-      strokeDasharray: isDep ? "none" : "4,4",
-      markerEnd: isDep ? "url(#arrowhead)" : undefined,
-    });
-  }).filter(Boolean);
-
-  return h("div", {
-    style: {
-      flex: 1, position: "relative", overflow: "hidden",
-      backgroundColor: "#1a1a2e", cursor: dragging ? "grabbing" : "grab",
-    },
-    onMouseDown: handleMouseDown,
-    onMouseMove: handleMouseMove,
-    onMouseUp: handleMouseUp,
-    onMouseLeave: handleMouseUp,
-    "data-canvas": "true",
-  },
-    // SVG layer for edges
-    h("svg", {
-      style: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" },
-    },
-      h("defs", null,
-        h("marker", {
-          id: "arrowhead", markerWidth: 10, markerHeight: 7, refX: 10, refY: 3.5, orient: "auto",
-        },
-          h("polygon", { points: "0 0, 10 3.5, 0 7", fill: "#3b82f6" })
-        )
-      ),
-      h("g", { transform: `translate(${pan.x},${pan.y})` }, ...edgeLines)
-    ),
-    // Cards layer
-    h("div", {
-      style: { position: "absolute", top: 0, left: 0, transform: `translate(${pan.x}px,${pan.y}px)` },
-    },
-      // Containers (background rectangles)
-      ...board.containers.map((cont, ci) =>
-        h("div", {
-          key: cont.id,
-          style: {
-            position: "absolute", left: `${30 + ci * 350}px`, top: "20px",
-            width: "300px", minHeight: "400px",
-            backgroundColor: "rgba(255,255,255,0.05)", border: "1px dashed #555",
-            borderRadius: "8px", padding: "8px",
-          },
-        },
-          h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px", fontWeight: "600" } },
-            cont.title
-          )
-        )
-      ),
-      // Cards (positioned absolutely)
-      ...board.cards.map((card) => {
-        const pos = cardPositions[card.id] || { x: 0, y: 0 };
-        const borderColor = STATUS_COLORS[card.status] || "#666";
-        return h("div", {
-          key: card.id,
-          style: {
-            position: "absolute", left: `${pos.x}px`, top: `${pos.y}px`,
-            width: "180px", minHeight: "80px",
-            backgroundColor: "#2d2d2d", borderRadius: "6px",
-            border: `2px solid ${borderColor}`,
-            padding: "8px 10px", cursor: "pointer",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-          },
-          onClick: (e: Event) => { e.stopPropagation(); onSelectCard(card); },
-        },
-          h("div", { style: { fontSize: "12px", fontWeight: "600", color: "#e0e0e0", marginBottom: "4px" } }, card.title),
-          card.content
-            ? h("div", { style: { fontSize: "11px", color: "#aaa", overflow: "hidden", maxHeight: "40px" } },
-                card.content.substring(0, 80)
-              )
-            : null,
-          h("div", { style: { display: "flex", justifyContent: "space-between", marginTop: "6px" } },
-            statusTag(card.status),
-            h("span", { style: { fontSize: "9px", color: "#666" } }, card.id)
-          )
-        );
-      })
-    )
+  return h("div", { style: { flex: 1, overflow: "hidden" } },
+    h(Board, {
+      state,
+      dispatch,
+      selectedId,
+      onSelectItem: handleSelectItem,
+    })
   );
 }
 
@@ -571,7 +557,7 @@ function StatusView({
   onMoveCard,
   onAttachAgent,
 }: {
-  board: Board;
+  board: BoardData;
   onSelectCard: (card: BoardCard) => void;
   onMoveCard: (cardId: string, containerId: string | null, newStatus?: string) => void;
   onAttachAgent: (containerId: string, agentId: string) => void;
@@ -787,7 +773,7 @@ function NewContainerDialog({
 
 export function ProjectBoard() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
-  const [activeBoard, setActiveBoard] = useState<Board | null>(null);
+  const [activeBoard, setActiveBoard] = useState<BoardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showNewBoard, setShowNewBoard] = useState(false);
@@ -795,6 +781,20 @@ export function ProjectBoard() {
   const [showNewContainer, setShowNewContainer] = useState(false);
   const [selectedCard, setSelectedCard] = useState<BoardCard | null>(null);
   const [viewMode, setViewMode] = useState<"status" | "canvas">("status");
+
+  // Register applet menu bar
+  useMenuBar("pb", [
+    { label: "Graph", items: [
+      { label: "New Card", onClick: () => setShowNewCard(true) },
+      { label: "New Container", onClick: () => setShowNewContainer(true) },
+      { label: "", divider: true },
+      { label: "New Board", onClick: () => setShowNewBoard(true) },
+    ]},
+    { label: "View", items: [
+      { label: "Status View", onClick: () => setViewMode("status") },
+      { label: "Canvas View", onClick: () => setViewMode("canvas") },
+    ]},
+  ]);
 
   // Load boards on mount
   useEffect(() => {
@@ -914,7 +914,7 @@ export function ProjectBoard() {
   }, [activeBoard, reloadBoard]);
 
   /** Handle board created */
-  const handleBoardCreated = useCallback(async (board: Board) => {
+  const handleBoardCreated = useCallback(async (board: BoardData) => {
     setBoards((prev) => [...prev, { id: board.id, name: board.name }]);
     setActiveBoard(board);
   }, []);

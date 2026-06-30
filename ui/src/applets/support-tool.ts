@@ -8,6 +8,7 @@
 
 import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
 import { Button, Modal, TextField, Spinner, Tag, DataGrid, Tabs } from "@asymmetric-effort/specifyjs/components";
+import { useMenuBar } from "./use-menu-bar";
 
 const h = createElement;
 
@@ -55,6 +56,12 @@ export function SupportTool() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showNewTicket, setShowNewTicket] = useState(false);
+
+  useMenuBar("sup", [
+    { label: "Support", items: [
+      { label: "New Ticket", onClick: () => setShowNewTicket(true) },
+    ]},
+  ]);
   const [newSubject, setNewSubject] = useState("");
   const [newPriority, setNewPriority] = useState("medium");
   const [newBody, setNewBody] = useState("");

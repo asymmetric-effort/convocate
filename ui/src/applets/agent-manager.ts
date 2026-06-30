@@ -20,6 +20,7 @@ import {
   DataGrid,
 } from "@asymmetric-effort/specifyjs/components";
 import { useWebSocket, ServerEvent } from "./use-websocket";
+import { useMenuBar } from "./use-menu-bar";
 
 const h = createElement;
 
@@ -373,6 +374,14 @@ export function AgentManager() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [offset] = useState(0);
   const limit = 200; // fetch all agents (accordion view, not paginated)
+
+  // Register applet menu bar
+  useMenuBar("amgr", [
+    { label: "Agent", items: [
+      { label: "Create Agent", onClick: () => setShowCreate(true) },
+      { label: "Refresh", onClick: () => loadAgents() },
+    ]},
+  ]);
 
   /** Load agents from the API */
   const loadAgents = useCallback(async () => {
