@@ -69,7 +69,10 @@ func (s *Store) Get(id string) (Node, bool) {
 func (s *Store) Create(n Node) Node {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	n.ID = fmt.Sprintf("cnn-%04d", len(s.nodes)+1)
+	// Use the provided name if given, otherwise auto-generate
+	if n.ID == "" {
+		n.ID = fmt.Sprintf("cnn-%04d", len(s.nodes)+1)
+	}
 	if n.Status == "" {
 		n.Status = "Pending"
 	}

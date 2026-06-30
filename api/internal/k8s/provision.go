@@ -35,9 +35,19 @@ func ProvisionNode(ctx context.Context, req ProvisionRequest) error {
 
 	log.Printf("[provision] starting provisioning of %s as %s", host, user)
 
-	// The target machine must have passwordless sudo configured for the
-	// provisioning user before calling this function. The Convocate UI
-	// provision flow expects this to be set up during VM creation.
+	// Step 0: Set up passwordless sudo for the provisioning user.
+	// The SSH password is used once with sudo -S to install a sudoers
+	// drop-in, so all subsequent sudo calls work non-interactively.
+	if pass != "" {
+		sudoSetup := fmt.Sprintf(
+			`echo '%s' | sudo -S sh -c 'echo "%s ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/%s && chmod 0440 /etc/sudoers.d/%s' && echo "[provision] passwordless sudo configured"`,
+			pass, user, user, user,
+		)
+		log.Printf("[provision] configuring passwordless sudo on %s", host)
+		if err := sshExecRetry(host, user, pass, sudoSetup, 6, 10*time.Second); err != nil {
+			return fmt.Errorf("sudo setup failed: %w", err)
+		}
+	}
 
 	// Step 1: Base OS preparation (swap, kernel modules, sysctl, packages)
 	baseScript := `set -euo pipefail

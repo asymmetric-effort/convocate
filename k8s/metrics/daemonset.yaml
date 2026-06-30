@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-metrics
+  namespace: convocate
+  labels:
+    app: node-metrics
+spec:
+  selector:
+    matchLabels:
+      app: node-metrics
+  template:
+    metadata:
+      labels:
+        app: node-metrics
+    spec:
+      serviceAccountName: node-metrics
+      tolerations:
+        # Run on all nodes including control-plane
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: node-metrics
+          image: 192.168.3.90:5000/convocate/metrics:latest
+          imagePullPolicy: Always
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # KUBELET_VERSION is read from the host by the collector binary
+            - name: API_URL
+              value: "http://convocate-api.convocate.svc:8443"
+            - name: METRICS_API_KEY
+              value: ""
+            - name: PROC_PREFIX
+              value: "/host/proc"
+            - name: ROOT_PREFIX
+              value: "/host/root"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: host-proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: host-root
+              mountPath: /host/root
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: host-proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault

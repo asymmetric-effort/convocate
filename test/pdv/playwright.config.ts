@@ -12,8 +12,11 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
   },
   projects: [
-    { name: "api", testMatch: /api\.spec\.ts/ },
-    { name: "ui", testMatch: /ui\.spec\.ts/ },
-    { name: "node-lifecycle", testMatch: /node-lifecycle\.spec\.ts/, retries: 0, timeout: 600000 },
+    { name: "ui-applet-windows", testMatch: /applet-windows\.spec\.ts/ },
+    { name: "node-manager", testMatch: /node-manager\.spec\.ts/ },
+    { name: "contrast", testMatch: /contrast\.spec\.ts/ },
+    { name: "node-lifecycle", testMatch: /node-lifecycle\.spec\.ts/, retries: 0, timeout: 120000 },
+    { name: "node-metrics", testMatch: /node-metrics\.spec\.ts/, timeout: 60000 },
+    { name: "provision-validation", testMatch: /provision-validation\.spec\.ts/ },
   ],
 });

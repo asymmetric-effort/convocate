@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/db"
@@ -14,9 +15,19 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/types"
 )
 
+// metricsEntry wraps a DaemonSet metrics report with its receive time
+// so we can detect stale data.
+type metricsEntry struct {
+	report   types.NodeMetricsReport
+	received time.Time
+}
+
 type Handler struct {
-	store  *Store
-	useK8s bool
+	store      *Store
+	useK8s     bool
+	// nodeMetrics holds the latest metrics report from each node's
+	// DaemonSet pod, keyed by node name.
+	nodeMetrics sync.Map // map[string]metricsEntry
 }
 
 func Register(mux *http.ServeMux) {
@@ -35,6 +46,9 @@ func Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/nmgr/node/{nodeId}/stop", middleware.Chain(http.HandlerFunc(h.stop), auth, middleware.RBAC("node-update")))
 	mux.Handle("GET /api/v1/nmgr/node/{nodeId}/note", middleware.Chain(http.HandlerFunc(h.listNotes), auth, middleware.RBAC("node-view")))
 	mux.Handle("POST /api/v1/nmgr/node/{nodeId}/note", middleware.Chain(http.HandlerFunc(h.addNote), auth, middleware.RBAC("node-update")))
+
+	// Metrics ingest endpoint — called by the node-metrics DaemonSet
+	mux.Handle("POST /api/v1/nmgr/metrics", middleware.Chain(http.HandlerFunc(h.ingestMetrics), middleware.InternalAuth))
 
 	go h.publishMetrics()
 }
@@ -76,6 +90,11 @@ func (h *Handler) publishMetrics() {
 			}
 		}
 
+		// Overlay real DaemonSet metrics onto each node
+		for i := range nodes {
+			h.mergeNodeMetrics(&nodes[i])
+		}
+
 		if len(nodes) > 0 {
 			events.DefaultHub.Publish("nmgr/status", "node.metrics", nodes)
 		}
@@ -114,6 +133,10 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
+		// Overlay real DaemonSet metrics for each node
+		for i := range nodes {
+			h.mergeNodeMetrics(&nodes[i])
+		}
 		httputil.WriteJSON(w, http.StatusOK, httputil.Paginate(nodes, offset, limit))
 		return
 	}
@@ -124,6 +147,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Name     string   `json:"name"`
 		Host     string   `json:"host"`
 		User     string   `json:"user"`
 		Password string   `json:"password,omitempty"`
@@ -144,11 +168,84 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate node name format: lowercase alphanumeric + hyphens, no leading/trailing hyphens
+	if req.Name != "" {
+		for _, ch := range req.Name {
+			if !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-') {
+				httputil.WriteError(w, http.StatusBadRequest, "validation_failed",
+					"node name must contain only lowercase letters, digits, and hyphens")
+				return
+			}
+		}
+		if req.Name[0] == '-' || req.Name[len(req.Name)-1] == '-' {
+			httputil.WriteError(w, http.StatusBadRequest, "validation_failed",
+				"node name must not start or end with a hyphen")
+			return
+		}
+		if len(req.Name) > 63 {
+			httputil.WriteError(w, http.StatusBadRequest, "validation_failed",
+				"node name must be 63 characters or fewer")
+			return
+		}
+	}
+
+	// Validate host is an IP or hostname (basic sanity check)
+	if len(req.Host) > 253 {
+		httputil.WriteError(w, http.StatusBadRequest, "validation_failed",
+			"host must be 253 characters or fewer")
+		return
+	}
+
+	// Check for name uniqueness — reject if a node with this name
+	// already exists in K8s or in the pending store
+	if req.Name != "" {
+		if _, exists := h.store.Get(req.Name); exists {
+			httputil.WriteError(w, http.StatusConflict, "conflict",
+				"a node with this name already exists or is being provisioned")
+			return
+		}
+		if h.useK8s {
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			_, err := k8s.GetNode(ctx, req.Name)
+			cancel()
+			if err == nil {
+				httputil.WriteError(w, http.StatusConflict, "conflict",
+					"a node with this name already exists in the cluster")
+				return
+			}
+		}
+	}
+
+	// Check for host uniqueness — reject if a node with this IP/host
+	// is already in the cluster or pending
+	if h.useK8s {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		existingNodes, err := k8s.ListNodes(ctx)
+		cancel()
+		if err == nil {
+			for _, n := range existingNodes {
+				if n.IP == req.Host {
+					httputil.WriteError(w, http.StatusConflict, "conflict",
+						"a node with this IP address already exists in the cluster")
+					return
+				}
+			}
+		}
+	}
+	for _, sn := range h.store.List() {
+		if sn.IP == req.Host {
+			httputil.WriteError(w, http.StatusConflict, "conflict",
+				"a node with this IP address is already being provisioned")
+			return
+		}
+	}
+
 	if h.useK8s && req.Password != "" {
 		// Real provisioning: SSH to target, install K8s, join cluster.
 		// Store the pending node so it appears in list responses while
 		// provisioning is in progress.
 		node := h.store.Create(Node{
+			ID:       req.Name,
 			IP:       req.Host,
 			Location: req.Location,
 			Tags:     req.Tags,
@@ -184,7 +281,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	node := h.store.Create(Node{IP: req.Host, Location: req.Location, Tags: req.Tags})
+	node := h.store.Create(Node{ID: req.Name, IP: req.Host, Location: req.Location, Tags: req.Tags})
 	events.DefaultHub.Publish("nmgr/status", "node.pending", node)
 
 	// Mock mode: transition to Ready after a short delay
@@ -206,16 +303,17 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 		node, err := k8s.GetNode(ctx, id)
-		if err != nil {
-			httputil.WriteError(w, http.StatusNotFound, "not_found", "node not found")
+		if err == nil {
+			agents, _ := k8s.ListAgentPodsOnNode(ctx, id)
+			node.Agents = len(agents)
+			h.mergeNodeMetrics(node)
+			notes := h.getNotesFromDB(id)
+			detail := types.NodeDetail{Node: *node, AgentList: agents, Notes: notes}
+			httputil.WriteJSON(w, http.StatusOK, detail)
 			return
 		}
-		agents, _ := k8s.ListAgentPodsOnNode(ctx, id)
-		node.Agents = len(agents)
-		notes := h.getNotesFromDB(id)
-		detail := types.NodeDetail{Node: *node, AgentList: agents, Notes: notes}
-		httputil.WriteJSON(w, http.StatusOK, detail)
-		return
+		// Fall through to check the store for pending/provisioning nodes
+		// that are not yet visible in K8s.
 	}
 
 	node, ok := h.store.Get(id)
@@ -249,8 +347,45 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, node)
 }
 
+// countReadyNodes returns the number of nodes in Ready status.
+// Used to enforce the minimum-3-Ready-nodes safety rule.
+func (h *Handler) countReadyNodes(ctx context.Context) int {
+	if h.useK8s {
+		nodes, err := k8s.ListNodes(ctx)
+		if err != nil {
+			return 0
+		}
+		count := 0
+		for _, n := range nodes {
+			if n.Status == types.NodeReady {
+				count++
+			}
+		}
+		return count
+	}
+	count := 0
+	for _, n := range h.store.List() {
+		if n.Status == "Ready" {
+			count++
+		}
+	}
+	return count
+}
+
+const minReadyNodes = 4 // must have at least this many Ready nodes to stop/delete one
+
 func (h *Handler) del(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("nodeId")
+
+	// Safety: require at least minReadyNodes Ready nodes before allowing delete
+	ctx0, cancel0 := context.WithTimeout(r.Context(), 5*time.Second)
+	readyCount := h.countReadyNodes(ctx0)
+	cancel0()
+	if readyCount < minReadyNodes {
+		httputil.WriteError(w, http.StatusConflict, "insufficient_nodes",
+			"cannot delete: cluster must maintain at least 3 Ready nodes")
+		return
+	}
 
 	if h.useK8s {
 		// Real K8s: drain all pods then remove node from cluster
@@ -292,6 +427,17 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("nodeId")
+
+	// Safety: require at least minReadyNodes Ready nodes before allowing stop
+	ctx0, cancel0 := context.WithTimeout(r.Context(), 5*time.Second)
+	readyCount := h.countReadyNodes(ctx0)
+	cancel0()
+	if readyCount < minReadyNodes {
+		httputil.WriteError(w, http.StatusConflict, "insufficient_nodes",
+			"cannot stop: cluster must maintain at least 3 Ready nodes")
+		return
+	}
+
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
@@ -385,4 +531,57 @@ func (h *Handler) getNotesFromDB(nodeID string) []types.Note {
 		notes = []types.Note{}
 	}
 	return notes
+}
+
+// ingestMetrics receives a NodeMetricsReport from the node-metrics
+// DaemonSet and stores it for the next publishMetrics cycle to merge.
+func (h *Handler) ingestMetrics(w http.ResponseWriter, r *http.Request) {
+	var report types.NodeMetricsReport
+	if err := httputil.ReadJSON(r, &report); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid metrics report")
+		return
+	}
+	if report.NodeName == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "nodeName is required")
+		return
+	}
+	h.nodeMetrics.Store(report.NodeName, metricsEntry{
+		report:   report,
+		received: time.Now(),
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// mergeNodeMetrics overlays real DaemonSet metrics onto a node if a
+// fresh report (< 10s old) exists.
+func (h *Handler) mergeNodeMetrics(node *types.Node) {
+	val, ok := h.nodeMetrics.Load(node.ID)
+	if !ok {
+		return
+	}
+	entry := val.(metricsEntry)
+	if time.Since(entry.received) > 10*time.Second {
+		return // stale data, skip
+	}
+	r := entry.report
+	node.LoadAvg = r.LoadAvg
+	if r.MemTotalBytes > 0 {
+		node.MemUsedGB = float64(r.MemUsedBytes) / (1024 * 1024 * 1024)
+		node.MemTotalGB = float64(r.MemTotalBytes) / (1024 * 1024 * 1024)
+	}
+	if r.SwapTotalBytes > 0 {
+		node.SwapUsedGB = float64(r.SwapUsedBytes) / (1024 * 1024 * 1024)
+		node.SwapTotalGB = float64(r.SwapTotalBytes) / (1024 * 1024 * 1024)
+	}
+	if r.DiskTotalBytes > 0 {
+		node.DiskUsedGB = float64(r.DiskUsedBytes) / (1024 * 1024 * 1024)
+		node.DiskTotalGB = float64(r.DiskTotalBytes) / (1024 * 1024 * 1024)
+	}
+	node.UptimeSeconds = r.UptimeSeconds
+	if r.KubeletVersion != "" {
+		node.KubeletVersion = r.KubeletVersion
+	}
+	if r.CPUCount > 0 {
+		node.CPUCount = r.CPUCount
+	}
 }

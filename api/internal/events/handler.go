@@ -22,15 +22,33 @@ func Register(mux *http.ServeMux) {
 	))
 }
 
+// parseTypeFilter extracts the optional ?filter=type1,type2 query param
+// and returns a slice of event types to subscribe to (nil = all).
+func parseTypeFilter(r *http.Request) []string {
+	raw := r.URL.Query().Get("filter")
+	if raw == "" {
+		return nil
+	}
+	var types []string
+	for _, t := range strings.Split(raw, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			types = append(types, t)
+		}
+	}
+	return types
+}
+
 func handleEvents(w http.ResponseWriter, r *http.Request) {
 	applet := r.PathValue("applet")
 	channel := r.PathValue("channel")
 	fullChannel := applet + "/" + channel
+	typeFilter := parseTypeFilter(r)
 
 	// WebSocket upgrade
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		// SSE fallback for non-WebSocket clients
-		handleSSE(w, r, fullChannel)
+		handleSSE(w, r, fullChannel, typeFilter)
 		return
 	}
 
@@ -40,7 +58,7 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	sub := DefaultHub.Subscribe(fullChannel)
+	sub := DefaultHub.Subscribe(fullChannel, typeFilter)
 	defer DefaultHub.Unsubscribe(fullChannel, sub)
 
 	// Send events to the client
@@ -61,7 +79,7 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleSSE(w http.ResponseWriter, r *http.Request, channel string) {
+func handleSSE(w http.ResponseWriter, r *http.Request, channel string, typeFilter []string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -72,7 +90,7 @@ func handleSSE(w http.ResponseWriter, r *http.Request, channel string) {
 		return
 	}
 
-	sub := DefaultHub.Subscribe(channel)
+	sub := DefaultHub.Subscribe(channel, typeFilter)
 	defer DefaultHub.Unsubscribe(channel, sub)
 
 	for {

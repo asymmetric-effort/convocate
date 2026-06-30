@@ -9,8 +9,11 @@ import (
 )
 
 type subscriber struct {
-	ch   chan []byte
-	done chan struct{}
+	ch     chan []byte
+	done   chan struct{}
+	// types restricts which event types this subscriber receives.
+	// nil means all events pass (backward compatible).
+	types  map[string]bool
 }
 
 type Hub struct {
@@ -22,13 +25,23 @@ var DefaultHub = &Hub{
 	subscribers: make(map[string]map[*subscriber]struct{}),
 }
 
-func (h *Hub) Subscribe(channel string) *subscriber {
+// Subscribe registers a new subscriber for the given channel.
+// If typeFilter is non-empty, only events whose Type matches one
+// of the filter values will be delivered.
+func (h *Hub) Subscribe(channel string, typeFilter []string) *subscriber {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	sub := &subscriber{
 		ch:   make(chan []byte, 64),
 		done: make(chan struct{}),
+	}
+
+	if len(typeFilter) > 0 {
+		sub.types = make(map[string]bool, len(typeFilter))
+		for _, t := range typeFilter {
+			sub.types[t] = true
+		}
 	}
 
 	if h.subscribers[channel] == nil {
@@ -67,6 +80,10 @@ func (h *Hub) Publish(channel string, eventType string, payload any) {
 
 	subs := h.subscribers[channel]
 	for sub := range subs {
+		// Skip if subscriber has a type filter and this event doesn't match
+		if sub.types != nil && !sub.types[eventType] {
+			continue
+		}
 		select {
 		case sub.ch <- data:
 		default:

@@ -212,11 +212,19 @@ func k8sNodeToNode(n *corev1.Node, metrics map[string]metricsUsage) types.Node {
 	memTotalGB := float64(memCapBytes) / (1024 * 1024 * 1024)
 	diskTotalGB := float64(diskCapBytes) / (1024 * 1024 * 1024)
 
-	// Use live metrics from the Metrics API only.
+	// Disk used: capacity minus allocatable is a reasonable proxy for
+	// system-reserved ephemeral storage. The K8s Metrics API does not
+	// expose disk usage, so this is the best we can do without a DaemonSet.
+	diskAllocBytes := n.Status.Allocatable.StorageEphemeral().Value()
+	diskUsedGB := -1.0
+	if diskCapBytes > 0 && diskAllocBytes > 0 {
+		diskUsedGB = float64(diskCapBytes-diskAllocBytes) / (1024 * 1024 * 1024)
+	}
+
+	// Use live metrics from the Metrics API for CPU and memory.
 	// When unavailable, use -1 sentinel so the UI displays "no data".
 	loadAvg := types.LoadAvg{One: -1, Five: -1, Fifteen: -1}
 	memUsedGB := -1.0
-	diskUsedGB := -1.0
 
 	if metrics != nil {
 		if m, ok := metrics[n.Name]; ok {
@@ -228,16 +236,17 @@ func k8sNodeToNode(n *corev1.Node, metrics map[string]metricsUsage) types.Node {
 	}
 
 	return types.Node{
-		ID:          n.Name,
-		Location:    location,
-		IP:          ip,
-		Status:      status,
-		LoadAvg:     loadAvg,
-		MemUsedGB:   memUsedGB,
-		MemTotalGB:  memTotalGB,
-		DiskUsedGB:  diskUsedGB,
-		DiskTotalGB: diskTotalGB,
-		Tags:        tags,
+		ID:             n.Name,
+		Location:       location,
+		IP:             ip,
+		Status:         status,
+		LoadAvg:        loadAvg,
+		MemUsedGB:      memUsedGB,
+		MemTotalGB:     memTotalGB,
+		DiskUsedGB:     diskUsedGB,
+		DiskTotalGB:    diskTotalGB,
+		KubeletVersion: n.Status.NodeInfo.KubeletVersion,
+		Tags:           tags,
 	}
 }
 

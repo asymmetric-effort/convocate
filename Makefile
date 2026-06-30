@@ -1,6 +1,6 @@
 REGISTRY := 192.168.3.90:5000
 NAMESPACE := convocate
-IMAGES := openbao redis postgresql minio api ui pdv
+IMAGES := openbao redis postgresql minio api ui pdv metrics
 
 .PHONY: all clean lint test build cover deploy
 
@@ -19,6 +19,7 @@ lint:
 # ── test ───────────────────────────────────────────────
 test:
 	cd api && go test ./...
+	cd metrics && go test ./...
 
 # ── build ──────────────────────────────────────────────
 build: $(addprefix build-,$(IMAGES))
@@ -43,6 +44,9 @@ build-ui:
 
 build-pdv:
 	docker build -f docker/pdv.Dockerfile -t $(REGISTRY)/convocate/pdv:latest .
+
+build-metrics:
+	docker build -f docker/metrics.Dockerfile -t $(REGISTRY)/convocate/metrics:latest .
 
 # ── cover ──────────────────────────────────────────────
 cover:
@@ -74,6 +78,8 @@ k8s-apply:
 	kubectl rollout status deployment/redis -n $(NAMESPACE) --timeout=120s
 	kubectl rollout status deployment/postgresql -n $(NAMESPACE) --timeout=120s
 	kubectl rollout status deployment/minio -n $(NAMESPACE) --timeout=120s
+	kubectl apply -f k8s/metrics/
+	kubectl rollout status daemonset/node-metrics -n $(NAMESPACE) --timeout=120s
 	kubectl apply -f k8s/api/
 	kubectl apply -f k8s/ui/
 	kubectl rollout status deployment/convocate-api -n $(NAMESPACE) --timeout=120s
