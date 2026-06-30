@@ -20,5 +20,6 @@ export default defineConfig({
     { name: "provision-validation", testMatch: /provision-validation\.spec\.ts/ },
     { name: "agent-manager", testMatch: /agent-manager\.spec\.ts/ },
     { name: "code-ide", testMatch: /code-ide\.spec\.ts/ },
+    { name: "project-board", testMatch: /project-board\.spec\.ts/ },
   ],
 });
