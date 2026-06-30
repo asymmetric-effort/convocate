@@ -411,6 +411,17 @@ func DeleteAgentPod(ctx context.Context, name string) error {
 	return err
 }
 
+// StopAgentPod deletes only the pod (not PVC/ConfigMap/Secret).
+// Used when stopping an agent — the persistent state is preserved.
+func StopAgentPod(ctx context.Context, name string) error {
+	return Client.CoreV1().Pods(AgentNamespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// GetOpts returns default GetOptions.
+func GetOpts() metav1.GetOptions {
+	return metav1.GetOptions{}
+}
+
 // valueOr extracts a field from resources or returns a default.
 func valueOr(r *types.AgentResources, getter func(*types.AgentResources) string, defaultVal string) string {
 	if r != nil {
