@@ -217,15 +217,29 @@ function AppletPortal({ appletId, label, Component, principal }: {
 // the AppletPortal injects real content into the window body.
 // ---------------------------------------------------------------------------
 
+// PermissionDenied — shown when a user opens an applet they're not authorized for
+function PermissionDenied() {
+  return h("div", {
+    style: {
+      display: "flex", alignItems: "center", justifyContent: "center",
+      height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0",
+    },
+  },
+    h("div", { style: { textAlign: "center", padding: "32px" } },
+      h("div", { style: { fontSize: "48px", marginBottom: "16px" } }, "🔒"),
+      h("div", { style: { fontSize: "18px", fontWeight: "600", marginBottom: "8px" } }, "Permission denied."),
+      h("div", { style: { fontSize: "13px", color: "#aaa" } }, "You do not have the required role to access this applet.")
+    )
+  );
+}
+
 function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: () => void }) {
   // Track which applets have been opened via the dock
   const [openApplets, setOpenApplets] = useState<Set<string>>(new Set());
 
-  // Filter applets to only show those the user is authorized for
-  const authorizedApplets = principal.authorizedApplets || [];
-  const visibleApplets = APPLETS.filter((a) =>
-    authorizedApplets.includes(a.id) || principal.roles?.includes("admin")
-  );
+  // Determine which applets the user is authorized for
+  const authorizedApplets = new Set(principal.authorizedApplets || []);
+  const isAdmin = principal.roles?.includes("admin") || false;
 
   /** Called when a dock icon is clicked and a window opens */
   const handleAppOpen = useCallback((appId: string) => {
@@ -237,23 +251,27 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
     });
   }, []);
 
-  // Build portal components for implemented applets that have been opened
-  const portals = visibleApplets
-    .filter((a) => a.component && openApplets.has(a.id))
-    .map((a) =>
-      h(AppletPortal, {
+  // Build portal components for opened applets
+  // Authorized applets get their real component; unauthorized get PermissionDenied
+  const portals = APPLETS
+    .filter((a) => openApplets.has(a.id))
+    .map((a) => {
+      const isAuthorized = isAdmin || authorizedApplets.has(a.id);
+      const Component = isAuthorized && a.component ? a.component : PermissionDenied;
+      return h(AppletPortal, {
         key: a.id,
         appletId: a.id,
         label: a.label,
-        Component: a.component!,
+        Component,
         principal,
-      })
-    );
+      });
+    });
 
   return h(
     UnityDesktop,
     {
-      apps: visibleApplets.map((a) => ({ id: a.id, label: a.label, icon: a.icon })),
+      // Show ALL applets in the dock — authorization checked on open
+      apps: APPLETS.map((a) => ({ id: a.id, label: a.label, icon: a.icon })),
       user: { name: principal.name },
       onAppOpen: handleAppOpen,
       onLogout,
@@ -269,6 +287,33 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
 
 function App() {
   const [principal, setPrincipal] = useState<any>(null);
+
+  // Idle session timeout — locks the screen after inactivity
+  useEffect(() => {
+    if (!principal) return;
+
+    // Default 30 minutes; could be fetched from /api/v1/ac/settings
+    const timeoutMs = 30 * 60 * 1000;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        localStorage.removeItem("accessToken");
+        setPrincipal(null); // lock screen
+      }, timeoutMs);
+    };
+
+    // Reset on any user interaction
+    const events = ["mousedown", "keydown", "scroll", "touchstart"];
+    events.forEach((e) => document.addEventListener(e, resetTimer));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => document.removeEventListener(e, resetTimer));
+    };
+  }, [principal]);
 
   useEffect(() => {
     const token = localStorage.getItem("accessToken");
