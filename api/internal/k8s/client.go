@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -12,6 +13,7 @@ import (
 const AgentNamespace = "convocate-agents"
 
 var Client *kubernetes.Clientset
+var DynClient dynamic.Interface
 
 func Init() error {
 	config, err := getConfig()
@@ -23,8 +25,14 @@ func Init() error {
 	if err != nil {
 		return fmt.Errorf("k8s client: %w", err)
 	}
-
 	Client = clientset
+
+	dynClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("k8s dynamic client: %w", err)
+	}
+	DynClient = dynClient
+
 	return nil
 }
 

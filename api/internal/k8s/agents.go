@@ -9,6 +9,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/asymmetric-effort/convocate/internal/types"
@@ -185,6 +187,10 @@ func CreateAgentPod(ctx context.Context, req types.CreateAgentRequest, owner str
 	if err := CreateAgentSecret(ctx, podName, req.AnthropicApiKey); err != nil {
 		return nil, err
 	}
+	if err := CreateAgentCertificate(ctx, podName); err != nil {
+		log.Printf("[agent] Warning: TLS certificate creation failed: %v", err)
+		// Non-fatal — wrapper falls back to HTTP dev mode
+	}
 
 	// Build Claude flags env var
 	claudeFlags := strings.Join(req.ClaudeFlags, " ")
@@ -237,6 +243,7 @@ func CreateAgentPod(ctx context.Context, req types.CreateAgentRequest, owner str
 	volumeMounts := []corev1.VolumeMount{
 		{Name: "workspace", MountPath: "/home/claude/workspace"},
 		{Name: "claude-md", MountPath: "/home/claude/CLAUDE.md", SubPath: "CLAUDE.md", ReadOnly: true},
+		{Name: "tls", MountPath: "/etc/tls", ReadOnly: true},
 		{Name: "tmp", MountPath: "/tmp"},
 	}
 
@@ -248,6 +255,12 @@ func CreateAgentPod(ctx context.Context, req types.CreateAgentRequest, owner str
 		{Name: "claude-md", VolumeSource: corev1.VolumeSource{
 			ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{Name: "cm-" + podName},
+			},
+		}},
+		{Name: "tls", VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: "tls-" + podName,
+				Optional:   boolPtr(true), // Allow pod to start without TLS (dev mode)
 			},
 		}},
 		{Name: "tmp", VolumeSource: corev1.VolumeSource{
@@ -407,8 +420,67 @@ func DeleteAgentPod(ctx context.Context, name string) error {
 	cleanupResource("Secret", "secret-"+name, func() error {
 		return Client.CoreV1().Secrets(AgentNamespace).Delete(ctx, "secret-"+name, metav1.DeleteOptions{})
 	})
+	// Clean up TLS certificate and its secret
+	if DynClient != nil {
+		certGVR := schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificates"}
+		cleanupResource("Certificate", "tls-"+name, func() error {
+			return DynClient.Resource(certGVR).Namespace(AgentNamespace).Delete(ctx, "tls-"+name, metav1.DeleteOptions{})
+		})
+	}
+	cleanupResource("TLS Secret", "tls-"+name, func() error {
+		return Client.CoreV1().Secrets(AgentNamespace).Delete(ctx, "tls-"+name, metav1.DeleteOptions{})
+	})
 
 	return err
+}
+
+// CreateAgentCertificate creates a cert-manager Certificate for per-pod TLS.
+// The certificate is issued by the convocate-agent-pod-ca issuer.
+func CreateAgentCertificate(ctx context.Context, podName string) error {
+	if DynClient == nil {
+		log.Printf("[agent] Dynamic client not available — skipping TLS certificate creation")
+		return nil
+	}
+
+	certGVR := schema.GroupVersionResource{
+		Group:    "cert-manager.io",
+		Version:  "v1",
+		Resource: "certificates",
+	}
+
+	cert := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "cert-manager.io/v1",
+			"kind":       "Certificate",
+			"metadata": map[string]interface{}{
+				"name":      "tls-" + podName,
+				"namespace": AgentNamespace,
+				"labels": map[string]interface{}{
+					"convocate.io/type":  "agent-tls",
+					"convocate.io/agent": podName,
+				},
+			},
+			"spec": map[string]interface{}{
+				"secretName": "tls-" + podName,
+				"issuerRef": map[string]interface{}{
+					"name": "convocate-agent-pod-ca",
+					"kind": "Issuer",
+				},
+				"dnsNames": []interface{}{
+					podName,
+					podName + "." + AgentNamespace + ".svc.cluster.local",
+				},
+				"duration":    "8760h",
+				"renewBefore": "720h",
+			},
+		},
+	}
+
+	_, err := DynClient.Resource(certGVR).Namespace(AgentNamespace).Create(ctx, cert, metav1.CreateOptions{})
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		return fmt.Errorf("create agent certificate: %w", err)
+	}
+	return nil
 }
 
 // StopAgentPod deletes only the pod (not PVC/ConfigMap/Secret).
@@ -431,6 +503,8 @@ func valueOr(r *types.AgentResources, getter func(*types.AgentResources) string,
 	}
 	return defaultVal
 }
+
+func boolPtr(b bool) *bool { return &b }
 
 // intstr8443 returns an IntOrString for port 8443.
 func intstr8443() intstr.IntOrString {
