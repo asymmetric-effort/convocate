@@ -555,9 +555,9 @@ function StatusView({
 }: {
   board: Board;
   onSelectCard: (card: BoardCard) => void;
-  onMoveCard: (cardId: string, containerId: string | null) => void;
+  onMoveCard: (cardId: string, containerId: string | null, newStatus?: string) => void;
 }) {
-  const [dragOverLane, setDragOverLane] = useState<string | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<string | null>(null);
   // Build swim lanes: one per container + one for unassigned cards
   const lanes: Array<{ id: string; label: string }> = [];
   for (const cont of board.containers) {
@@ -594,24 +594,14 @@ function StatusView({
       // Skip empty unassigned lane if all cards are in containers
       if (lane.id === "__unassigned__" && laneCards.length === 0 && board.containers.length > 0) return null;
 
-      const isDropTarget = dragOverLane === lane.id;
       const containerId = lane.id === "__unassigned__" ? null : lane.id;
+      const isUnassigned = lane.id === "__unassigned__";
 
       return h("div", {
         key: lane.id,
         style: {
           display: "flex", gap: "1px",
           borderBottom: "1px solid #333", minHeight: "80px",
-          backgroundColor: isDropTarget ? "rgba(59, 130, 246, 0.1)" : "transparent",
-          transition: "background-color 150ms",
-        },
-        onDragOver: (e: DragEvent) => { e.preventDefault(); setDragOverLane(lane.id); },
-        onDragLeave: () => setDragOverLane(null),
-        onDrop: (e: DragEvent) => {
-          e.preventDefault();
-          setDragOverLane(null);
-          const cardId = e.dataTransfer?.getData("text/plain");
-          if (cardId) onMoveCard(cardId, containerId);
         },
       },
         // Lane label
@@ -623,15 +613,36 @@ function StatusView({
             borderRight: "1px solid #333",
           },
         }, lane.label),
-        // Cells per status column
+        // Cells per status column — each cell is a drop target
         ...STATUS_ORDER.map((status) => {
           const cellCards = laneCards.filter((c) => c.status === status);
+          const cellKey = `${lane.id}:${status}`;
+          const isOver = dragOverCell === cellKey;
+
+          // Drop rules are validated on actual drop (see onDrop handler).
+          // Visual feedback: dim columns that never accept drops.
+          // Unassigned lane: only todo and note columns accept drops.
+          const canDropHere = !isUnassigned || status === "todo" || status === "note";
+
           return h("div", {
             key: status,
             style: {
               flex: 1, minWidth: "150px", padding: "6px",
-              backgroundColor: "#252526",
+              backgroundColor: isOver && canDropHere ? "rgba(59, 130, 246, 0.15)" : "#252526",
               display: "flex", flexDirection: "column", gap: "4px",
+              transition: "background-color 150ms",
+              opacity: canDropHere ? "1" : "0.6",
+            },
+            onDragOver: (e: DragEvent) => {
+              if (canDropHere) { e.preventDefault(); setDragOverCell(cellKey); }
+            },
+            onDragLeave: () => setDragOverCell(null),
+            onDrop: (e: DragEvent) => {
+              e.preventDefault();
+              setDragOverCell(null);
+              if (!canDropHere) return;
+              const cardId = e.dataTransfer?.getData("text/plain");
+              if (cardId) onMoveCard(cardId, containerId, status);
             },
           },
             ...cellCards.map((card) => renderCard(card, onSelectCard))
@@ -740,16 +751,59 @@ export function ProjectBoard() {
     }
   }, [activeBoard, reloadBoard]);
 
-  /** Move a card to a different container (drag-and-drop) */
-  const handleMoveCard = useCallback(async (cardId: string, containerId: string | null) => {
+  /** Move a card to a different container and/or status (drag-and-drop).
+   *  Enforces transition rules:
+   *   - Note cards: cannot change status (only container assignment)
+   *   - Task cards in active/done/fail: cannot change status via drag
+   *   - Task cards in todo: can go to active ONLY if attached to a container
+   *   - No card can be dragged TO the note column
+   */
+  const handleMoveCard = useCallback(async (cardId: string, containerId: string | null, newStatus?: string) => {
     if (!activeBoard) return;
     const card = activeBoard.cards.find((c) => c.id === cardId);
     if (!card) return;
+
+    // Validate status transitions
+    let finalStatus = card.status;
+    if (newStatus && newStatus !== card.status) {
+      // Note cards never change status
+      if (card.status === "note") {
+        finalStatus = "note";
+      }
+      // No card can be dragged to note
+      else if (newStatus === "note") {
+        finalStatus = card.status;
+      }
+      // Cards in active/done/fail cannot change status via drag
+      else if (card.status === "active" || card.status === "done" || card.status === "fail") {
+        finalStatus = card.status;
+      }
+      // Todo → active requires a container
+      else if (card.status === "todo" && newStatus === "active") {
+        const targetContainer = containerId ?? card.containerId;
+        if (targetContainer) {
+          finalStatus = "active";
+        } else {
+          setError("Card must be attached to a container before activation.");
+          return;
+        }
+      }
+      // Todo can only go to active (not done/fail directly)
+      else if (card.status === "todo" && (newStatus === "done" || newStatus === "fail")) {
+        setError("Cards must go through Active status before Done or Fail.");
+        return;
+      }
+      else {
+        finalStatus = newStatus;
+      }
+    }
+
     try {
-      await updateCard(activeBoard.id, cardId, {
-        ...card,
-        containerId: containerId || undefined,
-      });
+      const updates: Partial<BoardCard> = { ...card, status: finalStatus };
+      if (containerId !== undefined) {
+        updates.containerId = containerId || undefined;
+      }
+      await updateCard(activeBoard.id, cardId, updates);
       await reloadBoard();
     } catch (err: any) {
       setError(err.message);

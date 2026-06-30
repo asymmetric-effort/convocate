@@ -18,7 +18,7 @@ const APPLETS = [
   { id: "nmgr", label: "Node Manager" },
   { id: "amgr", label: "Agent Manager" },
   { id: "pb", label: "Convocate Project Board" },
-  { id: "ide", label: "Code IDE" },
+  { id: "ide", label: "Code Monkey IDE" },
   { id: "ac", label: "Access Control" },
   { id: "repo", label: "Repo Manager" },
   { id: "sup", label: "Support Tool" },

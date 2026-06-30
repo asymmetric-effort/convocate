@@ -36,7 +36,7 @@ async function login(page: Page): Promise<void> {
 async function openCodeIDE(page: Page): Promise<void> {
   await page.locator('[data-dock-item-id="ide"]').click();
   await expect(
-    page.locator('[role="dialog"][aria-label="Code IDE"]')
+    page.locator('[role="dialog"][aria-label="Code Monkey IDE"]')
   ).toBeVisible({ timeout: 5000 });
   await expect(
     page.locator('[data-testid="code-ide"]')
