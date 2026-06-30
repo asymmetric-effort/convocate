@@ -37,9 +37,12 @@ const APPLETS: {
   id: string;
   label: string;
   icon: string;
-  component?: () => ReturnType<typeof createElement>;
+  component?: (props: { principal: any }) => ReturnType<typeof createElement>;
+  defaultSize?: { width: number; height: number };
+  resizable?: boolean;
 }[] = [
-  { id: "nmgr", label: "Node Manager", icon: "/img/icons/node-manager.png", component: NodeManager },
+  { id: "nmgr", label: "Node Manager", icon: "/img/icons/node-manager.png", component: NodeManager,
+    defaultSize: { width: 1100, height: 360 }, resizable: false },
   { id: "amgr", label: "Agent Manager", icon: "/img/icons/agent-manager.png", component: AgentManager },
   { id: "pb", label: "Convocate Project Board", icon: "/img/icons/productboard.png", component: ProjectBoard },
   { id: "ide", label: "Code Monkey IDE", icon: "/img/icons/ide-monkey.png", component: CodeIDE },
@@ -271,7 +274,11 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
     UnityDesktop,
     {
       // Show ALL applets in the dock — authorization checked on open
-      apps: APPLETS.map((a) => ({ id: a.id, label: a.label, icon: a.icon })),
+      apps: APPLETS.map((a) => ({
+        id: a.id, label: a.label, icon: a.icon,
+        ...(a.defaultSize ? { defaultSize: a.defaultSize } : {}),
+        ...(a.resizable !== undefined ? { resizable: a.resizable } : {}),
+      })),
       user: { name: principal.name },
       onAppOpen: handleAppOpen,
       onLogout,

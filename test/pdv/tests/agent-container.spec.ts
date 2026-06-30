@@ -53,7 +53,7 @@ test.describe("Agent container lifecycle", () => {
       headers: authHeaders(),
       body: JSON.stringify({
         project: PROJECT,
-        nodeId: "convocate04",
+        nodeId: "",
         claudeFlags: ["--dangerously-skip-permissions"],
         claudeMd: "# PDV Test Agent\nBe helpful and concise.",
         resources: {

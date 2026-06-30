@@ -84,6 +84,16 @@ for (const applet of APPLETS) {
     });
 
     test(`maximizes and restores`, async ({ page }) => {
+      // Node Manager has a fixed-size window (resizable: false) — skip maximize test
+      if (applet.id === "nmgr") {
+        // Verify the window opens at fixed size instead
+        await page.locator(`[data-dock-item-id="${applet.id}"]`).click();
+        const window = page.locator(`[role="dialog"][aria-label="${applet.label}"]`);
+        await expect(window).toBeVisible({ timeout: 5000 });
+        await expect(window).toHaveClass(/draggable-window--normal/);
+        return;
+      }
+
       // Open the applet
       await page.locator(`[data-dock-item-id="${applet.id}"]`).click();
       const window = page.locator(`[role="dialog"][aria-label="${applet.label}"]`);

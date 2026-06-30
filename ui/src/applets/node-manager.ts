@@ -792,7 +792,7 @@ export function NodeManager({ principal }: { principal?: any } = {}) {
   const [total, setTotal] = useState(0);
   const [showProvision, setShowProvision] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const limit = 25;
+  const limit = 6; // fixed window shows 6 rows with pagination
 
   // Register applet menu bar
   useMenuBar("nmgr", [
@@ -989,9 +989,9 @@ export function NodeManager({ principal }: { principal?: any } = {}) {
   // Current page for pagination (1-based)
   const currentPage = Math.floor(offset / limit) + 1;
 
-  // Max grid height: 10 rows × 35px + header row (35px) = 385px
-  // Total max height: toolbar (40px) + grid (385px) + footer (35px) = 460px
-  const maxGridHeight = Math.min(data.length, 10) * 35 + 35;
+  // Grid shows up to 6 rows before pagination kicks in.
+  // Fixed window: 1100×360. Grid gets remaining space after toolbar + footer.
+  const maxGridHeight = Math.min(data.length, 6) * 35 + 35;
 
   return h(
     "div",
@@ -1000,7 +1000,7 @@ export function NodeManager({ principal }: { principal?: any } = {}) {
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        maxHeight: "460px",
+        // Window size is fixed by the applet registration (1100×360)
         backgroundColor: "#1e1e1e",
         color: "#e0e0e0",
       },

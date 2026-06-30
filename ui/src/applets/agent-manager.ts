@@ -144,11 +144,12 @@ function CreateAgentDialog({
   isAdmin: boolean;
 }) {
   const [project, setProject] = useState("");
-  const [nodeId, setNodeId] = useState("");
   const [claudeFlags, setClaudeFlags] = useState("--dangerously-skip-permissions");
   const [cpuLimit, setCpuLimit] = useState("2");
   const [memoryLimit, setMemoryLimit] = useState("2Gi");
   const [storageSize, setStorageSize] = useState("2Gi");
+  const [capabilities, setCapabilities] = useState("");
+  const [additionalEgress, setAdditionalEgress] = useState("");
   const [claudeMd, setClaudeMd] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [logging, setLogging] = useState(false);
@@ -157,21 +158,30 @@ function CreateAgentDialog({
 
   const handleSubmit = useCallback(async () => {
     if (!project.trim()) { setError("Project name is required."); return; }
-    if (!nodeId.trim()) { setError("Node ID is required."); return; }
     setError("");
     setSubmitting(true);
     try {
-      await createAgent({
+      const req: any = {
         project: project.trim(),
-        nodeId: nodeId.trim(),
+        nodeId: "", // Let K8s scheduler decide placement
         claudeFlags: claudeFlags.trim() ? claudeFlags.trim().split(/\s+/) : undefined,
         resources: { cpuLimit, memoryLimit, storageSize },
         claudeMd: claudeMd.trim() || undefined,
         anthropicApiKey: apiKey.trim() || undefined,
         logging,
-      } as any);
-      setProject(""); setNodeId(""); setClaudeFlags("--dangerously-skip-permissions");
+      };
+      // Admin-only security fields
+      if (isAdmin && capabilities.trim()) {
+        req.security = { capabilities: capabilities.trim().split(/[,\s]+/) };
+      }
+      // Network policy
+      if (additionalEgress.trim()) {
+        req.network = { additionalEgress: additionalEgress.trim().split(/[,\s]+/) };
+      }
+      await createAgent(req);
+      setProject(""); setClaudeFlags("--dangerously-skip-permissions");
       setCpuLimit("2"); setMemoryLimit("2Gi"); setStorageSize("2Gi");
+      setCapabilities(""); setAdditionalEgress("");
       setClaudeMd(""); setApiKey(""); setLogging(false);
       onCreated();
       onClose();
@@ -194,7 +204,6 @@ function CreateAgentDialog({
       // Core fields
       sectionLabel("Project"),
       h(TextField, { placeholder: "Project name", value: project, onChange: (v: string) => setProject(v) }),
-      h(TextField, { placeholder: "Node ID (e.g. convocate04)", value: nodeId, onChange: (v: string) => setNodeId(v) }),
 
       // Claude CLI
       sectionLabel("Claude CLI"),
@@ -207,6 +216,25 @@ function CreateAgentDialog({
         h(TextField, { placeholder: "CPU limit (e.g. 2)", value: cpuLimit, onChange: (v: string) => setCpuLimit(v) }),
         h(TextField, { placeholder: "Memory limit (e.g. 2Gi)", value: memoryLimit, onChange: (v: string) => setMemoryLimit(v) }),
         h(TextField, { placeholder: "Storage (e.g. 2Gi)", value: storageSize, onChange: (v: string) => setStorageSize(v) }),
+      ),
+
+      // K8s Capabilities (admin-only)
+      isAdmin ? sectionLabel("K8s Capabilities (admin)") : null,
+      isAdmin ? h(TextField, {
+        placeholder: "Linux capabilities (comma-separated, e.g. NET_ADMIN,SYS_PTRACE)",
+        value: capabilities,
+        onChange: (v: string) => setCapabilities(v),
+      }) : null,
+
+      // Network Policy
+      sectionLabel("Network Policy"),
+      h(TextField, {
+        placeholder: "Additional egress hosts (comma-separated, e.g. my-registry.io,db.internal)",
+        value: additionalEgress,
+        onChange: (v: string) => setAdditionalEgress(v),
+      }),
+      h("div", { style: { fontSize: "11px", color: "#666" } },
+        "Default: Anthropic API, GitHub, npm, PyPI. Add extra hosts here."
       ),
 
       // CLAUDE.md guardrails

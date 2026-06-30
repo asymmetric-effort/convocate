@@ -111,13 +111,14 @@ test.describe("Agent Manager create dialog", () => {
     await expect(page.locator('text=Project name is required')).toBeVisible();
   });
 
-  test("validates node ID is required", async ({ page }) => {
+  test("shows capabilities and network policy fields", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
     await expect(page.locator('input[placeholder="Project name"]')).toBeVisible({ timeout: 5000 });
 
-    await page.locator('input[placeholder="Project name"]').fill("test-project");
-    await page.locator('button:has-text("Create")').last().click();
-    await expect(page.locator('text=Node ID is required')).toBeVisible();
+    // Network policy field should be visible
+    await expect(page.locator('input[placeholder*="Additional egress"]')).toBeVisible();
+    // Default network info text
+    await expect(page.locator('text=Default: Anthropic API')).toBeVisible();
   });
 
   test("can be cancelled", async ({ page }) => {
