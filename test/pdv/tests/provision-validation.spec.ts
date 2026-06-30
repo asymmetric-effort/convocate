@@ -163,6 +163,42 @@ test.describe("Provision form UI validation happy path", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Cleanup — deleting pending/error nodes that only exist in the store
+// ---------------------------------------------------------------------------
+
+test.describe("Provision cleanup", () => {
+  test("can delete a pending/error node that does not exist in K8s", async ({ page }) => {
+    // Create a node that will go to Error status (unreachable host)
+    const name = `cleanup-${Date.now().toString(36)}`;
+    const res = await fetch(`${BASE}/api/v1/nmgr/node`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ name, host: "10.254.254.254", user: "nobody" }),
+    });
+    expect(res.status).toBe(202);
+
+    // Verify it exists in the API
+    const getRes = await fetch(`${BASE}/api/v1/nmgr/node/${name}`, {
+      headers: authHeaders(),
+    });
+    expect(getRes.status).toBe(200);
+
+    // Delete it — should succeed (not 500)
+    const delRes = await fetch(`${BASE}/api/v1/nmgr/node/${name}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    expect(delRes.status).toBe(202);
+
+    // Verify it's gone
+    const verifyRes = await fetch(`${BASE}/api/v1/nmgr/node/${name}`, {
+      headers: authHeaders(),
+    });
+    expect(verifyRes.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // API Validation — Sad Path (direct API calls)
 // ---------------------------------------------------------------------------
 

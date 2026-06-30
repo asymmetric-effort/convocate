@@ -377,18 +377,27 @@ const minReadyNodes = 4 // must have at least this many Ready nodes to stop/dele
 func (h *Handler) del(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("nodeId")
 
-	// Safety: require at least minReadyNodes Ready nodes before allowing delete
-	ctx0, cancel0 := context.WithTimeout(r.Context(), 5*time.Second)
-	readyCount := h.countReadyNodes(ctx0)
-	cancel0()
-	if readyCount < minReadyNodes {
-		httputil.WriteError(w, http.StatusConflict, "insufficient_nodes",
-			"cannot delete: cluster must maintain at least 3 Ready nodes")
+	// Check the in-memory store first — pending/error nodes from provisioning
+	// only exist there.  These don't affect cluster capacity so the
+	// minimum-node-count guard doesn't apply.
+	if h.store.Delete(id) {
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 
 	if h.useK8s {
-		// Real K8s: drain all pods then remove node from cluster
+		// Safety: require at least minReadyNodes Ready nodes before deleting
+		// a real K8s node
+		ctx0, cancel0 := context.WithTimeout(r.Context(), 5*time.Second)
+		readyCount := h.countReadyNodes(ctx0)
+		cancel0()
+		if readyCount < minReadyNodes {
+			httputil.WriteError(w, http.StatusConflict, "insufficient_nodes",
+				"cannot delete: cluster must maintain at least 3 Ready nodes")
+			return
+		}
+
+		// Real K8s node: drain all pods then remove from cluster
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
 		if err := k8s.DrainAndDeleteNode(ctx, id); err != nil {
@@ -399,11 +408,7 @@ func (h *Handler) del(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.store.Delete(id) {
-		httputil.WriteError(w, http.StatusNotFound, "not_found", "node not found")
-		return
-	}
-	w.WriteHeader(http.StatusAccepted)
+	httputil.WriteError(w, http.StatusNotFound, "not_found", "node not found")
 }
 
 func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
