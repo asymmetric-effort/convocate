@@ -135,6 +135,16 @@ async function updateCard(boardId: string, cardId: string, data: Partial<BoardCa
   return res.json();
 }
 
+async function createContainer(boardId: string, title: string): Promise<Container> {
+  const res = await fetch(`/api/v1/pb/board/${boardId}/container`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(`Failed to create container: ${res.status}`);
+  return res.json();
+}
+
 async function deleteCard(boardId: string, cardId: string): Promise<void> {
   const res = await fetch(`/api/v1/pb/board/${boardId}/card/${cardId}`, {
     method: "DELETE",
@@ -221,35 +231,47 @@ function NewCardDialog({
   onCreated: (title: string, status: string) => void;
 }) {
   const [title, setTitle] = useState("");
-  const [status, setStatus] = useState("todo");
+  const [cardType, setCardType] = useState<"todo" | "note">("todo");
   const [error, setError] = useState("");
 
   const handleSubmit = useCallback(() => {
     if (!title.trim()) { setError("Card title is required."); return; }
-    onCreated(title.trim(), status);
+    // Cards are always created in todo or note status
+    onCreated(title.trim(), cardType);
     setTitle("");
-    setStatus("todo");
+    setCardType("todo");
     setError("");
     onClose();
-  }, [title, status, onCreated, onClose]);
+  }, [title, cardType, onCreated, onClose]);
 
   if (!open) return null;
 
   return h(Modal, { open: true, onClose, title: "New Card", size: "sm" as const },
     h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },
       h(TextField, { placeholder: "Card title", value: title, onChange: (v: string) => setTitle(v) }),
+      // Card type: Task (todo) or Note
       h("div", { style: { display: "flex", gap: "8px" } },
-        ...STATUS_ORDER.map((s) =>
-          h("button", {
-            key: s,
-            style: {
-              padding: "4px 12px", borderRadius: "4px", border: "none", cursor: "pointer",
-              backgroundColor: status === s ? STATUS_COLORS[s] : "#333",
-              color: "#fff", fontSize: "12px", fontWeight: status === s ? "700" : "400",
-            },
-            onClick: () => setStatus(s),
-          }, s)
-        )
+        h("button", {
+          style: {
+            padding: "6px 16px", borderRadius: "4px", border: "none", cursor: "pointer",
+            backgroundColor: cardType === "todo" ? STATUS_COLORS.todo : "#333",
+            color: "#fff", fontSize: "12px", fontWeight: cardType === "todo" ? "700" : "400",
+          },
+          onClick: () => setCardType("todo"),
+        }, "Task"),
+        h("button", {
+          style: {
+            padding: "6px 16px", borderRadius: "4px", border: "none", cursor: "pointer",
+            backgroundColor: cardType === "note" ? STATUS_COLORS.note : "#333",
+            color: "#fff", fontSize: "12px", fontWeight: cardType === "note" ? "700" : "400",
+          },
+          onClick: () => setCardType("note"),
+        }, "Note"),
+      ),
+      h("div", { style: { fontSize: "11px", color: "#aaa" } },
+        cardType === "todo"
+          ? "Task cards can be attached to containers and dispatched to agents."
+          : "Note cards are for documentation — they cannot be executed."
       ),
       error ? h("div", { style: { color: "#ff8888", fontSize: "13px" } }, error) : null,
       h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
@@ -496,6 +518,27 @@ function CanvasView({
 // Kanban Status View — columns grouped by card status
 // ---------------------------------------------------------------------------
 
+/** Render a single card in a kanban cell */
+function renderCard(card: BoardCard, onSelectCard: (c: BoardCard) => void) {
+  return h("div", {
+    key: card.id,
+    style: {
+      padding: "8px 10px", backgroundColor: "#2d2d2d", borderRadius: "4px",
+      borderLeft: `3px solid ${STATUS_COLORS[card.status]}`,
+      cursor: "pointer", fontSize: "13px",
+    },
+    onClick: () => onSelectCard(card),
+  },
+    h("div", { style: { fontWeight: "500", marginBottom: "4px" } }, card.title),
+    card.content
+      ? h("div", { style: { fontSize: "11px", color: "#aaa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+          card.content.substring(0, 60)
+        )
+      : null,
+    h("div", { style: { fontSize: "10px", color: "#666", marginTop: "4px" } }, card.id)
+  );
+}
+
 function StatusView({
   board,
   onSelectCard,
@@ -503,57 +546,108 @@ function StatusView({
   board: Board;
   onSelectCard: (card: BoardCard) => void;
 }) {
-  const cardsByStatus: Record<string, BoardCard[]> = {};
-  for (const s of STATUS_ORDER) cardsByStatus[s] = [];
-  for (const card of board.cards) {
-    const col = cardsByStatus[card.status] || (cardsByStatus[card.status] = []);
-    col.push(card);
+  // Build swim lanes: one per container + one for unassigned cards
+  const lanes: Array<{ id: string; label: string }> = [];
+  for (const cont of board.containers) {
+    lanes.push({ id: cont.id, label: cont.title });
   }
+  lanes.push({ id: "__unassigned__", label: "Unassigned" });
 
   return h("div", {
-    style: { display: "flex", flex: 1, gap: "8px", padding: "8px", overflowX: "auto", overflowY: "hidden" },
+    style: { display: "flex", flexDirection: "column", flex: 1, overflow: "auto" },
   },
-    ...STATUS_ORDER.map((status) =>
-      h("div", {
-        key: status,
+    // Column headers
+    h("div", {
+      style: { display: "flex", gap: "1px", flexShrink: 0, position: "sticky", top: 0, zIndex: 1 },
+    },
+      h("div", { style: { width: "120px", flexShrink: 0, padding: "8px", backgroundColor: "#1e1e1e" } }), // spacer for lane labels
+      ...STATUS_ORDER.map((status) =>
+        h("div", {
+          key: status,
+          style: {
+            flex: 1, minWidth: "150px", padding: "8px 12px",
+            fontWeight: "600", fontSize: "13px", backgroundColor: "#252526",
+            borderBottom: `2px solid ${STATUS_COLORS[status]}`,
+            textAlign: "center",
+          },
+        }, status.toUpperCase())
+      )
+    ),
+    // Swim lanes
+    ...lanes.map((lane) => {
+      // Cards in this lane, grouped by status
+      const laneCards = board.cards.filter((c) =>
+        lane.id === "__unassigned__" ? !c.containerId : c.containerId === lane.id
+      );
+      // Skip empty unassigned lane if all cards are in containers
+      if (lane.id === "__unassigned__" && laneCards.length === 0 && board.containers.length > 0) return null;
+
+      return h("div", {
+        key: lane.id,
         style: {
-          flex: "1", minWidth: "180px", display: "flex", flexDirection: "column",
-          backgroundColor: "#252526", borderRadius: "6px", overflow: "hidden",
+          display: "flex", gap: "1px",
+          borderBottom: "1px solid #333", minHeight: "80px",
         },
       },
+        // Lane label
         h("div", {
           style: {
-            padding: "8px 12px", fontWeight: "600", fontSize: "13px",
-            borderBottom: `2px solid ${STATUS_COLORS[status]}`,
-            display: "flex", alignItems: "center", justifyContent: "space-between",
+            width: "120px", flexShrink: 0, padding: "8px",
+            fontSize: "12px", fontWeight: "600", color: "#aaa",
+            backgroundColor: "#1e1e1e", display: "flex", alignItems: "flex-start",
+            borderRight: "1px solid #333",
           },
-        },
-          h("span", null, status.toUpperCase()),
-          h("span", { style: { fontSize: "11px", color: "#aaa" } }, String(cardsByStatus[status]?.length || 0))
-        ),
-        h("div", {
-          style: { flex: 1, overflowY: "auto", padding: "8px", display: "flex", flexDirection: "column", gap: "6px" },
-        },
-          ...(cardsByStatus[status] || []).map((card) =>
-            h("div", {
-              key: card.id,
-              style: {
-                padding: "8px 10px", backgroundColor: "#2d2d2d", borderRadius: "4px",
-                borderLeft: `3px solid ${STATUS_COLORS[card.status]}`,
-                cursor: "pointer", fontSize: "13px",
-              },
-              onClick: () => onSelectCard(card),
+        }, lane.label),
+        // Cells per status column
+        ...STATUS_ORDER.map((status) => {
+          const cellCards = laneCards.filter((c) => c.status === status);
+          return h("div", {
+            key: status,
+            style: {
+              flex: 1, minWidth: "150px", padding: "6px",
+              backgroundColor: "#252526",
+              display: "flex", flexDirection: "column", gap: "4px",
             },
-              h("div", { style: { fontWeight: "500", marginBottom: "4px" } }, card.title),
-              card.content
-                ? h("div", { style: { fontSize: "11px", color: "#aaa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
-                    card.content.substring(0, 60)
-                  )
-                : null,
-              h("div", { style: { fontSize: "10px", color: "#666", marginTop: "4px" } }, card.id)
-            )
-          )
-        )
+          },
+            ...cellCards.map((card) => renderCard(card, onSelectCard))
+          );
+        })
+      );
+    }).filter(Boolean)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// New Container Dialog
+// ---------------------------------------------------------------------------
+
+function NewContainerDialog({
+  open, onClose, onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (title: string) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = useCallback(() => {
+    if (!title.trim()) { setError("Container title is required."); return; }
+    onCreated(title.trim());
+    setTitle("");
+    setError("");
+    onClose();
+  }, [title, onCreated, onClose]);
+
+  if (!open) return null;
+
+  return h(Modal, { open: true, onClose, title: "New Container", size: "sm" as const },
+    h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },
+      h(TextField, { placeholder: "Container title", value: title, onChange: (v: string) => setTitle(v) }),
+      error ? h("div", { style: { color: "#ff8888", fontSize: "13px" } }, error) : null,
+      h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
+        h(Button, { variant: "secondary" as const, onClick: onClose }, "Cancel"),
+        h(Button, { variant: "primary" as const, onClick: handleSubmit }, "Create")
       )
     )
   );
@@ -570,6 +664,7 @@ export function ProjectBoard() {
   const [error, setError] = useState("");
   const [showNewBoard, setShowNewBoard] = useState(false);
   const [showNewCard, setShowNewCard] = useState(false);
+  const [showNewContainer, setShowNewContainer] = useState(false);
   const [selectedCard, setSelectedCard] = useState<BoardCard | null>(null);
   const [viewMode, setViewMode] = useState<"status" | "canvas">("status");
 
@@ -609,6 +704,17 @@ export function ProjectBoard() {
     }
   }, [activeBoard, reloadBoard]);
 
+  /** Handle new container creation */
+  const handleCreateContainer = useCallback(async (title: string) => {
+    if (!activeBoard) return;
+    try {
+      await createContainer(activeBoard.id, title);
+      await reloadBoard();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }, [activeBoard, reloadBoard]);
+
   /** Handle board created */
   const handleBoardCreated = useCallback(async (board: Board) => {
     setBoards((prev) => [...prev, { id: board.id, name: board.name }]);
@@ -634,8 +740,9 @@ export function ProjectBoard() {
 
   return h("div", {
     style: {
-      display: "flex", flexDirection: "column", height: "100%",
+      display: "flex", flexDirection: "column", width: "100%", height: "100%",
       backgroundColor: "#1e1e1e", color: "#e0e0e0",
+      overflow: "hidden",
     },
     "data-testid": "project-board",
   },
@@ -678,6 +785,7 @@ export function ProjectBoard() {
           }, "Canvas"),
         ),
         h(Button, { variant: "primary" as const, onClick: () => setShowNewCard(true) }, "New Card"),
+        h(Button, { variant: "secondary" as const, onClick: () => setShowNewContainer(true) }, "New Container"),
         h(Button, { variant: "secondary" as const, onClick: () => setShowNewBoard(true) }, "New Board"),
         h(Button, { variant: "secondary" as const, onClick: reloadBoard }, "Refresh"),
       )
@@ -707,6 +815,7 @@ export function ProjectBoard() {
     // Dialogs
     h(NewBoardDialog, { open: showNewBoard, onClose: () => setShowNewBoard(false), onCreated: handleBoardCreated }),
     h(NewCardDialog, { open: showNewCard, onClose: () => setShowNewCard(false), onCreated: handleCreateCard }),
+    h(NewContainerDialog, { open: showNewContainer, onClose: () => setShowNewContainer(false), onCreated: handleCreateContainer }),
     h(CardDetailDialog, {
       card: selectedCard,
       boardId: activeBoard?.id || "",
