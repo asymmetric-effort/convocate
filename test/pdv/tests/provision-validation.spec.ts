@@ -14,6 +14,26 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 const BASE = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
 
 // ---------------------------------------------------------------------------
+// Cleanup: delete any test-* or cleanup-* nodes left over after tests
+// ---------------------------------------------------------------------------
+
+test.afterAll(async () => {
+  const res = await fetch(`${BASE}/api/v1/nmgr/node?limit=200`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) return;
+  const page = await res.json();
+  for (const node of page.items || []) {
+    if (node.id.startsWith("test-") || node.id.startsWith("cleanup-")) {
+      await fetch(`${BASE}/api/v1/nmgr/node/${node.id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      }).catch(() => {});
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
