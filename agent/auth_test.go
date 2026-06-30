@@ -3,25 +3,29 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
 func TestNewAuth_NoKey(t *testing.T) {
-	a := NewAuth("")
+	a := NewAuth("", "")
 	if a.publicKey != nil {
 		t.Error("publicKey should be nil when no key path provided")
+	}
+	if a.expectedSAToken != "" {
+		t.Error("expectedSAToken should be empty when no path provided")
 	}
 }
 
 func TestNewAuth_InvalidPath(t *testing.T) {
-	a := NewAuth("/nonexistent/path")
+	a := NewAuth("/nonexistent/path", "")
 	if a.publicKey != nil {
 		t.Error("publicKey should be nil for missing file")
 	}
 }
 
 func TestAuth_VerifyToken_DevMode(t *testing.T) {
-	a := NewAuth("") // dev mode — no key
+	a := NewAuth("", "") // dev mode — no key
 	claims, err := a.VerifyToken("mock-token")
 	if err != nil {
 		t.Fatalf("VerifyToken in dev mode: %v", err)
@@ -57,9 +61,7 @@ func TestJWTClaims_HasRole(t *testing.T) {
 }
 
 func TestAuth_RequireRole_MissingToken(t *testing.T) {
-	a := NewAuth("")
-	// Override to require real tokens by setting a non-nil key
-	// In dev mode, all tokens pass. Test the missing-token path.
+	a := NewAuth("", "")
 	handler := a.RequireRole("agent-view", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -75,7 +77,7 @@ func TestAuth_RequireRole_MissingToken(t *testing.T) {
 }
 
 func TestAuth_RequireRole_ValidToken_DevMode(t *testing.T) {
-	a := NewAuth("") // dev mode
+	a := NewAuth("", "") // dev mode
 	called := false
 	handler := a.RequireRole("agent-view", func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -89,6 +91,112 @@ func TestAuth_RequireRole_ValidToken_DevMode(t *testing.T) {
 
 	if !called {
 		t.Error("handler should have been called")
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// K8s SA token tests
+// ---------------------------------------------------------------------------
+
+func TestAuth_VerifySAToken_Disabled(t *testing.T) {
+	a := NewAuth("", "") // no SA token configured
+	req := httptest.NewRequest("GET", "/", nil)
+	if !a.VerifySAToken(req) {
+		t.Error("VerifySAToken should pass when SA auth is disabled")
+	}
+}
+
+func TestAuth_VerifySAToken_Valid(t *testing.T) {
+	// Write a test SA token file
+	dir := t.TempDir()
+	tokenPath := dir + "/token"
+	os.WriteFile(tokenPath, []byte("test-sa-token-xyz"), 0644)
+
+	a := NewAuth("", tokenPath)
+	if a.expectedSAToken != "test-sa-token-xyz" {
+		t.Errorf("expectedSAToken = %q, want %q", a.expectedSAToken, "test-sa-token-xyz")
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-K8s-SA-Token", "test-sa-token-xyz")
+	if !a.VerifySAToken(req) {
+		t.Error("VerifySAToken should pass with correct token")
+	}
+}
+
+func TestAuth_VerifySAToken_Invalid(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := dir + "/token"
+	os.WriteFile(tokenPath, []byte("correct-token"), 0644)
+
+	a := NewAuth("", tokenPath)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-K8s-SA-Token", "wrong-token")
+	if a.VerifySAToken(req) {
+		t.Error("VerifySAToken should fail with wrong token")
+	}
+}
+
+func TestAuth_VerifySAToken_Missing(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := dir + "/token"
+	os.WriteFile(tokenPath, []byte("correct-token"), 0644)
+
+	a := NewAuth("", tokenPath)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	// No X-K8s-SA-Token header
+	if a.VerifySAToken(req) {
+		t.Error("VerifySAToken should fail with missing token")
+	}
+}
+
+func TestAuth_RequireRole_SATokenRejection(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := dir + "/token"
+	os.WriteFile(tokenPath, []byte("correct-token"), 0644)
+
+	a := NewAuth("", tokenPath)
+	handler := a.RequireRole("agent-view", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Valid JWT but missing SA token
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer mock-token")
+	// No X-K8s-SA-Token
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d (SA token missing)", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAuth_RequireRole_BothTokensValid(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := dir + "/token"
+	os.WriteFile(tokenPath, []byte("correct-sa-token"), 0644)
+
+	a := NewAuth("", tokenPath)
+	called := false
+	handler := a.RequireRole("agent-view", func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer mock-token")
+	req.Header.Set("X-K8s-SA-Token", "correct-sa-token")
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if !called {
+		t.Error("handler should have been called with both tokens valid")
 	}
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)

@@ -22,7 +22,7 @@ func setupTestServer() (*Server, *http.ServeMux) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("") // dev mode
+	auth := NewAuth("", "") // dev mode
 	srv := NewServer(proc, m, auth, "test-v1", "claude-v2", "test-pod", "test-node")
 
 	mux := http.NewServeMux()

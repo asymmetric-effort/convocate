@@ -56,8 +56,11 @@ func main() {
 	claudeVersion := DetectClaudeVersion()
 	log.Printf("[wrapper] Claude CLI version: %s", claudeVersion)
 
-	// Initialize auth
-	auth := NewAuth(jwtKeyPath)
+	// SA token path for K8s container-to-container auth
+	saTokenPath := envOr("SA_TOKEN_PATH", "/var/run/secrets/kubernetes.io/serviceaccount/token")
+
+	// Initialize auth (JWT + K8s SA token)
+	auth := NewAuth(jwtKeyPath, saTokenPath)
 
 	// Spawn Claude CLI process
 	proc, err := NewProcess(claudeFlags, workDir, metrics)

@@ -1,15 +1,20 @@
-// JWT authentication for the agent wrapper.
-// Validates bearer tokens and enforces RBAC roles.
+// Authentication for the agent wrapper.
+// Three layers:
+//   1. K8s ServiceAccount token verification (container-to-container)
+//   2. JWT verification with RBAC roles (user-to-agent)
+//   3. TLS encryption (handled at the server level)
 
 package main
 
 import (
 	"crypto/ecdsa"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -35,34 +40,73 @@ func (c *JWTClaims) HasRole(role string) bool {
 	return false
 }
 
-// Auth holds the public key for JWT verification.
+// K8s SA token header name — the API includes its SA token in this header
+// when proxying requests to agent pods.
+const k8sSATokenHeader = "X-K8s-SA-Token"
+
+// Auth holds the public key for JWT verification and the expected K8s SA
+// token for container-to-container authentication.
 type Auth struct {
-	publicKey *ecdsa.PublicKey
+	publicKey      *ecdsa.PublicKey
+	expectedSAToken string // K8s SA token from the API's projected volume
+	saTokenPath     string // path to watch for token rotation
 }
 
-// NewAuth loads the JWT verification public key from a PEM file.
-// If the file doesn't exist or is empty, auth is disabled (all requests pass).
-func NewAuth(keyPath string) *Auth {
-	a := &Auth{}
-	if keyPath == "" {
-		return a
+// NewAuth loads the JWT verification public key and K8s SA token.
+//
+//   - keyPath: path to JWT EC public key PEM file (empty = dev mode, all pass)
+//   - saTokenPath: path to the K8s projected SA token file the API sends
+//     (e.g. /var/run/secrets/convocate/api-token). If empty, SA auth is disabled.
+func NewAuth(keyPath, saTokenPath string) *Auth {
+	a := &Auth{saTokenPath: saTokenPath}
+
+	// Load JWT public key
+	if keyPath != "" {
+		data, err := os.ReadFile(keyPath)
+		if err == nil {
+			block, _ := pem.Decode(data)
+			if block != nil {
+				pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+				if err == nil {
+					if ecKey, ok := pub.(*ecdsa.PublicKey); ok {
+						a.publicKey = ecKey
+					}
+				}
+			}
+		}
 	}
-	data, err := os.ReadFile(keyPath)
-	if err != nil {
-		return a
-	}
-	block, _ := pem.Decode(data)
-	if block == nil {
-		return a
-	}
-	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return a
-	}
-	if ecKey, ok := pub.(*ecdsa.PublicKey); ok {
-		a.publicKey = ecKey
-	}
+
+	// Load expected K8s SA token
+	a.reloadSAToken()
 	return a
+}
+
+// reloadSAToken reads the SA token from the projected volume.
+// Called at startup and can be called periodically for token rotation.
+func (a *Auth) reloadSAToken() {
+	if a.saTokenPath == "" {
+		return
+	}
+	data, err := os.ReadFile(a.saTokenPath)
+	if err != nil {
+		log.Printf("[auth] Warning: could not read SA token from %s: %v", a.saTokenPath, err)
+		return
+	}
+	a.expectedSAToken = strings.TrimSpace(string(data))
+	log.Printf("[auth] Loaded K8s SA token from %s (%d bytes)", a.saTokenPath, len(a.expectedSAToken))
+}
+
+// VerifySAToken checks the X-K8s-SA-Token header against the expected value.
+// Returns true if SA auth is disabled (no token configured) or the token matches.
+func (a *Auth) VerifySAToken(r *http.Request) bool {
+	if a.expectedSAToken == "" {
+		return true // SA auth disabled (dev mode)
+	}
+	token := r.Header.Get(k8sSATokenHeader)
+	if token == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(a.expectedSAToken)) == 1
 }
 
 // VerifyToken validates a JWT string and returns the claims.
@@ -124,9 +168,18 @@ func (a *Auth) parseClaimsOnly(tokenStr string) (*JWTClaims, error) {
 	return &claims, nil
 }
 
-// RequireRole returns middleware that requires the caller to have the given role.
+// RequireRole returns middleware that requires:
+//  1. Valid K8s SA token (if SA auth is configured)
+//  2. Valid JWT with the required role
 func (a *Auth) RequireRole(role string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Layer 1: K8s SA token verification (container-to-container)
+		if !a.VerifySAToken(r) {
+			http.Error(w, `{"code":"unauthorized","message":"invalid or missing K8s SA token"}`, http.StatusUnauthorized)
+			return
+		}
+
+		// Layer 2: JWT RBAC verification (user-to-agent)
 		token := extractBearerToken(r)
 		if token == "" {
 			http.Error(w, `{"code":"unauthorized","message":"missing bearer token"}`, http.StatusUnauthorized)

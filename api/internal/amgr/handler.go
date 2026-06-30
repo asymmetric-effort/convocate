@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/httputil"
@@ -13,15 +15,27 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/types"
 )
 
+// k8sSATokenHeader is the header used for K8s SA token mutual auth
+// between the API and agent wrapper.
+const k8sSATokenHeader = "X-K8s-SA-Token"
+
 type Handler struct {
-	store  *Store
-	useK8s bool
+	store   *Store
+	useK8s  bool
+	saToken string // API's own K8s SA token for agent auth
 }
 
 func Register(mux *http.ServeMux) {
+	// Load the API's own K8s SA token for authenticating with agent pods
+	saToken := ""
+	if data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token"); err == nil {
+		saToken = strings.TrimSpace(string(data))
+	}
+
 	h := &Handler{
-		store:  NewStore(),
-		useK8s: k8s.Client != nil,
+		store:   NewStore(),
+		useK8s:  k8s.Client != nil,
+		saToken: saToken,
 	}
 	auth := middleware.Auth
 
@@ -299,6 +313,9 @@ func (h *Handler) proxyStdin(w http.ResponseWriter, r *http.Request) {
 	proxyReq, _ := http.NewRequestWithContext(r.Context(), "POST", url, r.Body)
 	proxyReq.Header.Set("Authorization", r.Header.Get("Authorization"))
 	proxyReq.Header.Set("Content-Type", "application/octet-stream")
+	if h.saToken != "" {
+		proxyReq.Header.Set(k8sSATokenHeader, h.saToken)
+	}
 
 	resp, err := http.DefaultClient.Do(proxyReq)
 	if err != nil {
@@ -331,6 +348,9 @@ func (h *Handler) proxyMetrics(w http.ResponseWriter, r *http.Request) {
 	url := fmt.Sprintf("http://%s:8443/metrics", ip)
 	proxyReq, _ := http.NewRequestWithContext(r.Context(), "GET", url, nil)
 	proxyReq.Header.Set("Authorization", r.Header.Get("Authorization"))
+	if h.saToken != "" {
+		proxyReq.Header.Set(k8sSATokenHeader, h.saToken)
+	}
 
 	resp, err := http.DefaultClient.Do(proxyReq)
 	if err != nil {
@@ -356,6 +376,9 @@ func (h *Handler) proxyStream(w http.ResponseWriter, r *http.Request, stream str
 	url := fmt.Sprintf("http://%s:8443/%s", ip, stream)
 	proxyReq, _ := http.NewRequestWithContext(r.Context(), "GET", url, nil)
 	proxyReq.Header.Set("Authorization", r.Header.Get("Authorization"))
+	if h.saToken != "" {
+		proxyReq.Header.Set(k8sSATokenHeader, h.saToken)
+	}
 
 	resp, err := http.DefaultClient.Do(proxyReq)
 	if err != nil {
