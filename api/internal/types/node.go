@@ -2,22 +2,22 @@ package types
 
 // Node represents a compute host running Convocate.
 type Node struct {
-	ID              string     `json:"id"`
-	Location        string     `json:"location"`
-	IP              string     `json:"ip"`
-	Status          NodeStatus `json:"status"`
-	Agents          int        `json:"agents"`
-	LoadAvg         LoadAvg    `json:"loadAvg"`
-	MemUsedGB       float64    `json:"memUsedGB"`
-	MemTotalGB      float64    `json:"memTotalGB"`
-	SwapUsedGB      float64    `json:"swapUsedGB"`
-	SwapTotalGB     float64    `json:"swapTotalGB"`
-	DiskUsedGB      float64    `json:"diskUsedGB"`
-	DiskTotalGB     float64    `json:"diskTotalGB"`
-	UptimeSeconds   int64      `json:"uptimeSeconds"`
-	KubeletVersion  string     `json:"kubeletVersion"`
-	CPUCount        int        `json:"cpuCount"`
-	Tags            []string   `json:"tags"`
+	ID             string     `json:"id"`
+	Location       string     `json:"location"`
+	IP             string     `json:"ip"`
+	Status         NodeStatus `json:"status"`
+	Agents         int        `json:"agents"`
+	LoadAvg        LoadAvg    `json:"loadAvg"`
+	MemUsedGB      float64    `json:"memUsedGB"`
+	MemTotalGB     float64    `json:"memTotalGB"`
+	SwapUsedGB     float64    `json:"swapUsedGB"`
+	SwapTotalGB    float64    `json:"swapTotalGB"`
+	DiskUsedGB     float64    `json:"diskUsedGB"`
+	DiskTotalGB    float64    `json:"diskTotalGB"`
+	UptimeSeconds  int64      `json:"uptimeSeconds"`
+	KubeletVersion string     `json:"kubeletVersion"`
+	CPUCount       int        `json:"cpuCount"`
+	Tags           []string   `json:"tags"`
 }
 
 // LoadAvg represents CPU load averages.

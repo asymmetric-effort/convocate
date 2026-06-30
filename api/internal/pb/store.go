@@ -74,11 +74,11 @@ type ExecutionRun struct {
 }
 
 type Store struct {
-	mu         sync.Mutex
-	boards     []Board
-	nextCardN  int
-	nextContN  int
-	nextEdgeN  int
+	mu        sync.Mutex
+	boards    []Board
+	nextCardN int
+	nextContN int
+	nextEdgeN int
 }
 
 func NewStore() *Store {
@@ -105,56 +105,87 @@ func NewStore() *Store {
 }
 
 func (s *Store) ListBoards() []BoardSummary {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	out := make([]BoardSummary, len(s.boards))
-	for i, b := range s.boards { out[i] = b.BoardSummary }
+	for i, b := range s.boards {
+		out[i] = b.BoardSummary
+	}
 	return out
 }
 
 func (s *Store) GetBoard(id string) (Board, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
-	for _, b := range s.boards { if b.ID == id { return b, true } }
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, b := range s.boards {
+		if b.ID == id {
+			return b, true
+		}
+	}
 	return Board{}, false
 }
 
 func (s *Store) CreateBoard(name, repoID string) Board {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	b := Board{BoardSummary: BoardSummary{ID: fmt.Sprintf("brd-%03d", len(s.boards)+1), Name: name, RepoID: repoID, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}, Containers: []Container{}, Cards: []Card{}, Edges: []Edge{}}
 	s.boards = append(s.boards, b)
 	return b
 }
 
 func (s *Store) RenameBoard(id, name string) (Board, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i, b := range s.boards {
-		if b.ID == id { s.boards[i].Name = name; s.boards[i].UpdatedAt = time.Now().UTC().Format(time.RFC3339); return s.boards[i], true }
+		if b.ID == id {
+			s.boards[i].Name = name
+			s.boards[i].UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+			return s.boards[i], true
+		}
 	}
 	return Board{}, false
 }
 
 func (s *Store) boardIndex(id string) int {
-	for i, b := range s.boards { if b.ID == id { return i } }
+	for i, b := range s.boards {
+		if b.ID == id {
+			return i
+		}
+	}
 	return -1
 }
 
 func (s *Store) CreateContainer(boardID string, c Container) (Container, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	i := s.boardIndex(boardID)
-	if i < 0 { return Container{}, false }
-	c.ID = fmt.Sprintf("cont-%03d", s.nextContN); s.nextContN++
+	if i < 0 {
+		return Container{}, false
+	}
+	c.ID = fmt.Sprintf("cont-%03d", s.nextContN)
+	s.nextContN++
 	s.boards[i].Containers = append(s.boards[i].Containers, c)
 	return c, true
 }
 
 func (s *Store) UpdateContainer(boardID, contID string, c Container) (Container, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	bi := s.boardIndex(boardID)
-	if bi < 0 { return Container{}, false }
+	if bi < 0 {
+		return Container{}, false
+	}
 	for ci, existing := range s.boards[bi].Containers {
 		if existing.ID == contID {
-			if c.Title != "" { s.boards[bi].Containers[ci].Title = c.Title }
-			if c.AgentID != nil { s.boards[bi].Containers[ci].AgentID = c.AgentID }
-			if c.Geometry != nil { s.boards[bi].Containers[ci].Geometry = c.Geometry }
+			if c.Title != "" {
+				s.boards[bi].Containers[ci].Title = c.Title
+			}
+			if c.AgentID != nil {
+				s.boards[bi].Containers[ci].AgentID = c.AgentID
+			}
+			if c.Geometry != nil {
+				s.boards[bi].Containers[ci].Geometry = c.Geometry
+			}
 			s.boards[bi].Containers[ci].Minimized = c.Minimized
 			return s.boards[bi].Containers[ci], true
 		}
@@ -163,80 +194,131 @@ func (s *Store) UpdateContainer(boardID, contID string, c Container) (Container,
 }
 
 func (s *Store) DeleteContainer(boardID, contID string) bool {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	bi := s.boardIndex(boardID)
-	if bi < 0 { return false }
+	if bi < 0 {
+		return false
+	}
 	for ci, c := range s.boards[bi].Containers {
-		if c.ID == contID { s.boards[bi].Containers = append(s.boards[bi].Containers[:ci], s.boards[bi].Containers[ci+1:]...); return true }
+		if c.ID == contID {
+			s.boards[bi].Containers = append(s.boards[bi].Containers[:ci], s.boards[bi].Containers[ci+1:]...)
+			return true
+		}
 	}
 	return false
 }
 
 func (s *Store) CreateCard(boardID string, c Card) (Card, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	bi := s.boardIndex(boardID)
-	if bi < 0 { return Card{}, false }
-	c.ID = fmt.Sprintf("card-%03d", s.nextCardN); s.nextCardN++
-	if c.Status == "" { c.Status = "todo" }
-	if c.Links == nil { c.Links = []Edge{} }
+	if bi < 0 {
+		return Card{}, false
+	}
+	c.ID = fmt.Sprintf("card-%03d", s.nextCardN)
+	s.nextCardN++
+	if c.Status == "" {
+		c.Status = "todo"
+	}
+	if c.Links == nil {
+		c.Links = []Edge{}
+	}
 	s.boards[bi].Cards = append(s.boards[bi].Cards, c)
 	return c, true
 }
 
 func (s *Store) GetCard(boardID, cardID string) (Card, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	bi := s.boardIndex(boardID)
-	if bi < 0 { return Card{}, false }
-	for _, c := range s.boards[bi].Cards { if c.ID == cardID { return c, true } }
+	if bi < 0 {
+		return Card{}, false
+	}
+	for _, c := range s.boards[bi].Cards {
+		if c.ID == cardID {
+			return c, true
+		}
+	}
 	return Card{}, false
 }
 
 func (s *Store) UpdateCard(boardID string, card Card) (Card, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	bi := s.boardIndex(boardID)
-	if bi < 0 { return Card{}, false }
+	if bi < 0 {
+		return Card{}, false
+	}
 	for ci, c := range s.boards[bi].Cards {
-		if c.ID == card.ID { s.boards[bi].Cards[ci] = card; return card, true }
+		if c.ID == card.ID {
+			s.boards[bi].Cards[ci] = card
+			return card, true
+		}
 	}
 	return Card{}, false
 }
 
 func (s *Store) DeleteCard(boardID, cardID string) bool {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	bi := s.boardIndex(boardID)
-	if bi < 0 { return false }
+	if bi < 0 {
+		return false
+	}
 	for ci, c := range s.boards[bi].Cards {
-		if c.ID == cardID { s.boards[bi].Cards = append(s.boards[bi].Cards[:ci], s.boards[bi].Cards[ci+1:]...); return true }
+		if c.ID == cardID {
+			s.boards[bi].Cards = append(s.boards[bi].Cards[:ci], s.boards[bi].Cards[ci+1:]...)
+			return true
+		}
 	}
 	return false
 }
 
 func (s *Store) CreateEdge(boardID string, e Edge) (Edge, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	bi := s.boardIndex(boardID)
-	if bi < 0 { return Edge{}, false }
-	e.ID = fmt.Sprintf("edge-%03d", s.nextEdgeN); s.nextEdgeN++
-	if e.Type == "" { e.Type = "RelatesTo" }
+	if bi < 0 {
+		return Edge{}, false
+	}
+	e.ID = fmt.Sprintf("edge-%03d", s.nextEdgeN)
+	s.nextEdgeN++
+	if e.Type == "" {
+		e.Type = "RelatesTo"
+	}
 	s.boards[bi].Edges = append(s.boards[bi].Edges, e)
 	return e, true
 }
 
 func (s *Store) UpdateEdge(boardID, edgeID, edgeType string) (Edge, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	bi := s.boardIndex(boardID)
-	if bi < 0 { return Edge{}, false }
+	if bi < 0 {
+		return Edge{}, false
+	}
 	for ei, e := range s.boards[bi].Edges {
-		if e.ID == edgeID { s.boards[bi].Edges[ei].Type = edgeType; return s.boards[bi].Edges[ei], true }
+		if e.ID == edgeID {
+			s.boards[bi].Edges[ei].Type = edgeType
+			return s.boards[bi].Edges[ei], true
+		}
 	}
 	return Edge{}, false
 }
 
 func (s *Store) DeleteEdge(boardID, edgeID string) bool {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	bi := s.boardIndex(boardID)
-	if bi < 0 { return false }
+	if bi < 0 {
+		return false
+	}
 	for ei, e := range s.boards[bi].Edges {
-		if e.ID == edgeID { s.boards[bi].Edges = append(s.boards[bi].Edges[:ei], s.boards[bi].Edges[ei+1:]...); return true }
+		if e.ID == edgeID {
+			s.boards[bi].Edges = append(s.boards[bi].Edges[:ei], s.boards[bi].Edges[ei+1:]...)
+			return true
+		}
 	}
 	return false
 }

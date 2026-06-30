@@ -20,12 +20,12 @@ const defaultAgentImage = "192.168.3.90:5000/convocate/agent:latest"
 
 // Default resource values for agent pods
 const (
-	defaultCPURequest    = "500m"
-	defaultCPULimit      = "2"
-	defaultMemRequest    = "512Mi"
-	defaultMemLimit      = "2Gi"
-	defaultStorageSize   = "2Gi"
-	defaultClaudeMd      = "# Convocate Agent\n\nYou are a Convocate agent. Follow all instructions carefully.\n"
+	defaultCPURequest  = "500m"
+	defaultCPULimit    = "2"
+	defaultMemRequest  = "512Mi"
+	defaultMemLimit    = "2Gi"
+	defaultStorageSize = "2Gi"
+	defaultClaudeMd    = "# Convocate Agent\n\nYou are a Convocate agent. Follow all instructions carefully.\n"
 )
 
 func EnsureAgentNamespace(ctx context.Context) error {

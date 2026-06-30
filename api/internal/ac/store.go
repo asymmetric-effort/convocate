@@ -76,15 +76,39 @@ func NewStore() *Store {
 	}
 }
 
-func (s *Store) ListUsers() []User   { s.mu.Lock(); defer s.mu.Unlock(); o := make([]User, len(s.users)); copy(o, s.users); return o }
-func (s *Store) ListGroups() []Group { s.mu.Lock(); defer s.mu.Unlock(); o := make([]Group, len(s.groups)); copy(o, s.groups); return o }
-func (s *Store) ListRoles() []Role   { s.mu.Lock(); defer s.mu.Unlock(); o := make([]Role, len(s.roles)); copy(o, s.roles); return o }
+func (s *Store) ListUsers() []User {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := make([]User, len(s.users))
+	copy(o, s.users)
+	return o
+}
+func (s *Store) ListGroups() []Group {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := make([]Group, len(s.groups))
+	copy(o, s.groups)
+	return o
+}
+func (s *Store) ListRoles() []Role {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := make([]Role, len(s.roles))
+	copy(o, s.roles)
+	return o
+}
 func (s *Store) GetSettings() GlobalSettings { s.mu.Lock(); defer s.mu.Unlock(); return s.settings }
 
-func (s *Store) SetSettings(gs GlobalSettings) GlobalSettings { s.mu.Lock(); defer s.mu.Unlock(); s.settings = gs; return s.settings }
+func (s *Store) SetSettings(gs GlobalSettings) GlobalSettings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settings = gs
+	return s.settings
+}
 
 func (s *Store) CreateUser(u User) User {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	u.ID = fmt.Sprintf("usr-%03d", len(s.users)+1)
 	u.Status = "active"
 	s.users = append(s.users, u)
@@ -92,13 +116,22 @@ func (s *Store) CreateUser(u User) User {
 }
 
 func (s *Store) UpdateUser(id string, u User) (User, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i, existing := range s.users {
 		if existing.ID == id {
-			if u.Email != "" { s.users[i].Email = u.Email }
-			if u.Name != "" { s.users[i].Name = u.Name }
-			if u.Status != "" { s.users[i].Status = u.Status }
-			if u.Groups != nil { s.users[i].Groups = u.Groups }
+			if u.Email != "" {
+				s.users[i].Email = u.Email
+			}
+			if u.Name != "" {
+				s.users[i].Name = u.Name
+			}
+			if u.Status != "" {
+				s.users[i].Status = u.Status
+			}
+			if u.Groups != nil {
+				s.users[i].Groups = u.Groups
+			}
 			return s.users[i], true
 		}
 	}
@@ -106,40 +139,57 @@ func (s *Store) UpdateUser(id string, u User) (User, bool) {
 }
 
 func (s *Store) DeleteUser(id string) bool {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i, u := range s.users {
-		if u.ID == id { s.users = append(s.users[:i], s.users[i+1:]...); return true }
+		if u.ID == id {
+			s.users = append(s.users[:i], s.users[i+1:]...)
+			return true
+		}
 	}
 	return false
 }
 
 func (s *Store) CreateGroup(name string) Group {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	g := Group{ID: fmt.Sprintf("grp-%03d", len(s.groups)+1), Name: name}
 	s.groups = append(s.groups, g)
 	return g
 }
 
 func (s *Store) DeleteGroup(id string) bool {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i, g := range s.groups {
-		if g.ID == id && !g.Builtin { s.groups = append(s.groups[:i], s.groups[i+1:]...); return true }
+		if g.ID == id && !g.Builtin {
+			s.groups = append(s.groups[:i], s.groups[i+1:]...)
+			return true
+		}
 	}
 	return false
 }
 
 func (s *Store) SetGroupUsers(id string, userIDs []string) (Group, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i, g := range s.groups {
-		if g.ID == id { s.groups[i].UserCount = len(userIDs); return s.groups[i], true }
+		if g.ID == id {
+			s.groups[i].UserCount = len(userIDs)
+			return s.groups[i], true
+		}
 	}
 	return Group{}, false
 }
 
 func (s *Store) SetGroupRoles(id string, roles []string) (Group, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i, g := range s.groups {
-		if g.ID == id { s.groups[i].Roles = roles; return s.groups[i], true }
+		if g.ID == id {
+			s.groups[i].Roles = roles
+			return s.groups[i], true
+		}
 	}
 	return Group{}, false
 }

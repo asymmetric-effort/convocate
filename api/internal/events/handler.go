@@ -184,4 +184,3 @@ func wsReadDiscard(conn net.Conn) {
 		}
 	}
 }
-

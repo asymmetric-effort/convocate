@@ -25,20 +25,20 @@ type FieldDetail struct {
 type NodeStatus string
 
 const (
-	NodeReady               NodeStatus = "Ready"
-	NodeNotReady            NodeStatus = "NotReady"
-	NodeSchedulingDisabled  NodeStatus = "SchedulingDisabled"
+	NodeReady              NodeStatus = "Ready"
+	NodeNotReady           NodeStatus = "NotReady"
+	NodeSchedulingDisabled NodeStatus = "SchedulingDisabled"
 )
 
 // AgentStatus enumerates valid agent-container states.
 type AgentStatus string
 
 const (
-	AgentRunning    AgentStatus = "running"
-	AgentConnected  AgentStatus = "connected"
-	AgentStopped    AgentStatus = "stopped"
-	AgentMigrating  AgentStatus = "migrating"
-	AgentStopping   AgentStatus = "stopping"
+	AgentRunning   AgentStatus = "running"
+	AgentConnected AgentStatus = "connected"
+	AgentStopped   AgentStatus = "stopped"
+	AgentMigrating AgentStatus = "migrating"
+	AgentStopping  AgentStatus = "stopping"
 )
 
 // CardStatus enumerates valid card states.

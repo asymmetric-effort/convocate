@@ -49,7 +49,9 @@ func TestReadJSON(t *testing.T) {
 	body := bytes.NewBufferString(`{"name":"test"}`)
 	r := httptest.NewRequest("POST", "/", body)
 
-	var target struct{ Name string `json:"name"` }
+	var target struct {
+		Name string `json:"name"`
+	}
 	err := ReadJSON(r, &target)
 	if err != nil {
 		t.Fatalf("ReadJSON failed: %v", err)

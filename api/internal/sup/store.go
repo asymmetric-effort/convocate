@@ -42,17 +42,35 @@ func NewStore() *Store {
 	}
 }
 
-func (s *Store) ListTickets() []Ticket       { s.mu.Lock(); defer s.mu.Unlock(); o := make([]Ticket, len(s.tickets)); copy(o, s.tickets); return o }
-func (s *Store) ListArticles() []DocArticle  { s.mu.Lock(); defer s.mu.Unlock(); o := make([]DocArticle, len(s.articles)); copy(o, s.articles); return o }
+func (s *Store) ListTickets() []Ticket {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := make([]Ticket, len(s.tickets))
+	copy(o, s.tickets)
+	return o
+}
+func (s *Store) ListArticles() []DocArticle {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := make([]DocArticle, len(s.articles))
+	copy(o, s.articles)
+	return o
+}
 
 func (s *Store) GetTicket(id string) (Ticket, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
-	for _, t := range s.tickets { if t.ID == id { return t, true } }
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.tickets {
+		if t.ID == id {
+			return t, true
+		}
+	}
 	return Ticket{}, false
 }
 
 func (s *Store) CreateTicket(t Ticket) Ticket {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	t.ID = fmt.Sprintf("tkt-%03d", len(s.tickets)+1)
 	t.Status = "open"
 	t.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -61,13 +79,22 @@ func (s *Store) CreateTicket(t Ticket) Ticket {
 }
 
 func (s *Store) UpdateTicket(id string, t Ticket) (Ticket, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i, existing := range s.tickets {
 		if existing.ID == id {
-			if t.Subject != "" { s.tickets[i].Subject = t.Subject }
-			if t.Status != "" { s.tickets[i].Status = t.Status }
-			if t.Priority != "" { s.tickets[i].Priority = t.Priority }
-			if t.Body != "" { s.tickets[i].Body = t.Body }
+			if t.Subject != "" {
+				s.tickets[i].Subject = t.Subject
+			}
+			if t.Status != "" {
+				s.tickets[i].Status = t.Status
+			}
+			if t.Priority != "" {
+				s.tickets[i].Priority = t.Priority
+			}
+			if t.Body != "" {
+				s.tickets[i].Body = t.Body
+			}
 			s.tickets[i].UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 			return s.tickets[i], true
 		}

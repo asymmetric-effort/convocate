@@ -9,11 +9,11 @@ import (
 )
 
 type subscriber struct {
-	ch     chan []byte
-	done   chan struct{}
+	ch   chan []byte
+	done chan struct{}
 	// types restricts which event types this subscriber receives.
 	// nil means all events pass (backward compatible).
-	types  map[string]bool
+	types map[string]bool
 }
 
 type Hub struct {

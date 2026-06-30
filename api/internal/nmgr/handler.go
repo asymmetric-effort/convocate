@@ -23,8 +23,8 @@ type metricsEntry struct {
 }
 
 type Handler struct {
-	store      *Store
-	useK8s     bool
+	store  *Store
+	useK8s bool
 	// nodeMetrics holds the latest metrics report from each node's
 	// DaemonSet pod, keyed by node name.
 	nodeMetrics sync.Map // map[string]metricsEntry

@@ -71,7 +71,9 @@ func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Name string `json:"name"` }
+	var req struct {
+		Name string `json:"name"`
+	}
 	if err := httputil.ReadJSON(r, &req); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
@@ -88,7 +90,9 @@ func (h *Handler) deleteGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) setGroupUsers(w http.ResponseWriter, r *http.Request) {
-	var req struct{ UserIDs []string `json:"userIds"` }
+	var req struct {
+		UserIDs []string `json:"userIds"`
+	}
 	if err := httputil.ReadJSON(r, &req); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
@@ -102,7 +106,9 @@ func (h *Handler) setGroupUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) setGroupRoles(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Roles []string `json:"roles"` }
+	var req struct {
+		Roles []string `json:"roles"`
+	}
 	if err := httputil.ReadJSON(r, &req); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return

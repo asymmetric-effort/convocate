@@ -331,34 +331,34 @@ func getJoinCommandViaJob(ctx context.Context) (string, error) {
 				{Key: "node-role.kubernetes.io/control-plane", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
 			},
 			Containers: []corev1.Container{{
-				Name:    "kubeadm",
-				Image:   "ubuntu:24.04",
+				Name:  "kubeadm",
+				Image: "ubuntu:24.04",
 				Command: []string{"nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "sh", "-c",
 					// Generate a signed discovery kubeconfig with the bootstrap token
 					// as an embedded credential so kubeadm join can authenticate.
 					"TOKEN=$(kubeadm token create 2>/dev/null) && " +
-					"CA_B64=$(base64 -w0 /etc/kubernetes/pki/ca.crt) && " +
-					"echo \"TOKEN=$TOKEN\" && " +
-					"cat <<EOF\n" +
-					"apiVersion: v1\n" +
-					"clusters:\n" +
-					"- cluster:\n" +
-					"    certificate-authority-data: $CA_B64\n" +
-					"    server: https://192.168.56.10:6443\n" +
-					"  name: cluster\n" +
-					"contexts:\n" +
-					"- context:\n" +
-					"    cluster: cluster\n" +
-					"    user: bootstrap\n" +
-					"  name: bootstrap\n" +
-					"current-context: bootstrap\n" +
-					"kind: Config\n" +
-					"preferences: {}\n" +
-					"users:\n" +
-					"- name: bootstrap\n" +
-					"  user:\n" +
-					"    token: $TOKEN\n" +
-					"EOF"},
+						"CA_B64=$(base64 -w0 /etc/kubernetes/pki/ca.crt) && " +
+						"echo \"TOKEN=$TOKEN\" && " +
+						"cat <<EOF\n" +
+						"apiVersion: v1\n" +
+						"clusters:\n" +
+						"- cluster:\n" +
+						"    certificate-authority-data: $CA_B64\n" +
+						"    server: https://192.168.56.10:6443\n" +
+						"  name: cluster\n" +
+						"contexts:\n" +
+						"- context:\n" +
+						"    cluster: cluster\n" +
+						"    user: bootstrap\n" +
+						"  name: bootstrap\n" +
+						"current-context: bootstrap\n" +
+						"kind: Config\n" +
+						"preferences: {}\n" +
+						"users:\n" +
+						"- name: bootstrap\n" +
+						"  user:\n" +
+						"    token: $TOKEN\n" +
+						"EOF"},
 				SecurityContext: &corev1.SecurityContext{
 					Privileged: &privileged,
 				},

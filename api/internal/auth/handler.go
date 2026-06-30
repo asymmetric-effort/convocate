@@ -15,9 +15,9 @@ type loginRequest struct {
 }
 
 type session struct {
-	AccessToken  string            `json:"accessToken"`
-	RefreshToken string            `json:"refreshToken"`
-	ExpiresAt    string            `json:"expiresAt"`
+	AccessToken  string             `json:"accessToken"`
+	RefreshToken string             `json:"refreshToken"`
+	ExpiresAt    string             `json:"expiresAt"`
 	Principal    httputil.Principal `json:"principal"`
 }
 

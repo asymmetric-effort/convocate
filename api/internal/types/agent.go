@@ -46,7 +46,7 @@ type CreateAgentRequest struct {
 	Command         string          `json:"command,omitempty"`
 	ClaudeFlags     []string        `json:"claudeFlags,omitempty"`
 	Resources       *AgentResources `json:"resources,omitempty"`
-	Security        *AgentSecurity  `json:"security,omitempty"`  // admin-only
+	Security        *AgentSecurity  `json:"security,omitempty"` // admin-only
 	Network         *AgentNetwork   `json:"network,omitempty"`
 	Logging         bool            `json:"logging,omitempty"`
 	AnthropicApiKey string          `json:"anthropicApiKey,omitempty"`
@@ -55,13 +55,13 @@ type CreateAgentRequest struct {
 
 // ConfigureAgentRequest represents a request to update an agent-container.
 type ConfigureAgentRequest struct {
-	Project         *string         `json:"project,omitempty"`
-	NodeID          *string         `json:"nodeId,omitempty"`
-	Expose          *string         `json:"expose,omitempty"`
-	ClaudeFlags     []string        `json:"claudeFlags,omitempty"`
-	Resources       *AgentResources `json:"resources,omitempty"`
-	Security        *AgentSecurity  `json:"security,omitempty"`  // admin-only
-	Network         *AgentNetwork   `json:"network,omitempty"`
-	Logging         *bool           `json:"logging,omitempty"`
-	ClaudeMd        *string         `json:"claudeMd,omitempty"`
+	Project     *string         `json:"project,omitempty"`
+	NodeID      *string         `json:"nodeId,omitempty"`
+	Expose      *string         `json:"expose,omitempty"`
+	ClaudeFlags []string        `json:"claudeFlags,omitempty"`
+	Resources   *AgentResources `json:"resources,omitempty"`
+	Security    *AgentSecurity  `json:"security,omitempty"` // admin-only
+	Network     *AgentNetwork   `json:"network,omitempty"`
+	Logging     *bool           `json:"logging,omitempty"`
+	ClaudeMd    *string         `json:"claudeMd,omitempty"`
 }

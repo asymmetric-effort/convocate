@@ -47,7 +47,7 @@ const k8sSATokenHeader = "X-K8s-SA-Token"
 // Auth holds the public key for JWT verification and the expected K8s SA
 // token for container-to-container authentication.
 type Auth struct {
-	publicKey      *ecdsa.PublicKey
+	publicKey       *ecdsa.PublicKey
 	expectedSAToken string // K8s SA token from the API's projected volume
 	saTokenPath     string // path to watch for token rotation
 }

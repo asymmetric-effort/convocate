@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	signingKey  *ecdsa.PrivateKey
-	verifyKey   *ecdsa.PublicKey
+	signingKey *ecdsa.PrivateKey
+	verifyKey  *ecdsa.PublicKey
 )
 
 func InitJWT() {

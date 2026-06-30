@@ -30,7 +30,9 @@ func (h *Handler) listProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createProject(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Name string `json:"name"` }
+	var req struct {
+		Name string `json:"name"`
+	}
 	if err := httputil.ReadJSON(r, &req); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
@@ -52,7 +54,9 @@ func (h *Handler) getFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) putFile(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Content string `json:"content"` }
+	var req struct {
+		Content string `json:"content"`
+	}
 	if err := httputil.ReadJSON(r, &req); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return

@@ -28,15 +28,15 @@ type Check struct {
 }
 
 type PullRequest struct {
-	ID           string  `json:"id"`
-	RepoID       string  `json:"repoId"`
-	Title        string  `json:"title"`
-	Branch       string  `json:"branch"`
-	TargetBranch string  `json:"targetBranch"`
-	Status       string  `json:"status"`
-	Author       string  `json:"author"`
+	ID           string   `json:"id"`
+	RepoID       string   `json:"repoId"`
+	Title        string   `json:"title"`
+	Branch       string   `json:"branch"`
+	TargetBranch string   `json:"targetBranch"`
+	Status       string   `json:"status"`
+	Author       string   `json:"author"`
 	Files        []string `json:"files"`
-	Checks       []Check `json:"checks"`
+	Checks       []Check  `json:"checks"`
 }
 
 type Store struct {
@@ -58,10 +58,17 @@ func NewStore() *Store {
 	}
 }
 
-func (s *Store) ListRepos() []Repo { s.mu.Lock(); defer s.mu.Unlock(); o := make([]Repo, len(s.repos)); copy(o, s.repos); return o }
+func (s *Store) ListRepos() []Repo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := make([]Repo, len(s.repos))
+	copy(o, s.repos)
+	return o
+}
 
 func (s *Store) CreateRepo(name, visibility string) Repo {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	r := Repo{ID: fmt.Sprintf("repo-%03d", len(s.repos)+1), Name: name, DefaultBranch: "main", Visibility: visibility, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
 	s.repos = append(s.repos, r)
 	return r
@@ -76,21 +83,34 @@ func (s *Store) ListFiles(repoID string) []RepoFile {
 }
 
 func (s *Store) ListPRs(repoID string) []PullRequest {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var out []PullRequest
-	for _, pr := range s.prs { if pr.RepoID == repoID { out = append(out, pr) } }
-	if out == nil { out = []PullRequest{} }
+	for _, pr := range s.prs {
+		if pr.RepoID == repoID {
+			out = append(out, pr)
+		}
+	}
+	if out == nil {
+		out = []PullRequest{}
+	}
 	return out
 }
 
 func (s *Store) GetPR(repoID, prID string) (PullRequest, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
-	for _, pr := range s.prs { if pr.RepoID == repoID && pr.ID == prID { return pr, true } }
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, pr := range s.prs {
+		if pr.RepoID == repoID && pr.ID == prID {
+			return pr, true
+		}
+	}
 	return PullRequest{}, false
 }
 
 func (s *Store) MergePR(repoID, prID string) (PullRequest, bool) {
-	s.mu.Lock(); defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i, pr := range s.prs {
 		if pr.RepoID == repoID && pr.ID == prID {
 			s.prs[i].Status = "merged"
