@@ -63,7 +63,7 @@ async function mergePR(repoId: string, prId: string): Promise<void> {
 // Main Component
 // ---------------------------------------------------------------------------
 
-export function RepoManager() {
+export function RepoManager({ principal }: { principal?: any } = {}) {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [activeRepo, setActiveRepo] = useState<Repo | null>(null);
   const [files, setFiles] = useState<RepoFile[]>([]);
@@ -125,7 +125,11 @@ export function RepoManager() {
       ? h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
           h(DataGrid, {
             columns: [
-              { key: "name", header: "Name", width: 250 },
+              { key: "name", header: "Name", width: 250, render: (v: string, row: any) =>
+                row.type === "file"
+                  ? h("span", { style: { color: "#2563eb", cursor: "pointer" }, title: "Open in Code Monkey IDE" }, v)
+                  : h("span", { style: { fontWeight: "600" } }, v)
+              },
               { key: "type", header: "Type", width: 80 },
               { key: "size", header: "Size", width: 100 },
               { key: "path", header: "Path", width: 250 },

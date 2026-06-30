@@ -73,7 +73,7 @@ async function saveSettings(s: GlobalSettings): Promise<GlobalSettings> {
 // Main Component
 // ---------------------------------------------------------------------------
 
-export function AccessControl() {
+export function AccessControl({ principal }: { principal?: any } = {}) {
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
@@ -143,7 +143,16 @@ export function AccessControl() {
           { key: "email", header: "Email", width: 200 },
           { key: "status", header: "Status", width: 100, render: (v: string) => h(Tag, { label: v, color: v === "active" ? "green" : "red", variant: "solid" as const, size: "sm" as const }) },
           { key: "groups", header: "Groups", width: 150 },
-          { key: "actions", header: "", width: 80, render: (_: string, row: any) => h(Button, { variant: "danger" as any, onClick: () => deleteUser(row.id).then(loadAll) }, "Delete") },
+          { key: "actions", header: "", width: 160, render: (_: string, row: any) => h("div", { style: { display: "flex", gap: "4px" } },
+            h(Button, {
+              variant: (row.status === "active" ? "warning" : "primary") as any,
+              onClick: () => {
+                const newStatus = row.status === "active" ? "disabled" : "active";
+                fetch(`/api/v1/ac/user/${row.id}`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ status: newStatus }) }).then(loadAll);
+              },
+            }, row.status === "active" ? "Disable" : "Enable"),
+            h(Button, { variant: "danger" as any, onClick: () => deleteUser(row.id).then(loadAll) }, "Delete"),
+          ) },
         ],
         data: users.map((u) => ({ id: u.id, name: u.name, email: u.email, status: u.status, groups: u.groups.join(", "), actions: "" })),
         striped: true,
@@ -163,6 +172,12 @@ export function AccessControl() {
           { key: "userCount", header: "Users", width: 80 },
           { key: "roles", header: "Roles", width: 250 },
           { key: "builtin", header: "Built-in", width: 80 },
+          { key: "actions", header: "", width: 80, render: (_: string, row: any) =>
+            row.builtin === "Yes" ? null : h(Button, {
+              variant: "danger" as any,
+              onClick: () => fetch(`/api/v1/ac/group/${row.id}`, { method: "DELETE", headers: authHeaders() }).then(loadAll),
+            }, "Delete")
+          },
         ],
         data: groups.map((g) => ({ id: g.id, name: g.name, userCount: String(g.userCount), roles: g.roles.join(", "), builtin: g.builtin ? "Yes" : "No" })),
         striped: true,

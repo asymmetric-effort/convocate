@@ -380,7 +380,7 @@ function Editor({
 // Main Code IDE Component
 // ---------------------------------------------------------------------------
 
-export function CodeIDE() {
+export function CodeIDE({ principal }: { principal?: any } = {}) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [tree, setTree] = useState<RepoFile[]>([]);
@@ -495,13 +495,23 @@ export function CodeIDE() {
     }
   }, [activeProject, openFile]);
 
-  /** Handle project creation */
-  const handleProjectCreated = useCallback((project: Project) => {
+  /** Handle project creation — auto-creates SPECIFICATION.md template */
+  const handleProjectCreated = useCallback(async (project: Project) => {
     setProjects((prev) => [...prev, project]);
     setActiveProject(project);
     setTabs([]);
     setActiveTabPath(null);
-  }, []);
+    // Create a SPECIFICATION.md template
+    try {
+      const template = `# ${project.name} — Specification\n\n## 1. Overview\n\nDescribe the project here.\n\n## 2. Requirements\n\n- [ ] Requirement 1\n- [ ] Requirement 2\n\n## 3. Architecture\n\nDescribe the system architecture.\n\n## 4. Implementation Plan\n\nDescribe implementation steps.\n`;
+      await saveFile(project.id, "SPECIFICATION.md", template);
+      const newTree = await fetchTree(project.id);
+      setTree(newTree);
+      await openFile("SPECIFICATION.md");
+    } catch {
+      // Non-fatal — project still created
+    }
+  }, [openFile]);
 
   /** Handle file tree click */
   const handleTreeSelect = useCallback((itemId: string) => {
@@ -606,7 +616,21 @@ export function CodeIDE() {
                   },
                 },
                   h("span", { style: { fontSize: "12px" } }, file.type === "dir" ? "📁" : "📄"),
-                  file.name
+                  h("span", { style: { flex: 1 } }, file.name),
+                  file.type === "file" ? h("span", {
+                    style: { fontSize: "10px", color: "#666", cursor: "pointer", padding: "0 4px" },
+                    onClick: (e: Event) => {
+                      e.stopPropagation();
+                      if (activeProject) {
+                        deleteFile(activeProject.id, file.path)
+                          .then(() => fetchTree(activeProject.id).then(setTree))
+                          .catch((err: any) => setError(err.message));
+                        // Close tab if open
+                        closeTab(file.path);
+                      }
+                    },
+                    title: "Delete file",
+                  }, "✕") : null
                 )
               )
             )

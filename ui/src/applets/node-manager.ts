@@ -15,6 +15,7 @@
 import { createElement, useState, useEffect, useCallback, useRef } from "@asymmetric-effort/specifyjs";
 import { useWebSocket, ServerEvent } from "./use-websocket";
 import { useMenuBar } from "./use-menu-bar";
+import { hasRole, APPLET_ROLES } from "./use-rbac";
 import {
   DataGrid,
   Button,
@@ -779,7 +780,11 @@ function NodeDetailDialog({
 // EventSource on every render.
 const METRICS_FILTER = ["node.metrics"];
 
-export function NodeManager() {
+export function NodeManager({ principal }: { principal?: any } = {}) {
+  const roles = APPLET_ROLES.nmgr;
+  const canCreate = hasRole(principal, roles.create);
+  const canUpdate = hasRole(principal, roles.update);
+  const canDelete = hasRole(principal, roles.delete);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1032,7 +1037,7 @@ export function NodeManager() {
       h(
         "div",
         { style: { display: "flex", gap: "8px", alignItems: "center" } },
-        h(
+        canCreate ? h(
           Button,
           {
             variant: "primary" as const,
@@ -1040,7 +1045,7 @@ export function NodeManager() {
             "data-testid": "provision-btn",
           },
           "Provision Node"
-        ),
+        ) : null,
         h(
           Button,
           {

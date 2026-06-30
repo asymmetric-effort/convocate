@@ -50,12 +50,13 @@ async function fetchDocs(): Promise<DocArticle[]> {
 // Main Component
 // ---------------------------------------------------------------------------
 
-export function SupportTool() {
+export function SupportTool({ principal }: { principal?: any } = {}) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [docs, setDocs] = useState<DocArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showNewTicket, setShowNewTicket] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 
   useMenuBar("sup", [
     { label: "Support", items: [
@@ -100,7 +101,11 @@ export function SupportTool() {
       ? h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
           h(DataGrid, {
             columns: [
-              { key: "id", header: "ID", width: 100 },
+              { key: "id", header: "ID", width: 100, render: (v: string, row: any) =>
+                h("a", { href: "#", style: { color: "#2563eb", textDecoration: "none", cursor: "pointer" },
+                  onClick: (e: Event) => { e.preventDefault(); const t = tickets.find((t) => t.id === v); if (t) setSelectedTicket(t); },
+                }, v)
+              },
               { key: "subject", header: "Subject", width: 250 },
               { key: "priority", header: "Priority", width: 100, render: (v: string) => h(Tag, { label: v, color: priorityColor(v), variant: "solid" as const, size: "sm" as const }) },
               { key: "status", header: "Status", width: 120, render: (v: string) => h(Tag, { label: v, color: statusColor(v), variant: "solid" as const, size: "sm" as const }) },
@@ -162,6 +167,38 @@ export function SupportTool() {
         h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
           h(Button, { variant: "secondary" as const, onClick: () => setShowNewTicket(false) }, "Cancel"),
           h(Button, { variant: "primary" as const, onClick: handleCreateTicket }, "Submit")
+        )
+      )
+    ) : null,
+    // Ticket detail dialog
+    selectedTicket ? h(Modal, { open: true, onClose: () => setSelectedTicket(null), title: `Ticket: ${selectedTicket.id}`, size: "md" as const },
+      h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },
+        h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" } },
+          h("div", null,
+            h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "SUBJECT"),
+            h("div", null, selectedTicket.subject)
+          ),
+          h("div", null,
+            h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "STATUS"),
+            h(Tag, { label: selectedTicket.status, color: statusColor(selectedTicket.status), variant: "solid" as const, size: "sm" as const })
+          ),
+          h("div", null,
+            h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "PRIORITY"),
+            h(Tag, { label: selectedTicket.priority, color: priorityColor(selectedTicket.priority), variant: "solid" as const, size: "sm" as const })
+          ),
+          h("div", null,
+            h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "UPDATED"),
+            h("div", null, selectedTicket.updatedAt || "—")
+          ),
+        ),
+        h("div", null,
+          h("div", { style: { fontSize: "11px", color: "#aaa", marginBottom: "4px" } }, "BODY"),
+          h("div", { style: { padding: "8px", backgroundColor: "#2d2d2d", borderRadius: "4px", fontSize: "13px", whiteSpace: "pre-wrap" } },
+            selectedTicket.body || "No description."
+          )
+        ),
+        h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
+          h(Button, { variant: "secondary" as const, onClick: () => setSelectedTicket(null) }, "Close")
         )
       )
     ) : null,

@@ -9,7 +9,7 @@
  *   - Live updates: SSE /api/v1/events/amgr/status
  */
 
-import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
+import { createElement, useState, useEffect, useCallback, useRef } from "@asymmetric-effort/specifyjs";
 import {
   Accordion,
   Button,
@@ -135,41 +135,44 @@ function CreateAgentDialog({
   onClose,
   onCreated,
   availableNodes,
+  isAdmin,
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
   availableNodes: string[];
+  isAdmin: boolean;
 }) {
   const [project, setProject] = useState("");
   const [nodeId, setNodeId] = useState("");
-  const [image, setImage] = useState("");
-  const [command, setCommand] = useState("");
+  const [claudeFlags, setClaudeFlags] = useState("--dangerously-skip-permissions");
+  const [cpuLimit, setCpuLimit] = useState("2");
+  const [memoryLimit, setMemoryLimit] = useState("2Gi");
+  const [storageSize, setStorageSize] = useState("2Gi");
+  const [claudeMd, setClaudeMd] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [logging, setLogging] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = useCallback(async () => {
-    if (!project.trim()) {
-      setError("Project name is required.");
-      return;
-    }
-    if (!nodeId.trim()) {
-      setError("Node ID is required.");
-      return;
-    }
+    if (!project.trim()) { setError("Project name is required."); return; }
+    if (!nodeId.trim()) { setError("Node ID is required."); return; }
     setError("");
     setSubmitting(true);
     try {
       await createAgent({
         project: project.trim(),
         nodeId: nodeId.trim(),
-        image: image.trim() || undefined,
-        command: command.trim() || undefined,
-      });
-      setProject("");
-      setNodeId("");
-      setImage("");
-      setCommand("");
+        claudeFlags: claudeFlags.trim() ? claudeFlags.trim().split(/\s+/) : undefined,
+        resources: { cpuLimit, memoryLimit, storageSize },
+        claudeMd: claudeMd.trim() || undefined,
+        anthropicApiKey: apiKey.trim() || undefined,
+        logging,
+      } as any);
+      setProject(""); setNodeId(""); setClaudeFlags("--dangerously-skip-permissions");
+      setCpuLimit("2"); setMemoryLimit("2Gi"); setStorageSize("2Gi");
+      setClaudeMd(""); setApiKey(""); setLogging(false);
       onCreated();
       onClose();
     } catch (err: any) {
@@ -177,42 +180,52 @@ function CreateAgentDialog({
     } finally {
       setSubmitting(false);
     }
-  }, [project, nodeId, image, command, onCreated, onClose]);
+  }, [project, nodeId, claudeFlags, cpuLimit, memoryLimit, storageSize, claudeMd, apiKey, logging, onCreated, onClose]);
 
   if (!open) return null;
 
+  const darkStyle = { display: "flex", flexDirection: "column" as const, gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px", maxHeight: "60vh", overflowY: "auto" as const };
+  const sectionLabel = (text: string) => h("div", { style: { fontSize: "11px", color: "#aaa", marginTop: "4px", textTransform: "uppercase", letterSpacing: "1px" } }, text);
+
   return h(
     Modal,
-    { open: true, onClose, title: "Create Agent", size: "md" as const },
-    h(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },
-      h(TextField, {
-        placeholder: "Project name",
-        value: project,
-        onChange: (v: string) => setProject(v),
+    { open: true, onClose, title: "Create Agent", size: "lg" as const },
+    h("div", { style: darkStyle },
+      // Core fields
+      sectionLabel("Project"),
+      h(TextField, { placeholder: "Project name", value: project, onChange: (v: string) => setProject(v) }),
+      h(TextField, { placeholder: "Node ID (e.g. convocate04)", value: nodeId, onChange: (v: string) => setNodeId(v) }),
+
+      // Claude CLI
+      sectionLabel("Claude CLI"),
+      h(TextField, { placeholder: "Claude flags (space-separated)", value: claudeFlags, onChange: (v: string) => setClaudeFlags(v) }),
+      h(TextField, { placeholder: "Anthropic API Key (optional, for headless auth)", type: "password", value: apiKey, onChange: (v: string) => setApiKey(v) }),
+
+      // Resources
+      sectionLabel("Resources"),
+      h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" } },
+        h(TextField, { placeholder: "CPU limit (e.g. 2)", value: cpuLimit, onChange: (v: string) => setCpuLimit(v) }),
+        h(TextField, { placeholder: "Memory limit (e.g. 2Gi)", value: memoryLimit, onChange: (v: string) => setMemoryLimit(v) }),
+        h(TextField, { placeholder: "Storage (e.g. 2Gi)", value: storageSize, onChange: (v: string) => setStorageSize(v) }),
+      ),
+
+      // CLAUDE.md guardrails
+      sectionLabel("CLAUDE.md Guardrails"),
+      h("textarea", {
+        value: claudeMd,
+        onInput: (e: Event) => setClaudeMd((e.target as HTMLTextAreaElement).value),
+        placeholder: "# Agent Instructions\nCustom guardrails for this agent...",
+        style: { width: "100%", minHeight: "60px", backgroundColor: "#2d2d2d", color: "#e0e0e0", border: "1px solid #444", borderRadius: "4px", padding: "8px", fontSize: "12px", fontFamily: "monospace", resize: "vertical" },
       }),
-      h(TextField, {
-        placeholder: "Node ID (e.g. convocate04)",
-        value: nodeId,
-        onChange: (v: string) => setNodeId(v),
-      }),
-      h(TextField, {
-        placeholder: "Image (optional, default: convocate/agent:latest)",
-        value: image,
-        onChange: (v: string) => setImage(v),
-      }),
-      h(TextField, {
-        placeholder: "Command (optional)",
-        value: command,
-        onChange: (v: string) => setCommand(v),
-      }),
-      error
-        ? h("div", { style: { color: "#ff8888", fontSize: "13px" } }, error)
-        : null,
-      h(
-        "div",
-        { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
+
+      // Logging toggle
+      h("label", { style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer" } },
+        h("input", { type: "checkbox", checked: logging, onChange: () => setLogging(!logging) }),
+        "Enable I/O logging (stdout/stderr forwarded to K8s logging)"
+      ),
+
+      error ? h("div", { style: { color: "#ff8888", fontSize: "13px" } }, error) : null,
+      h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
         h(Button, { variant: "secondary" as const, onClick: onClose, disabled: submitting }, "Cancel"),
         h(Button, { variant: "primary" as const, onClick: handleSubmit, disabled: submitting },
           submitting ? "Creating..." : "Create"
@@ -360,18 +373,101 @@ function AgentDetailDialog({
 }
 
 // ---------------------------------------------------------------------------
+// Agent Shell Terminal — stdin/stdout/stderr relay via API proxy
+// ---------------------------------------------------------------------------
+
+function AgentShellDialog({
+  agentId,
+  onClose,
+}: {
+  agentId: string | null;
+  onClose: () => void;
+}) {
+  const [output, setOutput] = useState<string[]>([]);
+  const [input, setInput] = useState("");
+  const outputRef = useRef<HTMLDivElement | null>(null);
+
+  // Subscribe to stdout via SSE
+  useEffect(() => {
+    if (!agentId) return;
+    const token = localStorage.getItem("accessToken");
+    const url = `/api/v1/amgr/agent/${agentId}/stdout?token=${encodeURIComponent(token || "")}`;
+    const es = new EventSource(url);
+    es.onmessage = (e: MessageEvent) => {
+      setOutput((prev) => [...prev.slice(-500), e.data]); // keep last 500 lines
+    };
+    es.onerror = () => {
+      setOutput((prev) => [...prev, "[connection lost]"]);
+    };
+    return () => es.close();
+  }, [agentId]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [output]);
+
+  // Send stdin
+  const handleSend = useCallback(async () => {
+    if (!agentId || !input.trim()) return;
+    try {
+      await fetch(`/api/v1/amgr/agent/${agentId}/stdin`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("accessToken")}`, "Content-Type": "application/octet-stream" },
+        body: input + "\n",
+      });
+      setInput("");
+    } catch {
+      setOutput((prev) => [...prev, "[stdin send failed]"]);
+    }
+  }, [agentId, input]);
+
+  if (!agentId) return null;
+
+  return h(Modal, { open: true, onClose, title: `Shell: ${agentId}`, size: "lg" as const },
+    h("div", { style: { backgroundColor: "#0d1117", color: "#c9d1d9", borderRadius: "0 0 8px 8px", display: "flex", flexDirection: "column", height: "400px" } },
+      // Output area
+      h("div", {
+        ref: outputRef,
+        style: { flex: 1, overflow: "auto", padding: "8px", fontFamily: "monospace", fontSize: "12px", whiteSpace: "pre-wrap", lineHeight: "1.4" },
+      },
+        output.length === 0
+          ? h("span", { style: { color: "#666" } }, "Waiting for output...")
+          : output.map((line, i) => h("div", { key: i }, line))
+      ),
+      // Input area
+      h("div", { style: { display: "flex", borderTop: "1px solid #333", padding: "4px" } },
+        h("span", { style: { padding: "4px 8px", color: "#22c55e", fontFamily: "monospace", fontSize: "12px" } }, "$"),
+        h("input", {
+          value: input,
+          onInput: (e: Event) => setInput((e.target as HTMLInputElement).value),
+          onKeyDown: (e: KeyboardEvent) => { if (e.key === "Enter") handleSend(); },
+          style: { flex: 1, backgroundColor: "transparent", border: "none", outline: "none", color: "#c9d1d9", fontFamily: "monospace", fontSize: "12px", padding: "4px" },
+          placeholder: "Type a command...",
+        }),
+        h(Button, { variant: "primary" as const, onClick: handleSend }, "Send")
+      )
+    )
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Agent Manager Component
 // ---------------------------------------------------------------------------
 
 // Stable filter reference for SSE subscription
 const AGENT_METRICS_FILTER = ["agent.status"];
 
-export function AgentManager() {
+export function AgentManager({ principal }: { principal?: any } = {}) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [shellAgentId, setShellAgentId] = useState<string | null>(null);
+  const isAdmin = principal?.roles?.includes("admin") || false;
   const [offset] = useState(0);
   const limit = 200; // fetch all agents (accordion view, not paginated)
 
@@ -454,18 +550,26 @@ export function AgentManager() {
           {
             key: "controls",
             header: "",
-            width: 80,
+            width: 160,
             render: (_: string, row: any) => {
+              const btns: any[] = [];
+              // Shell button — always visible for running agents
               if (row._status === "running" || row._status === "connected") {
-                return h(Button, {
+                btns.push(h(Button, {
+                  variant: "secondary" as any,
+                  onClick: (e: Event) => { e.stopPropagation(); setShellAgentId(row.id); },
+                }, "Shell"));
+                btns.push(h(Button, {
                   variant: "warning" as any,
                   onClick: (e: Event) => {
                     e.stopPropagation();
                     stopAgent(row.id).then(loadAgents).catch((err) => setError(err.message));
                   },
-                }, "Stop");
+                }, "Stop"));
               }
-              return null;
+              return btns.length > 0
+                ? h("div", { style: { display: "flex", gap: "4px" } }, ...btns)
+                : null;
             },
           },
         ],
@@ -565,12 +669,18 @@ export function AgentManager() {
       onClose: () => setShowCreate(false),
       onCreated: loadAgents,
       availableNodes,
+      isAdmin,
     }),
     // Detail dialog
     h(AgentDetailDialog, {
       agentId: selectedAgentId,
       onClose: () => setSelectedAgentId(null),
       onRefresh: loadAgents,
+    }),
+    // Shell terminal
+    h(AgentShellDialog, {
+      agentId: shellAgentId,
+      onClose: () => setShellAgentId(null),
     })
   );
 }

@@ -140,10 +140,11 @@ function LoginScreen({ onSuccess }: { onSuccess: (principal: any) => void }) {
 // the placeholder.
 // ---------------------------------------------------------------------------
 
-function AppletPortal({ appletId, label, Component }: {
+function AppletPortal({ appletId, label, Component, principal }: {
   appletId: string;
   label: string;
-  Component: () => ReturnType<typeof createElement>;
+  Component: (props: { principal: any }) => ReturnType<typeof createElement>;
+  principal: any;
 }) {
   const rootRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -177,7 +178,7 @@ function AppletPortal({ appletId, label, Component }: {
 
     // Create a new render root and mount the applet component
     rootRef.current = createRoot(container);
-    rootRef.current.render(h(Component, null));
+    rootRef.current.render(h(Component, { principal }));
   }, [appletId, label, Component]);
 
   useEffect(() => {
@@ -245,6 +246,7 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
         appletId: a.id,
         label: a.label,
         Component: a.component!,
+        principal,
       })
     );
 

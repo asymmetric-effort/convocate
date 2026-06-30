@@ -771,7 +771,7 @@ function NewContainerDialog({
 // Main Project Board Component
 // ---------------------------------------------------------------------------
 
-export function ProjectBoard() {
+export function ProjectBoard({ principal }: { principal?: any } = {}) {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [activeBoard, setActiveBoard] = useState<BoardData | null>(null);
   const [loading, setLoading] = useState(true);
