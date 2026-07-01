@@ -228,7 +228,7 @@ function CreateAgentDialog({
     h("div", { style: darkStyle },
       // Core fields — select existing project or create new
       sectionLabel("Project"),
-      h("div", { style: { backgroundColor: "#ffffff", borderRadius: "4px", padding: "4px" } },
+      h("div", { style: { backgroundColor: "#f8f9fa", borderRadius: "4px", padding: "4px" } },
         h(Select, {
           options: [
             ...existingProjects.map((name) => ({ value: name, label: name })),
@@ -258,9 +258,8 @@ function CreateAgentDialog({
         })
       ) : null,
 
-      // Claude CLI
-      sectionLabel("Claude CLI"),
-      h("div", { style: { backgroundColor: "#ffffff", borderRadius: "4px", padding: "4px" } },
+      // Claude CLI flags
+      h("div", { style: { backgroundColor: "#f8f9fa", borderRadius: "4px", padding: "4px" } },
         h(BuildableList, {
           value: claudeFlags,
           onChange: (items: string[]) => setClaudeFlags(items),
@@ -280,7 +279,7 @@ function CreateAgentDialog({
 
       // K8s Capabilities (admin-only)
       isAdmin ? sectionLabel("K8s Capabilities (admin)") : null,
-      isAdmin ? h("div", { style: { backgroundColor: "#ffffff", borderRadius: "4px", padding: "4px" } },
+      isAdmin ? h("div", { style: { backgroundColor: "#f8f9fa", borderRadius: "4px", padding: "4px" } },
         h(BuildableList, {
           value: capabilities,
           onChange: (items: string[]) => setCapabilities(items),
@@ -291,7 +290,7 @@ function CreateAgentDialog({
 
       // Network Policy
       sectionLabel("Network Policy"),
-      h("div", { style: { backgroundColor: "#ffffff", borderRadius: "4px", padding: "4px" } },
+      h("div", { style: { backgroundColor: "#f8f9fa", borderRadius: "4px", padding: "4px" } },
         h(BuildableList, {
           value: additionalEgress,
           onChange: (items: string[]) => setAdditionalEgress(items),
