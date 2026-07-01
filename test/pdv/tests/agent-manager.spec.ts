@@ -97,21 +97,21 @@ test.describe("Agent Manager create dialog", () => {
 
   test("opens when Create Agent is clicked", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('input[placeholder="Project name"]')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('[data-testid="agent-manager"] select').last()).toBeVisible({ timeout: 5000 });
   });
 
   test("validates required fields", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('input[placeholder="Project name"]')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('[data-testid="agent-manager"] select').last()).toBeVisible({ timeout: 5000 });
 
     // Submit without filling fields
     await page.locator('button:has-text("Create")').last().click();
-    await expect(page.locator('text=Project name is required')).toBeVisible();
+    await expect(page.getByText('Please select or create a project.')).toBeVisible();
   });
 
   test("shows BuildableList components for CLI flags and network policy", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('input[placeholder="Project name"]')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('[data-testid="agent-manager"] select').last()).toBeVisible({ timeout: 5000 });
 
     // Claude CLI flags BuildableList should show default flag
     await expect(page.locator('text=--dangerously-skip-permissions')).toBeVisible();
@@ -123,7 +123,7 @@ test.describe("Agent Manager create dialog", () => {
 
   test("can be cancelled", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('input[placeholder="Project name"]')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('[data-testid="agent-manager"] select').last()).toBeVisible({ timeout: 5000 });
 
     await page.locator('button:has-text("Cancel")').click();
     await expect(page.locator('input[placeholder="Project name"]')).not.toBeVisible();

@@ -188,11 +188,10 @@ function AppletPortal({ appletId, label, Component, principal }: {
     // Initial injection attempt
     inject();
 
-    // Watch for DOM changes that might remove or replace our content
-    // (e.g., VDOM reconciliation restoring placeholder text)
+    // Watch for DOM changes — re-inject when our container is missing
+    // or when a new window appears (close + reopen scenario)
     observerRef.current = new MutationObserver(() => {
-      // If our container was removed, re-inject
-      if (containerRef.current && !document.body.contains(containerRef.current)) {
+      if (!containerRef.current || !document.body.contains(containerRef.current)) {
         containerRef.current = null;
         rootRef.current = null;
         inject();

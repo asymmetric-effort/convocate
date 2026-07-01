@@ -146,6 +146,7 @@ function CreateAgentDialog({
   isAdmin: boolean;
 }) {
   const [project, setProject] = useState("");
+  const [isNewProject, setIsNewProject] = useState(false);
   const [claudeFlags, setClaudeFlags] = useState<string[]>(["--dangerously-skip-permissions"]);
   const [cpuLimit, setCpuLimit] = useState("2");
   const [memoryLimit, setMemoryLimit] = useState("2Gi");
@@ -168,15 +169,17 @@ function CreateAgentDialog({
   }, [open]);
 
   const handleSubmit = useCallback(async () => {
-    const nameError = validateProjectName(project);
-    if (nameError) { setError(nameError); return; }
+    if (!project.trim()) { setError("Please select or create a project."); return; }
 
-    // If project doesn't exist, create it via the unified projects API
-    if (!existingProjects.includes(project.trim())) {
+    // For new projects: validate name and create via unified API
+    if (isNewProject) {
+      const nameError = validateProjectName(project);
+      if (nameError) { setError(nameError); return; }
       try {
         await createProject(project.trim());
       } catch (err: any) {
-        // Non-fatal — project may already exist with a different case
+        setError(err.message || "Failed to create project.");
+        return;
       }
     }
     setError("");
@@ -200,7 +203,7 @@ function CreateAgentDialog({
         req.network = { additionalEgress };
       }
       await createAgent(req);
-      setProject(""); setClaudeFlags(["--dangerously-skip-permissions"]);
+      setProject(""); setIsNewProject(false); setClaudeFlags(["--dangerously-skip-permissions"]);
       setCpuLimit("2"); setMemoryLimit("2Gi"); setStorageSize("2Gi");
       setCapabilities([]); setAdditionalEgress([]);
       setClaudeMd(""); setApiKey(""); setLogging(false);
@@ -222,18 +225,50 @@ function CreateAgentDialog({
     Modal,
     { open: true, onClose, title: "Create Agent", size: "lg" as const },
     h("div", { style: darkStyle },
-      // Core fields
+      // Core fields — select existing project or create new
       sectionLabel("Project"),
-      h(TextField, { placeholder: "Project name", value: project, onChange: (v: string) => setProject(v) }),
+      h("select", {
+        style: {
+          width: "100%", padding: "8px", backgroundColor: "#2d2d2d", color: "#e0e0e0",
+          border: "1px solid #444", borderRadius: "4px", fontSize: "13px",
+        },
+        value: isNewProject ? "__new__" : project,
+        onChange: (e: Event) => {
+          const val = (e.target as HTMLSelectElement).value;
+          if (val === "__new__") {
+            setIsNewProject(true);
+            setProject("");
+          } else {
+            setIsNewProject(false);
+            setProject(val);
+          }
+        },
+      },
+        h("option", { value: "", disabled: true }, "— Select a project —"),
+        ...existingProjects.map((name) =>
+          h("option", { key: name, value: name }, name)
+        ),
+        h("option", { value: "__new__" }, "+ Create new project...")
+      ),
+      // Show name input when creating a new project
+      isNewProject ? h("div", { style: { marginTop: "8px" } },
+        h(TextField, {
+          placeholder: "New project name (letters, digits, hyphens, underscores)",
+          value: project,
+          onChange: (v: string) => setProject(v),
+        })
+      ) : null,
 
       // Claude CLI
       sectionLabel("Claude CLI"),
-      h(BuildableList, {
-        value: claudeFlags,
-        onChange: (items: string[]) => setClaudeFlags(items),
-        placeholder: "e.g. --dangerously-skip-permissions",
-        label: "Claude CLI flags",
-      }),
+      h("div", { style: { backgroundColor: "#ffffff", borderRadius: "4px", padding: "4px" } },
+        h(BuildableList, {
+          value: claudeFlags,
+          onChange: (items: string[]) => setClaudeFlags(items),
+          placeholder: "e.g. --dangerously-skip-permissions",
+          label: "Claude CLI flags",
+        })
+      ),
       h(TextField, { placeholder: "Anthropic API Key (optional, for headless auth)", type: "password", value: apiKey, onChange: (v: string) => setApiKey(v) }),
 
       // Resources
@@ -246,21 +281,25 @@ function CreateAgentDialog({
 
       // K8s Capabilities (admin-only)
       isAdmin ? sectionLabel("K8s Capabilities (admin)") : null,
-      isAdmin ? h(BuildableList, {
-        value: capabilities,
-        onChange: (items: string[]) => setCapabilities(items),
-        placeholder: "e.g. NET_ADMIN",
-        label: "Linux capabilities",
-      }) : null,
+      isAdmin ? h("div", { style: { backgroundColor: "#ffffff", borderRadius: "4px", padding: "4px" } },
+        h(BuildableList, {
+          value: capabilities,
+          onChange: (items: string[]) => setCapabilities(items),
+          placeholder: "e.g. NET_ADMIN",
+          label: "Linux capabilities",
+        })
+      ) : null,
 
       // Network Policy
       sectionLabel("Network Policy"),
-      h(BuildableList, {
-        value: additionalEgress,
-        onChange: (items: string[]) => setAdditionalEgress(items),
-        placeholder: "e.g. my-registry.io",
-        label: "Additional egress hosts",
-      }),
+      h("div", { style: { backgroundColor: "#ffffff", borderRadius: "4px", padding: "4px" } },
+        h(BuildableList, {
+          value: additionalEgress,
+          onChange: (items: string[]) => setAdditionalEgress(items),
+          placeholder: "e.g. my-registry.io",
+          label: "Additional egress hosts",
+        })
+      ),
       h("div", { style: { fontSize: "11px", color: "#666" } },
         "Default: Anthropic API, GitHub, npm, PyPI. Add extra hosts above."
       ),
