@@ -98,8 +98,6 @@ test.describe("Agent Manager create dialog", () => {
   test("opens when Create Agent is clicked", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
     await expect(page.locator('input[placeholder="Project name"]')).toBeVisible({ timeout: 5000 });
-    // Network policy field should be visible
-    await expect(page.locator('input[placeholder*="Additional egress"]')).toBeVisible();
   });
 
   test("validates required fields", async ({ page }) => {
@@ -111,13 +109,15 @@ test.describe("Agent Manager create dialog", () => {
     await expect(page.locator('text=Project name is required')).toBeVisible();
   });
 
-  test("shows capabilities and network policy fields", async ({ page }) => {
+  test("shows BuildableList components for CLI flags and network policy", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
     await expect(page.locator('input[placeholder="Project name"]')).toBeVisible({ timeout: 5000 });
 
-    // Network policy field should be visible
-    await expect(page.locator('input[placeholder*="Additional egress"]')).toBeVisible();
-    // Default network info text
+    // Claude CLI flags BuildableList should show default flag
+    await expect(page.locator('text=--dangerously-skip-permissions')).toBeVisible();
+    // Network policy BuildableList label
+    await expect(page.locator('text=Additional egress hosts')).toBeVisible();
+    // Default network info
     await expect(page.locator('text=Default: Anthropic API')).toBeVisible();
   });
 
