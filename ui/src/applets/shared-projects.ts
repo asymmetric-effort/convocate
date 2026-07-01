@@ -36,6 +36,18 @@ export async function fetchProjects(): Promise<UnifiedProject[]> {
   }));
 }
 
+/** Project name validation regex: starts with letter, 2-65 chars, alphanumeric + hyphens + underscores */
+export const PROJECT_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_\-]{1,64}$/;
+
+/** Validate a project name against the global naming convention */
+export function validateProjectName(name: string): string | null {
+  if (!name.trim()) return "Project name is required.";
+  if (!PROJECT_NAME_PATTERN.test(name.trim())) {
+    return "Project name must start with a letter, contain only letters, digits, hyphens, and underscores (2-65 chars).";
+  }
+  return null;
+}
+
 /** Create a new project atomically (board + repo + agent). */
 export async function createProject(name: string): Promise<UnifiedProject> {
   const res = await fetch("/api/v1/projects", {

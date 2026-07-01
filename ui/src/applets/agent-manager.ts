@@ -22,6 +22,7 @@ import {
 } from "@asymmetric-effort/specifyjs/components";
 import { useWebSocket, ServerEvent } from "./use-websocket";
 import { useMenuBar } from "./use-menu-bar";
+import { fetchProjects, createProject, validateProjectName } from "./shared-projects";
 
 const h = createElement;
 
@@ -156,9 +157,28 @@ function CreateAgentDialog({
   const [logging, setLogging] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [existingProjects, setExistingProjects] = useState<string[]>([]);
+
+  // Fetch existing project names when dialog opens
+  useEffect(() => {
+    if (!open) return;
+    fetchProjects().then((projects) => {
+      setExistingProjects(projects.map((p) => p.name));
+    }).catch(() => {});
+  }, [open]);
 
   const handleSubmit = useCallback(async () => {
-    if (!project.trim()) { setError("Project name is required."); return; }
+    const nameError = validateProjectName(project);
+    if (nameError) { setError(nameError); return; }
+
+    // If project doesn't exist, create it via the unified projects API
+    if (!existingProjects.includes(project.trim())) {
+      try {
+        await createProject(project.trim());
+      } catch (err: any) {
+        // Non-fatal — project may already exist with a different case
+      }
+    }
     setError("");
     setSubmitting(true);
     try {
@@ -191,7 +211,7 @@ function CreateAgentDialog({
     } finally {
       setSubmitting(false);
     }
-  }, [project, claudeFlags, cpuLimit, memoryLimit, storageSize, capabilities, additionalEgress, claudeMd, apiKey, logging, isAdmin, onCreated, onClose]);
+  }, [project, claudeFlags, cpuLimit, memoryLimit, storageSize, capabilities, additionalEgress, claudeMd, apiKey, logging, isAdmin, existingProjects, onCreated, onClose]);
 
   if (!open) return null;
 
