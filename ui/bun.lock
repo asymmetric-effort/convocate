@@ -6,13 +6,13 @@
       "name": "convocate-ui",
       "dependencies": {
         "@asymmetric-effort/nogginlessdom": "^0.0.27",
-        "@asymmetric-effort/specifyjs": "^0.3.1",
+        "@asymmetric-effort/specifyjs": "^0.3.7",
       },
     },
   },
   "packages": {
     "@asymmetric-effort/nogginlessdom": ["@asymmetric-effort/nogginlessdom@0.0.27", "", {}, "sha512-CLKqwQbS4UbQieT1C4k6YlgGhweXiuAya2FIqOdNyBMg5w/F920I83kYk0cLN+e3ifoLSyfnob2iSaJPnfe2dw=="],
 
-    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@0.3.1", "", {}, "sha512-fjujIW9UbjLyszfVEFYaJn0nm1kX1sTEG1j98UFePHDhuRKgFEhTtY6Jp81DVmYUX/kOPI4QUd738AAgMTvwzA=="],
+    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@0.3.7", "", {}, "sha512-tdLPIBmhQjMdb4SXiUQRyy3EyQBQKLQnaLQlBZ1YAv2WMvKDKhdwc5KbcuYFPtQ+5HXTeRr8mLTvBlC/5fP0Qw=="],
   }
 }
