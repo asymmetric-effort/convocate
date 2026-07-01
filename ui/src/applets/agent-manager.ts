@@ -15,6 +15,7 @@ import {
   BuildableList,
   Button,
   Modal,
+  Select,
   TextField,
   Spinner,
   Tag,
@@ -227,28 +228,26 @@ function CreateAgentDialog({
     h("div", { style: darkStyle },
       // Core fields — select existing project or create new
       sectionLabel("Project"),
-      h("select", {
-        style: {
-          width: "100%", padding: "8px", backgroundColor: "#2d2d2d", color: "#e0e0e0",
-          border: "1px solid #444", borderRadius: "4px", fontSize: "13px",
-        },
-        value: isNewProject ? "__new__" : project,
-        onChange: (e: Event) => {
-          const val = (e.target as HTMLSelectElement).value;
-          if (val === "__new__") {
-            setIsNewProject(true);
-            setProject("");
-          } else {
-            setIsNewProject(false);
-            setProject(val);
-          }
-        },
-      },
-        h("option", { value: "", disabled: true }, "— Select a project —"),
-        ...existingProjects.map((name) =>
-          h("option", { key: name, value: name }, name)
-        ),
-        h("option", { value: "__new__" }, "+ Create new project...")
+      h("div", { style: { backgroundColor: "#ffffff", borderRadius: "4px", padding: "4px" } },
+        h(Select, {
+          options: [
+            ...existingProjects.map((name) => ({ value: name, label: name })),
+            { value: "__new__", label: "+ Create new project..." },
+          ],
+          value: isNewProject ? "__new__" : project,
+          onChange: (val: string) => {
+            if (val === "__new__") {
+              setIsNewProject(true);
+              setProject("");
+            } else {
+              setIsNewProject(false);
+              setProject(val);
+            }
+          },
+          placeholder: "Select a project...",
+          searchable: true,
+          label: "Project",
+        })
       ),
       // Show name input when creating a new project
       isNewProject ? h("div", { style: { marginTop: "8px" } },

@@ -97,12 +97,14 @@ test.describe("Agent Manager create dialog", () => {
 
   test("opens when Create Agent is clicked", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('[data-testid="agent-manager"] select').last()).toBeVisible({ timeout: 5000 });
+    // Wait for the Create Agent modal to open (look for the Project label)
+    await expect(page.locator('text=Project').first()).toBeVisible({ timeout: 5000 });
   });
 
   test("validates required fields", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('[data-testid="agent-manager"] select').last()).toBeVisible({ timeout: 5000 });
+    // Wait for the Create Agent modal to open (look for the Project label)
+    await expect(page.locator('text=Project').first()).toBeVisible({ timeout: 5000 });
 
     // Submit without filling fields
     await page.locator('button:has-text("Create")').last().click();
@@ -111,7 +113,8 @@ test.describe("Agent Manager create dialog", () => {
 
   test("shows BuildableList components for CLI flags and network policy", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('[data-testid="agent-manager"] select').last()).toBeVisible({ timeout: 5000 });
+    // Wait for the Create Agent modal to open (look for the Project label)
+    await expect(page.locator('text=Project').first()).toBeVisible({ timeout: 5000 });
 
     // Claude CLI flags BuildableList should show default flag
     await expect(page.locator('text=--dangerously-skip-permissions')).toBeVisible();
@@ -123,7 +126,8 @@ test.describe("Agent Manager create dialog", () => {
 
   test("can be cancelled", async ({ page }) => {
     await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('[data-testid="agent-manager"] select').last()).toBeVisible({ timeout: 5000 });
+    // Wait for the Create Agent modal to open (look for the Project label)
+    await expect(page.locator('text=Project').first()).toBeVisible({ timeout: 5000 });
 
     await page.locator('button:has-text("Cancel")').click();
     await expect(page.locator('input[placeholder="Project name"]')).not.toBeVisible();
