@@ -1,9 +1,8 @@
 /**
  * Project Board Applet
  *
- * DAG-based project planning board with Cards and Containers.
+ * DAG-based project planning board with Cards.
  * Cards have statuses: todo, active, done, fail, note.
- * Cards can be grouped into Containers (mapped to agent-containers).
  *
  * Data source: /api/v1/pb/board, /api/v1/pb/board/{id}/card, etc.
  */
@@ -19,7 +18,7 @@ import {
   useBoardReducer,
 } from "@asymmetric-effort/specifyjs/components";
 import { useMenuBar } from "./use-menu-bar";
-import { fetchProjects, createProject as createIdeProject, updateProject, UnifiedProject } from "./shared-projects";
+import { fetchProjects, createProject, UnifiedProject } from "./shared-projects";
 
 const h = createElement;
 
@@ -33,19 +32,11 @@ interface BoardSummary {
   updatedAt?: string;
 }
 
-interface Container {
-  id: string;
-  title: string;
-  agentId?: string;
-  minimized: boolean;
-}
-
 interface BoardCard {
   id: string;
   title: string;
   status: string;
   content: string;
-  containerId?: string;
   note?: string;
 }
 
@@ -57,7 +48,6 @@ interface Edge {
 }
 
 interface BoardData extends BoardSummary {
-  containers: Container[];
   cards: BoardCard[];
   edges: Edge[];
 }
@@ -72,19 +62,6 @@ function authHeaders(): Record<string, string> {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
-}
-
-/** Fetch the unified project list and map to BoardSummary entries.
- *  Projects with a boardId reference an existing board; projects
- *  without one are still shown (board can be created on demand). */
-async function fetchBoardProjects(): Promise<{ projects: UnifiedProject[]; boards: BoardSummary[] }> {
-  const projects = await fetchProjects();
-  const boards: BoardSummary[] = projects.map((p) => ({
-    id: p.boardId || `__project__${p.id}`,
-    name: p.name,
-    updatedAt: undefined,
-  }));
-  return { projects, boards };
 }
 
 async function fetchBoard(id: string): Promise<BoardData> {
@@ -120,33 +97,6 @@ async function updateCard(boardId: string, cardId: string, data: Partial<BoardCa
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(`Failed to update card: ${res.status}`);
-  return res.json();
-}
-
-async function createContainer(boardId: string, title: string): Promise<Container> {
-  const res = await fetch(`/api/v1/pb/board/${boardId}/container`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ title }),
-  });
-  if (!res.ok) throw new Error(`Failed to create container: ${res.status}`);
-  return res.json();
-}
-
-async function fetchAgents(): Promise<Array<{ id: string; project: string; nodeId: string; status: string }>> {
-  const res = await fetch("/api/v1/amgr/agent?limit=200", { headers: authHeaders() });
-  if (!res.ok) return [];
-  const page = await res.json();
-  return page.items || [];
-}
-
-async function updateContainer(boardId: string, containerId: string, data: Partial<Container>): Promise<Container> {
-  const res = await fetch(`/api/v1/pb/board/${boardId}/container/${containerId}`, {
-    method: "PATCH",
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error(`Failed to update container: ${res.status}`);
   return res.json();
 }
 
@@ -196,28 +146,28 @@ function statusTag(status: string) {
 }
 
 // ---------------------------------------------------------------------------
-// New Board Dialog
+// New Project Dialog
 // ---------------------------------------------------------------------------
 
-function NewBoardDialog({
+function NewProjectDialog({
   open, onClose, onCreated,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated: (board: BoardData) => void;
+  onCreated: (project: UnifiedProject) => void;
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = useCallback(async () => {
-    if (!name.trim()) { setError("Board name is required."); return; }
+    if (!name.trim()) { setError("Project name is required."); return; }
     setError("");
     setSubmitting(true);
     try {
-      const board = await createBoard(name.trim());
+      const project = await createProject(name.trim());
       setName("");
-      onCreated(board);
+      onCreated(project);
       onClose();
     } catch (err: any) {
       setError(err.message);
@@ -228,9 +178,9 @@ function NewBoardDialog({
 
   if (!open) return null;
 
-  return h(Modal, { open: true, onClose, title: "New Board", size: "sm" as const },
+  return h(Modal, { open: true, onClose, title: "New Project", size: "sm" as const },
     h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },
-      h(TextField, { placeholder: "Board name", value: name, onChange: (v: string) => setName(v) }),
+      h(TextField, { placeholder: "Project name", value: name, onChange: (v: string) => setName(v) }),
       error ? h("div", { style: { color: "#ff8888", fontSize: "13px" } }, error) : null,
       h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
         h(Button, { variant: "secondary" as const, onClick: onClose, disabled: submitting }, "Cancel"),
@@ -293,7 +243,7 @@ function NewCardDialog({
       ),
       h("div", { style: { fontSize: "11px", color: "#aaa" } },
         cardType === "todo"
-          ? "Task cards can be attached to containers and dispatched to agents."
+          ? "Task cards track work items through the board workflow."
           : "Note cards are for documentation — they cannot be executed."
       ),
       error ? h("div", { style: { color: "#ff8888", fontSize: "13px" } }, error) : null,
@@ -406,23 +356,7 @@ function apiBoardToBoardState(board: BoardData): any {
   const now = Date.now();
   const collection: any[] = [];
 
-  // Add containers
-  board.containers.forEach((cont, ci) => {
-    collection.push({
-      type: "container",
-      container_id: cont.id,
-      name: cont.title,
-      position: { x: 30 + ci * 400, y: 20 },
-      size: { width: 360, height: 500 },
-      color: "#334155",
-      minimized: cont.minimized || false,
-      children: [],
-      createdAt: now,
-      updatedAt: now,
-    });
-  });
-
-  // Add cards — nest inside containers if containerId is set
+  // Add cards
   board.cards.forEach((card, i) => {
     const color = STATUS_COLORS[card.status] || "#6b7280";
     const col = i % 4;
@@ -455,17 +389,7 @@ function apiBoardToBoardState(board: BoardData): any {
         });
       });
 
-    if (card.containerId) {
-      // Nest inside the container
-      const cont = collection.find((c) => c.type === "container" && c.container_id === card.containerId);
-      if (cont) {
-        cont.children.push(cardItem);
-      } else {
-        collection.push(cardItem);
-      }
-    } else {
-      collection.push(cardItem);
-    }
+    collection.push(cardItem);
   });
 
   return {
@@ -477,7 +401,7 @@ function apiBoardToBoardState(board: BoardData): any {
 }
 
 // Canvas view using the SpecifyJS Board component with drag-and-drop,
-// card linking, and container management.
+// card linking, and management.
 function CanvasView({
   board,
   onSelectCard,
@@ -505,8 +429,6 @@ function CanvasView({
   }, [board.id, dispatch]);
 
   // Persist card position/size changes back to the API after drag-end.
-  // The Board dispatches actions that update `state`; we watch for
-  // position or size changes and push them to the server.
   const prevCollectionRef = useRef<string>("");
   useEffect(() => {
     const serialized = JSON.stringify(state.collection);
@@ -518,8 +440,6 @@ function CanvasView({
               position: { x: item.position.x, y: item.position.y },
               size: { w: item.size.width, h: item.size.height },
             } as any).catch(() => { /* position sync is best-effort */ });
-          } else if (item.type === "container" && item.children) {
-            syncCards(item.children);
           }
         }
       };
@@ -630,7 +550,7 @@ function CanvasView({
 }
 
 // ---------------------------------------------------------------------------
-// Kanban Status View — columns grouped by card status
+// Kanban Status View — flat columns grouped by card status
 // ---------------------------------------------------------------------------
 
 /** Render a single draggable card in a kanban cell */
@@ -638,7 +558,6 @@ function renderCard(
   card: BoardCard,
   onSelectCard: (c: BoardCard) => void,
   onDragStart?: (cardId: string) => void,
-  onCardContextMenu?: (e: MouseEvent, card: BoardCard) => void,
 ) {
   return h("div", {
     key: card.id,
@@ -647,10 +566,6 @@ function renderCard(
       e.dataTransfer?.setData("text/plain", card.id);
       if (onDragStart) onDragStart(card.id);
     },
-    onContextMenu: onCardContextMenu ? (e: MouseEvent) => {
-      e.preventDefault();
-      onCardContextMenu(e, card);
-    } : undefined,
     style: {
       padding: "8px 10px", backgroundColor: "#2d2d2d", borderRadius: "4px",
       borderLeft: `3px solid ${STATUS_COLORS[card.status]}`,
@@ -672,264 +587,63 @@ function StatusView({
   board,
   onSelectCard,
   onMoveCard,
-  onAttachAgent,
 }: {
   board: BoardData;
   onSelectCard: (card: BoardCard) => void;
-  onMoveCard: (cardId: string, containerId: string | null, newStatus?: string) => void;
-  onAttachAgent: (containerId: string, agentId: string) => void;
+  onMoveCard: (cardId: string, newStatus: string) => void;
 }) {
-  const [dragOverCell, setDragOverCell] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ containerId: string; x: number; y: number } | null>(null);
-  const [cardContextMenu, setCardContextMenu] = useState<{ cardId: string; containerId: string | undefined; x: number; y: number } | null>(null);
-  const [agents, setAgents] = useState<Array<{ id: string; project: string; status: string }>>([]);
-
-  // Fetch agents when context menu opens
-  useEffect(() => {
-    if (contextMenu) {
-      fetchAgents().then(setAgents);
-    }
-  }, [contextMenu]);
-  // Build swim lanes: one per container + one for unassigned cards
-  const lanes: Array<{ id: string; label: string }> = [];
-  for (const cont of board.containers) {
-    lanes.push({ id: cont.id, label: cont.title });
-  }
-  lanes.push({ id: "__unassigned__", label: "Unassigned" });
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
 
   return h("div", {
-    style: { display: "flex", flexDirection: "column", flex: 1, overflow: "auto" },
+    style: { display: "flex", flex: 1, overflow: "auto", gap: "1px" },
   },
-    // Column headers
-    h("div", {
-      style: { display: "flex", gap: "1px", flexShrink: 0, position: "sticky", top: 0, zIndex: 1 },
-    },
-      h("div", { style: { width: "120px", flexShrink: 0, padding: "8px", backgroundColor: "#1e1e1e" } }), // spacer for lane labels
-      ...STATUS_ORDER.map((status) =>
-        h("div", {
-          key: status,
-          style: {
-            flex: 1, minWidth: "150px", padding: "8px 12px",
-            fontWeight: "600", fontSize: "13px", backgroundColor: "#252526",
-            borderBottom: `2px solid ${STATUS_COLORS[status]}`,
-            textAlign: "center",
-          },
-        }, status.toUpperCase())
-      )
-    ),
-    // Swim lanes
-    ...lanes.map((lane) => {
-      // Cards in this lane, grouped by status
-      const laneCards = board.cards.filter((c) =>
-        lane.id === "__unassigned__" ? !c.containerId : c.containerId === lane.id
-      );
-      // Skip empty unassigned lane if all cards are in containers
-      if (lane.id === "__unassigned__" && laneCards.length === 0 && board.containers.length > 0) return null;
-
-      const containerId = lane.id === "__unassigned__" ? null : lane.id;
-      const isUnassigned = lane.id === "__unassigned__";
+    ...STATUS_ORDER.map((status) => {
+      const colCards = board.cards.filter((c) => c.status === status);
+      const isOver = dragOverCol === status;
 
       return h("div", {
-        key: lane.id,
+        key: status,
         style: {
-          display: "flex", gap: "1px",
-          borderBottom: "1px solid #333", minHeight: "80px",
+          flex: 1, minWidth: "180px", display: "flex", flexDirection: "column",
+          backgroundColor: "#252526",
+        },
+        onDragOver: (e: DragEvent) => {
+          e.preventDefault();
+          setDragOverCol(status);
+        },
+        onDragLeave: () => setDragOverCol(null),
+        onDrop: (e: DragEvent) => {
+          e.preventDefault();
+          setDragOverCol(null);
+          const cardId = e.dataTransfer?.getData("text/plain");
+          if (cardId) onMoveCard(cardId, status);
         },
       },
-        // Lane label — right-click for container context menu
+        // Column header
         h("div", {
           style: {
-            width: "120px", flexShrink: 0, padding: "8px",
-            fontSize: "12px", fontWeight: "600", color: "#aaa",
-            backgroundColor: "#1e1e1e", display: "flex", flexDirection: "column",
-            alignItems: "flex-start", borderRight: "1px solid #333", cursor: isUnassigned ? "default" : "context-menu",
-          },
-          onContextMenu: isUnassigned ? undefined : (e: MouseEvent) => {
-            e.preventDefault();
-            setContextMenu({ containerId: lane.id, x: e.clientX, y: e.clientY });
+            padding: "8px 12px", fontWeight: "600", fontSize: "13px",
+            borderBottom: `2px solid ${STATUS_COLORS[status]}`,
+            textAlign: "center", flexShrink: 0,
+            display: "flex", justifyContent: "center", alignItems: "center", gap: "6px",
           },
         },
-          h("span", null, lane.label),
-          // Show attached agent if any
-          (() => {
-            const cont = board.containers.find((c) => c.id === lane.id);
-            if (cont?.agentId) {
-              return h("span", { style: { fontSize: "10px", color: "#6b7280", marginTop: "2px" } },
-                `→ ${cont.agentId}`
-              );
-            }
-            return null;
-          })()
+          h("span", null, status.toUpperCase()),
+          h("span", { style: { fontSize: "11px", color: "#888", fontWeight: "400" } }, `(${colCards.length})`)
         ),
-        // Cells per status column — each cell is a drop target
-        ...STATUS_ORDER.map((status) => {
-          const cellCards = laneCards.filter((c) => c.status === status);
-          const cellKey = `${lane.id}:${status}`;
-          const isOver = dragOverCell === cellKey;
-
-          // Drop rules are validated on actual drop (see onDrop handler).
-          // Visual feedback: dim columns that never accept drops.
-          // Unassigned lane: only todo and note columns accept drops.
-          const canDropHere = !isUnassigned || status === "todo" || status === "note";
-
-          return h("div", {
-            key: status,
-            style: {
-              flex: 1, minWidth: "150px", padding: "6px",
-              backgroundColor: isOver && canDropHere ? "rgba(59, 130, 246, 0.15)" : "#252526",
-              display: "flex", flexDirection: "column", gap: "4px",
-              transition: "background-color 150ms",
-              opacity: canDropHere ? "1" : "0.6",
-            },
-            onDragOver: (e: DragEvent) => {
-              if (canDropHere) { e.preventDefault(); setDragOverCell(cellKey); }
-            },
-            onDragLeave: () => setDragOverCell(null),
-            onDrop: (e: DragEvent) => {
-              e.preventDefault();
-              setDragOverCell(null);
-              if (!canDropHere) return;
-              const cardId = e.dataTransfer?.getData("text/plain");
-              if (cardId) onMoveCard(cardId, containerId, status);
-            },
+        // Scrollable card list
+        h("div", {
+          style: {
+            flex: 1, padding: "6px", display: "flex", flexDirection: "column", gap: "4px",
+            overflowY: "auto",
+            backgroundColor: isOver ? "rgba(59, 130, 246, 0.15)" : "transparent",
+            transition: "background-color 150ms",
           },
-            ...cellCards.map((card) => renderCard(card, onSelectCard, undefined, (e: MouseEvent, c: BoardCard) => {
-              setCardContextMenu({ cardId: c.id, containerId: c.containerId, x: e.clientX, y: e.clientY });
-            }))
-          );
-        })
+        },
+          ...colCards.map((card) => renderCard(card, onSelectCard))
+        )
       );
-    }).filter(Boolean),
-    // Card context menu overlay
-    cardContextMenu ? h("div", {
-      style: { position: "fixed", inset: 0, zIndex: 1000 },
-      onClick: () => setCardContextMenu(null),
-    },
-      h("div", {
-        style: {
-          position: "absolute", left: `${cardContextMenu.x}px`, top: `${cardContextMenu.y}px`,
-          backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.4)", minWidth: "160px", zIndex: 1001,
-        },
-        onClick: (e: Event) => e.stopPropagation(),
-      },
-        h("div", {
-          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
-          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
-          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
-          onClick: () => {
-            const card = board.cards.find((c) => c.id === cardContextMenu.cardId);
-            if (card) onSelectCard(card);
-            setCardContextMenu(null);
-          },
-        }, "View in Editor"),
-        cardContextMenu.containerId ? h("div", {
-          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#e0e0e0" },
-          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
-          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
-          onClick: () => {
-            onMoveCard(cardContextMenu.cardId, null);
-            setCardContextMenu(null);
-          },
-        }, "Detach from Container") : null,
-        h("div", {
-          style: { padding: "6px 12px", cursor: "pointer", fontSize: "12px", color: "#ef4444", borderTop: "1px solid #444" },
-          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
-          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
-          onClick: async () => {
-            try {
-              await deleteCard(board.id, cardContextMenu.cardId);
-              onMoveCard(cardContextMenu.cardId, null); // triggers reload via parent
-            } catch { /* handled by parent */ }
-            setCardContextMenu(null);
-          },
-        }, "Delete")
-      )
-    ) : null,
-    // Context menu overlay for "Attach to" agent
-    contextMenu ? h("div", {
-      style: { position: "fixed", inset: 0, zIndex: 1000 },
-      onClick: () => setContextMenu(null),
-    },
-      h("div", {
-        style: {
-          position: "absolute", left: `${contextMenu.x}px`, top: `${contextMenu.y}px`,
-          backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.4)", minWidth: "180px", zIndex: 1001,
-        },
-        onClick: (e: Event) => e.stopPropagation(),
-      },
-        h("div", { style: { padding: "6px 12px", fontSize: "11px", color: "#888", borderBottom: "1px solid #444" } },
-          "Attach to Agent"
-        ),
-        agents.length === 0
-          ? h("div", { style: { padding: "8px 12px", fontSize: "12px", color: "#666" } }, "No agents available")
-          : null,
-        ...agents.map((agent) =>
-          h("div", {
-            key: agent.id,
-            style: {
-              padding: "6px 12px", fontSize: "12px", color: "#e0e0e0",
-              cursor: "pointer", display: "flex", justifyContent: "space-between",
-            },
-            onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
-            onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
-            onClick: () => {
-              onAttachAgent(contextMenu.containerId, agent.id);
-              setContextMenu(null);
-            },
-          },
-            h("span", null, agent.id),
-            h("span", { style: { color: "#888", fontSize: "10px" } }, agent.status)
-          )
-        ),
-        h("div", {
-          style: { padding: "6px 12px", fontSize: "12px", color: "#888", borderTop: "1px solid #444", cursor: "pointer" },
-          onMouseEnter: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "#3c3c3c"; },
-          onMouseLeave: (e: Event) => { (e.target as HTMLElement).style.backgroundColor = "transparent"; },
-          onClick: () => {
-            onAttachAgent(contextMenu.containerId, "");
-            setContextMenu(null);
-          },
-        }, "Detach")
-      )
-    ) : null
-  );
-}
-
-// ---------------------------------------------------------------------------
-// New Container Dialog
-// ---------------------------------------------------------------------------
-
-function NewContainerDialog({
-  open, onClose, onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreated: (title: string) => void;
-}) {
-  const [title, setTitle] = useState("");
-  const [error, setError] = useState("");
-
-  const handleSubmit = useCallback(() => {
-    if (!title.trim()) { setError("Container title is required."); return; }
-    onCreated(title.trim());
-    setTitle("");
-    setError("");
-    onClose();
-  }, [title, onCreated, onClose]);
-
-  if (!open) return null;
-
-  return h(Modal, { open: true, onClose, title: "New Container", size: "sm" as const },
-    h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },
-      h(TextField, { placeholder: "Container title", value: title, onChange: (v: string) => setTitle(v) }),
-      error ? h("div", { style: { color: "#ff8888", fontSize: "13px" } }, error) : null,
-      h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
-        h(Button, { variant: "secondary" as const, onClick: onClose }, "Cancel"),
-        h(Button, { variant: "primary" as const, onClick: handleSubmit }, "Create")
-      )
-    )
+    })
   );
 }
 
@@ -943,9 +657,8 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
   const [activeBoard, setActiveBoard] = useState<BoardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showNewBoard, setShowNewBoard] = useState(false);
+  const [showNewProject, setShowNewProject] = useState(false);
   const [showNewCard, setShowNewCard] = useState(false);
-  const [showNewContainer, setShowNewContainer] = useState(false);
   const [selectedCard, setSelectedCard] = useState<BoardCard | null>(null);
   const [viewMode, setViewMode] = useState<"status" | "canvas">("status");
 
@@ -953,9 +666,8 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
   useMenuBar("pb", [
     { label: "Graph", items: [
       { label: "New Card", onClick: () => setShowNewCard(true) },
-      { label: "New Container", onClick: () => setShowNewContainer(true) },
       { label: "", divider: true },
-      { label: "New Board", onClick: () => setShowNewBoard(true) },
+      { label: "New Project", onClick: () => setShowNewProject(true) },
     ]},
     { label: "View", items: [
       { label: "Status View", onClick: () => setViewMode("status") },
@@ -966,9 +678,14 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
   // Load IDE projects on mount — projects are the canonical list
   useEffect(() => {
     setLoading(true);
-    fetchBoardProjects()
-      .then(({ projects, boards: b }) => {
+    fetchProjects()
+      .then((projects) => {
         setIdeProjects(projects);
+        const b: BoardSummary[] = projects.map((p) => ({
+          id: p.boardId || `__project__${p.id}`,
+          name: p.name,
+          updatedAt: undefined,
+        }));
         setBoards(b);
         // Auto-select the first project that has a board
         const firstWithBoard = projects.find((p) => p.boardId);
@@ -1004,100 +721,35 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
     }
   }, [activeBoard, reloadBoard]);
 
-  /** Handle new container creation */
-  const handleCreateContainer = useCallback(async (title: string) => {
-    if (!activeBoard) return;
-    try {
-      await createContainer(activeBoard.id, title);
-      await reloadBoard();
-    } catch (err: any) {
-      setError(err.message);
-    }
-  }, [activeBoard, reloadBoard]);
-
-  /** Move a card to a different container and/or status (drag-and-drop).
-   *  Enforces transition rules:
-   *   - Note cards: cannot change status (only container assignment)
-   *   - Task cards in active/done/fail: cannot change status via drag
-   *   - Task cards in todo: can go to active ONLY if attached to a container
-   *   - No card can be dragged TO the note column
+  /** Move a card to a different status (drag-and-drop).
+   *  Cards can move between status columns freely.
    */
-  const handleMoveCard = useCallback(async (cardId: string, containerId: string | null, newStatus?: string) => {
+  const handleMoveCard = useCallback(async (cardId: string, newStatus: string) => {
     if (!activeBoard) return;
     const card = activeBoard.cards.find((c) => c.id === cardId);
     if (!card) return;
-
-    // Validate status transitions
-    let finalStatus = card.status;
-    if (newStatus && newStatus !== card.status) {
-      // Note cards never change status
-      if (card.status === "note") {
-        finalStatus = "note";
-      }
-      // No card can be dragged to note
-      else if (newStatus === "note") {
-        finalStatus = card.status;
-      }
-      // Cards in active/done/fail cannot change status via drag
-      else if (card.status === "active" || card.status === "done" || card.status === "fail") {
-        finalStatus = card.status;
-      }
-      // Todo → active requires a container
-      else if (card.status === "todo" && newStatus === "active") {
-        const targetContainer = containerId ?? card.containerId;
-        if (targetContainer) {
-          finalStatus = "active";
-        } else {
-          setError("Card must be attached to a container before activation.");
-          return;
-        }
-      }
-      // Todo can only go to active (not done/fail directly)
-      else if (card.status === "todo" && (newStatus === "done" || newStatus === "fail")) {
-        setError("Cards must go through Active status before Done or Fail.");
-        return;
-      }
-      else {
-        finalStatus = newStatus;
-      }
-    }
+    if (newStatus === card.status) return;
 
     try {
-      const updates: Partial<BoardCard> = { ...card, status: finalStatus };
-      if (containerId !== undefined) {
-        updates.containerId = containerId || undefined;
-      }
-      await updateCard(activeBoard.id, cardId, updates);
+      await updateCard(activeBoard.id, cardId, { status: newStatus });
       await reloadBoard();
     } catch (err: any) {
       setError(err.message);
     }
   }, [activeBoard, reloadBoard]);
 
-  /** Attach or detach an agent to/from a container */
-  const handleAttachAgent = useCallback(async (containerId: string, agentId: string) => {
-    if (!activeBoard) return;
-    try {
-      await updateContainer(activeBoard.id, containerId, { agentId: agentId || undefined });
-      await reloadBoard();
-    } catch (err: any) {
-      setError(err.message);
+  /** Handle project created — load its board. */
+  const handleProjectCreated = useCallback(async (project: UnifiedProject) => {
+    setIdeProjects((prev) => [...prev, project]);
+    setBoards((prev) => [...prev, { id: project.boardId || `__project__${project.id}`, name: project.name }]);
+    if (project.boardId) {
+      try {
+        const board = await fetchBoard(project.boardId);
+        setActiveBoard(board);
+      } catch (err: any) {
+        setError(err.message);
+      }
     }
-  }, [activeBoard, reloadBoard]);
-
-  /** Handle board created — creates IDE project first if needed,
-   *  then links the board to the project. */
-  const handleBoardCreated = useCallback(async (board: BoardData) => {
-    // Create an IDE project and link the board
-    try {
-      const project = await createIdeProject(board.name);
-      await updateProject(project.id, { boardId: board.id });
-      setIdeProjects((prev) => [...prev, { ...project, boardId: board.id }]);
-    } catch {
-      // Non-fatal — the board was still created
-    }
-    setBoards((prev) => [...prev, { id: board.id, name: board.name }]);
-    setActiveBoard(board);
   }, []);
 
   /** Switch board — if the selected entry is a project without a
@@ -1111,7 +763,6 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
         if (!proj) return;
         // Create a board for this project
         const board = await createBoard(proj.name);
-        await updateProject(proj.id, { boardId: board.id });
         // Update local state
         setIdeProjects((prev) => prev.map((p) => p.id === proj.id ? { ...p, boardId: board.id } : p));
         setBoards((prev) => prev.map((b) => b.id === id ? { ...b, id: board.id } : b));
@@ -1148,7 +799,7 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
       },
     },
       h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } },
-        // Board selector
+        // Project selector
         h("select", {
           style: {
             backgroundColor: "#333", color: "#e0e0e0", border: "1px solid #555",
@@ -1179,8 +830,7 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
           }, "Canvas"),
         ),
         h(Button, { variant: "primary" as const, onClick: () => setShowNewCard(true) }, "New Card"),
-        h(Button, { variant: "secondary" as const, onClick: () => setShowNewContainer(true) }, "New Container"),
-        h(Button, { variant: "secondary" as const, onClick: () => setShowNewBoard(true) }, "New Board"),
+        h(Button, { variant: "secondary" as const, onClick: () => setShowNewProject(true) }, "New Project"),
         h(Button, { variant: "secondary" as const, onClick: reloadBoard }, "Refresh"),
       )
     ),
@@ -1192,7 +842,7 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
     // View — status kanban or canvas
     activeBoard
       ? viewMode === "status"
-        ? h(StatusView, { board: activeBoard, onSelectCard: setSelectedCard, onMoveCard: handleMoveCard, onAttachAgent: handleAttachAgent })
+        ? h(StatusView, { board: activeBoard, onSelectCard: setSelectedCard, onMoveCard: handleMoveCard })
         : h(CanvasView, { board: activeBoard, onSelectCard: setSelectedCard, onReloadBoard: reloadBoard })
       : h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" } }, "No board selected"),
     // Footer
@@ -1207,9 +857,8 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
         : "No board selected"
     ),
     // Dialogs
-    h(NewBoardDialog, { open: showNewBoard, onClose: () => setShowNewBoard(false), onCreated: handleBoardCreated }),
+    h(NewProjectDialog, { open: showNewProject, onClose: () => setShowNewProject(false), onCreated: handleProjectCreated }),
     h(NewCardDialog, { open: showNewCard, onClose: () => setShowNewCard(false), onCreated: handleCreateCard }),
-    h(NewContainerDialog, { open: showNewContainer, onClose: () => setShowNewContainer(false), onCreated: handleCreateContainer }),
     h(CardDetailDialog, {
       card: selectedCard,
       boardId: activeBoard?.id || "",

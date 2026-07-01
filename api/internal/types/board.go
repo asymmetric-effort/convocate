@@ -8,12 +8,13 @@ type BoardSummary struct {
 	UpdatedAt string `json:"updatedAt"`
 }
 
-// Board is a full project board with containers, cards, and edges.
+// Board is a full project board with cards and edges.
+// Each project has exactly one agent-container (managed by Agent Manager),
+// not multiple containers on the board.
 type Board struct {
 	BoardSummary
-	Containers []Container `json:"containers"`
-	Cards      []Card      `json:"cards"`
-	Edges      []Edge      `json:"edges"`
+	Cards []Card `json:"cards"`
+	Edges []Edge `json:"edges"`
 }
 
 // Geometry represents position and size of a board element.
@@ -36,45 +37,26 @@ type Size struct {
 	H float64 `json:"h"`
 }
 
-// Container groups cards on a board, mapped to an agent-container.
-type Container struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	AgentID   *string   `json:"agentId"`
-	Minimized bool      `json:"minimized"`
-	Geometry  *Geometry `json:"geometry,omitempty"`
-}
-
-// ContainerInput is the write model for container create/update.
-type ContainerInput struct {
-	Title     string    `json:"title,omitempty"`
-	AgentID   *string   `json:"agentId"`
-	Minimized bool      `json:"minimized"`
-	Geometry  *Geometry `json:"geometry,omitempty"`
-}
-
 // Card represents a task on a project board.
 type Card struct {
-	ID          string     `json:"id"`
-	Title       string     `json:"title"`
-	Status      CardStatus `json:"status"`
-	Content     string     `json:"content"`
-	ContainerID *string    `json:"containerId"`
-	Position    *Position  `json:"position,omitempty"`
-	Size        *Size      `json:"size,omitempty"`
-	SourceRefs  []string   `json:"sourceRefs,omitempty"`
-	Note        *string    `json:"note"`
-	Links       []Edge     `json:"links"`
+	ID         string     `json:"id"`
+	Title      string     `json:"title"`
+	Status     CardStatus `json:"status"`
+	Content    string     `json:"content"`
+	Position   *Position  `json:"position,omitempty"`
+	Size       *Size      `json:"size,omitempty"`
+	SourceRefs []string   `json:"sourceRefs,omitempty"`
+	Note       *string    `json:"note"`
+	Links      []Edge     `json:"links"`
 }
 
 // CardInput is the write model for card creation.
 type CardInput struct {
-	Title       string     `json:"title"`
-	Content     string     `json:"content,omitempty"`
-	Status      CardStatus `json:"status,omitempty"`
-	ContainerID *string    `json:"containerId"`
-	Position    *Position  `json:"position,omitempty"`
-	Size        *Size      `json:"size,omitempty"`
+	Title    string     `json:"title"`
+	Content  string     `json:"content,omitempty"`
+	Status   CardStatus `json:"status,omitempty"`
+	Position *Position  `json:"position,omitempty"`
+	Size     *Size      `json:"size,omitempty"`
 }
 
 // Edge represents a typed link between two cards.

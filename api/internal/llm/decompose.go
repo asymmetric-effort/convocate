@@ -70,41 +70,23 @@ func DecomposeSpec(specContent string) (*types.Board, error) {
 	}
 
 	board := &types.Board{
-		Containers: make([]types.Container, len(decomposed.Containers)),
-		Cards:      make([]types.Card, len(decomposed.Cards)),
-		Edges:      make([]types.Edge, len(decomposed.Edges)),
+		Cards: make([]types.Card, len(decomposed.Cards)),
+		Edges: make([]types.Edge, len(decomposed.Edges)),
 	}
 
-	containerIDs := make([]string, len(decomposed.Containers))
-	for i, c := range decomposed.Containers {
-		id := fmt.Sprintf("cont-%03d", i+1)
-		containerIDs[i] = id
-		board.Containers[i] = types.Container{
-			ID:    id,
-			Title: c.Title,
-			Geometry: &types.Geometry{
-				X: c.X, Y: c.Y, W: c.W, H: c.H,
-			},
-		}
-	}
-
+	// Containers removed — each project has one agent-container
 	cardIDs := make([]string, len(decomposed.Cards))
 	for i, c := range decomposed.Cards {
 		id := fmt.Sprintf("card-%03d", i+1)
 		cardIDs[i] = id
-		var contID *string
-		if c.ContainerIndex >= 0 && c.ContainerIndex < len(containerIDs) {
-			contID = &containerIDs[c.ContainerIndex]
-		}
 		board.Cards[i] = types.Card{
-			ID:          id,
-			Title:       c.Title,
-			Status:      types.CardStatus(c.Status),
-			Content:     c.Content,
-			ContainerID: contID,
-			Position:    &types.Position{X: c.X, Y: c.Y},
-			Size:        &types.Size{W: c.W, H: c.H},
-			Links:       []types.Edge{},
+			ID:       id,
+			Title:    c.Title,
+			Status:   types.CardStatus(c.Status),
+			Content:  c.Content,
+			Position: &types.Position{X: c.X, Y: c.Y},
+			Size:     &types.Size{W: c.W, H: c.H},
+			Links:    []types.Edge{},
 		}
 	}
 

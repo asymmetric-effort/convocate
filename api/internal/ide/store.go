@@ -12,6 +12,7 @@ type Project struct {
 	RepoID              string `json:"repoId"`
 	SpecificationFileID string `json:"specificationFileId"`
 	BoardID             string `json:"boardId,omitempty"`
+	AgentID             string `json:"agentId,omitempty"`
 }
 
 type FileContent struct {
@@ -69,7 +70,7 @@ func (s *Store) CreateProject(name string) Project {
 	return p
 }
 
-func (s *Store) UpdateProject(id string, name, repoID, boardID *string) (Project, bool) {
+func (s *Store) UpdateProject(id string, name, repoID, boardID, agentID *string) (Project, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, p := range s.projects {
@@ -82,6 +83,9 @@ func (s *Store) UpdateProject(id string, name, repoID, boardID *string) (Project
 			}
 			if boardID != nil {
 				s.projects[i].BoardID = *boardID
+			}
+			if agentID != nil {
+				s.projects[i].AgentID = *agentID
 			}
 			return s.projects[i], true
 		}

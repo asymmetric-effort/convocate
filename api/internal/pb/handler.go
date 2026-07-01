@@ -20,9 +20,7 @@ func Register(mux *http.ServeMux) {
 	mux.Handle("PATCH /api/v1/pb/board/{boardId}", middleware.Chain(http.HandlerFunc(h.renameBoard), auth, middleware.RBAC("pb-update")))
 	mux.Handle("POST /api/v1/pb/board/{boardId}/save-as-repo", middleware.Chain(http.HandlerFunc(h.saveAsRepo), auth, middleware.RBAC("pb-update")))
 	mux.Handle("POST /api/v1/pb/board/{boardId}/implement", middleware.Chain(http.HandlerFunc(h.implement), auth, middleware.RBAC("pb-execute")))
-	mux.Handle("POST /api/v1/pb/board/{boardId}/container", middleware.Chain(http.HandlerFunc(h.createContainer), auth, middleware.RBAC("pb-update")))
-	mux.Handle("PATCH /api/v1/pb/board/{boardId}/container/{containerId}", middleware.Chain(http.HandlerFunc(h.updateContainer), auth, middleware.RBAC("pb-update")))
-	mux.Handle("DELETE /api/v1/pb/board/{boardId}/container/{containerId}", middleware.Chain(http.HandlerFunc(h.deleteContainer), auth, middleware.RBAC("pb-update")))
+	// Container endpoints removed — each project has one agent-container (§12)
 	mux.Handle("POST /api/v1/pb/board/{boardId}/card", middleware.Chain(http.HandlerFunc(h.createCard), auth, middleware.RBAC("pb-update")))
 	mux.Handle("GET /api/v1/pb/board/{boardId}/card/{cardId}", middleware.Chain(http.HandlerFunc(h.getCard), auth, middleware.RBAC("pb-view")))
 	mux.Handle("PUT /api/v1/pb/board/{boardId}/card/{cardId}", middleware.Chain(http.HandlerFunc(h.updateCard), auth, middleware.RBAC("pb-update")))
@@ -83,42 +81,6 @@ func (h *Handler) implement(w http.ResponseWriter, r *http.Request) {
 	boardID := r.PathValue("boardId")
 	run := ExecutionRun{ID: "run-001", BoardID: boardID, DispatchedCards: []string{"card-001", "card-002"}, StartedAt: time.Now().UTC().Format(time.RFC3339)}
 	httputil.WriteJSON(w, http.StatusAccepted, run)
-}
-
-func (h *Handler) createContainer(w http.ResponseWriter, r *http.Request) {
-	var req Container
-	if err := httputil.ReadJSON(r, &req); err != nil {
-		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
-		return
-	}
-	c, ok := h.store.CreateContainer(r.PathValue("boardId"), req)
-	if !ok {
-		httputil.WriteError(w, http.StatusNotFound, "not_found", "board not found")
-		return
-	}
-	httputil.WriteJSON(w, http.StatusCreated, c)
-}
-
-func (h *Handler) updateContainer(w http.ResponseWriter, r *http.Request) {
-	var req Container
-	if err := httputil.ReadJSON(r, &req); err != nil {
-		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
-		return
-	}
-	c, ok := h.store.UpdateContainer(r.PathValue("boardId"), r.PathValue("containerId"), req)
-	if !ok {
-		httputil.WriteError(w, http.StatusNotFound, "not_found", "container not found")
-		return
-	}
-	httputil.WriteJSON(w, http.StatusOK, c)
-}
-
-func (h *Handler) deleteContainer(w http.ResponseWriter, r *http.Request) {
-	if !h.store.DeleteContainer(r.PathValue("boardId"), r.PathValue("containerId")) {
-		httputil.WriteError(w, http.StatusNotFound, "not_found", "container not found")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) createCard(w http.ResponseWriter, r *http.Request) {

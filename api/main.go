@@ -18,6 +18,7 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/middleware"
 	"github.com/asymmetric-effort/convocate/internal/nmgr"
 	"github.com/asymmetric-effort/convocate/internal/pb"
+	"github.com/asymmetric-effort/convocate/internal/projects"
 	"github.com/asymmetric-effort/convocate/internal/repo"
 	"github.com/asymmetric-effort/convocate/internal/status"
 	"github.com/asymmetric-effort/convocate/internal/sup"
@@ -58,6 +59,7 @@ func main() {
 	repo.Register(mux)
 	ac.Register(mux)
 	sup.Register(mux)
+	projects.Register(mux)
 	events.Register(mux)
 
 	handler := middleware.CORS(mux)

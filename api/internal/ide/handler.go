@@ -47,12 +47,13 @@ func (h *Handler) updateProject(w http.ResponseWriter, r *http.Request) {
 		Name    *string `json:"name,omitempty"`
 		RepoID  *string `json:"repoId,omitempty"`
 		BoardID *string `json:"boardId,omitempty"`
+		AgentID *string `json:"agentId,omitempty"`
 	}
 	if err := httputil.ReadJSON(r, &req); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
 	}
-	p, ok := h.store.UpdateProject(id, req.Name, req.RepoID, req.BoardID)
+	p, ok := h.store.UpdateProject(id, req.Name, req.RepoID, req.BoardID, req.AgentID)
 	if !ok {
 		httputil.WriteError(w, http.StatusNotFound, "not_found", "project not found")
 		return

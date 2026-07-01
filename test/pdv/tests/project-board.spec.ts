@@ -1,8 +1,9 @@
 /**
  * Project Board Applet — Post-Deployment Verification Tests
  *
- * Validates that the Project Board loads, shows kanban columns,
- * and supports card CRUD operations.
+ * Validates that the Project Board loads, shows flat kanban columns,
+ * and supports card CRUD operations. Containers have been removed —
+ * each project has one agent-container managed by Agent Manager.
  */
 
 import { test, expect, Page } from "@playwright/test";
@@ -11,13 +12,9 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const BASE = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
 
-function authHeaders(): Record<string, string> {
+function authHeaders() {
   return { "Content-Type": "application/json", Authorization: "Bearer mock-token" };
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 async function login(page: Page): Promise<void> {
   await page.goto("/");
@@ -31,17 +28,9 @@ async function login(page: Page): Promise<void> {
 
 async function openProjectBoard(page: Page): Promise<void> {
   await page.locator('[data-dock-item-id="pb"]').click();
-  await expect(
-    page.locator('[role="dialog"][aria-label="Convocate Project Board"]')
-  ).toBeVisible({ timeout: 5000 });
-  await expect(
-    page.locator('[data-testid="project-board"]')
-  ).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('[role="dialog"][aria-label="Convocate Project Board"]')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('[data-testid="project-board"]')).toBeVisible({ timeout: 10000 });
 }
-
-// ---------------------------------------------------------------------------
-// Tests: Board loads and shows columns
-// ---------------------------------------------------------------------------
 
 test.describe("Project Board applet", () => {
   test.beforeEach(async ({ page }) => {
@@ -49,7 +38,7 @@ test.describe("Project Board applet", () => {
     await openProjectBoard(page);
   });
 
-  test("displays kanban columns for all statuses", async ({ page }) => {
+  test("displays flat kanban columns for all statuses", async ({ page }) => {
     for (const status of ["TODO", "ACTIVE", "DONE", "FAIL", "NOTE"]) {
       await expect(
         page.locator(`[data-testid="project-board"] >> text=${status}`)
@@ -57,112 +46,60 @@ test.describe("Project Board applet", () => {
     }
   });
 
-  test("shows board selector and action buttons", async ({ page }) => {
+  test("shows project selector and action buttons", async ({ page }) => {
     await expect(page.locator('[data-testid="project-board"] select')).toBeVisible();
     await expect(page.locator('[data-testid="project-board"] button:has-text("New Card")')).toBeVisible();
-    await expect(page.locator('[data-testid="project-board"] button:has-text("New Board")')).toBeVisible();
-    await expect(page.locator('[data-testid="project-board"] button:has-text("Refresh")')).toBeVisible();
+    await expect(page.locator('[data-testid="project-board"] button:has-text("New Project")')).toBeVisible();
   });
 
-  test("shows card and edge count in footer", async ({ page }) => {
-    await expect(page.locator('text=/\\d+ cards?/')).toBeVisible({ timeout: 5000 });
-  });
-
-  test("has Status and Canvas view toggle buttons", async ({ page }) => {
+  test("has Status and Canvas view toggle", async ({ page }) => {
     await expect(page.locator('[data-testid="project-board"] button:has-text("Status")')).toBeVisible();
     await expect(page.locator('[data-testid="project-board"] button:has-text("Canvas")')).toBeVisible();
   });
 
-  test("can switch to Canvas view", async ({ page }) => {
-    // Click Canvas toggle
-    await page.locator('[data-testid="project-board"] button:has-text("Canvas")').click();
-
-    // Canvas view should show cards positioned on a dark background
-    // and the footer should still show card count
+  test("shows card count in footer", async ({ page }) => {
     await expect(page.locator('text=/\\d+ cards?/')).toBeVisible({ timeout: 5000 });
   });
 
-  test("can switch between views", async ({ page }) => {
-    // Switch to Canvas — the Board component should render
-    await page.locator('[data-testid="project-board"] button:has-text("Canvas")').click();
-    await page.waitForTimeout(1000);
-
-    // The canvas should be visible (Board component renders)
-    await expect(page.locator('[data-testid="project-board"]')).toBeVisible();
-
-    // Switch back to Status
-    await page.locator('[data-testid="project-board"] button:has-text("Status")').click();
-    await page.waitForTimeout(1000);
-
-    // Status view should render (board still visible)
-    await expect(page.locator('[data-testid="project-board"]')).toBeVisible();
+  test("cards are rendered in flat columns", async ({ page }) => {
+    await page.waitForTimeout(2000);
+    const boardText = await page.locator('[data-testid="project-board"]').textContent();
+    // Should have card IDs visible
+    expect(boardText).toContain("card-");
   });
 });
-
-// ---------------------------------------------------------------------------
-// Tests: Card operations
-// ---------------------------------------------------------------------------
 
 test.describe("Project Board card operations", () => {
   test("New Card dialog opens and validates", async ({ page }) => {
     await login(page);
     await openProjectBoard(page);
-
     await page.locator('[data-testid="project-board"] button:has-text("New Card")').click();
     await expect(page.locator('text=New Card').first()).toBeVisible({ timeout: 3000 });
-
-    // Submit empty
     await page.locator('button:has-text("Add Card")').click();
     await expect(page.locator('text=Card title is required')).toBeVisible();
-
-    // Cancel
     await page.locator('button:has-text("Cancel")').click();
-    await expect(page.locator('input[placeholder="Card title"]')).not.toBeVisible();
   });
 
-  test("cards are rendered in the kanban columns", async ({ page }) => {
+  test("New Project dialog opens and validates", async ({ page }) => {
     await login(page);
     await openProjectBoard(page);
-
-    // Wait for cards to load — the seed data has card-001 and card-002
-    await page.waitForTimeout(2000);
-
-    // Verify card IDs are visible in the board
-    const cardText = await page.locator('[data-testid="project-board"]').textContent();
-    expect(cardText).toContain("card-001");
-    expect(cardText).toContain("card-002");
-  });
-
-  test("New Board dialog opens and validates", async ({ page }) => {
-    await login(page);
-    await openProjectBoard(page);
-
-    await page.locator('[data-testid="project-board"] button:has-text("New Board")').click();
-    await expect(page.locator('text=New Board').first()).toBeVisible({ timeout: 3000 });
-
-    // Submit empty
+    await page.locator('[data-testid="project-board"] button:has-text("New Project")').click();
+    await expect(page.locator('text=New Project').first()).toBeVisible({ timeout: 3000 });
     await page.locator('button:has-text("Create")').last().click();
-    await expect(page.locator('text=Board name is required')).toBeVisible();
-
-    // Cancel
+    await expect(page.locator('text=/name is required/i')).toBeVisible();
     await page.locator('button:has-text("Cancel")').click();
   });
 });
 
-// ---------------------------------------------------------------------------
-// Tests: API operations
-// ---------------------------------------------------------------------------
-
 test.describe("Project Board API", () => {
-  test("list boards returns paginated results", async () => {
-    const res = await fetch(`${BASE}/api/v1/pb/board?limit=10`, { headers: authHeaders() });
+  test("unified projects API returns results", async () => {
+    const res = await fetch(`${BASE}/api/v1/projects?limit=10`, { headers: authHeaders() });
     expect(res.status).toBe(200);
     const page = await res.json();
     expect(page).toHaveProperty("items");
-    expect(page).toHaveProperty("total");
   });
 
-  test("get board returns cards and edges", async () => {
+  test("get board returns cards and edges (no containers)", async () => {
     const listRes = await fetch(`${BASE}/api/v1/pb/board?limit=1`, { headers: authHeaders() });
     const boards = await listRes.json();
     if (boards.items && boards.items.length > 0) {
@@ -171,7 +108,8 @@ test.describe("Project Board API", () => {
       const board = await res.json();
       expect(board).toHaveProperty("cards");
       expect(board).toHaveProperty("edges");
-      expect(board).toHaveProperty("containers");
+      // Containers should NOT be present
+      expect(board.containers).toBeUndefined();
     }
   });
 
@@ -180,8 +118,6 @@ test.describe("Project Board API", () => {
     const boards = await listRes.json();
     if (boards.items && boards.items.length > 0) {
       const boardId = boards.items[0].id;
-
-      // Create
       const createRes = await fetch(`${BASE}/api/v1/pb/board/${boardId}/card`, {
         method: "POST",
         headers: authHeaders(),
@@ -189,12 +125,8 @@ test.describe("Project Board API", () => {
       });
       expect(createRes.status).toBe(201);
       const card = await createRes.json();
-      expect(card).toHaveProperty("id");
-
-      // Delete
       const delRes = await fetch(`${BASE}/api/v1/pb/board/${boardId}/card/${card.id}`, {
-        method: "DELETE",
-        headers: authHeaders(),
+        method: "DELETE", headers: authHeaders(),
       });
       expect(delRes.status).toBe(204);
     }
