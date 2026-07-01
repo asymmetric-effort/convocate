@@ -22,6 +22,7 @@ func Register(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/v1/ide/project/{projectId}/file/{path...}", middleware.Chain(http.HandlerFunc(h.deleteFile), auth, middleware.RBAC("ide-update")))
 	mux.Handle("POST /api/v1/ide/project/{projectId}/rename-file", middleware.Chain(http.HandlerFunc(h.renameFile), auth, middleware.RBAC("ide-update")))
 	mux.Handle("PATCH /api/v1/ide/project/{projectId}", middleware.Chain(http.HandlerFunc(h.updateProject), auth, middleware.RBAC("ide-update")))
+	mux.Handle("DELETE /api/v1/ide/project/{projectId}", middleware.Chain(http.HandlerFunc(h.deleteProject), auth, middleware.RBAC("ide-update")))
 	mux.Handle("POST /api/v1/ide/project/{projectId}/render-board", middleware.Chain(http.HandlerFunc(h.renderBoard), auth, middleware.RBAC("ide-update")))
 }
 
@@ -59,6 +60,15 @@ func (h *Handler) updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, p)
+}
+
+func (h *Handler) deleteProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("projectId")
+	if !h.store.DeleteProject(id) {
+		httputil.WriteError(w, http.StatusNotFound, "not_found", "project not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) tree(w http.ResponseWriter, r *http.Request) {

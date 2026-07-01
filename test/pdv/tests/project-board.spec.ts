@@ -57,6 +57,19 @@ test.describe("Project Board applet", () => {
     await expect(page.locator('[data-testid="project-board"] button:has-text("Canvas")')).toBeVisible();
   });
 
+  test("Status/Canvas toggle is leftmost toolbar item", async ({ page }) => {
+    const statusBtn = page.locator('[data-testid="project-board"] button:has-text("Status")');
+    const selectEl = page.locator('[data-testid="project-board"] select');
+    await expect(statusBtn).toBeVisible({ timeout: 5000 });
+    await expect(selectEl).toBeVisible();
+    const statusBox = await statusBtn.boundingBox();
+    const selectBox = await selectEl.boundingBox();
+    expect(statusBox).toBeTruthy();
+    expect(selectBox).toBeTruthy();
+    // Status button should be to the LEFT of the project selector
+    expect(statusBox!.x).toBeLessThan(selectBox!.x);
+  });
+
   test("shows card count in footer", async ({ page }) => {
     await expect(page.locator('text=/\\d+ cards?/')).toBeVisible({ timeout: 5000 });
   });

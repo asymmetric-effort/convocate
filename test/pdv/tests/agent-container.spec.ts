@@ -38,6 +38,21 @@ test.afterAll(async () => {
     // Wait for K8s cleanup
     await new Promise((r) => setTimeout(r, 5000));
   }
+
+  // Clean up any pdv-* test projects
+  try {
+    const res = await fetch(`${BASE}/api/v1/projects?limit=200`, { headers: authHeaders() });
+    if (res.ok) {
+      const page = await res.json();
+      const testProjects = (page.items || []).filter((p: any) => p.name?.startsWith("pdv-"));
+      for (const proj of testProjects) {
+        await fetch(`${BASE}/api/v1/projects/${proj.id}`, {
+          method: "DELETE",
+          headers: authHeaders(),
+        }).catch(() => {});
+      }
+    }
+  } catch { /* ignore cleanup errors */ }
 });
 
 // ---------------------------------------------------------------------------
@@ -161,6 +176,29 @@ test.describe("Agent container lifecycle", () => {
     });
     // May be 404 (pod deleted) or 200 with stopped status
     expect([200, 404]).toContain(getRes.status);
+  });
+
+  test("start agent restarts a stopped agent", async () => {
+    const res = await fetch(`${BASE}/api/v1/amgr/agent/${AGENT_ID}/start`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    // Accept 200/202 (started) or 404 (agent gone from stop)
+    expect([200, 202]).toContain(res.status);
+
+    if (res.status === 200 || res.status === 202) {
+      // Wait for pod to reach Running
+      let running = false;
+      for (let i = 0; i < 12; i++) {
+        const getRes = await fetch(`${BASE}/api/v1/amgr/agent/${AGENT_ID}`, { headers: authHeaders() });
+        if (getRes.ok) {
+          const agent = await getRes.json();
+          if (agent.status === "running" || agent.status === "connected") { running = true; break; }
+        }
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+      expect(running).toBeTruthy();
+    }
   });
 
   test("delete agent removes all resources", async () => {

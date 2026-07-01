@@ -86,7 +86,9 @@ export function SupportTool({ principal }: { principal?: any } = {}) {
   }, [newSubject, newPriority, newBody]);
 
   if (loading) {
-    return h("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", backgroundColor: "#1e1e1e" }, "data-testid": "support-tool" }, h(Spinner, null));
+    return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "support-tool" },
+      h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center" } }, h(Spinner, null))
+    );
   }
 
   const priorityColor = (p: string) => p === "high" ? "red" : p === "medium" ? "#b45309" : "green";
@@ -94,9 +96,6 @@ export function SupportTool({ principal }: { principal?: any } = {}) {
 
   // Tickets tab
   const ticketsTab = h("div", { style: { backgroundColor: "#1e1e1e", color: "#e0e0e0", padding: "8px" } },
-    h("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: "8px" } },
-      h(Button, { variant: "primary" as const, onClick: () => setShowNewTicket(true) }, "New Ticket")
-    ),
     tickets.length > 0
       ? h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
           h(DataGrid, {
@@ -131,12 +130,19 @@ export function SupportTool({ principal }: { principal?: any } = {}) {
       : h("div", { style: { color: "#aaa", padding: "16px", textAlign: "center" } }, "No documentation articles")
   );
 
-  return h("div", { style: { display: "flex", flexDirection: "column", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "support-tool" },
-    error ? h("div", { style: { padding: "4px 8px", backgroundColor: "#3d1c1c", color: "#ff8888", fontSize: "12px" }, onClick: () => setError("") }, error) : null,
-    h(Tabs, { tabs: [
-      { id: "tickets", label: "Tickets", content: ticketsTab },
-      { id: "docs", label: "Documentation", content: docsTab },
-    ] }),
+  return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "support-tool" },
+    error ? h("div", { style: { padding: "4px 8px", backgroundColor: "#3d1c1c", color: "#ff8888", fontSize: "12px", flexShrink: 0 }, onClick: () => setError("") }, error) : null,
+    h("div", { style: { flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", position: "relative" } },
+      h(Button, {
+        variant: "primary" as const,
+        onClick: () => setShowNewTicket(true),
+        style: { position: "absolute", right: "8px", top: "4px", zIndex: 1, padding: "4px 12px", fontSize: "12px" },
+      }, "New Ticket"),
+      h(Tabs, { tabs: [
+        { id: "tickets", label: "Tickets", content: ticketsTab },
+        { id: "docs", label: "Documentation", content: docsTab },
+      ] }),
+    ),
     // New Ticket dialog
     showNewTicket ? h(Modal, { open: true, onClose: () => setShowNewTicket(false), title: "New Ticket", size: "md" as const },
       h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },

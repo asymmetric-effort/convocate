@@ -799,20 +799,7 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
       },
     },
       h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } },
-        // Project selector
-        h("select", {
-          style: {
-            backgroundColor: "#333", color: "#e0e0e0", border: "1px solid #555",
-            borderRadius: "4px", padding: "4px 8px", fontSize: "13px",
-          },
-          value: activeBoard?.id || "",
-          onChange: (e: Event) => switchBoard((e.target as HTMLSelectElement).value),
-        }, ...boards.map((b) =>
-          h("option", { key: b.id, value: b.id }, b.name)
-        )),
-      ),
-      h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
-        // View toggle
+        // View toggle — leftmost item
         h("div", { style: { display: "flex", borderRadius: "4px", overflow: "hidden", border: "1px solid #555" } },
           h("button", {
             style: {
@@ -829,6 +816,19 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
             onClick: () => setViewMode("canvas"),
           }, "Canvas"),
         ),
+        // Project selector
+        h("select", {
+          style: {
+            backgroundColor: "#333", color: "#e0e0e0", border: "1px solid #555",
+            borderRadius: "4px", padding: "4px 8px", fontSize: "13px",
+          },
+          value: activeBoard?.id || "",
+          onChange: (e: Event) => switchBoard((e.target as HTMLSelectElement).value),
+        }, ...boards.map((b) =>
+          h("option", { key: b.id, value: b.id }, b.name)
+        )),
+      ),
+      h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
         h(Button, { variant: "primary" as const, onClick: () => setShowNewCard(true) }, "New Card"),
         h(Button, { variant: "secondary" as const, onClick: () => setShowNewProject(true) }, "New Project"),
         h(Button, { variant: "secondary" as const, onClick: reloadBoard }, "Refresh"),

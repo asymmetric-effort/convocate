@@ -128,7 +128,9 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
   }, [settings]);
 
   if (loading) {
-    return h("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100%", backgroundColor: "#1e1e1e" }, "data-testid": "access-control" }, h(Spinner, null));
+    return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "access-control" },
+      h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center" } }, h(Spinner, null))
+    );
   }
 
   // Users tab
@@ -210,13 +212,15 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
     ) : null
   );
 
-  return h("div", { style: { display: "flex", flexDirection: "column", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "access-control" },
-    error ? h("div", { style: { padding: "4px 8px", backgroundColor: "#3d1c1c", color: "#ff8888", fontSize: "12px" }, onClick: () => setError("") }, error) : null,
-    h(Tabs, { tabs: [
-      { id: "users", label: "Users", content: usersTab },
-      { id: "groups", label: "Groups", content: groupsTab },
-      { id: "settings", label: "Settings", content: settingsTab },
-    ] }),
+  return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "access-control" },
+    error ? h("div", { style: { padding: "4px 8px", backgroundColor: "#3d1c1c", color: "#ff8888", fontSize: "12px", flexShrink: 0 }, onClick: () => setError("") }, error) : null,
+    h("div", { style: { flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start" } },
+      h(Tabs, { tabs: [
+        { id: "users", label: "Users", content: usersTab },
+        { id: "groups", label: "Groups", content: groupsTab },
+        { id: "settings", label: "Settings", content: settingsTab },
+      ] }),
+    ),
     // Add User dialog
     showAddUser ? h(Modal, { open: true, onClose: () => setShowAddUser(false), title: "Add User", size: "sm" as const },
       h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },

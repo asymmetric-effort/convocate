@@ -100,6 +100,14 @@ async function stopAgent(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Stop failed: ${res.status}`);
 }
 
+async function startAgent(id: string): Promise<void> {
+  const res = await fetch(`/api/v1/amgr/agent/${id}/start`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Start failed: ${res.status}`);
+}
+
 async function deleteAgent(id: string): Promise<void> {
   const res = await fetch(`/api/v1/amgr/agent/${id}`, {
     method: "DELETE",
@@ -160,29 +168,28 @@ function CreateAgentDialog({
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [existingProjects, setExistingProjects] = useState<string[]>([]);
+  const [projectsWithAgents, setProjectsWithAgents] = useState<Set<string>>(new Set());
 
-  // Fetch existing project names when dialog opens
+  // Fetch existing project names and agents with existing containers when dialog opens
   useEffect(() => {
     if (!open) return;
     fetchProjects().then((projects) => {
       setExistingProjects(projects.map((p) => p.name));
     }).catch(() => {});
+    fetchAgents(0, 200).then((page) => {
+      const taken = new Set<string>();
+      for (const a of page.items || []) {
+        if (a.project) taken.add(a.project);
+      }
+      setProjectsWithAgents(taken);
+    }).catch(() => {});
   }, [open]);
+
+  const hasDuplicateAgent = !isNewProject && project.trim() !== "" && projectsWithAgents.has(project.trim());
 
   const handleSubmit = useCallback(async () => {
     if (!project.trim()) { setError("Please select or create a project."); return; }
-
-    // For new projects: validate name and create via unified API
-    if (isNewProject) {
-      const nameError = validateProjectName(project);
-      if (nameError) { setError(nameError); return; }
-      try {
-        await createProject(project.trim());
-      } catch (err: any) {
-        setError(err.message || "Failed to create project.");
-        return;
-      }
-    }
+    if (!isNewProject && projectsWithAgents.has(project.trim())) { setError("This project already has an agent-container."); return; }
     setError("");
     setSubmitting(true);
     try {
@@ -227,77 +234,75 @@ function CreateAgentDialog({
     { open: true, onClose, title: "Create Agent", size: "lg" as const },
     h("div", { style: darkStyle },
       // Core fields — select existing project or create new
-      sectionLabel("Project"),
-      h("div", { style: { backgroundColor: "#f8f9fa", borderRadius: "4px", padding: "4px" } },
-        h(Select, {
-          options: [
-            ...existingProjects.map((name) => ({ value: name, label: name })),
-            { value: "__new__", label: "+ Create new project..." },
-          ],
-          value: isNewProject ? "__new__" : project,
-          onChange: (val: string) => {
-            if (val === "__new__") {
-              setIsNewProject(true);
-              setProject("");
-            } else {
-              setIsNewProject(false);
-              setProject(val);
-            }
-          },
-          placeholder: "Select a project...",
-          searchable: true,
-          label: "Project",
-        })
-      ),
-      // Show name input when creating a new project
-      isNewProject ? h("div", { style: { marginTop: "8px" } },
-        h(TextField, {
-          placeholder: "New project name (letters, digits, hyphens, underscores)",
-          value: project,
-          onChange: (v: string) => setProject(v),
-        })
-      ) : null,
+      h(Select, {
+        options: existingProjects.map((name) => ({ value: name, label: name })),
+        value: project,
+        onChange: (val: string) => {
+          setIsNewProject(false);
+          setProject(val);
+        },
+        placeholder: "Select a project...",
+        searchable: true,
+        creatable: true,
+        createLabel: "+ Create new project...",
+        onCreate: async (val: string) => {
+          const nameError = validateProjectName(val.trim());
+          if (nameError) { setError(nameError); return; }
+          try {
+            await createProject(val.trim());
+            setExistingProjects((prev) => [...prev, val.trim()]);
+            setIsNewProject(false);
+            setProject(val.trim());
+            setError("");
+          } catch (err: any) {
+            setError(err.message || "Failed to create project.");
+          }
+        },
+        label: "Project",
+      }),
+      hasDuplicateAgent ? h("div", { style: { color: "#ef4444", fontSize: "12px", marginTop: "-8px" } }, "This project already has an agent-container.") : null,
 
       // Claude CLI flags
-      h("div", { style: { backgroundColor: "#f8f9fa", borderRadius: "4px", padding: "4px" } },
-        h(BuildableList, {
-          value: claudeFlags,
-          onChange: (items: string[]) => setClaudeFlags(items),
-          placeholder: "e.g. --dangerously-skip-permissions",
-          label: "Claude CLI flags",
-        })
-      ),
+      h(BuildableList, {
+        value: claudeFlags,
+        onChange: (items: string[]) => setClaudeFlags(items),
+        placeholder: "e.g. --dangerously-skip-permissions",
+        label: "Claude CLI flags",
+      }),
       h(TextField, { placeholder: "Anthropic API Key (optional, for headless auth)", type: "password", value: apiKey, onChange: (v: string) => setApiKey(v) }),
 
       // Resources
       sectionLabel("Resources"),
       h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" } },
-        h(TextField, { placeholder: "CPU limit (e.g. 2)", value: cpuLimit, onChange: (v: string) => setCpuLimit(v) }),
-        h(TextField, { placeholder: "Memory limit (e.g. 2Gi)", value: memoryLimit, onChange: (v: string) => setMemoryLimit(v) }),
-        h(TextField, { placeholder: "Storage (e.g. 2Gi)", value: storageSize, onChange: (v: string) => setStorageSize(v) }),
+        h("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+          h("span", { style: { fontSize: "12px", color: "#aaa", fontWeight: "600", minWidth: "36px" } }, "CPU"),
+          h(TextField, { placeholder: "e.g. 2", value: cpuLimit, onChange: (v: string) => setCpuLimit(v) }),
+        ),
+        h("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+          h("span", { style: { fontSize: "12px", color: "#aaa", fontWeight: "600", minWidth: "36px" } }, "RAM"),
+          h(TextField, { placeholder: "e.g. 2Gi", value: memoryLimit, onChange: (v: string) => setMemoryLimit(v) }),
+        ),
+        h("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+          h("span", { style: { fontSize: "12px", color: "#aaa", fontWeight: "600", minWidth: "36px" } }, "DISK"),
+          h(TextField, { placeholder: "e.g. 2Gi", value: storageSize, onChange: (v: string) => setStorageSize(v) }),
+        ),
       ),
 
       // K8s Capabilities (admin-only)
-      isAdmin ? sectionLabel("K8s Capabilities (admin)") : null,
-      isAdmin ? h("div", { style: { backgroundColor: "#f8f9fa", borderRadius: "4px", padding: "4px" } },
-        h(BuildableList, {
-          value: capabilities,
-          onChange: (items: string[]) => setCapabilities(items),
-          placeholder: "e.g. NET_ADMIN",
-          label: "Linux capabilities",
-        })
-      ) : null,
+      isAdmin ? h(BuildableList, {
+        value: capabilities,
+        onChange: (items: string[]) => setCapabilities(items),
+        placeholder: "e.g. NET_ADMIN",
+        label: "Linux capabilities",
+      }) : null,
 
       // Network Policy
-      sectionLabel("Network Policy"),
-      h("div", { style: { backgroundColor: "#f8f9fa", borderRadius: "4px", padding: "4px" } },
-        h(BuildableList, {
-          value: additionalEgress,
-          onChange: (items: string[]) => setAdditionalEgress(items),
-          placeholder: "e.g. my-registry.io",
-          label: "Additional egress hosts",
-        })
-      ),
+      h(BuildableList, {
+        value: additionalEgress,
+        onChange: (items: string[]) => setAdditionalEgress(items),
+        placeholder: "e.g. my-registry.io",
+        label: "Additional egress hosts",
+      }),
       h("div", { style: { fontSize: "11px", color: "#666" } },
         "Default: Anthropic API, GitHub, npm, PyPI. Add extra hosts above."
       ),
@@ -320,7 +325,7 @@ function CreateAgentDialog({
       error ? h("div", { style: { color: "#ff8888", fontSize: "13px" } }, error) : null,
       h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
         h(Button, { variant: "secondary" as const, onClick: onClose, disabled: submitting }, "Cancel"),
-        h(Button, { variant: "primary" as const, onClick: handleSubmit, disabled: submitting },
+        h(Button, { variant: "primary" as const, onClick: handleSubmit, disabled: submitting || hasDuplicateAgent },
           submitting ? "Creating..." : "Create"
         )
       )
@@ -362,6 +367,21 @@ function AgentDetailDialog({
     setActionLoading(true);
     try {
       await stopAgent(agentId);
+      const updated = await fetchAgent(agentId).catch(() => null);
+      if (updated) setAgent(updated);
+      onRefresh();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  }, [agentId, onRefresh]);
+
+  const handleStart = useCallback(async () => {
+    if (!agentId) return;
+    setActionLoading(true);
+    try {
+      await startAgent(agentId);
       const updated = await fetchAgent(agentId).catch(() => null);
       if (updated) setAgent(updated);
       onRefresh();
@@ -456,6 +476,9 @@ function AgentDetailDialog({
           agent.status === "running" || agent.status === "connected"
             ? h(Button, { variant: "warning" as const, onClick: handleStop, disabled: actionLoading }, "Stop")
             : null,
+          agent.status === "stopped" || agent.status === "exited"
+            ? h(Button, { variant: "primary" as const, onClick: handleStart, disabled: actionLoading }, "Start")
+            : null,
           h(Button, { variant: "danger" as const, onClick: () => setConfirmDelete(true), disabled: actionLoading }, "Delete")
         ),
         error ? h("div", { style: { color: "#ff8888", fontSize: "13px" } }, error) : null
@@ -502,9 +525,10 @@ function AgentShellDialog({
     }
   }, [output]);
 
-  // Send stdin
+  // Send stdin — echo input to output
   const handleSend = useCallback(async () => {
     if (!agentId || !input.trim()) return;
+    setOutput((prev) => [...prev.slice(-500), `$ ${input}`]);
     try {
       await fetch(`/api/v1/amgr/agent/${agentId}/stdin`, {
         method: "POST",
@@ -530,17 +554,23 @@ function AgentShellDialog({
           ? h("span", { style: { color: "#666" } }, "Waiting for output...")
           : output.map((line, i) => h("div", { key: i }, line))
       ),
-      // Input area
-      h("div", { style: { display: "flex", borderTop: "1px solid #333", padding: "4px" } },
+      // Input area — multiline, Enter sends, Shift+Enter for newline
+      h("div", { style: { display: "flex", borderTop: "1px solid #333", padding: "4px", alignItems: "flex-end" } },
         h("span", { style: { padding: "4px 8px", color: "#22c55e", fontFamily: "monospace", fontSize: "12px" } }, "$"),
-        h("input", {
+        h("textarea", {
           value: input,
-          onInput: (e: Event) => setInput((e.target as HTMLInputElement).value),
-          onKeyDown: (e: KeyboardEvent) => { if (e.key === "Enter") handleSend(); },
-          style: { flex: 1, backgroundColor: "transparent", border: "none", outline: "none", color: "#c9d1d9", fontFamily: "monospace", fontSize: "12px", padding: "4px" },
-          placeholder: "Type a command...",
+          onInput: (e: Event) => setInput((e.target as HTMLTextAreaElement).value),
+          onKeyDown: (e: KeyboardEvent) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          },
+          style: { flex: 1, backgroundColor: "transparent", border: "none", outline: "none", color: "#c9d1d9", fontFamily: "monospace", fontSize: "12px", padding: "4px", resize: "none", minHeight: "24px", maxHeight: "80px", overflow: "auto" },
+          placeholder: "Type a command... (Enter to send, Shift+Enter for newline)",
+          rows: 1,
         }),
-        h(Button, { variant: "primary" as const, onClick: handleSend }, "Send")
+        h(Button, { variant: "primary" as const, onClick: handleSend, style: { padding: "4px 12px", fontSize: "12px" } }, "Send")
       )
     )
   );
@@ -646,8 +676,9 @@ export function AgentManager({ principal }: { principal?: any } = {}) {
             width: 160,
             render: (_: string, row: any) => {
               const btns: any[] = [];
-              // Shell button — always visible for running agents
-              if (row._status === "running" || row._status === "connected") {
+              const isRunning = row._status === "running" || row._status === "connected";
+              const isStopped = row._status === "stopped" || row._status === "exited";
+              if (isRunning) {
                 btns.push(h(Button, {
                   variant: "secondary" as any,
                   onClick: (e: Event) => { e.stopPropagation(); setShellAgentId(row.id); },
@@ -659,6 +690,14 @@ export function AgentManager({ principal }: { principal?: any } = {}) {
                     stopAgent(row.id).then(loadAgents).catch((err) => setError(err.message));
                   },
                 }, "Stop"));
+              } else if (isStopped) {
+                btns.push(h(Button, {
+                  variant: "primary" as any,
+                  onClick: (e: Event) => {
+                    e.stopPropagation();
+                    startAgent(row.id).then(loadAgents).catch((err) => setError(err.message));
+                  },
+                }, "Start"));
               }
               return btns.length > 0
                 ? h("div", { style: { display: "flex", gap: "4px" } }, ...btns)

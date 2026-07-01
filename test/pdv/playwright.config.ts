@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 const APP_URL = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
 
 export default defineConfig({
+  globalTeardown: "./global-teardown.ts",
   testDir: "./tests",
   timeout: 30000,
   retries: 1,

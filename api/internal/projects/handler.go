@@ -220,7 +220,9 @@ func deleteProject(w http.ResponseWriter, r *http.Request) {
 	if project.AgentID != "" {
 		internalCall("DELETE", "/api/v1/amgr/agent/"+project.AgentID, nil)
 	}
-	// Board and repo deletion would go here when those endpoints support DELETE
+
+	// Delete the IDE project record
+	internalCall("DELETE", "/api/v1/ide/project/"+id, nil)
 
 	events.DefaultHub.Publish("projects/status", "project.deleted", map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)

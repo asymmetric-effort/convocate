@@ -39,6 +39,29 @@ test.describe("Support Tool applet", () => {
     // The "New Ticket" button is inside the Tickets tab content
     await expect(page.locator('button:has-text("New Ticket")')).toBeVisible({ timeout: 10000 });
   });
+  test("New Ticket button is compact (reduced height)", async ({ page }) => {
+    await login(page); await openSupport(page);
+    const btn = page.locator('button:has-text("New Ticket")');
+    await expect(btn).toBeVisible({ timeout: 5000 });
+    const box = await btn.boundingBox();
+    expect(box).toBeTruthy();
+    // Button should be compact — height under 32px (reduced from default ~36px)
+    expect(box!.height).toBeLessThanOrEqual(32);
+  });
+
+  test("New Ticket button is on the same row as tabs", async ({ page }) => {
+    await login(page); await openSupport(page);
+    const btn = page.locator('button:has-text("New Ticket")');
+    const tab = page.locator('[role="tab"]').first();
+    await expect(btn).toBeVisible({ timeout: 5000 });
+    await expect(tab).toBeVisible({ timeout: 5000 });
+    const btnBox = await btn.boundingBox();
+    const tabBox = await tab.boundingBox();
+    // Same visual row — vertical overlap
+    expect(btnBox).toBeTruthy();
+    expect(tabBox).toBeTruthy();
+    expect(Math.abs(btnBox!.y - tabBox!.y)).toBeLessThan(20);
+  });
 });
 
 test.describe("Support Tool API", () => {
