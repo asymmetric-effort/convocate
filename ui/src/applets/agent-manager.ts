@@ -24,6 +24,7 @@ import {
 import { useWebSocket, ServerEvent } from "./use-websocket";
 import { useMenuBar } from "./use-menu-bar";
 import { fetchProjects, createProject, validateProjectName } from "./shared-projects";
+import { hasRole, APPLET_ROLES } from "./use-rbac";
 
 const h = createElement;
 
@@ -591,6 +592,7 @@ export function AgentManager({ principal }: { principal?: any } = {}) {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [shellAgentId, setShellAgentId] = useState<string | null>(null);
   const isAdmin = principal?.roles?.includes("admin") || false;
+  const canUpdate = hasRole(principal, APPLET_ROLES.amgr.update);
   const [offset] = useState(0);
   const limit = 200; // fetch all agents (accordion view, not paginated)
 
@@ -683,14 +685,16 @@ export function AgentManager({ principal }: { principal?: any } = {}) {
                   variant: "secondary" as any,
                   onClick: (e: Event) => { e.stopPropagation(); setShellAgentId(row.id); },
                 }, "Shell"));
-                btns.push(h(Button, {
-                  variant: "warning" as any,
-                  onClick: (e: Event) => {
-                    e.stopPropagation();
-                    stopAgent(row.id).then(loadAgents).catch((err) => setError(err.message));
-                  },
-                }, "Stop"));
-              } else if (isStopped) {
+                if (canUpdate) {
+                  btns.push(h(Button, {
+                    variant: "warning" as any,
+                    onClick: (e: Event) => {
+                      e.stopPropagation();
+                      stopAgent(row.id).then(loadAgents).catch((err) => setError(err.message));
+                    },
+                  }, "Stop"));
+                }
+              } else if (isStopped && canUpdate) {
                 btns.push(h(Button, {
                   variant: "primary" as any,
                   onClick: (e: Event) => {
@@ -758,7 +762,7 @@ export function AgentManager({ principal }: { principal?: any } = {}) {
         })
       ),
       h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
-        h(Button, { variant: "primary" as const, onClick: () => setShowCreate(true) }, "Create Agent"),
+        canUpdate ? h(Button, { variant: "primary" as const, onClick: () => setShowCreate(true) }, "Create Agent") : null,
         h(Button, { variant: "secondary" as const, onClick: loadAgents }, "Refresh")
       )
     ),

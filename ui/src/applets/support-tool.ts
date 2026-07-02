@@ -9,6 +9,7 @@
 import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
 import { Button, Modal, TextField, Spinner, Tag, DataGrid, Tabs } from "@asymmetric-effort/specifyjs/components";
 import { useMenuBar } from "./use-menu-bar";
+import { hasRole, APPLET_ROLES } from "./use-rbac";
 
 const h = createElement;
 

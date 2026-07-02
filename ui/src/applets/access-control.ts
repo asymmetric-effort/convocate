@@ -8,6 +8,7 @@
 import { createElement, useState, useEffect, useCallback } from "@asymmetric-effort/specifyjs";
 import { Button, Modal, TextField, Spinner, Tabs, Tag, DataGrid, Toggle } from "@asymmetric-effort/specifyjs/components";
 import { useMenuBar } from "./use-menu-bar";
+import { hasRole, APPLET_ROLES } from "./use-rbac";
 
 const h = createElement;
 
@@ -74,6 +75,7 @@ async function saveSettings(s: GlobalSettings): Promise<GlobalSettings> {
 // ---------------------------------------------------------------------------
 
 export function AccessControl({ principal }: { principal?: any } = {}) {
+  const canUpdate = hasRole(principal, APPLET_ROLES.ac.update);
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
@@ -135,9 +137,9 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
 
   // Users tab
   const usersTab = h("div", { style: { backgroundColor: "#1e1e1e", color: "#e0e0e0", padding: "8px" } },
-    h("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: "8px" } },
+    canUpdate ? h("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: "8px" } },
       h(Button, { variant: "primary" as const, onClick: () => setShowAddUser(true) }, "Add User")
-    ),
+    ) : null,
     h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
       h(DataGrid, {
         columns: [
@@ -164,9 +166,9 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
 
   // Groups tab
   const groupsTab = h("div", { style: { backgroundColor: "#1e1e1e", color: "#e0e0e0", padding: "8px" } },
-    h("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: "8px" } },
+    canUpdate ? h("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: "8px" } },
       h(Button, { variant: "primary" as const, onClick: () => setShowAddGroup(true) }, "Add Group")
-    ),
+    ) : null,
     h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
       h(DataGrid, {
         columns: [

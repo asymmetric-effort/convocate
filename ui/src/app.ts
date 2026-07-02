@@ -273,12 +273,14 @@ function ConvocateDesktop({ principal, onLogout }: { principal: any; onLogout: (
   return h(
     UnityDesktop,
     {
-      // Show ALL applets in the dock — authorization checked on open
-      apps: APPLETS.map((a) => ({
-        id: a.id, label: a.label, icon: a.icon,
-        ...(a.defaultSize ? { defaultSize: a.defaultSize } : {}),
-        ...(a.resizable !== undefined ? { resizable: a.resizable } : {}),
-      })),
+      // Show only authorized applets in the dock (admin sees all)
+      apps: APPLETS
+        .filter((a) => isAdmin || authorizedApplets.has(a.id))
+        .map((a) => ({
+          id: a.id, label: a.label, icon: a.icon,
+          ...(a.defaultSize ? { defaultSize: a.defaultSize } : {}),
+          ...(a.resizable !== undefined ? { resizable: a.resizable } : {}),
+        })),
       user: { name: principal.name },
       onAppOpen: handleAppOpen,
       onLogout,

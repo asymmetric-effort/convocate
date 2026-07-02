@@ -10,6 +10,7 @@ import { createElement, useState, useEffect, useCallback } from "@asymmetric-eff
 import { Button, Modal, TextField, Spinner, Tag, DataGrid, Tabs } from "@asymmetric-effort/specifyjs/components";
 import { useMenuBar } from "./use-menu-bar";
 import { fetchProjects, createProject as createIdeProject, updateProject, UnifiedProject } from "./shared-projects";
+import { hasRole, APPLET_ROLES } from "./use-rbac";
 
 const h = createElement;
 
@@ -88,6 +89,7 @@ async function mergePR(repoId: string, prId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function RepoManager({ principal }: { principal?: any } = {}) {
+  const canUpdate = hasRole(principal, APPLET_ROLES.repo.update);
   const [ideProjects, setIdeProjects] = useState<UnifiedProject[]>([]);
   const [repos, setRepos] = useState<Repo[]>([]);
   const [activeRepo, setActiveRepo] = useState<Repo | null>(null);
@@ -247,7 +249,7 @@ export function RepoManager({ principal }: { principal?: any } = {}) {
         onChange: (e: Event) => { const r = repos.find((repo) => repo.id === (e.target as HTMLSelectElement).value); if (r) setActiveRepo(r); },
       }, ...repos.map((r) => h("option", { key: r.id, value: r.id }, r.name + (r.id.startsWith("__project__") ? " (no repo)" : "")))),
       h("div", { style: { display: "flex", gap: "8px" } },
-        h(Button, { variant: "primary" as const, onClick: () => setShowNewRepo(true) }, "New Repo"),
+        canUpdate ? h(Button, { variant: "primary" as const, onClick: () => setShowNewRepo(true) }, "New Repo") : null,
       )
     ),
     error ? h("div", { style: { padding: "4px 8px", backgroundColor: "#3d1c1c", color: "#ff8888", fontSize: "12px" }, onClick: () => setError("") }, error) : null,

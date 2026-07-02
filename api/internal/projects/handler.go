@@ -58,11 +58,11 @@ func internalCall(method, path string, body interface{}) ([]byte, int, error) {
 
 func Register(mux *http.ServeMux) {
 	auth := middleware.Auth
-	mux.Handle("GET /api/v1/projects", middleware.Chain(http.HandlerFunc(listProjects), auth))
-	mux.Handle("POST /api/v1/projects", middleware.Chain(http.HandlerFunc(createProject), auth))
-	mux.Handle("GET /api/v1/projects/{projectId}", middleware.Chain(http.HandlerFunc(getProject), auth))
-	mux.Handle("PATCH /api/v1/projects/{projectId}", middleware.Chain(http.HandlerFunc(updateProject), auth))
-	mux.Handle("DELETE /api/v1/projects/{projectId}", middleware.Chain(http.HandlerFunc(deleteProject), auth))
+	mux.Handle("GET /api/v1/projects", middleware.Chain(http.HandlerFunc(listProjects), auth, middleware.RBAC("ide-view")))
+	mux.Handle("POST /api/v1/projects", middleware.Chain(http.HandlerFunc(createProject), auth, middleware.RBAC("ide-update")))
+	mux.Handle("GET /api/v1/projects/{projectId}", middleware.Chain(http.HandlerFunc(getProject), auth, middleware.RBAC("ide-view")))
+	mux.Handle("PATCH /api/v1/projects/{projectId}", middleware.Chain(http.HandlerFunc(updateProject), auth, middleware.RBAC("ide-update")))
+	mux.Handle("DELETE /api/v1/projects/{projectId}", middleware.Chain(http.HandlerFunc(deleteProject), auth, middleware.RBAC("ide-update")))
 }
 
 // listProjects delegates to the IDE project list (canonical source).

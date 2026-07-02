@@ -19,6 +19,7 @@ import {
 } from "@asymmetric-effort/specifyjs/components";
 import { useMenuBar } from "./use-menu-bar";
 import { fetchProjects, createProject, UnifiedProject } from "./shared-projects";
+import { hasRole, APPLET_ROLES } from "./use-rbac";
 
 const h = createElement;
 
@@ -652,6 +653,7 @@ function StatusView({
 // ---------------------------------------------------------------------------
 
 export function ProjectBoard({ principal }: { principal?: any } = {}) {
+  const canUpdate = hasRole(principal, APPLET_ROLES.pb.update);
   const [ideProjects, setIdeProjects] = useState<UnifiedProject[]>([]);
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [activeBoard, setActiveBoard] = useState<BoardData | null>(null);
@@ -829,8 +831,8 @@ export function ProjectBoard({ principal }: { principal?: any } = {}) {
         )),
       ),
       h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
-        h(Button, { variant: "primary" as const, onClick: () => setShowNewCard(true) }, "New Card"),
-        h(Button, { variant: "secondary" as const, onClick: () => setShowNewProject(true) }, "New Project"),
+        canUpdate ? h(Button, { variant: "primary" as const, onClick: () => setShowNewCard(true) }, "New Card") : null,
+        canUpdate ? h(Button, { variant: "secondary" as const, onClick: () => setShowNewProject(true) }, "New Project") : null,
         h(Button, { variant: "secondary" as const, onClick: reloadBoard }, "Refresh"),
       )
     ),

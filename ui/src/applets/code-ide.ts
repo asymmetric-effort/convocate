@@ -24,6 +24,7 @@ import {
 } from "@asymmetric-effort/specifyjs/components";
 import { useMenuBar } from "./use-menu-bar";
 import { fetchProjects, createProject, UnifiedProject } from "./shared-projects";
+import { hasRole, APPLET_ROLES } from "./use-rbac";
 
 const h = createElement;
 
@@ -362,6 +363,7 @@ function Editor({
 // ---------------------------------------------------------------------------
 
 export function CodeIDE({ principal }: { principal?: any } = {}) {
+  const canUpdate = hasRole(principal, APPLET_ROLES.ide.update);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [tree, setTree] = useState<RepoFile[]>([]);
@@ -549,19 +551,19 @@ export function CodeIDE({ principal }: { principal?: any } = {}) {
         h("option", { key: p.id, value: p.id }, p.name)
       )),
       h("div", { style: { flex: 1 } }), // spacer
-      h("button", {
+      canUpdate ? h("button", {
         style: { backgroundColor: "transparent", color: "#cccccc", border: "none", cursor: "pointer", fontSize: "12px", padding: "2px 8px" },
         onClick: () => setShowNewProject(true),
-      }, "New Project"),
-      h("button", {
+      }, "New Project") : null,
+      canUpdate ? h("button", {
         style: { backgroundColor: "transparent", color: "#cccccc", border: "none", cursor: "pointer", fontSize: "12px", padding: "2px 8px" },
         onClick: () => setShowNewFile(true),
-      }, "New File"),
-      h("button", {
+      }, "New File") : null,
+      canUpdate ? h("button", {
         style: { backgroundColor: "transparent", color: "#cccccc", border: "none", cursor: "pointer", fontSize: "12px", padding: "2px 8px" },
         onClick: handleSave,
         disabled: !activeTab?.modified,
-      }, "Save"),
+      }, "Save") : null,
     ),
     // Error banner
     error ? h("div", {
