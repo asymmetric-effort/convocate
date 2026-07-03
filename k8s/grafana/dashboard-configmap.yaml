@@ -14,13 +14,13 @@ data:
       "links": [],
       "panels": [
         {
-          "title": "CPU Usage by Pod",
+          "title": "CPU Usage by Service",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
-            "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, pod)",
-            "legendFormat": "{{namespace}}/{{pod}}",
+            "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, container)",
+            "legendFormat": "{{namespace}}/{{container}}",
             "refId": "A"
           }],
           "fieldConfig": {
@@ -32,13 +32,13 @@ data:
           }
         },
         {
-          "title": "Memory Usage by Pod",
+          "title": "Memory Usage by Service",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
-            "expr": "sum(container_memory_working_set_bytes{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}) by (namespace, pod)",
-            "legendFormat": "{{namespace}}/{{pod}}",
+            "expr": "sum(container_memory_working_set_bytes{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}) by (namespace, container)",
+            "legendFormat": "{{namespace}}/{{container}}",
             "refId": "A"
           }],
           "fieldConfig": {
@@ -50,19 +50,19 @@ data:
           }
         },
         {
-          "title": "Network I/O by Pod",
+          "title": "Network I/O by Service",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [
             {
-              "expr": "sum(rate(container_network_receive_bytes_total{namespace=~\"convocate|data-layer|security|o11y\"}[5m])) by (namespace, pod)",
-              "legendFormat": "rx {{namespace}}/{{pod}}",
+              "expr": "sum(label_replace(rate(container_network_receive_bytes_total{namespace=~\"convocate|data-layer|security|o11y\"}[5m]), \"service\", \"$1\", \"pod\", \"(.*)-[a-z0-9]+-[a-z0-9]+\")) by (namespace, service)",
+              "legendFormat": "rx {{namespace}}/{{service}}",
               "refId": "A"
             },
             {
-              "expr": "sum(rate(container_network_transmit_bytes_total{namespace=~\"convocate|data-layer|security|o11y\"}[5m])) by (namespace, pod)",
-              "legendFormat": "tx {{namespace}}/{{pod}}",
+              "expr": "sum(label_replace(rate(container_network_transmit_bytes_total{namespace=~\"convocate|data-layer|security|o11y\"}[5m]), \"service\", \"$1\", \"pod\", \"(.*)-[a-z0-9]+-[a-z0-9]+\")) by (namespace, service)",
+              "legendFormat": "tx {{namespace}}/{{service}}",
               "refId": "B"
             }
           ],
@@ -75,19 +75,19 @@ data:
           }
         },
         {
-          "title": "Disk I/O by Pod",
+          "title": "Disk I/O by Service",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [
             {
-              "expr": "sum(rate(container_fs_reads_bytes_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, pod)",
-              "legendFormat": "read {{namespace}}/{{pod}}",
+              "expr": "sum(rate(container_fs_reads_bytes_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, container)",
+              "legendFormat": "read {{namespace}}/{{container}}",
               "refId": "A"
             },
             {
-              "expr": "sum(rate(container_fs_writes_bytes_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, pod)",
-              "legendFormat": "write {{namespace}}/{{pod}}",
+              "expr": "sum(rate(container_fs_writes_bytes_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, container)",
+              "legendFormat": "write {{namespace}}/{{container}}",
               "refId": "B"
             }
           ],
