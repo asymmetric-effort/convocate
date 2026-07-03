@@ -30,6 +30,7 @@ export default defineConfig({
     { name: "monitoring", testMatch: /monitoring\.spec\.ts/ },
     { name: "k8s-infrastructure", testMatch: /k8s-infrastructure\.spec\.ts/ },
     { name: "network-boundaries", testMatch: /network-boundaries\.spec\.ts/ },
+    { name: "oidc-auth", testMatch: /oidc-auth\.spec\.ts/ },
     { name: "agent-container", testMatch: /agent-container\.spec\.ts/, retries: 0, timeout: 120000 },
   ],
 });
