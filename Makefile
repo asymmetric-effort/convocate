@@ -1,6 +1,6 @@
 REGISTRY := 192.168.3.90:5000
 NAMESPACE := convocate
-IMAGES := openbao redis postgresql minio api ui pdv metrics agent
+IMAGES := openbao redis postgresql minio influxdb api ui pdv metrics agent fluentbit
 
 .PHONY: all clean lint test build cover deploy
 
@@ -36,6 +36,12 @@ build-postgresql:
 
 build-minio:
 	docker build -f docker/minio.Dockerfile -t $(REGISTRY)/convocate/minio:latest .
+
+build-influxdb:
+	docker build -f docker/influxdb.Dockerfile -t $(REGISTRY)/convocate/influxdb:latest .
+
+build-fluentbit:
+	docker build -f docker/fluentbit.Dockerfile -t $(REGISTRY)/convocate/fluentbit:latest .
 
 build-api:
 	docker build -f docker/api.Dockerfile -t $(REGISTRY)/convocate/api:latest .
@@ -79,9 +85,13 @@ k8s-apply:
 	kubectl apply -f k8s/redis/
 	kubectl apply -f k8s/postgresql/
 	kubectl apply -f k8s/minio/
+	kubectl apply -f k8s/influxdb/
 	kubectl rollout status deployment/redis -n $(NAMESPACE) --timeout=120s
 	kubectl rollout status deployment/postgresql -n $(NAMESPACE) --timeout=120s
 	kubectl rollout status deployment/minio -n $(NAMESPACE) --timeout=120s
+	kubectl rollout status deployment/influxdb -n $(NAMESPACE) --timeout=120s
+	kubectl apply -f k8s/fluentbit/
+	kubectl rollout status daemonset/fluent-bit -n $(NAMESPACE) --timeout=120s
 	kubectl apply -f k8s/agent/
 	kubectl apply -f k8s/metrics/
 	kubectl rollout status daemonset/node-metrics -n $(NAMESPACE) --timeout=120s
@@ -91,19 +101,21 @@ k8s-apply:
 	kubectl rollout status deployment/convocate-ui -n $(NAMESPACE) --timeout=120s
 
 k8s-verify:
-	-kubectl delete job verify-openbao verify-redis verify-postgresql verify-minio verify-pdv -n $(NAMESPACE) 2>/dev/null
+	-kubectl delete job verify-openbao verify-redis verify-postgresql verify-minio verify-influxdb verify-pdv -n $(NAMESPACE) 2>/dev/null
 	kubectl apply -f k8s/openbao/verify-job.yaml
 	kubectl apply -f k8s/redis/verify-job.yaml
 	kubectl apply -f k8s/postgresql/verify-job.yaml
 	kubectl apply -f k8s/minio/verify-job.yaml
+	kubectl apply -f k8s/influxdb/verify-job.yaml
 	kubectl apply -f k8s/pdv/verify-job.yaml
 	kubectl wait --for=condition=complete -n $(NAMESPACE) \
-		job/verify-openbao job/verify-redis job/verify-postgresql job/verify-minio job/verify-pdv \
+		job/verify-openbao job/verify-redis job/verify-postgresql job/verify-minio job/verify-influxdb job/verify-pdv \
 		--timeout=180s
 	@echo "=== Verification Results ==="
 	@kubectl logs job/verify-openbao -n $(NAMESPACE) 2>/dev/null | tail -1
 	@kubectl logs job/verify-redis -n $(NAMESPACE) 2>/dev/null | tail -1
 	@kubectl logs job/verify-postgresql -n $(NAMESPACE) 2>/dev/null | tail -1
 	@kubectl logs job/verify-minio -n $(NAMESPACE) 2>/dev/null | tail -1
+	@kubectl logs job/verify-influxdb -n $(NAMESPACE) 2>/dev/null | tail -1
 	@echo "--- PDV ---"
 	@kubectl logs job/verify-pdv -n $(NAMESPACE) 2>/dev/null | tail -3
