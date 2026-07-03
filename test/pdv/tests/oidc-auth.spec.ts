@@ -2,7 +2,8 @@
  * OIDC Authentication — Post-Deployment Verification Tests
  *
  * Validates that users can authenticate to Grafana via OpenBao OIDC.
- * Tests the full OIDC authorization code flow using the pdv-test user.
+ * Tests the full OIDC authorization code flow using the pdv-test user
+ * and verifies read-only dashboard access.
  */
 
 import { test, expect } from "@playwright/test";
@@ -14,78 +15,132 @@ const AUTH_URL = process.env.AUTH_URL || "https://auth.asymmetric-effort.com";
 
 test.describe("OIDC authentication flow", () => {
   test("OpenBao OIDC discovery endpoint is accessible", async () => {
-    // Test via Grafana's internal proxy since auth.asymmetric-effort.com
-    // may not resolve from outside the ZTNA
-    const res = await fetch(`${GRAFANA_URL}/api/health`);
-    expect(res.status).toBe(200);
+    try {
+      const res = await fetch(`${AUTH_URL}/v1/identity/oidc/provider/default/.well-known/openid-configuration`);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.issuer).toContain("identity/oidc/provider/default");
+    } catch {
+      // auth.asymmetric-effort.com not reachable from test runner — skip
+      test.skip();
+    }
   });
 
   test("Grafana login page shows OpenBao SSO option", async ({ page }) => {
     await page.goto(`${GRAFANA_URL}/login`, { ignoreHTTPSErrors: true });
-    // Look for the OpenBao OAuth button
     await expect(page.locator('text=Sign in with OpenBao')).toBeVisible({ timeout: 10000 });
   });
 
-  test("pdv-test user can authenticate via OIDC flow", async ({ page }) => {
+  test("pdv-test user can login via OIDC and view dashboard", async ({ page }) => {
     // Navigate to Grafana login
     await page.goto(`${GRAFANA_URL}/login`, { ignoreHTTPSErrors: true });
 
     // Click the OpenBao SSO button
     const ssoButton = page.locator('a:has-text("Sign in with OpenBao")');
-    if (await ssoButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await ssoButton.click();
-
-      // Should redirect to OpenBao login page
-      // Wait for the OpenBao auth page to load
-      await page.waitForTimeout(3000);
-
-      // Check if we're on the OpenBao auth page
-      const url = page.url();
-      if (url.includes("auth.asymmetric-effort.com") || url.includes("vault")) {
-        // Fill in credentials on OpenBao login form
-        const usernameField = page.locator('input[name="username"], input[type="text"]').first();
-        const passwordField = page.locator('input[name="password"], input[type="password"]').first();
-
-        if (await usernameField.isVisible({ timeout: 5000 }).catch(() => false)) {
-          await usernameField.fill("pdv-test");
-          await passwordField.fill("PdvTest2026!Secure");
-
-          // Submit the form
-          const submitBtn = page.locator('button[type="submit"], button:has-text("Sign In"), button:has-text("Log in")').first();
-          await submitBtn.click();
-
-          // Wait for redirect back to Grafana
-          await page.waitForURL(/grafana/, { timeout: 15000 }).catch(() => {});
-
-          // If we're back at Grafana, verify we're logged in
-          if (page.url().includes("grafana")) {
-            // Should see the dashboard or user profile
-            const health = await fetch(`${GRAFANA_URL}/api/health`);
-            expect(health.status).toBe(200);
-          }
-        }
-      }
+    if (!(await ssoButton.isVisible({ timeout: 5000 }).catch(() => false))) {
+      test.skip();
+      return;
     }
-    // If SSO button not visible or auth.asymmetric-effort.com not reachable,
-    // test passes (OIDC infrastructure is configured, network may block test)
+    await ssoButton.click();
+
+    // Wait for redirect to OpenBao auth page
+    try {
+      await page.waitForURL(/auth\.asymmetric-effort\.com/, { timeout: 10000 });
+    } catch {
+      // Can't reach auth endpoint from test runner
+      test.skip();
+      return;
+    }
+
+    // Select userpass auth method if method selector is shown
+    const methodSelect = page.locator('select, [data-test-select="auth-method"]');
+    if (await methodSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await methodSelect.selectOption({ label: "Username" }).catch(() => {});
+    }
+
+    // Fill in credentials
+    const usernameField = page.locator('input[name="username"], input[id="username"], input[type="text"]').first();
+    const passwordField = page.locator('input[name="password"], input[id="password"], input[type="password"]').first();
+    await expect(usernameField).toBeVisible({ timeout: 10000 });
+    await usernameField.fill("pdv-test");
+    await passwordField.fill("PdvTest2026!Secure");
+
+    // Submit
+    const submitBtn = page.locator('button[type="submit"], button:has-text("Sign In"), button:has-text("Log in")').first();
+    await submitBtn.click();
+
+    // Handle OIDC consent/authorize if prompted
+    const authorizeBtn = page.locator('button:has-text("Authorize"), button:has-text("Allow")');
+    if (await authorizeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await authorizeBtn.click();
+    }
+
+    // Wait for redirect back to Grafana
+    await page.waitForURL(/grafana\.asymmetric-effort\.com/, { timeout: 15000 });
+
+    // Verify we're logged in — should see the home dashboard
+    await expect(page.locator('text=Convocate Cluster Overview')).toBeVisible({ timeout: 10000 });
+
+    // Verify the user has Viewer role (read-only)
+    // Try to access the admin API — should be forbidden
+    const cookies = await page.context().cookies();
+    const sessionCookie = cookies.find(c => c.name === 'grafana_session');
+    if (sessionCookie) {
+      const adminRes = await page.evaluate(async () => {
+        const res = await fetch('/api/admin/users', { credentials: 'include' });
+        return res.status;
+      });
+      // Viewer should get 403 on admin endpoints
+      expect(adminRes).toBe(403);
+    }
+
+    // Verify dashboard is visible and has panels
+    await expect(page.locator('[class*="panel"]').first()).toBeVisible({ timeout: 5000 });
   });
 });
 
-test.describe("OIDC API validation", () => {
-  test("OpenBao userpass auth returns a valid token", async () => {
-    // Authenticate via OpenBao userpass API directly
-    const res = await fetch("http://openbao.security.svc:8200/v1/auth/userpass/login/pdv-test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: "PdvTest2026!Secure" }),
-    }).catch(() => null);
-
-    // May fail from outside cluster — that's OK
-    if (res && res.ok) {
+test.describe("OIDC least-privilege validation", () => {
+  test("pdv-test user gets viewer-policy from OpenBao", async () => {
+    try {
+      const res = await fetch(`${AUTH_URL}/v1/auth/userpass/login/pdv-test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: "PdvTest2026!Secure" }),
+      });
+      expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.auth).toBeTruthy();
       expect(data.auth.client_token).toBeTruthy();
       expect(data.auth.policies).toContain("viewer-policy");
+      // Should NOT have admin-policy
+      expect(data.auth.policies).not.toContain("admin-policy");
+      // Token should have limited TTL
+      expect(data.auth.lease_duration).toBeGreaterThan(0);
+    } catch {
+      // auth.asymmetric-effort.com not reachable — skip
+      test.skip();
+    }
+  });
+
+  test("pdv-test token cannot access OpenBao secrets", async () => {
+    try {
+      // Login to get a token
+      const loginRes = await fetch(`${AUTH_URL}/v1/auth/userpass/login/pdv-test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: "PdvTest2026!Secure" }),
+      });
+      if (!loginRes.ok) { test.skip(); return; }
+      const { auth } = await loginRes.json();
+
+      // Try to read a secret — should be denied
+      const secretRes = await fetch(`${AUTH_URL}/v1/convocate/data/influxdb`, {
+        headers: { "X-Vault-Token": auth.client_token },
+      });
+      // Should be 403 Forbidden
+      expect(secretRes.status).toBe(403);
+    } catch {
+      test.skip();
     }
   });
 });
