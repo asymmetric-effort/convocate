@@ -14,13 +14,13 @@ data:
       "links": [],
       "panels": [
         {
-          "title": "CPU Usage by Container",
+          "title": "CPU Usage by Pod",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
-            "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"convocate\", container!=\"\", container!=\"POD\"}[5m])) by (pod)",
-            "legendFormat": "{{pod}}",
+            "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, pod)",
+            "legendFormat": "{{namespace}}/{{pod}}",
             "refId": "A"
           }],
           "fieldConfig": {
@@ -32,13 +32,13 @@ data:
           }
         },
         {
-          "title": "Memory Usage by Container",
+          "title": "Memory Usage by Pod",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
-            "expr": "sum(container_memory_working_set_bytes{namespace=\"convocate\", container!=\"\", container!=\"POD\"}) by (pod)",
-            "legendFormat": "{{pod}}",
+            "expr": "sum(container_memory_working_set_bytes{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}) by (namespace, pod)",
+            "legendFormat": "{{namespace}}/{{pod}}",
             "refId": "A"
           }],
           "fieldConfig": {
@@ -128,7 +128,7 @@ data:
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
             "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"convocate\"}[1h])) by (pod)",
-            "legendFormat": "{{pod}}",
+            "legendFormat": "{{namespace}}/{{pod}}",
             "refId": "A"
           }],
           "fieldConfig": {
