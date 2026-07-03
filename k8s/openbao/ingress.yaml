@@ -38,14 +38,7 @@ spec:
     - host: auth.asymmetric-effort.com
       http:
         paths:
-          - path: /v1/identity/oidc
-            pathType: Prefix
-            backend:
-              service:
-                name: openbao
-                port:
-                  number: 8200
-          - path: /ui/vault/identity/oidc
+          - path: /
             pathType: Prefix
             backend:
               service:
