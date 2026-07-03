@@ -1,6 +1,6 @@
 REGISTRY := 192.168.3.90:5000
 NAMESPACE := convocate
-IMAGES := openbao redis postgresql minio influxdb api ui pdv metrics agent fluentbit
+IMAGES := openbao redis postgresql minio influxdb prometheus grafana api ui pdv metrics agent fluentbit
 
 .PHONY: all clean lint test build cover deploy
 
@@ -39,6 +39,12 @@ build-minio:
 
 build-influxdb:
 	docker build -f docker/influxdb.Dockerfile -t $(REGISTRY)/convocate/influxdb:latest .
+
+build-prometheus:
+	docker build -f docker/prometheus.Dockerfile -t $(REGISTRY)/convocate/prometheus:latest .
+
+build-grafana:
+	docker build -f docker/grafana.Dockerfile -t $(REGISTRY)/convocate/grafana:latest .
 
 build-fluentbit:
 	docker build -f docker/fluentbit.Dockerfile -t $(REGISTRY)/convocate/fluentbit:latest .
@@ -86,10 +92,14 @@ k8s-apply:
 	kubectl apply -f k8s/postgresql/
 	kubectl apply -f k8s/minio/
 	kubectl apply -f k8s/influxdb/
+	kubectl apply -f k8s/prometheus/
+	kubectl apply -f k8s/grafana/
 	kubectl rollout status deployment/redis -n $(NAMESPACE) --timeout=120s
 	kubectl rollout status deployment/postgresql -n $(NAMESPACE) --timeout=120s
 	kubectl rollout status deployment/minio -n $(NAMESPACE) --timeout=120s
 	kubectl rollout status deployment/influxdb -n $(NAMESPACE) --timeout=120s
+	kubectl rollout status deployment/prometheus -n $(NAMESPACE) --timeout=120s
+	kubectl rollout status deployment/grafana -n $(NAMESPACE) --timeout=120s
 	kubectl apply -f k8s/fluentbit/
 	kubectl rollout status daemonset/fluent-bit -n $(NAMESPACE) --timeout=120s
 	kubectl apply -f k8s/agent/

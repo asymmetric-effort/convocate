@@ -1,0 +1,47 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: grafana-selfsigned
+  namespace: convocate
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: grafana-tls
+  namespace: convocate
+spec:
+  secretName: grafana-tls
+  issuerRef:
+    name: grafana-selfsigned
+    kind: Issuer
+  dnsNames:
+    - grafana.asymmetric-effort.com
+  duration: 8760h
+  renewBefore: 720h
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: convocate
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - grafana.asymmetric-effort.com
+      secretName: grafana-tls
+  rules:
+    - host: grafana.asymmetric-effort.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000

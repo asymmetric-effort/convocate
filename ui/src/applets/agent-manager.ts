@@ -529,14 +529,15 @@ function AgentShellDialog({
   // Send stdin — echo input to output
   const handleSend = useCallback(async () => {
     if (!agentId || !input.trim()) return;
-    setOutput((prev) => [...prev.slice(-500), `$ ${input}`]);
+    const msg = input;
+    setInput("");
+    setOutput((prev) => [...prev.slice(-500), `$ ${msg}`]);
     try {
       await fetch(`/api/v1/amgr/agent/${agentId}/stdin`, {
         method: "POST",
         headers: { Authorization: `Bearer ${localStorage.getItem("accessToken")}`, "Content-Type": "application/octet-stream" },
-        body: input + "\n",
+        body: msg + "\n",
       });
-      setInput("");
     } catch {
       setOutput((prev) => [...prev, "[stdin send failed]"]);
     }

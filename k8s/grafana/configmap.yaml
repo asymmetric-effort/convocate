@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-config
+  namespace: convocate
+data:
+  grafana.ini: |
+    [server]
+    protocol = http
+    http_port = 3000
+    domain = grafana.asymmetric-effort.com
+    root_url = https://grafana.asymmetric-effort.com
+
+    [database]
+    type = sqlite3
+    path = /var/lib/grafana/grafana.db
+
+    [security]
+    admin_user = admin
+    admin_password = convocate-grafana
+
+    [auth.anonymous]
+    enabled = false
+
+    [log]
+    mode = console
+    level = info
+
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: https://prometheus.convocate.svc:9090
+        isDefault: true
+        jsonData:
+          tlsSkipVerify: true
+        editable: false
+      - name: InfluxDB
+        type: influxdb
+        access: proxy
+        url: https://influxdb.convocate.svc:8086
+        jsonData:
+          version: Flux
+          organization: convocate
+          defaultBucket: logs
+          tlsSkipVerify: true
+        secureJsonData:
+          token: convocate-influx-token
+        editable: false
