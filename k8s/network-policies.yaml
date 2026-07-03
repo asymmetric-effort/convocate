@@ -143,7 +143,34 @@ spec:
       ports:
         - port: 8086
 ---
-# Allow Grafana to reach Prometheus and InfluxDB
+# Allow o11y pods to reach Jaeger on OTLP and query ports
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-o11y-to-jaeger
+  namespace: o11y
+spec:
+  podSelector:
+    matchLabels:
+      app: jaeger
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: ["o11y", "convocate"]
+      ports:
+        - port: 4317
+          protocol: TCP
+        - port: 4318
+          protocol: TCP
+        - port: 16686
+          protocol: TCP
+---
+# Allow Grafana to reach Prometheus, InfluxDB, and Jaeger
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -154,7 +181,7 @@ spec:
     matchExpressions:
       - key: app
         operator: In
-        values: ["prometheus", "influxdb"]
+        values: ["prometheus", "influxdb", "jaeger"]
   policyTypes:
     - Ingress
   ingress:

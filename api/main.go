@@ -22,9 +22,13 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/repo"
 	"github.com/asymmetric-effort/convocate/internal/status"
 	"github.com/asymmetric-effort/convocate/internal/sup"
+	"github.com/asymmetric-effort/convocate/internal/tracing"
 )
 
 func main() {
+	shutdownTracer := tracing.Init(context.Background())
+	defer shutdownTracer(context.Background())
+
 	auth.InitJWT()
 	llm.Init()
 
@@ -62,7 +66,7 @@ func main() {
 	projects.Register(mux)
 	events.Register(mux)
 
-	handler := middleware.CORS(mux)
+	handler := tracing.Middleware(middleware.CORS(mux))
 
 	addr := os.Getenv("LISTEN_ADDR")
 	if addr == "" {

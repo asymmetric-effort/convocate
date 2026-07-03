@@ -51,6 +51,12 @@ data:
         secureJsonData:
           token: $INFLUXDB_TOKEN
         editable: false
+      - name: Jaeger
+        type: jaeger
+        access: proxy
+        url: http://jaeger.o11y.svc:16686
+        isDefault: false
+        editable: false
 
   dashboards.yaml: |
     apiVersion: 1

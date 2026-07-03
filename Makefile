@@ -1,6 +1,6 @@
 REGISTRY := 192.168.3.90:5000
 NAMESPACE := convocate
-IMAGES := openbao redis postgresql minio influxdb prometheus grafana api ui pdv metrics agent fluentbit
+IMAGES := openbao redis postgresql minio influxdb prometheus grafana jaeger api ui pdv metrics agent fluentbit
 
 .PHONY: all clean lint test build cover deploy
 
@@ -45,6 +45,9 @@ build-prometheus:
 
 build-grafana:
 	docker build -f docker/grafana.Dockerfile -t $(REGISTRY)/convocate/grafana:latest .
+
+build-jaeger:
+	docker build -f docker/jaeger.Dockerfile -t $(REGISTRY)/convocate/jaeger:latest .
 
 build-fluentbit:
 	docker build -f docker/fluentbit.Dockerfile -t $(REGISTRY)/convocate/fluentbit:latest .
@@ -100,9 +103,11 @@ k8s-apply:
 	# Observability namespace
 	kubectl apply -f k8s/influxdb/
 	kubectl apply -f k8s/prometheus/
+	kubectl apply -f k8s/jaeger/
 	kubectl apply -f k8s/grafana/
 	kubectl rollout status deployment/influxdb -n o11y --timeout=120s
 	kubectl rollout status deployment/prometheus -n o11y --timeout=120s
+	kubectl rollout status deployment/jaeger -n o11y --timeout=120s
 	kubectl rollout status deployment/grafana -n o11y --timeout=120s
 	kubectl apply -f k8s/fluentbit/
 	kubectl rollout status daemonset/fluent-bit -n o11y --timeout=120s
