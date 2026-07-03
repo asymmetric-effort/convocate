@@ -24,7 +24,8 @@ RUN ARCH=$(uname -m) && \
 
 # Create default config for filesystem-backed storage
 RUN mkdir -p /opt/openbao/config /opt/openbao/data && \
-    printf 'storage "file" {\n  path = "/openbao/data"\n}\n\nlistener "tcp" {\n  address     = "0.0.0.0:8200"\n  tls_disable = true\n}\n\napi_addr      = "http://0.0.0.0:8200"\ndisable_mlock = true\nui            = false\n' > /opt/openbao/config/config.hcl
+    printf 'storage "file" {\n  path = "/openbao/data"\n}\n\nlistener "tcp" {\n  address     = "0.0.0.0:8200"\n  tls_disable = true\n}\n\naudit {\n  type = "file"\n  path = "file"\n  description = "Audit log"\n  options = {\n    file_path = "/openbao/audit/audit.log"\n  }\n}\n\napi_addr      = "http://0.0.0.0:8200"\ndisable_mlock = true\nui            = false\n' > /opt/openbao/config/config.hcl && \
+    mkdir -p /opt/openbao/audit
 
 # Runtime stage
 FROM gcr.io/distroless/cc-debian13:debug
@@ -32,6 +33,7 @@ FROM gcr.io/distroless/cc-debian13:debug
 COPY --from=build /usr/local/bin/bao /usr/local/bin/bao
 COPY --from=build --chown=65534:65534 /opt/openbao/config/ /openbao/config/
 COPY --from=build --chown=65534:65534 /opt/openbao/data/ /openbao/data/
+COPY --from=build --chown=65534:65534 /opt/openbao/audit/ /openbao/audit/
 
 EXPOSE 8200
 
