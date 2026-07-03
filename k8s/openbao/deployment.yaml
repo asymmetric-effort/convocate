@@ -17,7 +17,7 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8200"
-        prometheus.io/path: "/v1/sys/metrics?format=prometheus"
+        prometheus.io/path: "/v1/sys/health"
     spec:
       securityContext:
         fsGroup: 65534

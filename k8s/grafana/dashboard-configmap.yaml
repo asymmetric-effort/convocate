@@ -200,9 +200,10 @@ data:
           "gridPos": { "h": 4, "w": 6, "x": 0, "y": 36 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
-            "expr": "up{job=\"kubernetes-pods\", kubernetes_namespace=\"security\"}",
+            "expr": "up{job=\"kubernetes-pods\", kubernetes_namespace=\"security\", kubernetes_pod_name=~\"openbao.*\"}",
             "legendFormat": "OpenBao",
-            "refId": "A"
+            "refId": "A",
+            "instant": true
           }],
           "fieldConfig": {
             "defaults": {
