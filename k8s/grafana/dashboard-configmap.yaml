@@ -50,19 +50,19 @@ data:
           }
         },
         {
-          "title": "Network I/O (Receive)",
+          "title": "Network I/O by Pod",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [
             {
-              "expr": "sum(rate(container_network_receive_bytes_total{namespace=\"convocate\"}[5m])) by (pod)",
-              "legendFormat": "rx {{pod}}",
+              "expr": "sum(rate(container_network_receive_bytes_total{namespace=~\"convocate|data-layer|security|o11y\"}[5m])) by (namespace, pod)",
+              "legendFormat": "rx {{namespace}}/{{pod}}",
               "refId": "A"
             },
             {
-              "expr": "sum(rate(container_network_transmit_bytes_total{namespace=\"convocate\"}[5m])) by (pod)",
-              "legendFormat": "tx {{pod}}",
+              "expr": "sum(rate(container_network_transmit_bytes_total{namespace=~\"convocate|data-layer|security|o11y\"}[5m])) by (namespace, pod)",
+              "legendFormat": "tx {{namespace}}/{{pod}}",
               "refId": "B"
             }
           ],
@@ -75,19 +75,19 @@ data:
           }
         },
         {
-          "title": "Disk I/O",
+          "title": "Disk I/O by Pod",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [
             {
-              "expr": "sum(rate(container_fs_reads_bytes_total{namespace=\"convocate\", container!=\"\"}[5m])) by (pod)",
-              "legendFormat": "read {{pod}}",
+              "expr": "sum(rate(container_fs_reads_bytes_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, pod)",
+              "legendFormat": "read {{namespace}}/{{pod}}",
               "refId": "A"
             },
             {
-              "expr": "sum(rate(container_fs_writes_bytes_total{namespace=\"convocate\", container!=\"\"}[5m])) by (pod)",
-              "legendFormat": "write {{pod}}",
+              "expr": "sum(rate(container_fs_writes_bytes_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, pod)",
+              "legendFormat": "write {{namespace}}/{{pod}}",
               "refId": "B"
             }
           ],
