@@ -1,0 +1,54 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-selfsigned
+  namespace: security
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openbao-tls
+  namespace: security
+spec:
+  secretName: openbao-tls
+  issuerRef:
+    name: openbao-selfsigned
+    kind: Issuer
+  dnsNames:
+    - auth.asymmetric-effort.com
+  duration: 8760h
+  renewBefore: 720h
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openbao-oidc
+  namespace: security
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - auth.asymmetric-effort.com
+      secretName: openbao-tls
+  rules:
+    - host: auth.asymmetric-effort.com
+      http:
+        paths:
+          - path: /v1/identity/oidc
+            pathType: Prefix
+            backend:
+              service:
+                name: openbao
+                port:
+                  number: 8200
+          - path: /ui/vault/identity/oidc
+            pathType: Prefix
+            backend:
+              service:
+                name: openbao
+                port:
+                  number: 8200
