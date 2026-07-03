@@ -14,49 +14,9 @@ data:
       "links": [],
       "panels": [
         {
-          "title": "CPU Usage by Node",
-          "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "targets": [{
-            "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
-            "legendFormat": "{{instance}}",
-            "refId": "A"
-          }],
-          "fieldConfig": {
-            "defaults": {
-              "unit": "percent",
-              "min": 0,
-              "max": 100,
-              "custom": { "fillOpacity": 10, "lineWidth": 2 }
-            },
-            "overrides": []
-          }
-        },
-        {
-          "title": "Memory Usage by Node",
-          "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "targets": [{
-            "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
-            "legendFormat": "{{instance}}",
-            "refId": "A"
-          }],
-          "fieldConfig": {
-            "defaults": {
-              "unit": "percent",
-              "min": 0,
-              "max": 100,
-              "custom": { "fillOpacity": 10, "lineWidth": 2 }
-            },
-            "overrides": []
-          }
-        },
-        {
           "title": "CPU Usage by Container",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
             "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"convocate\", container!=\"\", container!=\"POD\"}[5m])) by (pod)",
@@ -74,7 +34,7 @@ data:
         {
           "title": "Memory Usage by Container",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
             "expr": "sum(container_memory_working_set_bytes{namespace=\"convocate\", container!=\"\", container!=\"POD\"}) by (pod)",
@@ -90,36 +50,9 @@ data:
           }
         },
         {
-          "title": "Disk Usage by Node",
-          "type": "gauge",
-          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
-          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "targets": [{
-            "expr": "(1 - node_filesystem_avail_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"}) * 100",
-            "legendFormat": "{{instance}}",
-            "refId": "A"
-          }],
-          "fieldConfig": {
-            "defaults": {
-              "unit": "percent",
-              "min": 0,
-              "max": 100,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  { "color": "green", "value": null },
-                  { "color": "yellow", "value": 70 },
-                  { "color": "red", "value": 90 }
-                ]
-              }
-            },
-            "overrides": []
-          }
-        },
-        {
           "title": "Network I/O (Receive)",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [
             {
@@ -144,7 +77,7 @@ data:
         {
           "title": "Disk I/O",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [
             {
@@ -169,7 +102,7 @@ data:
         {
           "title": "Log Error Count (from InfluxDB)",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_field\"] == \"log\")\n  |> filter(fn: (r) => r[\"log\"] =~ /(?i)error|fail|panic|fatal/)\n  |> group(columns: [\"container_name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: count, createEmpty: false)\n  |> yield(name: \"errors\")",
@@ -191,7 +124,7 @@ data:
         {
           "title": "Pod Restart Count",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 32 },
+          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 24 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
             "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"convocate\"}[1h])) by (pod)",
@@ -215,7 +148,7 @@ data:
         {
           "title": "Container Count by Namespace",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 8, "x": 8, "y": 32 },
+          "gridPos": { "h": 4, "w": 8, "x": 8, "y": 24 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
             "expr": "count(container_last_seen{namespace=~\"convocate|convocate-agents\"}) by (namespace)",
@@ -232,7 +165,7 @@ data:
         {
           "title": "Node Count",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 8, "x": 16, "y": 32 },
+          "gridPos": { "h": 4, "w": 8, "x": 16, "y": 24 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
             "expr": "count(up{job=\"kubernetes-nodes\"})",
@@ -250,7 +183,7 @@ data:
         {
           "title": "OpenBao Secret Access Audit Trail",
           "type": "table",
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"openbao.audit\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 100)",
@@ -264,7 +197,7 @@ data:
         {
           "title": "OpenBao Health Status",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 44 },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 36 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [{
             "expr": "up{job=\"kubernetes-pods\", kubernetes_namespace=\"security\"}",
@@ -284,7 +217,7 @@ data:
         {
           "title": "OpenBao Secret Read/Write Count",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 9, "x": 6, "y": 44 },
+          "gridPos": { "h": 8, "w": 9, "x": 6, "y": 36 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [
             {
@@ -303,7 +236,7 @@ data:
         {
           "title": "OpenBao Request Latency",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 9, "x": 15, "y": 44 },
+          "gridPos": { "h": 8, "w": 9, "x": 15, "y": 36 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [
             {
@@ -323,7 +256,7 @@ data:
         {
           "title": "PDV Test Pass/Fail Over Time",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pdv_run\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\" or r[\"_field\"] == \"failed\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
@@ -343,7 +276,7 @@ data:
         {
           "title": "PDV Test Duration by Suite",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pdv_test\")\n  |> filter(fn: (r) => r[\"_field\"] == \"duration_ms\")\n  |> group(columns: [\"project\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
@@ -360,7 +293,7 @@ data:
         {
           "title": "PDV Latest Run Summary",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 24, "x": 0, "y": 60 },
+          "gridPos": { "h": 4, "w": 24, "x": 0, "y": 52 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pdv_run\")\n  |> filter(fn: (r) => r[\"_field\"] == \"total_duration_ms\" or r[\"_field\"] == \"passed\" or r[\"_field\"] == \"failed\")\n  |> last()",

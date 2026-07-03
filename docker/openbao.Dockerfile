@@ -24,7 +24,7 @@ RUN ARCH=$(uname -m) && \
 
 # Create default config for filesystem-backed storage
 RUN mkdir -p /opt/openbao/config /opt/openbao/data && \
-    printf 'storage "file" {\n  path = "/openbao/data"\n}\n\nlistener "tcp" {\n  address     = "0.0.0.0:8200"\n  tls_disable = true\n}\n\naudit {\n  type = "file"\n  path = "file"\n  description = "Audit log"\n  options = {\n    file_path = "/openbao/audit/audit.log"\n  }\n}\n\napi_addr      = "http://0.0.0.0:8200"\ndisable_mlock = true\nui            = false\n' > /opt/openbao/config/config.hcl && \
+    printf 'storage "file" {\n  path = "/openbao/data"\n}\n\nlistener "tcp" {\n  address     = "0.0.0.0:8200"\n  tls_disable = true\n}\n\naudit {\n  type = "file"\n  path = "file"\n  description = "Audit log"\n  options = {\n    file_path = "/openbao/audit/audit.log"\n  }\n}\n\ntelemetry {\n  prometheus_retention_time = "30s"\n  disable_hostname         = true\n  unauthenticated_metrics_access = true\n}\n\napi_addr      = "http://0.0.0.0:8200"\ndisable_mlock = true\nui            = false\n' > /opt/openbao/config/config.hcl && \
     mkdir -p /opt/openbao/audit
 
 # Runtime stage
