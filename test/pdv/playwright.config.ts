@@ -7,6 +7,7 @@ export default defineConfig({
   testDir: "./tests",
   timeout: 30000,
   retries: 1,
+  reporter: [["list"], ["./influxdb-reporter.ts"]],
   use: {
     baseURL: APP_URL,
     headless: true,
@@ -27,6 +28,8 @@ export default defineConfig({
     { name: "support-tool", testMatch: /support-tool\.spec\.ts/ },
     { name: "rbac", testMatch: /rbac\.spec\.ts/ },
     { name: "monitoring", testMatch: /monitoring\.spec\.ts/ },
+    { name: "k8s-infrastructure", testMatch: /k8s-infrastructure\.spec\.ts/ },
+    { name: "network-boundaries", testMatch: /network-boundaries\.spec\.ts/ },
     { name: "agent-container", testMatch: /agent-container\.spec\.ts/, retries: 0, timeout: 120000 },
   ],
 });
