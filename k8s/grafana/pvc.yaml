@@ -8,7 +8,7 @@ spec:
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: /mnt/convocate/grafana
+    path: /mnt/o11y/grafana
     type: DirectoryOrCreate
   storageClassName: local
   nodeAffinity:
@@ -24,11 +24,12 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: grafana-data
-  namespace: convocate
+  namespace: o11y
 spec:
   accessModes:
     - ReadWriteOnce
   storageClassName: local
+  volumeName: grafana-pv
   resources:
     requests:
       storage: 5Gi

@@ -14,7 +14,7 @@ var Pool *pgxpool.Pool
 func InitPostgres() error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://postgres@postgresql.convocate.svc:5432/convocate?sslmode=disable"
+		dsn = "postgres://postgres@postgresql.data-layer.svc:5432/convocate?sslmode=disable"
 	}
 
 	cfg, err := pgxpool.ParseConfig(dsn)

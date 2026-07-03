@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: influxdb
-  namespace: convocate
+  namespace: o11y
   labels:
     app: influxdb
 spec:
@@ -19,19 +19,6 @@ spec:
         fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        - name: init-perms
-          image: 192.168.3.90:5000/convocate/openbao:latest
-          command: ["/busybox/sh", "-c", "/busybox/chown -R 65534:65534 /var/lib/influxdb2"]
-          securityContext:
-            runAsUser: 0
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-              add: ["CHOWN"]
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/influxdb2
       containers:
         - name: influxdb
           image: 192.168.3.90:5000/convocate/influxdb:latest
@@ -49,7 +36,10 @@ spec:
             - name: DOCKER_INFLUXDB_INIT_USERNAME
               value: "admin"
             - name: DOCKER_INFLUXDB_INIT_PASSWORD
-              value: "convocate-influx"
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-credentials
+                  key: DOCKER_INFLUXDB_INIT_PASSWORD
             - name: DOCKER_INFLUXDB_INIT_ORG
               value: "convocate"
             - name: DOCKER_INFLUXDB_INIT_BUCKET
@@ -57,7 +47,10 @@ spec:
             - name: DOCKER_INFLUXDB_INIT_RETENTION
               value: "90d"
             - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
-              value: "convocate-influx-token"
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-credentials
+                  key: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
             - name: INFLUXD_BOLT_PATH
               value: "/var/lib/influxdb2/influxd.bolt"
             - name: INFLUXD_ENGINE_PATH

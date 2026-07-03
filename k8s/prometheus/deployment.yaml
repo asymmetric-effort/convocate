@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: prometheus
-  namespace: convocate
+  namespace: o11y
   labels:
     app: prometheus
 spec:
@@ -20,19 +20,6 @@ spec:
         fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        - name: init-perms
-          image: 192.168.3.90:5000/convocate/openbao:latest
-          command: ["/busybox/sh", "-c", "/busybox/chown -R 65534:65534 /prometheus"]
-          securityContext:
-            runAsUser: 0
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-              add: ["CHOWN"]
-          volumeMounts:
-            - name: data
-              mountPath: /prometheus
       containers:
         - name: prometheus
           image: 192.168.3.90:5000/convocate/prometheus:latest

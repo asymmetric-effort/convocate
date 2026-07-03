@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
-  namespace: convocate
+  namespace: data-layer
   labels:
     app: redis
 spec:
@@ -25,8 +25,16 @@ spec:
           image: 192.168.3.90:5000/convocate/redis:latest
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "25m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
           ports:
             - containerPort: 6379
               name: redis

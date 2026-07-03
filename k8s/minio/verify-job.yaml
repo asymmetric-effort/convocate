@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: verify-minio
-  namespace: convocate
+  namespace: data-layer
 spec:
   backoffLimit: 3
   ttlSecondsAfterFinished: 300
@@ -27,7 +27,7 @@ spec:
           args:
             - |
               echo "=== MinIO Verification ==="
-              RESULT=$(/busybox/wget -qO- http://minio.convocate.svc:9000/minio/health/live 2>&1) || true
+              RESULT=$(/busybox/wget -qO- http://minio.data-layer.svc:9000/minio/health/live 2>&1) || true
               if echo "$RESULT" | /busybox/grep -qi "error"; then
                 echo "FAIL: MinIO health check failed"
                 exit 1

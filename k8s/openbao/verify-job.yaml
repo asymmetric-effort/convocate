@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: verify-openbao
-  namespace: convocate
+  namespace: security
 spec:
   backoffLimit: 3
   ttlSecondsAfterFinished: 300
@@ -25,7 +25,7 @@ spec:
               drop: ["ALL"]
           env:
             - name: BAO_ADDR
-              value: "http://openbao.convocate.svc:8200"
+              value: "http://openbao.security.svc:8200"
           command: ["/busybox/sh", "-c"]
           args:
             - |

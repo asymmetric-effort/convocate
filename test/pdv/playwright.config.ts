@@ -26,6 +26,7 @@ export default defineConfig({
     { name: "repo-manager", testMatch: /repo-manager\.spec\.ts/ },
     { name: "support-tool", testMatch: /support-tool\.spec\.ts/ },
     { name: "rbac", testMatch: /rbac\.spec\.ts/ },
+    { name: "monitoring", testMatch: /monitoring\.spec\.ts/ },
     { name: "agent-container", testMatch: /agent-container\.spec\.ts/, retries: 0, timeout: 120000 },
   ],
 });

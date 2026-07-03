@@ -2,7 +2,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: prometheus-selfsigned
-  namespace: convocate
+  namespace: o11y
 spec:
   selfSigned: {}
 ---
@@ -10,7 +10,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: prometheus-tls
-  namespace: convocate
+  namespace: o11y
 spec:
   secretName: prometheus-tls
   issuerRef:
@@ -18,7 +18,7 @@ spec:
     kind: Issuer
   dnsNames:
     - prometheus
-    - prometheus.convocate.svc
-    - prometheus.convocate.svc.cluster.local
+    - prometheus.o11y.svc
+    - prometheus.o11y.svc.cluster.local
   duration: 8760h
   renewBefore: 720h

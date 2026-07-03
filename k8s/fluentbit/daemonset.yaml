@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: fluent-bit
-  namespace: convocate
+  namespace: o11y
   labels:
     app: fluent-bit
 spec:
@@ -25,6 +25,9 @@ spec:
       containers:
         - name: fluent-bit
           image: 192.168.3.90:5000/convocate/fluentbit:latest
+          envFrom:
+            - secretRef:
+                name: fluentbit-credentials
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

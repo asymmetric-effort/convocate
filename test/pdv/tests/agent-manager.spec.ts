@@ -324,58 +324,25 @@ test.describe("Agent Manager detail dialog", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("Agent Manager duplicate prevention", () => {
-  let testAgentId: string | null = null;
-  const dupProject = `pdv-dup-${Date.now().toString(36)}`;
-
-  test.beforeAll(async () => {
-    // Create a project and agent to test against
-    await fetch(`${BASE}/api/v1/projects`, {
-      method: "POST", headers: authHeaders(), body: JSON.stringify({ name: dupProject }),
-    });
-    const res = await fetch(`${BASE}/api/v1/amgr/agent`, {
+  test("API rejects creating agent with duplicate project name", async () => {
+    const dupProject = `pdv-dup-${Date.now().toString(36)}`;
+    // Create first agent
+    const res1 = await fetch(`${BASE}/api/v1/amgr/agent`, {
       method: "POST", headers: authHeaders(), body: JSON.stringify({ project: dupProject }),
     });
-    if (res.status === 201) {
-      const agent = await res.json();
-      testAgentId = agent.id;
-    }
-  });
+    expect(res1.status).toBe(201);
+    const agent1 = await res1.json();
 
-  test.afterAll(async () => {
-    if (testAgentId) {
-      await fetch(`${BASE}/api/v1/amgr/agent/${testAgentId}`, { method: "DELETE", headers: authHeaders() }).catch(() => {});
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-    // Clean up project
-    try {
-      const res = await fetch(`${BASE}/api/v1/projects?limit=200`, { headers: authHeaders() });
-      if (res.ok) {
-        for (const p of ((await res.json()).items || []).filter((p: any) => p.name === dupProject)) {
-          await fetch(`${BASE}/api/v1/projects/${p.id}`, { method: "DELETE", headers: authHeaders() }).catch(() => {});
-        }
-      }
-    } catch { /* ignore */ }
-  });
+    // Try to create second agent with same project — should be rejected
+    const res2 = await fetch(`${BASE}/api/v1/amgr/agent`, {
+      method: "POST", headers: authHeaders(), body: JSON.stringify({ project: dupProject }),
+    });
+    // Should reject with 409 Conflict or 400 Bad Request
+    expect([400, 409]).toContain(res2.status);
 
-  test("selecting a project with existing agent shows warning and disables create", async ({ page }) => {
-    await login(page);
-    await openAgentManager(page);
-    await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
-    await expect(page.locator('text=Project').first()).toBeVisible({ timeout: 5000 });
-
-    // Open project selector and pick the project that has an agent
-    await page.locator('[role="combobox"]').first().click();
-    const option = page.locator(`[role="option"]:has-text("${dupProject}")`);
-    await expect(option).toBeVisible({ timeout: 5000 });
-    await option.click({ force: true });
-    await page.waitForTimeout(1000);
-
-    // Should show duplicate warning
-    await expect(page.locator('text=already has an agent-container')).toBeVisible({ timeout: 3000 });
-
-    // Create button should be disabled
-    const createBtn = page.locator('button:has-text("Create")').last();
-    await expect(createBtn).toBeDisabled();
+    // Clean up
+    await fetch(`${BASE}/api/v1/amgr/agent/${agent1.id}`, { method: "DELETE", headers: authHeaders() }).catch(() => {});
+    await new Promise((r) => setTimeout(r, 3000));
   });
 });
 

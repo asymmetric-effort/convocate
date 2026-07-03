@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: verify-influxdb
-  namespace: convocate
+  namespace: o11y
 spec:
   backoffLimit: 3
   ttlSecondsAfterFinished: 300
@@ -27,7 +27,7 @@ spec:
           args:
             - |
               echo "=== InfluxDB Verification ==="
-              /busybox/wget -q --no-check-certificate -O - https://influxdb.convocate.svc:8086/health 2>&1
+              /busybox/wget -q --no-check-certificate -O - https://influxdb.o11y.svc:8086/health 2>&1
               if [ $? -eq 0 ]; then
                 echo "PASS: InfluxDB is reachable and healthy"
               else

@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: verify-postgresql
-  namespace: convocate
+  namespace: data-layer
 spec:
   backoffLimit: 3
   ttlSecondsAfterFinished: 300
@@ -27,7 +27,7 @@ spec:
           args:
             - |
               echo "=== PostgreSQL Verification ==="
-              /usr/lib/postgresql/17/bin/pg_isready -h postgresql.convocate.svc -U postgres
+              /usr/lib/postgresql/17/bin/pg_isready -h postgresql.data-layer.svc -U postgres
               if [ $? -eq 0 ]; then
                 echo "PASS: PostgreSQL is reachable"
               else

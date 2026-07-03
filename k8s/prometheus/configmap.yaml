@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus-config
-  namespace: convocate
+  namespace: o11y
 data:
   prometheus.yml: |
     global:

@@ -14,7 +14,7 @@ var Redis *redis.Client
 func InitRedis() error {
 	addr := os.Getenv("REDIS_URL")
 	if addr == "" {
-		addr = "redis.convocate.svc:6379"
+		addr = "redis.data-layer.svc:6379"
 	}
 
 	Redis = redis.NewClient(&redis.Options{
