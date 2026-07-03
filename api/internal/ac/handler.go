@@ -30,8 +30,13 @@ func Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := h.store.ListUsers()
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
 	offset, limit := httputil.ParsePagination(r)
-	httputil.WriteJSON(w, http.StatusOK, httputil.Paginate(h.store.ListUsers(), offset, limit))
+	httputil.WriteJSON(w, http.StatusOK, httputil.Paginate(users, offset, limit))
 }
 
 func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +45,12 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
 	}
-	httputil.WriteJSON(w, http.StatusCreated, h.store.CreateUser(req))
+	u, err := h.store.CreateUser(req)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	httputil.WriteJSON(w, http.StatusCreated, u)
 }
 
 func (h *Handler) updateUser(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +59,11 @@ func (h *Handler) updateUser(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
 	}
-	u, ok := h.store.UpdateUser(r.PathValue("userId"), req)
+	u, ok, err := h.store.UpdateUser(r.PathValue("userId"), req)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
 	if !ok {
 		httputil.WriteError(w, http.StatusNotFound, "not_found", "user not found")
 		return
@@ -58,7 +72,12 @@ func (h *Handler) updateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
-	if !h.store.DeleteUser(r.PathValue("userId")) {
+	ok, err := h.store.DeleteUser(r.PathValue("userId"))
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	if !ok {
 		httputil.WriteError(w, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
@@ -66,8 +85,13 @@ func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.store.ListGroups()
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
 	offset, limit := httputil.ParsePagination(r)
-	httputil.WriteJSON(w, http.StatusOK, httputil.Paginate(h.store.ListGroups(), offset, limit))
+	httputil.WriteJSON(w, http.StatusOK, httputil.Paginate(groups, offset, limit))
 }
 
 func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
@@ -78,11 +102,21 @@ func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
 	}
-	httputil.WriteJSON(w, http.StatusCreated, h.store.CreateGroup(req.Name))
+	g, err := h.store.CreateGroup(req.Name)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	httputil.WriteJSON(w, http.StatusCreated, g)
 }
 
 func (h *Handler) deleteGroup(w http.ResponseWriter, r *http.Request) {
-	if !h.store.DeleteGroup(r.PathValue("groupId")) {
+	ok, err := h.store.DeleteGroup(r.PathValue("groupId"))
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	if !ok {
 		httputil.WriteError(w, http.StatusNotFound, "not_found", "group not found or is builtin")
 		return
 	}
@@ -97,7 +131,11 @@ func (h *Handler) setGroupUsers(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
 	}
-	g, ok := h.store.SetGroupUsers(r.PathValue("groupId"), req.UserIDs)
+	g, ok, err := h.store.SetGroupUsers(r.PathValue("groupId"), req.UserIDs)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
 	if !ok {
 		httputil.WriteError(w, http.StatusNotFound, "not_found", "group not found")
 		return
@@ -113,7 +151,11 @@ func (h *Handler) setGroupRoles(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
 	}
-	g, ok := h.store.SetGroupRoles(r.PathValue("groupId"), req.Roles)
+	g, ok, err := h.store.SetGroupRoles(r.PathValue("groupId"), req.Roles)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
 	if !ok {
 		httputil.WriteError(w, http.StatusNotFound, "not_found", "group not found")
 		return
@@ -127,7 +169,12 @@ func (h *Handler) listRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getSettings(w http.ResponseWriter, _ *http.Request) {
-	httputil.WriteJSON(w, http.StatusOK, h.store.GetSettings())
+	gs, err := h.store.GetSettings()
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, gs)
 }
 
 func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
@@ -136,5 +183,10 @@ func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, h.store.SetSettings(req))
+	gs, err := h.store.SetSettings(req)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, gs)
 }

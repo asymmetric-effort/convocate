@@ -63,7 +63,7 @@ test.describe("OIDC authentication flow", () => {
     const passwordField = page.locator('input[name="password"], input[id="password"], input[type="password"]').first();
     await expect(usernameField).toBeVisible({ timeout: 10000 });
     await usernameField.fill("pdv-test");
-    await passwordField.fill("PdvTest2026!Secure");
+    await passwordField.fill("PdvTest-2026-Secure");
 
     // Submit
     const submitBtn = page.locator('button[type="submit"], button:has-text("Sign In"), button:has-text("Log in")').first();
@@ -105,7 +105,7 @@ test.describe("OIDC least-privilege validation", () => {
       const res = await fetch(`${AUTH_URL}/v1/auth/userpass/login/pdv-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: "PdvTest2026!Secure" }),
+        body: JSON.stringify({ password: "PdvTest-2026-Secure" }),
       });
       expect(res.status).toBe(200);
       const data = await res.json();
@@ -128,7 +128,7 @@ test.describe("OIDC least-privilege validation", () => {
       const loginRes = await fetch(`${AUTH_URL}/v1/auth/userpass/login/pdv-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: "PdvTest2026!Secure" }),
+        body: JSON.stringify({ password: "PdvTest-2026-Secure" }),
       });
       if (!loginRes.ok) { test.skip(); return; }
       const { auth } = await loginRes.json();

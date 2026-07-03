@@ -42,6 +42,15 @@ spec:
               value: "convocate-api"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://jaeger.o11y.svc:4318"
+            - name: OPENBAO_ADDR
+              value: "http://openbao.security.svc:8200"
+            - name: OPENBAO_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openbao-root-token
+                  key: token
+            - name: ALLOW_MOCK_AUTH
+              value: "true"
           ports:
             - containerPort: 8443
               name: api

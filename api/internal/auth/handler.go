@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/httputil"
@@ -15,9 +17,9 @@ type loginRequest struct {
 }
 
 type session struct {
-	AccessToken  string             `json:"accessToken"`
-	RefreshToken string             `json:"refreshToken"`
-	ExpiresAt    string             `json:"expiresAt"`
+	AccessToken  string            `json:"accessToken"`
+	RefreshToken string            `json:"refreshToken"`
+	ExpiresAt    string            `json:"expiresAt"`
 	Principal    httputil.Principal `json:"principal"`
 }
 
@@ -36,24 +38,6 @@ func Register(mux *http.ServeMux) {
 		http.HandlerFunc(handleMe), middleware.Auth))
 }
 
-func mockSession() session {
-	return session{
-		AccessToken:  "mock-jwt-token-convocate",
-		RefreshToken: "mock-refresh-token",
-		ExpiresAt:    time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339),
-		Principal: httputil.Principal{
-			ID:                "usr-mock-admin",
-			Username:          "admin",
-			Name:              "Mock Admin",
-			Email:             "admin@convocate.local",
-			Groups:            []string{"admins"},
-			Roles:             []string{"admin"},
-			IDP:               "local",
-			AuthorizedApplets: []string{"nmgr", "amgr", "pb", "ide", "repo", "ac", "sup"},
-		},
-	}
-}
-
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := httputil.ReadJSON(r, &req); err != nil {
@@ -64,7 +48,57 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, mockSession())
+
+	// Authenticate via OpenBao userpass
+	loginResp, err := openbaoLogin(req.Username, req.Password)
+	if err != nil {
+		log.Printf("OpenBao login failed for user %q: %v", req.Username, err)
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "User login failed.")
+		return
+	}
+
+	token := loginResp.Auth.ClientToken
+	entityID := loginResp.Auth.EntityID
+
+	// Look up entity for metadata
+	var principal *httputil.Principal
+	if entityID != "" {
+		entity, err := openbaoLookupEntity(token, entityID)
+		if err == nil {
+			principal = buildPrincipalFromEntity(entity, loginResp.Auth.Policies)
+		}
+	}
+
+	// Fallback: build principal from login response metadata if entity lookup failed
+	if principal == nil {
+		roles := make([]string, 0, len(loginResp.Auth.Policies))
+		for _, p := range loginResp.Auth.Policies {
+			if p != "" {
+				roles = append(roles, p)
+			}
+		}
+		principal = &httputil.Principal{
+			ID:                entityID,
+			Username:          req.Username,
+			Name:              loginResp.Auth.Metadata["name"],
+			Email:             loginResp.Auth.Metadata["email"],
+			Roles:             roles,
+			IDP:               "openbao",
+			AuthorizedApplets: rolesToApplets(roles),
+		}
+	}
+
+	expiresAt := time.Now().Add(time.Duration(loginResp.Auth.LeaseDuration) * time.Second)
+	if loginResp.Auth.LeaseDuration == 0 {
+		expiresAt = time.Now().Add(24 * time.Hour)
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, session{
+		AccessToken:  token,
+		RefreshToken: "",
+		ExpiresAt:    expiresAt.UTC().Format(time.RFC3339),
+		Principal:    *principal,
+	})
 }
 
 func handleOIDCStart(w http.ResponseWriter, _ *http.Request) {
@@ -77,14 +111,52 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "missing code parameter")
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, mockSession())
+	httputil.WriteError(w, http.StatusNotImplemented, "not_implemented", "OIDC callback not yet implemented")
 }
 
-func handleRefresh(w http.ResponseWriter, _ *http.Request) {
-	httputil.WriteJSON(w, http.StatusOK, mockSession())
+func handleRefresh(w http.ResponseWriter, r *http.Request) {
+	// Extract the current token and validate it is still valid
+	auth := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(auth, "Bearer ")
+
+	lookupResp, err := openbaoTokenLookupSelf(token)
+	if err != nil {
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "token refresh failed")
+		return
+	}
+
+	// Look up entity for current metadata
+	var principal *httputil.Principal
+	if lookupResp.Data.EntityID != "" {
+		entity, err := openbaoLookupEntity(token, lookupResp.Data.EntityID)
+		if err == nil {
+			principal = buildPrincipalFromEntity(entity, lookupResp.Data.Policies)
+		}
+	}
+
+	if principal == nil {
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "token refresh failed")
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, session{
+		AccessToken:  token,
+		RefreshToken: "",
+		ExpiresAt:    time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339),
+		Principal:    *principal,
+	})
 }
 
-func handleLogout(w http.ResponseWriter, _ *http.Request) {
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	// Extract the token and revoke it in OpenBao
+	auth := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(auth, "Bearer ")
+
+	// Best-effort revocation; respond 204 regardless
+	if token != "" && token != "mock-token" {
+		_ = openbaoRevokeSelf(token)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
