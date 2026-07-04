@@ -49,6 +49,8 @@ spec:
                 secretKeyRef:
                   name: openbao-root-token
                   key: token
+            - name: OPENBAO_MFA_METHOD_ID
+              value: "be724fc0-04d7-3597-40a4-18e284acdc3f"
             - name: ALLOW_MOCK_AUTH
               value: "true"
           ports:

@@ -607,6 +607,90 @@ func (s *Store) SetGroupRoles(id string, roles []string) (Group, bool, error) {
 	}, true, nil
 }
 
+// ── MFA (TOTP via OpenBao) ──────────────────────────────────────────────
+
+// MFAEnrollResult holds the TOTP enrollment response from OpenBao.
+type MFAEnrollResult struct {
+	URL     string `json:"url"`
+	Barcode string `json:"barcode"`
+}
+
+// mfaMethodID returns the TOTP method ID from the environment.
+func (s *Store) mfaMethodID() string {
+	return os.Getenv("OPENBAO_MFA_METHOD_ID")
+}
+
+// EnrollMFA generates a TOTP secret for an entity via the admin-generate endpoint.
+func (s *Store) EnrollMFA(entityID string) (MFAEnrollResult, error) {
+	methodID := s.mfaMethodID()
+	if methodID == "" {
+		return MFAEnrollResult{}, fmt.Errorf("OPENBAO_MFA_METHOD_ID not configured")
+	}
+
+	resp, err := s.baoRequest("POST", "/v1/identity/mfa/method/totp/admin-generate", map[string]any{
+		"method_id": methodID,
+		"entity_id": entityID,
+	})
+	if err != nil {
+		return MFAEnrollResult{}, fmt.Errorf("enroll MFA: %w", err)
+	}
+
+	data, _ := resp["data"].(map[string]any)
+	if data == nil {
+		return MFAEnrollResult{}, fmt.Errorf("enroll MFA: empty response data")
+	}
+
+	return MFAEnrollResult{
+		URL:     mapStr(data, "url"),
+		Barcode: mapStr(data, "barcode"),
+	}, nil
+}
+
+// DestroyMFA removes TOTP MFA for an entity via the admin-destroy endpoint.
+func (s *Store) DestroyMFA(entityID string) error {
+	methodID := s.mfaMethodID()
+	if methodID == "" {
+		return fmt.Errorf("OPENBAO_MFA_METHOD_ID not configured")
+	}
+
+	_, err := s.baoRequest("POST", "/v1/identity/mfa/method/totp/admin-destroy", map[string]any{
+		"method_id": methodID,
+		"entity_id": entityID,
+	})
+	if err != nil {
+		return fmt.Errorf("destroy MFA: %w", err)
+	}
+	return nil
+}
+
+// GetMFAStatus checks whether an entity has TOTP MFA configured by reading the
+// entity and inspecting its mfa_secrets field.
+func (s *Store) GetMFAStatus(entityID string) (bool, error) {
+	resp, err := s.baoRequest("GET", "/v1/identity/entity/id/"+entityID, nil)
+	if err != nil {
+		return false, fmt.Errorf("get entity for MFA status: %w", err)
+	}
+
+	data, _ := resp["data"].(map[string]any)
+	if data == nil {
+		return false, nil
+	}
+
+	// OpenBao stores TOTP secrets in mfa_secrets keyed by method ID.
+	mfaSecrets, ok := data["mfa_secrets"].(map[string]any)
+	if !ok || len(mfaSecrets) == 0 {
+		return false, nil
+	}
+
+	methodID := s.mfaMethodID()
+	if methodID == "" {
+		return false, nil
+	}
+
+	_, enrolled := mfaSecrets[methodID]
+	return enrolled, nil
+}
+
 // ── Roles (static) ─────────────────────────────────────────────────────
 
 func (s *Store) ListRoles() []Role {

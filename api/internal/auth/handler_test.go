@@ -30,6 +30,39 @@ func setupMockBao(t *testing.T) *httptest.Server {
 					"lease_duration": 3600,
 				},
 			})
+		case r.URL.Path == "/v1/auth/userpass/login/mfauser" && r.Method == http.MethodPost:
+			// MFA-enforced user: returns mfa_requirement instead of a token
+			json.NewEncoder(w).Encode(map[string]any{
+				"auth": map[string]any{
+					"client_token":   "",
+					"entity_id":      "",
+					"policies":       nil,
+					"metadata":       nil,
+					"lease_duration": 0,
+					"mfa_requirement": map[string]any{
+						"mfa_request_id": "mfa-req-001",
+					},
+				},
+			})
+		case r.URL.Path == "/v1/sys/mfa/validate" && r.Method == http.MethodPost:
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			reqID, _ := body["mfa_request_id"].(string)
+			payload, _ := body["mfa_payload"].(map[string]any)
+			codes, _ := payload["test-method-id"].([]any)
+			if reqID == "mfa-req-001" && len(codes) == 1 && codes[0] == "123456" {
+				json.NewEncoder(w).Encode(map[string]any{
+					"auth": map[string]any{
+						"client_token":   "tok-mfa-valid",
+						"entity_id":      "ent-002",
+						"policies":       []string{"default", "admin-policy"},
+						"metadata":       map[string]string{"name": "MFA User", "email": "mfa@example.com"},
+						"lease_duration": 3600,
+					},
+				})
+			} else {
+				w.WriteHeader(http.StatusForbidden)
+			}
 		case r.URL.Path == "/v1/auth/userpass/login/noentityuser" && r.Method == http.MethodPost:
 			json.NewEncoder(w).Encode(map[string]any{
 				"auth": map[string]any{
@@ -52,9 +85,19 @@ func setupMockBao(t *testing.T) *httptest.Server {
 					"group_ids": []string{"grp-1"},
 				},
 			})
+		case r.URL.Path == "/v1/identity/entity/id/ent-002":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":        "ent-002",
+					"name":      "mfauser",
+					"metadata":  map[string]string{"name": "MFA User", "email": "mfa@example.com"},
+					"policies":  []string{"default"},
+					"group_ids": []string{"grp-2"},
+				},
+			})
 		case r.URL.Path == "/v1/auth/token/lookup-self":
 			token := r.Header.Get("X-Vault-Token")
-			if token == "tok-valid" {
+			if token == "tok-valid" || token == "tok-mfa-valid" {
 				json.NewEncoder(w).Encode(map[string]any{
 					"data": map[string]any{
 						"entity_id": "ent-001",
@@ -71,9 +114,11 @@ func setupMockBao(t *testing.T) *httptest.Server {
 		}
 	}))
 	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", "test-method-id")
 	t.Cleanup(func() {
 		bao.Close()
 		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
 	})
 	return bao
 }
@@ -187,6 +232,85 @@ func TestHandleLogin_NoEntityFallback(t *testing.T) {
 	}
 	if sess.Principal.Name != "No Entity" {
 		t.Errorf("Name = %q, want %q", sess.Principal.Name, "No Entity")
+	}
+}
+
+func TestHandleLogin_MFARequired_NoCode(t *testing.T) {
+	setupMockBao(t)
+
+	body, _ := json.Marshal(loginRequest{Username: "mfauser", Password: "secret"})
+	r := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleLogin(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+
+	var errResp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	if errResp["message"] != "MFA code required" {
+		t.Errorf("message = %q, want %q", errResp["message"], "MFA code required")
+	}
+}
+
+func TestHandleLogin_MFARequired_ValidCode(t *testing.T) {
+	setupMockBao(t)
+
+	body, _ := json.Marshal(loginRequest{Username: "mfauser", Password: "secret", MFAToken: "123456"})
+	r := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleLogin(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var sess session
+	json.Unmarshal(w.Body.Bytes(), &sess)
+	if sess.AccessToken != "tok-mfa-valid" {
+		t.Errorf("AccessToken = %q, want %q", sess.AccessToken, "tok-mfa-valid")
+	}
+	if sess.Principal.Username != "mfauser" {
+		t.Errorf("Username = %q, want %q", sess.Principal.Username, "mfauser")
+	}
+	if sess.Principal.Name != "MFA User" {
+		t.Errorf("Name = %q, want %q", sess.Principal.Name, "MFA User")
+	}
+}
+
+func TestHandleLogin_MFARequired_InvalidCode(t *testing.T) {
+	setupMockBao(t)
+
+	body, _ := json.Marshal(loginRequest{Username: "mfauser", Password: "secret", MFAToken: "000000"})
+	r := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleLogin(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+}
+
+func TestHandleLogin_MFARequired_NoMethodID(t *testing.T) {
+	setupMockBao(t)
+	os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+
+	body, _ := json.Marshal(loginRequest{Username: "mfauser", Password: "secret", MFAToken: "123456"})
+	r := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleLogin(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusInternalServerError, w.Body.String())
 	}
 }
 

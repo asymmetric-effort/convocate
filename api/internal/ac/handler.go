@@ -25,6 +25,9 @@ func Register(mux *http.ServeMux) {
 	mux.Handle("PUT /api/v1/ac/group/{groupId}/user", middleware.Chain(http.HandlerFunc(h.setGroupUsers), auth, update))
 	mux.Handle("PUT /api/v1/ac/group/{groupId}/role", middleware.Chain(http.HandlerFunc(h.setGroupRoles), auth, update))
 	mux.Handle("GET /api/v1/ac/role", middleware.Chain(http.HandlerFunc(h.listRoles), auth, view))
+	mux.Handle("POST /api/v1/ac/user/{userId}/mfa/enroll", middleware.Chain(http.HandlerFunc(h.enrollMFA), auth, update))
+	mux.Handle("DELETE /api/v1/ac/user/{userId}/mfa", middleware.Chain(http.HandlerFunc(h.destroyMFA), auth, update))
+	mux.Handle("GET /api/v1/ac/user/{userId}/mfa/status", middleware.Chain(http.HandlerFunc(h.mfaStatus), auth, update))
 	mux.Handle("GET /api/v1/ac/settings", middleware.Chain(http.HandlerFunc(h.getSettings), auth, view))
 	mux.Handle("PUT /api/v1/ac/settings", middleware.Chain(http.HandlerFunc(h.putSettings), auth, update))
 }
@@ -189,4 +192,33 @@ func (h *Handler) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, gs)
+}
+
+func (h *Handler) enrollMFA(w http.ResponseWriter, r *http.Request) {
+	entityID := r.PathValue("userId")
+	result, err := h.store.EnrollMFA(entityID)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) destroyMFA(w http.ResponseWriter, r *http.Request) {
+	entityID := r.PathValue("userId")
+	if err := h.store.DestroyMFA(entityID); err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) mfaStatus(w http.ResponseWriter, r *http.Request) {
+	entityID := r.PathValue("userId")
+	enrolled, err := h.store.GetMFAStatus(entityID)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]bool{"enrolled": enrolled})
 }

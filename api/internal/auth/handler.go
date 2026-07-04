@@ -57,6 +57,27 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle MFA two-step flow: userpass login may return mfa_requirement instead of a token
+	if loginResp.Auth.MFARequirement != nil && loginResp.Auth.MFARequirement.MFARequestID != "" {
+		if req.MFAToken == "" {
+			httputil.WriteError(w, http.StatusUnauthorized, "mfa_required", "MFA code required")
+			return
+		}
+		methodID := openbaoMFAMethodID()
+		if methodID == "" {
+			log.Printf("OPENBAO_MFA_METHOD_ID not configured")
+			httputil.WriteError(w, http.StatusInternalServerError, "server_error", "MFA not configured")
+			return
+		}
+		mfaResp, err := openbaoMFAValidate(loginResp.Auth.MFARequirement.MFARequestID, methodID, req.MFAToken)
+		if err != nil {
+			log.Printf("MFA validation failed for user %q: %v", req.Username, err)
+			httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "MFA validation failed.")
+			return
+		}
+		loginResp = mfaResp
+	}
+
 	token := loginResp.Auth.ClientToken
 	entityID := loginResp.Auth.EntityID
 

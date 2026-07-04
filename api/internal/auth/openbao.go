@@ -21,15 +21,22 @@ func openbaoAddr() string {
 	return "http://openbao.security.svc:8200"
 }
 
+// mfaRequirement represents the MFA challenge returned by OpenBao when MFA is enforced.
+type mfaRequirement struct {
+	MFARequestID string `json:"mfa_request_id"`
+}
+
 // openbaoLoginResponse represents the auth block from a userpass login.
 type openbaoLoginResponse struct {
 	Auth struct {
-		ClientToken string            `json:"client_token"`
-		EntityID    string            `json:"entity_id"`
-		Policies    []string          `json:"policies"`
-		Metadata    map[string]string `json:"metadata"`
-		LeaseDuration int            `json:"lease_duration"`
+		ClientToken    string            `json:"client_token"`
+		EntityID       string            `json:"entity_id"`
+		Policies       []string          `json:"policies"`
+		Metadata       map[string]string `json:"metadata"`
+		LeaseDuration  int               `json:"lease_duration"`
+		MFARequirement *mfaRequirement   `json:"mfa_requirement"`
 	} `json:"auth"`
+	Warnings []string `json:"warnings"`
 }
 
 // openbaoEntityResponse represents an identity entity lookup.
@@ -85,6 +92,55 @@ func openbaoLogin(username, password string) (*openbaoLoginResponse, error) {
 	var result openbaoLoginResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode login response: %w", err)
+	}
+	return &result, nil
+}
+
+// openbaoMFAMethodID returns the MFA method ID from env.
+func openbaoMFAMethodID() string {
+	return os.Getenv("OPENBAO_MFA_METHOD_ID")
+}
+
+// openbaoMFAValidate completes the MFA two-step login by validating a TOTP code.
+func openbaoMFAValidate(mfaRequestID, methodID, totpCode string) (*openbaoLoginResponse, error) {
+	url := fmt.Sprintf("%s/v1/sys/mfa/validate", openbaoAddr())
+
+	payload := map[string]any{
+		"mfa_request_id": mfaRequestID,
+		"mfa_payload": map[string][]string{
+			methodID: {totpCode},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal mfa validate body: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create mfa validate request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("mfa validate request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("mfa validation failed")
+	}
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("mfa validate unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result openbaoLoginResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode mfa validate response: %w", err)
 	}
 	return &result, nil
 }

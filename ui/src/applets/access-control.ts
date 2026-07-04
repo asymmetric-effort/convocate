@@ -19,6 +19,7 @@ const h = createElement;
 interface User { id: string; email: string; name: string; status: string; groups: string[] }
 interface Group { id: string; name: string; builtin: boolean; userCount: number; roles: string[] }
 interface GlobalSettings { requireMfa: boolean; sessionTimeoutMinutes: number; passwordMinLength: number; passwordRotationDays: number }
+interface MFAEnrollResult { url: string; barcode: string }
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -70,6 +71,24 @@ async function saveSettings(s: GlobalSettings): Promise<GlobalSettings> {
   return res.json();
 }
 
+async function enrollMFA(userId: string): Promise<MFAEnrollResult> {
+  const res = await fetch(`/api/v1/ac/user/${userId}/mfa/enroll`, { method: "POST", headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+async function destroyMFA(userId: string): Promise<void> {
+  const res = await fetch(`/api/v1/ac/user/${userId}/mfa`, { method: "DELETE", headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+}
+
+async function fetchMFAStatus(userId: string): Promise<boolean> {
+  const res = await fetch(`/api/v1/ac/user/${userId}/mfa/status`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.enrolled === true;
+}
+
 // ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
@@ -94,12 +113,30 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
   const [newUserName, setNewUserName] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
+  const [mfaStatuses, setMfaStatuses] = useState<Record<string, boolean>>({});
+  const [showMfaEnroll, setShowMfaEnroll] = useState(false);
+  const [mfaEnrollResult, setMfaEnrollResult] = useState<MFAEnrollResult | null>(null);
+  const [mfaEnrolling, setMfaEnrolling] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
       const [u, g, s] = await Promise.all([fetchUsers(), fetchGroups(), fetchSettings()]);
       setUsers(u); setGroups(g); setSettings(s);
+      // Load MFA statuses for all users in parallel
+      const statusEntries = await Promise.all(
+        u.map(async (user: User) => {
+          try {
+            const enrolled = await fetchMFAStatus(user.id);
+            return [user.id, enrolled] as [string, boolean];
+          } catch {
+            return [user.id, false] as [string, boolean];
+          }
+        })
+      );
+      const statuses: Record<string, boolean> = {};
+      for (const [id, enrolled] of statusEntries) { statuses[id] = enrolled; }
+      setMfaStatuses(statuses);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   }, []);
@@ -129,6 +166,24 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
     try { await saveSettings(settings); } catch (err: any) { setError(err.message); }
   }, [settings]);
 
+  const handleEnrollMFA = useCallback(async (userId: string) => {
+    setMfaEnrolling(true);
+    try {
+      const result = await enrollMFA(userId);
+      setMfaEnrollResult(result);
+      setShowMfaEnroll(true);
+    } catch (err: any) { setError(err.message); }
+    finally { setMfaEnrolling(false); }
+  }, []);
+
+  const handleResetMFA = useCallback(async (userId: string) => {
+    if (!confirm("Are you sure you want to reset MFA for this user?")) return;
+    try {
+      await destroyMFA(userId);
+      await loadAll();
+    } catch (err: any) { setError(err.message); }
+  }, [loadAll]);
+
   if (loading) {
     return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "access-control" },
       h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center" } }, h(Spinner, null))
@@ -146,8 +201,9 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
           { key: "name", header: "Name", width: 150 },
           { key: "email", header: "Email", width: 200 },
           { key: "status", header: "Status", width: 100, render: (v: string) => h(Tag, { label: v, color: v === "active" ? "green" : "red", variant: "solid" as const, size: "sm" as const }) },
+          { key: "mfa", header: "MFA", width: 100, render: (v: string) => h(Tag, { label: v, color: v === "Enrolled" ? "green" : "gray", variant: "solid" as const, size: "sm" as const }) },
           { key: "groups", header: "Groups", width: 150 },
-          { key: "actions", header: "", width: 160, render: (_: string, row: any) => h("div", { style: { display: "flex", gap: "4px" } },
+          { key: "actions", header: "", width: 260, render: (_: string, row: any) => h("div", { style: { display: "flex", gap: "4px" } },
             h(Button, {
               variant: (row.status === "active" ? "warning" : "primary") as any,
               onClick: () => {
@@ -155,10 +211,13 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
                 fetch(`/api/v1/ac/user/${row.id}`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ status: newStatus }) }).then(loadAll);
               },
             }, row.status === "active" ? "Disable" : "Enable"),
+            row.mfa === "Enrolled"
+              ? h(Button, { variant: "warning" as any, onClick: () => handleResetMFA(row.id) }, "Reset MFA")
+              : h(Button, { variant: "secondary" as any, onClick: () => handleEnrollMFA(row.id) }, "Enroll MFA"),
             h(Button, { variant: "danger" as any, onClick: () => deleteUser(row.id).then(loadAll) }, "Delete"),
           ) },
         ],
-        data: users.map((u) => ({ id: u.id, name: u.name, email: u.email, status: u.status, groups: u.groups.join(", "), actions: "" })),
+        data: users.map((u) => ({ id: u.id, name: u.name, email: u.email, status: u.status, mfa: mfaStatuses[u.id] ? "Enrolled" : "Not Enrolled", groups: u.groups.join(", "), actions: "" })),
         striped: true,
       })
     )
@@ -242,6 +301,22 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
         h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
           h(Button, { variant: "secondary" as const, onClick: () => setShowAddGroup(false) }, "Cancel"),
           h(Button, { variant: "primary" as const, onClick: handleCreateGroup }, "Add")
+        )
+      )
+    ) : null,
+    // MFA Enrollment dialog
+    showMfaEnroll && mfaEnrollResult ? h(Modal, { open: true, onClose: () => { setShowMfaEnroll(false); setMfaEnrollResult(null); loadAll(); }, title: "Enroll MFA", size: "sm" as const },
+      h("div", { style: { display: "flex", flexDirection: "column", gap: "16px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px", alignItems: "center" } },
+        h("p", { style: { margin: 0, fontSize: "13px" } }, "Scan this QR code with your authenticator app:"),
+        mfaEnrollResult.barcode
+          ? h("img", { src: `data:image/png;base64,${mfaEnrollResult.barcode}`, alt: "TOTP QR Code", style: { width: "200px", height: "200px", imageRendering: "pixelated" } })
+          : null,
+        h("div", { style: { fontSize: "11px", color: "#aaa", wordBreak: "break-all", textAlign: "center" } },
+          h("p", { style: { margin: "0 0 4px 0" } }, "Or enter this URL manually:"),
+          h("code", { style: { fontSize: "10px" } }, mfaEnrollResult.url)
+        ),
+        h("div", { style: { display: "flex", justifyContent: "flex-end", width: "100%" } },
+          h(Button, { variant: "primary" as const, onClick: () => { setShowMfaEnroll(false); setMfaEnrollResult(null); loadAll(); } }, "Done")
         )
       )
     ) : null,

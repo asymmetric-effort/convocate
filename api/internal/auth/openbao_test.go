@@ -490,6 +490,124 @@ func TestOpenbaoRevokeSelf_ConnectionRefused(t *testing.T) {
 	}
 }
 
+func TestOpenbaoMFAValidate_Success(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/sys/mfa/validate" {
+			t.Errorf("path = %s, want /v1/sys/mfa/validate", r.URL.Path)
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["mfa_request_id"] != "req-123" {
+			t.Errorf("mfa_request_id = %v, want req-123", body["mfa_request_id"])
+		}
+		payload, _ := body["mfa_payload"].(map[string]any)
+		codes, _ := payload["method-abc"].([]any)
+		if len(codes) != 1 || codes[0] != "654321" {
+			t.Errorf("mfa_payload unexpected: %v", payload)
+		}
+
+		json.NewEncoder(w).Encode(map[string]any{
+			"auth": map[string]any{
+				"client_token":   "tok-mfa-ok",
+				"entity_id":      "ent-mfa",
+				"policies":       []string{"default", "admin"},
+				"metadata":       map[string]string{"name": "MFA User"},
+				"lease_duration": 7200,
+			},
+		})
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	resp, err := openbaoMFAValidate("req-123", "method-abc", "654321")
+	if err != nil {
+		t.Fatalf("openbaoMFAValidate failed: %v", err)
+	}
+	if resp.Auth.ClientToken != "tok-mfa-ok" {
+		t.Errorf("ClientToken = %q, want %q", resp.Auth.ClientToken, "tok-mfa-ok")
+	}
+	if resp.Auth.EntityID != "ent-mfa" {
+		t.Errorf("EntityID = %q, want %q", resp.Auth.EntityID, "ent-mfa")
+	}
+}
+
+func TestOpenbaoMFAValidate_InvalidCode(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	_, err := openbaoMFAValidate("req-123", "method-abc", "000000")
+	if err == nil {
+		t.Fatal("expected error for invalid MFA code")
+	}
+}
+
+func TestOpenbaoMFAValidate_ServerError(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal error"))
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	_, err := openbaoMFAValidate("req-123", "method-abc", "123456")
+	if err == nil {
+		t.Fatal("expected error for server error")
+	}
+}
+
+func TestOpenbaoMFAValidate_InvalidJSON(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("not json"))
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	_, err := openbaoMFAValidate("req-123", "method-abc", "123456")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON response")
+	}
+}
+
+func TestOpenbaoMFAValidate_ConnectionRefused(t *testing.T) {
+	os.Setenv("OPENBAO_ADDR", "http://127.0.0.1:1")
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	_, err := openbaoMFAValidate("req-123", "method-abc", "123456")
+	if err == nil {
+		t.Fatal("expected error for connection refused")
+	}
+}
+
+func TestOpenbaoMFAMethodID(t *testing.T) {
+	os.Setenv("OPENBAO_MFA_METHOD_ID", "test-id-123")
+	defer os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+
+	id := openbaoMFAMethodID()
+	if id != "test-id-123" {
+		t.Errorf("openbaoMFAMethodID() = %q, want %q", id, "test-id-123")
+	}
+}
+
+func TestOpenbaoMFAMethodID_Empty(t *testing.T) {
+	os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+
+	id := openbaoMFAMethodID()
+	if id != "" {
+		t.Errorf("openbaoMFAMethodID() = %q, want empty", id)
+	}
+}
+
 func TestBuildPrincipalFromEntity_SkipsEmptyPolicies(t *testing.T) {
 	entity := &openbaoEntityResponse{}
 	entity.Data.ID = "ent-004"
