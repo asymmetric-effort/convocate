@@ -346,7 +346,7 @@ data:
         {
           "title": "PDV Latest Run Summary",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 24, "x": 0, "y": 60 },
+          "gridPos": { "h": 4, "w": 12, "x": 0, "y": 60 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pdv_run\")\n  |> filter(fn: (r) => r[\"_field\"] == \"total_duration_ms\" or r[\"_field\"] == \"passed\" or r[\"_field\"] == \"failed\")\n  |> last()",
@@ -401,7 +401,7 @@ data:
         {
           "title": "Overall Coverage Trend",
           "type": "stat",
-          "gridPos": { "h": 4, "w": 24, "x": 0, "y": 72 },
+          "gridPos": { "h": 4, "w": 12, "x": 12, "y": 60 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"test_coverage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"coverage\")\n  |> group()\n  |> last()\n  |> mean()",
@@ -427,7 +427,7 @@ data:
         {
           "title": "Synthetic Check: Service Health Status",
           "type": "stat",
-          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 76 },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 72 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\")\n  |> group(columns: [\"service\"])\n  |> last()\n  |> keep(columns: [\"_value\", \"service\"])",
@@ -464,7 +464,7 @@ data:
         {
           "title": "Synthetic Check: Service Latency",
           "type": "timeseries",
-          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 84 },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 80 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"latency_ms\")\n  |> group(columns: [\"service\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
@@ -482,7 +482,7 @@ data:
         {
           "title": "Synthetic Check: Service Uptime (24h)",
           "type": "stat",
-          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 76 },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 72 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
             "query": "from(bucket: \"logs\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\")\n  |> group(columns: [\"service\"])\n  |> mean()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))\n  |> keep(columns: [\"_value\", \"service\"])",
