@@ -123,6 +123,8 @@ k8s-apply:
 	kubectl apply -f k8s/ui/
 	kubectl rollout status deployment/convocate-api -n $(NAMESPACE) --timeout=120s
 	kubectl rollout status deployment/convocate-ui -n $(NAMESPACE) --timeout=120s
+	# Synthetic monitoring
+	kubectl apply -f k8s/pdv/synthetic-cronjob.yaml
 
 k8s-verify:
 	-kubectl delete job verify-openbao -n security 2>/dev/null

@@ -1,0 +1,228 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: synthetic-checks-script
+  namespace: convocate
+data:
+  synthetic-checks.sh: |
+    #!/bin/sh
+    # Synthetic health checks — runs every 5 minutes from K8s
+    # Reports pass/fail + latency to InfluxDB
+    set -e
+
+    INFLUXDB_URL="${INFLUXDB_URL:-https://influxdb.o11y.svc:8086}"
+    INFLUXDB_TOKEN="${INFLUXDB_TOKEN:-}"
+    INFLUXDB_ORG="${INFLUXDB_ORG:-convocate}"
+    INFLUXDB_BUCKET="${INFLUXDB_BUCKET:-logs}"
+    API_BASE="http://convocate-api.convocate.svc:8443"
+
+    RESULTS=""
+
+    # check_http: perform an HTTP GET/POST and record latency + pass/fail
+    # Usage: check_http <service_name> <method> <url> [post_data]
+    check_http() {
+      svc="$1"
+      method="$2"
+      url="$3"
+      post_data="${4:-}"
+      now_ns="$(date +%s)000000000"
+      start_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+      wget_args="--no-check-certificate -q -O /dev/null -S --timeout=10"
+      if [ "$method" = "POST" ]; then
+        wget_args="$wget_args --post-data=${post_data}"
+      fi
+
+      status=0
+      http_code=$(wget $wget_args "$url" 2>&1 | grep "HTTP/" | tail -1 | awk '{print $2}') || status=$?
+
+      end_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+      if [ "$start_ms" != "0" ] && [ "$end_ms" != "0" ]; then
+        latency_ms=$(( (end_ms - start_ms) / 1000000 ))
+      else
+        latency_ms=0
+      fi
+
+      if [ "$http_code" = "200" ]; then
+        passed=1
+        status_tag="pass"
+      else
+        passed=0
+        status_tag="fail"
+      fi
+
+      RESULTS="${RESULTS}synthetic_check,service=${svc},status=${status_tag} latency_ms=${latency_ms}i,passed=${passed}i ${now_ns}
+    "
+    }
+
+    # check_api_service: check a sub-service from /api/v1/status JSON
+    check_api_service() {
+      svc="$1"
+      json_key="$2"
+      now_ns="$(date +%s)000000000"
+      start_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+      body=$(wget --no-check-certificate -q -O - --timeout=10 "${API_BASE}/api/v1/status" 2>/dev/null) || body=""
+
+      end_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+      if [ "$start_ms" != "0" ] && [ "$end_ms" != "0" ]; then
+        latency_ms=$(( (end_ms - start_ms) / 1000000 ))
+      else
+        latency_ms=0
+      fi
+
+      if echo "$body" | grep -q "\"${json_key}\"[^}]*\"healthy\""; then
+        passed=1
+        status_tag="pass"
+      else
+        passed=0
+        status_tag="fail"
+      fi
+
+      RESULTS="${RESULTS}synthetic_check,service=${svc},status=${status_tag} latency_ms=${latency_ms}i,passed=${passed}i ${now_ns}
+    "
+    }
+
+    # check_node_metrics: verify node count > 0 from API
+    check_node_metrics() {
+      svc="node_metrics"
+      now_ns="$(date +%s)000000000"
+      start_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+      body=$(wget --no-check-certificate -q -O - --timeout=10 "${API_BASE}/api/v1/status" 2>/dev/null) || body=""
+
+      end_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+      if [ "$start_ms" != "0" ] && [ "$end_ms" != "0" ]; then
+        latency_ms=$(( (end_ms - start_ms) / 1000000 ))
+      else
+        latency_ms=0
+      fi
+
+      if echo "$body" | grep -qE '"node_count":[1-9]|"nodes":\[.+\]'; then
+        passed=1
+        status_tag="pass"
+      else
+        passed=0
+        status_tag="fail"
+      fi
+
+      RESULTS="${RESULTS}synthetic_check,service=${svc},status=${status_tag} latency_ms=${latency_ms}i,passed=${passed}i ${now_ns}
+    "
+    }
+
+    echo "=== Synthetic Health Checks ==="
+    echo "Started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    check_http "api_health" "GET" "${API_BASE}/api/v1/status"
+    check_http "api_auth" "POST" "${API_BASE}/api/v1/auth/login" '{"token":"mock-token"}'
+    check_http "ui_health" "GET" "http://convocate-ui.convocate.svc:8080/healthz"
+    check_api_service "postgresql" "postgresql"
+    check_api_service "redis" "redis"
+    check_http "openbao" "GET" "http://openbao.security.svc:8200/v1/sys/health"
+    check_http "influxdb" "GET" "https://influxdb.o11y.svc:8086/health"
+    check_http "prometheus" "GET" "https://prometheus.o11y.svc:9090/-/ready"
+    check_http "grafana" "GET" "http://grafana.o11y.svc:3000/api/health"
+    check_http "jaeger" "GET" "http://jaeger.o11y.svc:16686/api/services"
+    check_http "minio" "GET" "http://minio.data-layer.svc:9000/minio/health/live"
+    check_node_metrics
+    check_http "agent_manager" "GET" "${API_BASE}/api/v1/amgr/agent"
+
+    echo ""
+    echo "=== Results ==="
+    printf '%s' "$RESULTS"
+
+    echo ""
+    echo "Writing to InfluxDB..."
+    write_url="${INFLUXDB_URL}/api/v2/write?org=${INFLUXDB_ORG}&bucket=${INFLUXDB_BUCKET}&precision=ns"
+
+    response=$(wget --no-check-certificate -q -O /dev/null -S \
+      --header="Authorization: Token ${INFLUXDB_TOKEN}" \
+      --header="Content-Type: text/plain" \
+      --post-data="$(printf '%s' "$RESULTS")" \
+      "$write_url" 2>&1) || true
+
+    if echo "$response" | grep -q "HTTP/.*204\|HTTP/.*200"; then
+      echo "OK: results written to InfluxDB"
+    else
+      echo "WARN: InfluxDB write may have failed"
+      echo "$response" | head -5
+    fi
+
+    echo "Completed: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: synthetic-checks-influxdb
+  namespace: convocate
+type: Opaque
+stringData:
+  INFLUXDB_TOKEN: "convocate-influx-token"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: synthetic-checks
+  namespace: convocate
+  labels:
+    app: synthetic-checks
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 120
+      template:
+        metadata:
+          labels:
+            app: synthetic-checks
+        spec:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: checks
+              image: 192.168.3.90:5000/convocate/openbao:latest
+              command: ["/busybox/sh", "/scripts/synthetic-checks.sh"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: INFLUXDB_URL
+                  value: "https://influxdb.o11y.svc:8086"
+                - name: INFLUXDB_ORG
+                  value: "convocate"
+                - name: INFLUXDB_BUCKET
+                  value: "logs"
+                - name: INFLUXDB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: synthetic-checks-influxdb
+                      key: INFLUXDB_TOKEN
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  memory: "32Mi"
+                  cpu: "50m"
+                limits:
+                  memory: "64Mi"
+                  cpu: "100m"
+          volumes:
+            - name: script
+              configMap:
+                name: synthetic-checks-script
+                defaultMode: 0555
+          restartPolicy: OnFailure

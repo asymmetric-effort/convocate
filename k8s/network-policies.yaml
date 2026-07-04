@@ -210,6 +210,74 @@ spec:
       ports:
         - port: 9090
 ---
+# Allow synthetic-checks (convocate ns) to reach o11y services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-synthetic-checks-to-o11y
+  namespace: o11y
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: ["influxdb", "prometheus", "grafana", "jaeger"]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: convocate
+          podSelector:
+            matchLabels:
+              app: synthetic-checks
+      ports:
+        - port: 8086
+        - port: 9090
+        - port: 3000
+        - port: 16686
+---
+# Allow synthetic-checks to reach convocate-api
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-synthetic-checks-to-api
+  namespace: convocate
+spec:
+  podSelector:
+    matchLabels:
+      app: convocate-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: synthetic-checks
+      ports:
+        - port: 8443
+---
+# Allow synthetic-checks to reach convocate-ui
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-synthetic-checks-to-ui
+  namespace: convocate
+spec:
+  podSelector:
+    matchLabels:
+      app: convocate-ui
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: synthetic-checks
+      ports:
+        - port: 8080
+---
 # Allow node-metrics to reach convocate-api
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
