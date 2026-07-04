@@ -33,6 +33,13 @@ jobs:
         working-directory: api
         run: |
           go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
+      # - name: Push test metrics to InfluxDB
+      #   if: always()
+      #   # Requires INFLUXDB_TOKEN secret configured in repository settings
+      #   env:
+      #     INFLUXDB_TOKEN: ${{ secrets.INFLUXDB_TOKEN }}
+      #     INFLUXDB_URL: https://influxdb.o11y.svc:8086
+      #   run: ./scripts/test-metrics.sh
 
   test-metrics:
     name: Test Metrics
@@ -49,6 +56,13 @@ jobs:
         working-directory: metrics
         run: |
           go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
+      # - name: Push test metrics to InfluxDB
+      #   if: always()
+      #   # Requires INFLUXDB_TOKEN secret configured in repository settings
+      #   env:
+      #     INFLUXDB_TOKEN: ${{ secrets.INFLUXDB_TOKEN }}
+      #     INFLUXDB_URL: https://influxdb.o11y.svc:8086
+      #   run: ./scripts/test-metrics.sh
 
   test-agent:
     name: Test Agent
@@ -65,6 +79,13 @@ jobs:
         working-directory: agent
         run: |
           go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
+      # - name: Push test metrics to InfluxDB
+      #   if: always()
+      #   # Requires INFLUXDB_TOKEN secret configured in repository settings
+      #   env:
+      #     INFLUXDB_TOKEN: ${{ secrets.INFLUXDB_TOKEN }}
+      #     INFLUXDB_URL: https://influxdb.o11y.svc:8086
+      #   run: ./scripts/test-metrics.sh
 
   test-ui:
     name: Test UI
@@ -77,6 +98,13 @@ jobs:
         run: |
           bun install
           bun test
+      # - name: Push test metrics to InfluxDB
+      #   if: always()
+      #   # Requires INFLUXDB_TOKEN secret configured in repository settings
+      #   env:
+      #     INFLUXDB_TOKEN: ${{ secrets.INFLUXDB_TOKEN }}
+      #     INFLUXDB_URL: https://influxdb.o11y.svc:8086
+      #   run: ./scripts/test-metrics.sh
 
   build:
     name: Build Docker Images

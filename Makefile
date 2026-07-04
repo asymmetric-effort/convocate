@@ -2,7 +2,7 @@ REGISTRY := 192.168.3.90:5000
 NAMESPACE := convocate
 IMAGES := openbao redis postgresql minio influxdb prometheus grafana jaeger api ui pdv metrics agent fluentbit
 
-.PHONY: all clean lint test build cover deploy
+.PHONY: all clean lint test test-metrics build cover deploy
 
 all: build
 
@@ -21,6 +21,10 @@ test:
 	cd api && go test ./...
 	cd metrics && go test ./...
 	cd agent && go test ./...
+
+# ── test-metrics ──────────────────────────────────────────
+test-metrics:
+	./scripts/test-metrics.sh
 
 # ── build ──────────────────────────────────────────────
 build: $(addprefix build-,$(IMAGES))
