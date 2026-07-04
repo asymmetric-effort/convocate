@@ -7,13 +7,37 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asymmetric-effort/convocate/internal/db"
 	"github.com/asymmetric-effort/convocate/internal/events"
 	"github.com/asymmetric-effort/convocate/internal/httputil"
 	"github.com/asymmetric-effort/convocate/internal/k8s"
 	"github.com/asymmetric-effort/convocate/internal/middleware"
 	"github.com/asymmetric-effort/convocate/internal/types"
 )
+
+// NoteDB abstracts the database operations for node notes so they can
+// be replaced with mocks in tests.
+type NoteDB interface {
+	// HasDB returns true when a database backend is available.
+	HasDB() bool
+	// ListNotes returns all notes for the given node from the database.
+	ListNotes(ctx context.Context, nodeID string) ([]types.Note, error)
+	// AddNote inserts a note and returns its created_at timestamp.
+	AddNote(ctx context.Context, nodeID, author, text string) (time.Time, error)
+}
+
+// NodeManager abstracts the K8s operations used by the handler so
+// they can be replaced with mocks in tests.
+type NodeManager interface {
+	ListNodes(ctx context.Context) ([]types.Node, error)
+	GetNode(ctx context.Context, name string) (*types.Node, error)
+	GetNodeDetail(ctx context.Context, name string) (*types.NodeDetail, error)
+	CordonNode(ctx context.Context, name string) error
+	UncordonNode(ctx context.Context, name string) error
+	CountAgentPodsOnNode(ctx context.Context, nodeName string) (int, error)
+	ListAgentPodsOnNode(ctx context.Context, nodeName string) ([]types.Agent, error)
+	DrainAndDeleteNode(ctx context.Context, nodeName string) error
+	ProvisionNode(ctx context.Context, req k8s.ProvisionRequest) error
+}
 
 // metricsEntry wraps a DaemonSet metrics report with its receive time
 // so we can detect stale data.
@@ -25,6 +49,8 @@ type metricsEntry struct {
 type Handler struct {
 	store  *Store
 	useK8s bool
+	mgr    NodeManager
+	noteDB NoteDB
 	// nodeMetrics holds the latest metrics report from each node's
 	// DaemonSet pod, keyed by node name.
 	nodeMetrics sync.Map // map[string]metricsEntry
@@ -34,6 +60,8 @@ func Register(mux *http.ServeMux) {
 	h := &Handler{
 		store:  NewStore(),
 		useK8s: k8s.Client != nil,
+		mgr:    k8sNodeManager{},
+		noteDB: pgNoteDB{},
 	}
 	auth := middleware.Auth
 
@@ -61,43 +89,49 @@ func (h *Handler) publishMetrics() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		var nodes []types.Node
+		h.collectAndPublishMetrics()
+	}
+}
 
-		if h.useK8s {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			k8sNodes, err := k8s.ListNodes(ctx)
-			cancel()
-			if err != nil {
-				continue
-			}
-			nodes = k8sNodes
-		} else {
-			// Mock mode: jitter metrics to simulate real activity
-			h.store.JitterMetrics()
-			storeNodes := h.store.List()
-			for _, sn := range storeNodes {
-				nodes = append(nodes, types.Node{
-					ID:          sn.ID,
-					IP:          sn.IP,
-					Status:      types.NodeStatus(sn.Status),
-					Agents:      sn.Agents,
-					LoadAvg:     types.LoadAvg(sn.LoadAvg),
-					MemUsedGB:   sn.MemUsedGB,
-					MemTotalGB:  sn.MemTotalGB,
-					DiskUsedGB:  sn.DiskUsedGB,
-					DiskTotalGB: sn.DiskTotalGB,
-				})
-			}
-		}
+// collectAndPublishMetrics performs a single metrics collection and publish
+// cycle.  Called by publishMetrics on each ticker tick.
+func (h *Handler) collectAndPublishMetrics() {
+	var nodes []types.Node
 
-		// Overlay real DaemonSet metrics onto each node
-		for i := range nodes {
-			h.mergeNodeMetrics(&nodes[i])
+	if h.useK8s {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		k8sNodes, err := h.mgr.ListNodes(ctx)
+		cancel()
+		if err != nil {
+			return
 		}
+		nodes = k8sNodes
+	} else {
+		// Mock mode: jitter metrics to simulate real activity
+		h.store.JitterMetrics()
+		storeNodes := h.store.List()
+		for _, sn := range storeNodes {
+			nodes = append(nodes, types.Node{
+				ID:          sn.ID,
+				IP:          sn.IP,
+				Status:      types.NodeStatus(sn.Status),
+				Agents:      sn.Agents,
+				LoadAvg:     types.LoadAvg(sn.LoadAvg),
+				MemUsedGB:   sn.MemUsedGB,
+				MemTotalGB:  sn.MemTotalGB,
+				DiskUsedGB:  sn.DiskUsedGB,
+				DiskTotalGB: sn.DiskTotalGB,
+			})
+		}
+	}
 
-		if len(nodes) > 0 {
-			events.DefaultHub.Publish("nmgr/status", "node.metrics", nodes)
-		}
+	// Overlay real DaemonSet metrics onto each node
+	for i := range nodes {
+		h.mergeNodeMetrics(&nodes[i])
+	}
+
+	if len(nodes) > 0 {
+		events.DefaultHub.Publish("nmgr/status", "node.metrics", nodes)
 	}
 }
 
@@ -107,13 +141,13 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		nodes, err := k8s.ListNodes(ctx)
+		nodes, err := h.mgr.ListNodes(ctx)
 		if err != nil {
 			httputil.WriteError(w, http.StatusInternalServerError, "k8s_error", err.Error())
 			return
 		}
 		for i := range nodes {
-			count, _ := k8s.CountAgentPodsOnNode(ctx, nodes[i].ID)
+			count, _ := h.mgr.CountAgentPodsOnNode(ctx, nodes[i].ID)
 			nodes[i].Agents = count
 		}
 		// Merge in pending/provisioning nodes from the store that
@@ -206,7 +240,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		}
 		if h.useK8s {
 			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-			_, err := k8s.GetNode(ctx, req.Name)
+			_, err := h.mgr.GetNode(ctx, req.Name)
 			cancel()
 			if err == nil {
 				httputil.WriteError(w, http.StatusConflict, "conflict",
@@ -220,7 +254,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	// is already in the cluster or pending
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		existingNodes, err := k8s.ListNodes(ctx)
+		existingNodes, err := h.mgr.ListNodes(ctx)
 		cancel()
 		if err == nil {
 			for _, n := range existingNodes {
@@ -262,7 +296,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 				Password: req.Password,
 				Location: req.Location,
 			}
-			if err := k8s.ProvisionNode(context.Background(), provReq); err != nil {
+			if err := h.mgr.ProvisionNode(context.Background(), provReq); err != nil {
 				log.Printf("[provision] ERROR: %v", err)
 				h.store.SetStatus(node.ID, "Error")
 				events.DefaultHub.Publish("nmgr/status", "node.error", map[string]string{
@@ -302,9 +336,9 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		detail, err := k8s.GetNodeDetail(ctx, id)
+		detail, err := h.mgr.GetNodeDetail(ctx, id)
 		if err == nil {
-			agents, _ := k8s.ListAgentPodsOnNode(ctx, id)
+			agents, _ := h.mgr.ListAgentPodsOnNode(ctx, id)
 			detail.Node.Agents = len(agents)
 			h.mergeNodeMetrics(&detail.Node)
 			detail.AgentList = agents
@@ -351,7 +385,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 // Used to enforce the minimum-3-Ready-nodes safety rule.
 func (h *Handler) countReadyNodes(ctx context.Context) int {
 	if h.useK8s {
-		nodes, err := k8s.ListNodes(ctx)
+		nodes, err := h.mgr.ListNodes(ctx)
 		if err != nil {
 			return 0
 		}
@@ -400,7 +434,7 @@ func (h *Handler) del(w http.ResponseWriter, r *http.Request) {
 		// Real K8s node: drain all pods then remove from cluster
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
-		if err := k8s.DrainAndDeleteNode(ctx, id); err != nil {
+		if err := h.mgr.DrainAndDeleteNode(ctx, id); err != nil {
 			httputil.WriteError(w, http.StatusInternalServerError, "delete_failed", err.Error())
 			return
 		}
@@ -416,7 +450,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		if err := k8s.UncordonNode(ctx, id); err != nil {
+		if err := h.mgr.UncordonNode(ctx, id); err != nil {
 			httputil.WriteError(w, http.StatusNotFound, "not_found", "node not found")
 			return
 		}
@@ -446,7 +480,7 @@ func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		if err := k8s.CordonNode(ctx, id); err != nil {
+		if err := h.mgr.CordonNode(ctx, id); err != nil {
 			httputil.WriteError(w, http.StatusNotFound, "not_found", "node not found")
 			return
 		}
@@ -462,7 +496,7 @@ func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listNotes(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("nodeId")
-	if db.Pool != nil {
+	if h.noteDB != nil && h.noteDB.HasDB() {
 		httputil.WriteJSON(w, http.StatusOK, h.getNotesFromDB(id))
 		return
 	}
@@ -485,13 +519,10 @@ func (h *Handler) addNote(w http.ResponseWriter, r *http.Request) {
 		author = p.Username
 	}
 
-	if db.Pool != nil {
+	if h.noteDB != nil && h.noteDB.HasDB() {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		var createdAt time.Time
-		err := db.Pool.QueryRow(ctx,
-			"INSERT INTO node_notes (node_id, author, text) VALUES ($1, $2, $3) RETURNING created_at",
-			id, author, req.Text).Scan(&createdAt)
+		createdAt, err := h.noteDB.AddNote(ctx, id, author, req.Text)
 		if err != nil {
 			httputil.WriteError(w, http.StatusInternalServerError, "db_error", err.Error())
 			return
@@ -507,7 +538,7 @@ func (h *Handler) addNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getNotesFromDB(nodeID string) []types.Note {
-	if db.Pool == nil {
+	if h.noteDB == nil || !h.noteDB.HasDB() {
 		mockNotes := h.store.ListNotes(nodeID)
 		var notes []types.Note
 		for _, n := range mockNotes {
@@ -517,23 +548,9 @@ func (h *Handler) getNotesFromDB(nodeID string) []types.Note {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	rows, err := db.Pool.Query(ctx,
-		"SELECT author, created_at, text FROM node_notes WHERE node_id = $1 ORDER BY created_at", nodeID)
+	notes, err := h.noteDB.ListNotes(ctx, nodeID)
 	if err != nil {
 		return nil
-	}
-	defer rows.Close()
-	var notes []types.Note
-	for rows.Next() {
-		var n types.Note
-		var t time.Time
-		if err := rows.Scan(&n.Author, &t, &n.Text); err == nil {
-			n.CreatedAt = t.UTC().Format(time.RFC3339)
-			notes = append(notes, n)
-		}
-	}
-	if notes == nil {
-		notes = []types.Note{}
 	}
 	return notes
 }

@@ -19,10 +19,23 @@ import (
 // between the API and agent wrapper.
 const k8sSATokenHeader = "X-K8s-SA-Token"
 
+// AgentManager abstracts the K8s operations used by the handler so
+// they can be replaced with mocks in tests.
+type AgentManager interface {
+	ListAgentPods(ctx context.Context) ([]types.Agent, error)
+	GetAgentPod(ctx context.Context, name string) (*types.Agent, error)
+	CreateAgentPod(ctx context.Context, req types.CreateAgentRequest, owner string) (*types.Agent, error)
+	DeleteAgentPod(ctx context.Context, name string) error
+	StopAgentPod(ctx context.Context, name string) error
+	UpdateAgentConfigMap(ctx context.Context, podName, claudeMd string) error
+	GetAgentPodIP(ctx context.Context, name string) (string, error)
+}
+
 type Handler struct {
 	store   *Store
 	useK8s  bool
 	saToken string // API's own K8s SA token for agent auth
+	mgr     AgentManager
 }
 
 func Register(mux *http.ServeMux) {
@@ -36,6 +49,7 @@ func Register(mux *http.ServeMux) {
 		store:   NewStore(),
 		useK8s:  k8s.Client != nil,
 		saToken: saToken,
+		mgr:     k8sAgentManager{},
 	}
 	auth := middleware.Auth
 
@@ -60,7 +74,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		agents, err := k8s.ListAgentPods(ctx)
+		agents, err := h.mgr.ListAgentPods(ctx)
 		if err != nil {
 			httputil.WriteError(w, http.StatusInternalServerError, "k8s_error", err.Error())
 			return
@@ -104,7 +118,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		if p != nil {
 			owner = p.Username
 		}
-		agent, err := k8s.CreateAgentPod(ctx, req, owner)
+		agent, err := h.mgr.CreateAgentPod(ctx, req, owner)
 		if err != nil {
 			httputil.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
 			return
@@ -121,7 +135,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		agent, err := k8s.GetAgentPod(ctx, id)
+		agent, err := h.mgr.GetAgentPod(ctx, id)
 		if err != nil {
 			httputil.WriteError(w, http.StatusNotFound, "not_found", "agent not found")
 			return
@@ -169,14 +183,14 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 
 		// Update CLAUDE.md via ConfigMap if provided
 		if req.ClaudeMd != nil {
-			if err := k8s.UpdateAgentConfigMap(ctx, id, *req.ClaudeMd); err != nil {
+			if err := h.mgr.UpdateAgentConfigMap(ctx, id, *req.ClaudeMd); err != nil {
 				httputil.WriteError(w, http.StatusInternalServerError, "update_failed", err.Error())
 				return
 			}
 		}
 
 		// Return the current agent state
-		agent, err := k8s.GetAgentPod(ctx, id)
+		agent, err := h.mgr.GetAgentPod(ctx, id)
 		if err != nil {
 			httputil.WriteError(w, http.StatusNotFound, "not_found", "agent not found")
 			return
@@ -198,7 +212,7 @@ func (h *Handler) del(w http.ResponseWriter, r *http.Request) {
 	if h.useK8s {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		if err := k8s.DeleteAgentPod(ctx, id); err != nil {
+		if err := h.mgr.DeleteAgentPod(ctx, id); err != nil {
 			httputil.WriteError(w, http.StatusNotFound, "not_found", "agent not found")
 			return
 		}
@@ -221,7 +235,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 
 		// Check if the pod already exists
-		_, err := k8s.GetAgentPod(ctx, id)
+		_, err := h.mgr.GetAgentPod(ctx, id)
 		if err == nil {
 			httputil.WriteError(w, http.StatusConflict, "conflict", "agent is already running")
 			return
@@ -238,7 +252,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		if len(id) > 6 && id[:6] == "agent-" {
 			project = id[6:]
 		}
-		_, createErr := k8s.CreateAgentPod(ctx, types.CreateAgentRequest{
+		_, createErr := h.mgr.CreateAgentPod(ctx, types.CreateAgentRequest{
 			Project: project,
 		}, owner)
 		if createErr != nil {
@@ -261,7 +275,7 @@ func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 		// Stop = delete the pod only (not PVC/ConfigMap)
-		if err := k8s.StopAgentPod(ctx, id); err != nil {
+		if err := h.mgr.StopAgentPod(ctx, id); err != nil {
 			httputil.WriteError(w, http.StatusNotFound, "not_found", "agent not found")
 			return
 		}
@@ -291,14 +305,7 @@ func (h *Handler) getAgentPodIP(id string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	pod, err := k8s.Client.CoreV1().Pods(k8s.AgentNamespace).Get(ctx, id, k8s.GetOpts())
-	if err != nil {
-		return "", fmt.Errorf("agent not found: %w", err)
-	}
-	if pod.Status.PodIP == "" {
-		return "", fmt.Errorf("agent pod has no IP (not yet running)")
-	}
-	return pod.Status.PodIP, nil
+	return h.mgr.GetAgentPodIP(ctx, id)
 }
 
 // proxyStdin forwards POST body to the agent wrapper's /stdin endpoint.

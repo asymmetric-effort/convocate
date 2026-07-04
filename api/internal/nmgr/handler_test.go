@@ -2,17 +2,86 @@ package nmgr
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/httputil"
+	"github.com/asymmetric-effort/convocate/internal/k8s"
 	"github.com/asymmetric-effort/convocate/internal/types"
 )
+
+// ---------------------------------------------------------------------------
+// Mock NoteDB
+// ---------------------------------------------------------------------------
+
+type mockNoteDB struct {
+	hasDB     bool
+	listFn    func(ctx context.Context, nodeID string) ([]types.Note, error)
+	addNoteFn func(ctx context.Context, nodeID, author, text string) (time.Time, error)
+}
+
+func (m *mockNoteDB) HasDB() bool { return m.hasDB }
+func (m *mockNoteDB) ListNotes(ctx context.Context, nodeID string) ([]types.Note, error) {
+	return m.listFn(ctx, nodeID)
+}
+func (m *mockNoteDB) AddNote(ctx context.Context, nodeID, author, text string) (time.Time, error) {
+	return m.addNoteFn(ctx, nodeID, author, text)
+}
+
+// ---------------------------------------------------------------------------
+// Mock NodeManager
+// ---------------------------------------------------------------------------
+
+type mockNodeManager struct {
+	listNodesFn          func(ctx context.Context) ([]types.Node, error)
+	getNodeFn            func(ctx context.Context, name string) (*types.Node, error)
+	getNodeDetailFn      func(ctx context.Context, name string) (*types.NodeDetail, error)
+	cordonNodeFn         func(ctx context.Context, name string) error
+	uncordonNodeFn       func(ctx context.Context, name string) error
+	countAgentPodsOnNodeFn func(ctx context.Context, nodeName string) (int, error)
+	listAgentPodsOnNodeFn  func(ctx context.Context, nodeName string) ([]types.Agent, error)
+	drainAndDeleteNodeFn func(ctx context.Context, nodeName string) error
+	provisionNodeFn      func(ctx context.Context, req k8s.ProvisionRequest) error
+}
+
+func (m *mockNodeManager) ListNodes(ctx context.Context) ([]types.Node, error) {
+	return m.listNodesFn(ctx)
+}
+func (m *mockNodeManager) GetNode(ctx context.Context, name string) (*types.Node, error) {
+	return m.getNodeFn(ctx, name)
+}
+func (m *mockNodeManager) GetNodeDetail(ctx context.Context, name string) (*types.NodeDetail, error) {
+	return m.getNodeDetailFn(ctx, name)
+}
+func (m *mockNodeManager) CordonNode(ctx context.Context, name string) error {
+	return m.cordonNodeFn(ctx, name)
+}
+func (m *mockNodeManager) UncordonNode(ctx context.Context, name string) error {
+	return m.uncordonNodeFn(ctx, name)
+}
+func (m *mockNodeManager) CountAgentPodsOnNode(ctx context.Context, nodeName string) (int, error) {
+	return m.countAgentPodsOnNodeFn(ctx, nodeName)
+}
+func (m *mockNodeManager) ListAgentPodsOnNode(ctx context.Context, nodeName string) ([]types.Agent, error) {
+	return m.listAgentPodsOnNodeFn(ctx, nodeName)
+}
+func (m *mockNodeManager) DrainAndDeleteNode(ctx context.Context, nodeName string) error {
+	return m.drainAndDeleteNodeFn(ctx, nodeName)
+}
+func (m *mockNodeManager) ProvisionNode(ctx context.Context, req k8s.ProvisionRequest) error {
+	return m.provisionNodeFn(ctx, req)
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
 
 func newAuthRequest(method, path string, body interface{}) *http.Request {
 	var buf bytes.Buffer
@@ -34,6 +103,19 @@ func newTestHandler() *Handler {
 		useK8s: false,
 	}
 }
+
+// newK8sTestHandler creates a Handler with useK8s=true and a mock manager.
+func newK8sTestHandler(mgr *mockNodeManager) *Handler {
+	return &Handler{
+		store:  NewStore(),
+		useK8s: true,
+		mgr:    mgr,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Non-K8s tests (existing, preserved)
+// ---------------------------------------------------------------------------
 
 func TestList_Empty(t *testing.T) {
 	h := newTestHandler()
@@ -805,5 +887,803 @@ func TestStoreGet(t *testing.T) {
 	}
 	if n.IP != "1.2.3.4" {
 		t.Errorf("expected IP '1.2.3.4', got %q", n.IP)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// K8s mock tests — list
+// ---------------------------------------------------------------------------
+
+func TestListK8s_Happy(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{
+				{ID: "node-a", IP: "10.0.0.1", Status: types.NodeReady},
+				{ID: "node-b", IP: "10.0.0.2", Status: types.NodeReady},
+			}, nil
+		},
+		countAgentPodsOnNodeFn: func(ctx context.Context, nodeName string) (int, error) {
+			return 3, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("GET", "/api/v1/nmgr/node", nil)
+	rec := httptest.NewRecorder()
+	h.list(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var page httputil.PageResponse
+	json.NewDecoder(rec.Body).Decode(&page)
+	if page.Total != 2 {
+		t.Errorf("expected 2 nodes, got %d", page.Total)
+	}
+}
+
+func TestListK8s_Error(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return nil, fmt.Errorf("k8s unavailable")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("GET", "/api/v1/nmgr/node", nil)
+	rec := httptest.NewRecorder()
+	h.list(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestListK8s_MergesPendingNodes(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{
+				{ID: "node-a", IP: "10.0.0.1", Status: types.NodeReady},
+			}, nil
+		},
+		countAgentPodsOnNodeFn: func(ctx context.Context, nodeName string) (int, error) {
+			return 0, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	// Add a pending node to the store that isn't in K8s yet
+	h.store.Create(Node{ID: "node-pending", IP: "10.0.0.99", Status: "Pending"})
+
+	req := newAuthRequest("GET", "/api/v1/nmgr/node", nil)
+	rec := httptest.NewRecorder()
+	h.list(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var page httputil.PageResponse
+	json.NewDecoder(rec.Body).Decode(&page)
+	if page.Total != 2 {
+		t.Errorf("expected 2 nodes (1 k8s + 1 pending), got %d", page.Total)
+	}
+}
+
+func TestListK8s_SkipsDuplicatePending(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{
+				{ID: "node-a", IP: "10.0.0.1", Status: types.NodeReady},
+			}, nil
+		},
+		countAgentPodsOnNodeFn: func(ctx context.Context, nodeName string) (int, error) {
+			return 0, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	// Same ID as K8s node — should be skipped
+	h.store.Create(Node{ID: "node-a", IP: "10.0.0.1", Status: "Pending"})
+
+	req := newAuthRequest("GET", "/api/v1/nmgr/node", nil)
+	rec := httptest.NewRecorder()
+	h.list(rec, req)
+
+	var page httputil.PageResponse
+	json.NewDecoder(rec.Body).Decode(&page)
+	if page.Total != 1 {
+		t.Errorf("expected 1 node (duplicate pending should be skipped), got %d", page.Total)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// K8s mock tests — create
+// ---------------------------------------------------------------------------
+
+func TestCreateK8s_NameExistsInCluster(t *testing.T) {
+	mgr := &mockNodeManager{
+		getNodeFn: func(ctx context.Context, name string) (*types.Node, error) {
+			return &types.Node{ID: name}, nil // node exists
+		},
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node", map[string]string{
+		"name": "existing",
+		"host": "10.0.0.99",
+		"user": "convocate",
+	})
+	rec := httptest.NewRecorder()
+	h.create(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateK8s_IPExistsInCluster(t *testing.T) {
+	mgr := &mockNodeManager{
+		getNodeFn: func(ctx context.Context, name string) (*types.Node, error) {
+			return nil, fmt.Errorf("not found") // name doesn't exist
+		},
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{
+				{ID: "node-a", IP: "10.0.0.1"},
+			}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node", map[string]string{
+		"name": "new-node",
+		"host": "10.0.0.1", // same IP as existing
+		"user": "convocate",
+	})
+	rec := httptest.NewRecorder()
+	h.create(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateK8s_WithPassword(t *testing.T) {
+	var provisionCalled sync.WaitGroup
+	provisionCalled.Add(1)
+	mgr := &mockNodeManager{
+		getNodeFn: func(ctx context.Context, name string) (*types.Node, error) {
+			return nil, fmt.Errorf("not found")
+		},
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{}, nil
+		},
+		provisionNodeFn: func(ctx context.Context, req k8s.ProvisionRequest) error {
+			provisionCalled.Done()
+			return nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node", map[string]interface{}{
+		"name":     "new-node",
+		"host":     "10.0.0.99",
+		"user":     "convocate",
+		"password": "secret",
+		"location": "rack-1",
+		"tags":     []string{"gpu"},
+	})
+	rec := httptest.NewRecorder()
+	h.create(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+	// Wait for provision goroutine
+	provisionCalled.Wait()
+}
+
+func TestCreateK8s_WithPasswordProvisionError(t *testing.T) {
+	var provisionDone sync.WaitGroup
+	provisionDone.Add(1)
+	mgr := &mockNodeManager{
+		getNodeFn: func(ctx context.Context, name string) (*types.Node, error) {
+			return nil, fmt.Errorf("not found")
+		},
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{}, nil
+		},
+		provisionNodeFn: func(ctx context.Context, req k8s.ProvisionRequest) error {
+			provisionDone.Done()
+			return fmt.Errorf("SSH failed")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node", map[string]interface{}{
+		"name":     "fail-node",
+		"host":     "10.0.0.99",
+		"user":     "convocate",
+		"password": "secret",
+	})
+	rec := httptest.NewRecorder()
+	h.create(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", rec.Code)
+	}
+	provisionDone.Wait()
+	// After provision failure, the node should have Error status
+	time.Sleep(50 * time.Millisecond) // let goroutine finish SetStatus
+	n, ok := h.store.Get("fail-node")
+	if !ok {
+		t.Fatal("expected node to still be in store")
+	}
+	if n.Status != "Error" {
+		t.Errorf("expected status 'Error', got %q", n.Status)
+	}
+}
+
+func TestCreateK8s_NoPassword_MockMode(t *testing.T) {
+	mgr := &mockNodeManager{
+		getNodeFn: func(ctx context.Context, name string) (*types.Node, error) {
+			return nil, fmt.Errorf("not found")
+		},
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node", map[string]string{
+		"name": "mock-node",
+		"host": "10.0.0.99",
+		"user": "convocate",
+	})
+	rec := httptest.NewRecorder()
+	h.create(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateK8s_NoName(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node", map[string]string{
+		"host": "10.0.0.99",
+		"user": "convocate",
+	})
+	rec := httptest.NewRecorder()
+	h.create(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// K8s mock tests — get
+// ---------------------------------------------------------------------------
+
+func TestGetK8s_Happy(t *testing.T) {
+	mgr := &mockNodeManager{
+		getNodeDetailFn: func(ctx context.Context, name string) (*types.NodeDetail, error) {
+			return &types.NodeDetail{
+				Node: types.Node{ID: name, Status: types.NodeReady},
+			}, nil
+		},
+		listAgentPodsOnNodeFn: func(ctx context.Context, nodeName string) ([]types.Agent, error) {
+			return []types.Agent{{ID: "agent-1"}}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("GET", "/api/v1/nmgr/node/node-a", nil)
+	req.SetPathValue("nodeId", "node-a")
+	rec := httptest.NewRecorder()
+	h.get(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestGetK8s_NotFoundInK8s_FoundInStore(t *testing.T) {
+	mgr := &mockNodeManager{
+		getNodeDetailFn: func(ctx context.Context, name string) (*types.NodeDetail, error) {
+			return nil, fmt.Errorf("not found")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	h.store.Create(Node{ID: "pending-node", IP: "10.0.0.99", Status: "Pending"})
+
+	req := newAuthRequest("GET", "/api/v1/nmgr/node/pending-node", nil)
+	req.SetPathValue("nodeId", "pending-node")
+	rec := httptest.NewRecorder()
+	h.get(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestGetK8s_NotFoundAnywhere(t *testing.T) {
+	mgr := &mockNodeManager{
+		getNodeDetailFn: func(ctx context.Context, name string) (*types.NodeDetail, error) {
+			return nil, fmt.Errorf("not found")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("GET", "/api/v1/nmgr/node/nonexistent", nil)
+	req.SetPathValue("nodeId", "nonexistent")
+	rec := httptest.NewRecorder()
+	h.get(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// K8s mock tests — delete
+// ---------------------------------------------------------------------------
+
+func TestDeleteK8s_PendingNodeFromStore(t *testing.T) {
+	mgr := &mockNodeManager{}
+	h := newK8sTestHandler(mgr)
+	h.store.Create(Node{ID: "pending-node", IP: "10.0.0.99", Status: "Pending"})
+
+	req := newAuthRequest("DELETE", "/api/v1/nmgr/node/pending-node", nil)
+	req.SetPathValue("nodeId", "pending-node")
+	rec := httptest.NewRecorder()
+	h.del(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", rec.Code)
+	}
+}
+
+func TestDeleteK8s_InsufficientNodes(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{
+				{ID: "node-a", Status: types.NodeReady},
+				{ID: "node-b", Status: types.NodeReady},
+			}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("DELETE", "/api/v1/nmgr/node/node-a", nil)
+	req.SetPathValue("nodeId", "node-a")
+	rec := httptest.NewRecorder()
+	h.del(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+}
+
+func TestDeleteK8s_Happy(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			nodes := make([]types.Node, 5)
+			for i := range nodes {
+				nodes[i] = types.Node{ID: fmt.Sprintf("node-%d", i), Status: types.NodeReady}
+			}
+			return nodes, nil
+		},
+		drainAndDeleteNodeFn: func(ctx context.Context, nodeName string) error {
+			return nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("DELETE", "/api/v1/nmgr/node/node-0", nil)
+	req.SetPathValue("nodeId", "node-0")
+	rec := httptest.NewRecorder()
+	h.del(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", rec.Code)
+	}
+}
+
+func TestDeleteK8s_DrainError(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			nodes := make([]types.Node, 5)
+			for i := range nodes {
+				nodes[i] = types.Node{ID: fmt.Sprintf("node-%d", i), Status: types.NodeReady}
+			}
+			return nodes, nil
+		},
+		drainAndDeleteNodeFn: func(ctx context.Context, nodeName string) error {
+			return fmt.Errorf("drain failed")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("DELETE", "/api/v1/nmgr/node/node-0", nil)
+	req.SetPathValue("nodeId", "node-0")
+	rec := httptest.NewRecorder()
+	h.del(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// K8s mock tests — start
+// ---------------------------------------------------------------------------
+
+func TestStartK8s_Happy(t *testing.T) {
+	mgr := &mockNodeManager{
+		uncordonNodeFn: func(ctx context.Context, name string) error {
+			return nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node/node-a/start", nil)
+	req.SetPathValue("nodeId", "node-a")
+	rec := httptest.NewRecorder()
+	h.start(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", rec.Code)
+	}
+}
+
+func TestStartK8s_NotFound(t *testing.T) {
+	mgr := &mockNodeManager{
+		uncordonNodeFn: func(ctx context.Context, name string) error {
+			return fmt.Errorf("not found")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node/nonexistent/start", nil)
+	req.SetPathValue("nodeId", "nonexistent")
+	rec := httptest.NewRecorder()
+	h.start(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// K8s mock tests — stop
+// ---------------------------------------------------------------------------
+
+func TestStopK8s_Happy(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			nodes := make([]types.Node, 5)
+			for i := range nodes {
+				nodes[i] = types.Node{ID: fmt.Sprintf("node-%d", i), Status: types.NodeReady}
+			}
+			return nodes, nil
+		},
+		cordonNodeFn: func(ctx context.Context, name string) error {
+			return nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node/node-0/stop", nil)
+	req.SetPathValue("nodeId", "node-0")
+	rec := httptest.NewRecorder()
+	h.stop(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", rec.Code)
+	}
+}
+
+func TestStopK8s_InsufficientNodes(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{
+				{ID: "node-a", Status: types.NodeReady},
+			}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node/node-a/stop", nil)
+	req.SetPathValue("nodeId", "node-a")
+	rec := httptest.NewRecorder()
+	h.stop(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+}
+
+func TestStopK8s_NotFound(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			nodes := make([]types.Node, 5)
+			for i := range nodes {
+				nodes[i] = types.Node{ID: fmt.Sprintf("node-%d", i), Status: types.NodeReady}
+			}
+			return nodes, nil
+		},
+		cordonNodeFn: func(ctx context.Context, name string) error {
+			return fmt.Errorf("not found")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node/nonexistent/stop", nil)
+	req.SetPathValue("nodeId", "nonexistent")
+	rec := httptest.NewRecorder()
+	h.stop(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// K8s mock tests — countReadyNodes
+// ---------------------------------------------------------------------------
+
+func TestCountReadyNodesK8s_Happy(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{
+				{ID: "n1", Status: types.NodeReady},
+				{ID: "n2", Status: types.NodeReady},
+				{ID: "n3", Status: "NotReady"},
+			}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	count := h.countReadyNodes(context.Background())
+	if count != 2 {
+		t.Errorf("expected 2, got %d", count)
+	}
+}
+
+func TestCountReadyNodesK8s_Error(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return nil, fmt.Errorf("unavailable")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	count := h.countReadyNodes(context.Background())
+	if count != 0 {
+		t.Errorf("expected 0 on error, got %d", count)
+	}
+}
+
+func TestDeleteK8s_CountReadyNodesError(t *testing.T) {
+	// When ListNodes returns an error during countReadyNodes,
+	// readyCount is 0 which is < minReadyNodes => conflict
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return nil, fmt.Errorf("unavailable")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("DELETE", "/api/v1/nmgr/node/node-a", nil)
+	req.SetPathValue("nodeId", "node-a")
+	rec := httptest.NewRecorder()
+	h.del(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+}
+
+func TestStopK8s_CountReadyNodesError(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return nil, fmt.Errorf("unavailable")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	req := newAuthRequest("POST", "/api/v1/nmgr/node/node-a/stop", nil)
+	req.SetPathValue("nodeId", "node-a")
+	rec := httptest.NewRecorder()
+	h.stop(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// collectAndPublishMetrics tests
+// ---------------------------------------------------------------------------
+
+func TestCollectAndPublishMetrics_NonK8s(t *testing.T) {
+	h := newTestHandler()
+	h.store.Create(Node{ID: "node-001", IP: "1.2.3.4", Status: "Ready",
+		LoadAvg:    LoadAvg{One: 1.0, Five: 1.0, Fifteen: 1.0},
+		MemUsedGB:  4.0, MemTotalGB: 16.0,
+		DiskUsedGB: 50.0, DiskTotalGB: 200.0})
+
+	// Should not panic
+	h.collectAndPublishMetrics()
+}
+
+func TestCollectAndPublishMetrics_NonK8s_Empty(t *testing.T) {
+	h := newTestHandler()
+	// No nodes in store — should handle empty list gracefully
+	h.collectAndPublishMetrics()
+}
+
+func TestCollectAndPublishMetrics_K8s_Happy(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{
+				{ID: "node-a", IP: "10.0.0.1", Status: types.NodeReady},
+			}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	h.collectAndPublishMetrics()
+}
+
+func TestCollectAndPublishMetrics_K8s_Error(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return nil, fmt.Errorf("k8s unavailable")
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	// Should return early without panic
+	h.collectAndPublishMetrics()
+}
+
+// ---------------------------------------------------------------------------
+// NoteDB mock tests
+// ---------------------------------------------------------------------------
+
+func TestListNotes_WithDB(t *testing.T) {
+	h := newTestHandler()
+	h.noteDB = &mockNoteDB{
+		hasDB: true,
+		listFn: func(ctx context.Context, nodeID string) ([]types.Note, error) {
+			return []types.Note{
+				{Author: "admin", CreatedAt: "2025-01-01T00:00:00Z", Text: "db note"},
+			}, nil
+		},
+	}
+	req := newAuthRequest("GET", "/api/v1/nmgr/node/node-001/note", nil)
+	req.SetPathValue("nodeId", "node-001")
+	rec := httptest.NewRecorder()
+	h.listNotes(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestAddNote_WithDB_Happy(t *testing.T) {
+	now := time.Now().UTC()
+	h := newTestHandler()
+	h.noteDB = &mockNoteDB{
+		hasDB: true,
+		addNoteFn: func(ctx context.Context, nodeID, author, text string) (time.Time, error) {
+			return now, nil
+		},
+	}
+	req := newAuthRequest("POST", "/api/v1/nmgr/node/node-001/note", map[string]string{
+		"text": "db note",
+	})
+	req.SetPathValue("nodeId", "node-001")
+	rec := httptest.NewRecorder()
+	h.addNote(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAddNote_WithDB_Error(t *testing.T) {
+	h := newTestHandler()
+	h.noteDB = &mockNoteDB{
+		hasDB: true,
+		addNoteFn: func(ctx context.Context, nodeID, author, text string) (time.Time, error) {
+			return time.Time{}, fmt.Errorf("db error")
+		},
+	}
+	req := newAuthRequest("POST", "/api/v1/nmgr/node/node-001/note", map[string]string{
+		"text": "db note",
+	})
+	req.SetPathValue("nodeId", "node-001")
+	rec := httptest.NewRecorder()
+	h.addNote(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestGetNotesFromDB_WithDB(t *testing.T) {
+	h := newTestHandler()
+	h.noteDB = &mockNoteDB{
+		hasDB: true,
+		listFn: func(ctx context.Context, nodeID string) ([]types.Note, error) {
+			return []types.Note{
+				{Author: "admin", CreatedAt: "2025-01-01T00:00:00Z", Text: "from db"},
+			}, nil
+		},
+	}
+	notes := h.getNotesFromDB("node-001")
+	if len(notes) != 1 {
+		t.Errorf("expected 1 note, got %d", len(notes))
+	}
+}
+
+func TestGetNotesFromDB_WithDB_Error(t *testing.T) {
+	h := newTestHandler()
+	h.noteDB = &mockNoteDB{
+		hasDB: true,
+		listFn: func(ctx context.Context, nodeID string) ([]types.Note, error) {
+			return nil, fmt.Errorf("db error")
+		},
+	}
+	notes := h.getNotesFromDB("node-001")
+	if notes != nil {
+		t.Errorf("expected nil on error, got %v", notes)
+	}
+}
+
+func TestGetK8s_WithDBNotes(t *testing.T) {
+	mgr := &mockNodeManager{
+		getNodeDetailFn: func(ctx context.Context, name string) (*types.NodeDetail, error) {
+			return &types.NodeDetail{
+				Node: types.Node{ID: name, Status: types.NodeReady},
+			}, nil
+		},
+		listAgentPodsOnNodeFn: func(ctx context.Context, nodeName string) ([]types.Agent, error) {
+			return []types.Agent{}, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	h.noteDB = &mockNoteDB{
+		hasDB: true,
+		listFn: func(ctx context.Context, nodeID string) ([]types.Note, error) {
+			return []types.Note{
+				{Author: "admin", CreatedAt: "2025-01-01T00:00:00Z", Text: "from db"},
+			}, nil
+		},
+	}
+	req := newAuthRequest("GET", "/api/v1/nmgr/node/node-a", nil)
+	req.SetPathValue("nodeId", "node-a")
+	rec := httptest.NewRecorder()
+	h.get(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestListK8s_WithMetrics(t *testing.T) {
+	mgr := &mockNodeManager{
+		listNodesFn: func(ctx context.Context) ([]types.Node, error) {
+			return []types.Node{
+				{ID: "node-a", IP: "10.0.0.1", Status: types.NodeReady},
+			}, nil
+		},
+		countAgentPodsOnNodeFn: func(ctx context.Context, nodeName string) (int, error) {
+			return 2, nil
+		},
+	}
+	h := newK8sTestHandler(mgr)
+	// Store metrics for node-a
+	h.nodeMetrics.Store("node-a", metricsEntry{
+		report: types.NodeMetricsReport{
+			NodeName:      "node-a",
+			MemTotalBytes: 8 * 1024 * 1024 * 1024,
+			MemUsedBytes:  4 * 1024 * 1024 * 1024,
+		},
+		received: time.Now(),
+	})
+
+	req := newAuthRequest("GET", "/api/v1/nmgr/node", nil)
+	rec := httptest.NewRecorder()
+	h.list(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
