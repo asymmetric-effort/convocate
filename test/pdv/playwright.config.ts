@@ -31,6 +31,7 @@ export default defineConfig({
     { name: "k8s-infrastructure", testMatch: /k8s-infrastructure\.spec\.ts/ },
     { name: "network-boundaries", testMatch: /network-boundaries\.spec\.ts/ },
     { name: "oidc-auth", testMatch: /oidc-auth\.spec\.ts/ },
+    { name: "convocate-auth", testMatch: /convocate-auth\.spec\.ts/ },
     { name: "agent-container", testMatch: /agent-container\.spec\.ts/, retries: 0, timeout: 120000 },
     { name: "events-api", testMatch: /events-api\.spec\.ts/ },
     { name: "jaeger-tracing", testMatch: /jaeger-tracing\.spec\.ts/ },

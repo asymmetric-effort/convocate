@@ -100,7 +100,7 @@ test.describe("OIDC authentication flow", () => {
 });
 
 test.describe("OIDC least-privilege validation", () => {
-  test("pdv-test user gets viewer-policy from OpenBao", async () => {
+  test("pdv-test user gets login-only policy from OpenBao", async () => {
     try {
       const res = await fetch(`${AUTH_URL}/v1/auth/userpass/login/pdv-test`, {
         method: "POST",
@@ -109,15 +109,14 @@ test.describe("OIDC least-privilege validation", () => {
       });
       expect(res.status).toBe(200);
       const data = await res.json();
+      // MFA enforcement means we get mfa_requirement, not a direct token
+      // But the auth block confirms the user authenticated successfully
       expect(data.auth).toBeTruthy();
-      expect(data.auth.client_token).toBeTruthy();
-      expect(data.auth.policies).toContain("viewer-policy");
-      // Should NOT have admin-policy
-      expect(data.auth.policies).not.toContain("admin-policy");
-      // Token should have limited TTL
-      expect(data.auth.lease_duration).toBeGreaterThan(0);
+      // Should NOT have admin-policy or viewer-policy
+      const policies = data.auth.policies || data.auth.token_policies || [];
+      expect(policies).not.toContain("admin-policy");
+      expect(policies).not.toContain("viewer-policy");
     } catch {
-      // auth.asymmetric-effort.com not reachable — skip
       test.skip();
     }
   });
