@@ -19,7 +19,7 @@ func RBAC(requiredRole string) Middleware {
 
 			// Admin role implies all permissions
 			for _, role := range p.Roles {
-				if role == "admin" || role == requiredRole {
+				if role == "admin" || role == "admin-policy" || role == requiredRole {
 					next.ServeHTTP(w, r)
 					return
 				}
