@@ -100,20 +100,16 @@ data:
           }
         },
         {
-          "title": "Disk Usage by PV",
+          "title": "Disk Usage by Storage Node",
+          "description": "Root filesystem usage on nodes hosting PV data (hostPath PVs share the node root filesystem). convocate04: redis, openbao. convocate05: postgresql, grafana, influxdb, jaeger, prometheus. convocate06: minio.",
           "type": "gauge",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [
             {
-              "expr": "kubelet_volume_stats_used_bytes{namespace=~\"convocate|data-layer|security|o11y\"} / kubelet_volume_stats_capacity_bytes{namespace=~\"convocate|data-layer|security|o11y\"} * 100",
-              "legendFormat": "{{namespace}}/{{persistentvolumeclaim}}",
+              "expr": "container_fs_usage_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"} / container_fs_limit_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"} * 100",
+              "legendFormat": "{{kubernetes_io_hostname}}",
               "refId": "A"
-            },
-            {
-              "expr": "(kubelet_volume_stats_capacity_bytes{namespace=~\"convocate|data-layer|security|o11y\"} - kubelet_volume_stats_available_bytes{namespace=~\"convocate|data-layer|security|o11y\"}) / kubelet_volume_stats_capacity_bytes{namespace=~\"convocate|data-layer|security|o11y\"} * 100",
-              "legendFormat": "{{namespace}}/{{persistentvolumeclaim}}",
-              "refId": "B"
             }
           ],
           "fieldConfig": {
@@ -134,15 +130,23 @@ data:
           }
         },
         {
-          "title": "Disk Usage by Pod",
+          "title": "Disk Usage by Storage Node (bytes)",
+          "description": "Root filesystem usage over time on nodes hosting PV data",
           "type": "timeseries",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "targets": [{
-            "expr": "kubelet_volume_stats_used_bytes{namespace=~\"convocate|data-layer|security|o11y\"}",
-            "legendFormat": "{{namespace}}/{{persistentvolumeclaim}}",
-            "refId": "A"
-          }],
+          "targets": [
+            {
+              "expr": "container_fs_usage_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"}",
+              "legendFormat": "used {{kubernetes_io_hostname}}",
+              "refId": "A"
+            },
+            {
+              "expr": "container_fs_limit_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"}",
+              "legendFormat": "total {{kubernetes_io_hostname}}",
+              "refId": "B"
+            }
+          ],
           "fieldConfig": {
             "defaults": {
               "unit": "bytes",
@@ -426,7 +430,7 @@ data:
         },
         {
           "title": "Synthetic Check: Service Health Status",
-          "type": "stat",
+          "type": "bargauge",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 72 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
@@ -440,13 +444,17 @@ data:
               "fields": ""
             },
             "orientation": "horizontal",
-            "textMode": "value_and_name",
-            "colorMode": "background",
-            "graphMode": "none"
+            "displayMode": "basic",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10,
+            "valueMode": "text"
           },
           "fieldConfig": {
             "defaults": {
               "displayName": "${__field.labels.service}",
+              "min": 0,
+              "max": 1,
               "mappings": [
                 { "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }, "type": "value" }
               ],
@@ -481,7 +489,7 @@ data:
         },
         {
           "title": "Synthetic Check: Service Uptime (24h)",
-          "type": "stat",
+          "type": "bargauge",
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 72 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
@@ -495,9 +503,11 @@ data:
               "fields": ""
             },
             "orientation": "horizontal",
-            "textMode": "value_and_name",
-            "colorMode": "background",
-            "graphMode": "none"
+            "displayMode": "basic",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10,
+            "valueMode": "text"
           },
           "fieldConfig": {
             "defaults": {
