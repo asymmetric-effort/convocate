@@ -15,43 +15,112 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-      - name: Go fmt check
+      - name: make lint
+        run: make lint
+
+  test-api:
+    name: Test API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Run Go tests with coverage
+        working-directory: api
+        run: go test -coverprofile=coverage.out ./... -v
+      - name: Coverage check (98% minimum)
         working-directory: api
         run: |
-          UNFMT=$(gofmt -l .)
-          if [ -n "$UNFMT" ]; then
-            echo "Files not formatted:"
-            echo "$UNFMT"
-            exit 1
-          fi
-      - name: Go vet
-        working-directory: api
-        run: go vet ./...
+          go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
 
-  test:
-    name: Test
+  test-metrics:
+    name: Test Metrics
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-      - name: Run Go tests
-        working-directory: api
-        run: go test ./... -v
+      - name: Run Go tests with coverage
+        working-directory: metrics
+        run: go test -coverprofile=coverage.out ./... -v
+      - name: Coverage check (98% minimum)
+        working-directory: metrics
+        run: |
+          go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
+
+  test-agent:
+    name: Test Agent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Run Go tests with coverage
+        working-directory: agent
+        run: go test -coverprofile=coverage.out ./... -v
+      - name: Coverage check (98% minimum)
+        working-directory: agent
+        run: |
+          go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
+
+  test-ui:
+    name: Test UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install and test
+        working-directory: ui
+        run: |
+          bun install
+          bun test
 
   build:
-    name: Build
+    name: Build Docker Images
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test-api, test-metrics, test-agent, test-ui]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26"
-      - name: Build API
-        working-directory: api
-        run: CGO_ENABLED=0 go build -o ../build/convocate-api .
-      - name: Build UI server
-        working-directory: ui/cmd/serve
-        run: CGO_ENABLED=0 go build -o ../../../build/convocate-ui .
+      - name: Build openbao
+        run: docker build -f docker/openbao.Dockerfile -t convocate/openbao:ci .
+      - name: Build redis
+        run: docker build -f docker/redis.Dockerfile -t convocate/redis:ci .
+      - name: Build postgresql
+        run: docker build -f docker/pg.Dockerfile -t convocate/postgresql:ci .
+      - name: Build minio
+        run: docker build -f docker/minio.Dockerfile -t convocate/minio:ci .
+      - name: Build influxdb
+        run: docker build -f docker/influxdb.Dockerfile -t convocate/influxdb:ci .
+      - name: Build prometheus
+        run: docker build -f docker/prometheus.Dockerfile -t convocate/prometheus:ci .
+      - name: Build grafana
+        run: docker build -f docker/grafana.Dockerfile -t convocate/grafana:ci .
+      - name: Build jaeger
+        run: docker build -f docker/jaeger.Dockerfile -t convocate/jaeger:ci .
+      - name: Build fluentbit
+        run: docker build -f docker/fluentbit.Dockerfile -t convocate/fluentbit:ci .
+      - name: Build api
+        run: docker build -f docker/api.Dockerfile -t convocate/api:ci .
+      - name: Build ui
+        run: docker build -f docker/ui.Dockerfile -t convocate/ui:ci .
+      - name: Build pdv
+        run: docker build -f docker/pdv.Dockerfile -t convocate/pdv:ci .
+      - name: Build metrics
+        run: docker build -f docker/metrics.Dockerfile -t convocate/metrics:ci .
+      - name: Build agent
+        run: docker build -f docker/agent.Dockerfile -t convocate/agent:ci .
+
+  # Playwright PDV tests run post-deploy against the live K8s cluster,
+  # not in CI. The pdv Docker image is built above to catch build failures.
+  # To run: deploy to K8s, then execute the PDV container against the cluster.
+  # pdv:
+  #   name: Playwright PDV
+  #   runs-on: ubuntu-latest
+  #   needs: [build]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Run PDV tests (post-deploy only)
+  #       run: echo "PDV tests run post-deploy against live K8s cluster"

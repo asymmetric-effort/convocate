@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/asymmetric-effort/convocate/internal/types"
 )
@@ -34,7 +35,11 @@ type nodeMetricsResponse struct {
 // fetchNodeMetrics queries the K8s Metrics API for live CPU and memory
 // usage per node. Returns nil on error (caller falls back gracefully).
 func fetchNodeMetrics(ctx context.Context) map[string]metricsUsage {
-	data, err := Client.RESTClient().Get().
+	cs, ok := Client.(*kubernetes.Clientset)
+	if !ok {
+		return nil
+	}
+	data, err := cs.RESTClient().Get().
 		AbsPath("/apis/metrics.k8s.io/v1beta1/nodes").
 		DoRaw(ctx)
 	if err != nil {

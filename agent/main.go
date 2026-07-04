@@ -35,113 +35,156 @@ import (
 var version = "dev"
 
 func main() {
-	// Parse environment
-	certPath := envOr("TLS_CERT_PATH", "/etc/tls/tls.crt")
-	keyPath := envOr("TLS_KEY_PATH", "/etc/tls/tls.key")
-	jwtKeyPath := envOr("JWT_PUBLIC_KEY_PATH", "")
-	claudeFlags := strings.Fields(envOr("CLAUDE_FLAGS", ""))
-	claudeMdPath := envOr("CLAUDE_MD_PATH", "/home/claude/CLAUDE.md")
-	workDir := envOr("WORK_DIR", "/home/claude/workspace")
-	podName := envOr("POD_NAME", "unknown")
-	nodeName := envOr("NODE_NAME", "unknown")
-	listenAddr := envOr("LISTEN_ADDR", ":8443")
+	run(signalChannel())
+}
 
-	log.Printf("[wrapper] convocate-agent-wrapper %s starting", version)
-	log.Printf("[wrapper] pod=%s node=%s flags=%v", podName, nodeName, claudeFlags)
+// signalChannel creates a channel that receives SIGTERM and SIGINT.
+func signalChannel() <-chan os.Signal {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
+	return ch
+}
 
-	// Initialize metrics
-	metrics := NewMetrics()
+// agentConfig holds parsed environment configuration for the agent wrapper.
+type agentConfig struct {
+	certPath    string
+	keyPath     string
+	jwtKeyPath  string
+	claudeFlags []string
+	claudeMdPath string
+	workDir     string
+	podName     string
+	nodeName    string
+	listenAddr  string
+	saTokenPath string
+}
 
-	// Detect Claude CLI version
+// parseAgentConfig reads environment variables and returns configuration.
+func parseAgentConfig() agentConfig {
+	return agentConfig{
+		certPath:     envOr("TLS_CERT_PATH", "/etc/tls/tls.crt"),
+		keyPath:      envOr("TLS_KEY_PATH", "/etc/tls/tls.key"),
+		jwtKeyPath:   envOr("JWT_PUBLIC_KEY_PATH", ""),
+		claudeFlags:  strings.Fields(envOr("CLAUDE_FLAGS", "")),
+		claudeMdPath: envOr("CLAUDE_MD_PATH", "/home/claude/CLAUDE.md"),
+		workDir:      envOr("WORK_DIR", "/home/claude/workspace"),
+		podName:      envOr("POD_NAME", "unknown"),
+		nodeName:     envOr("NODE_NAME", "unknown"),
+		listenAddr:   envOr("LISTEN_ADDR", ":8443"),
+		saTokenPath:  envOr("SA_TOKEN_PATH", "/var/run/secrets/kubernetes.io/serviceaccount/token"),
+	}
+}
+
+// buildServer creates the HTTP server components from the given config and process.
+func buildServer(cfg agentConfig, proc *Process, metrics *Metrics) (*http.Server, *Watcher) {
 	claudeVersion := DetectClaudeVersion()
 	log.Printf("[wrapper] Claude CLI version: %s", claudeVersion)
 
-	// SA token path for K8s container-to-container auth
-	saTokenPath := envOr("SA_TOKEN_PATH", "/var/run/secrets/kubernetes.io/serviceaccount/token")
+	auth := NewAuth(cfg.jwtKeyPath, cfg.saTokenPath)
 
-	// Initialize auth (JWT + K8s SA token)
-	auth := NewAuth(jwtKeyPath, saTokenPath)
+	watcher := NewWatcher(cfg.claudeMdPath, 500*time.Millisecond, func() {
+		if restartErr := proc.Restart(cfg.claudeFlags); restartErr != nil {
+			log.Printf("[wrapper] Restart on config change failed: %v", restartErr)
+		}
+	})
 
-	// Spawn Claude CLI process
-	proc, err := NewProcess(claudeFlags, workDir, metrics)
+	server := NewServer(proc, metrics, auth, version, claudeVersion, cfg.podName, cfg.nodeName)
+	mux := http.NewServeMux()
+	server.RegisterRoutes(mux)
+
+	httpServer, err := configureHTTPServer(cfg, mux)
+	if err != nil {
+		log.Fatalf("[wrapper] Failed to configure HTTP server: %v", err)
+	}
+	return httpServer, watcher
+}
+
+// configureHTTPServer sets up TLS or plain HTTP based on cert availability.
+func configureHTTPServer(cfg agentConfig, handler http.Handler) (*http.Server, error) {
+	if fileExists(cfg.certPath) && fileExists(cfg.keyPath) {
+		cert, tlsErr := tls.LoadX509KeyPair(cfg.certPath, cfg.keyPath)
+		if tlsErr != nil {
+			return nil, tlsErr
+		}
+		return &http.Server{
+			Addr:    cfg.listenAddr,
+			Handler: handler,
+			TLSConfig: &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				MinVersion:   tls.VersionTLS12,
+			},
+		}, nil
+	}
+	return &http.Server{
+		Addr:    cfg.listenAddr,
+		Handler: handler,
+	}, nil
+}
+
+// startHTTPServer starts the server in TLS or plain mode based on config.
+func startHTTPServer(httpServer *http.Server, cfg agentConfig) {
+	if httpServer.TLSConfig != nil {
+		log.Printf("[wrapper] HTTPS server listening on %s", cfg.listenAddr)
+	} else {
+		log.Printf("[wrapper] HTTP server listening on %s (no TLS — dev mode)", cfg.listenAddr)
+	}
+	go serveHTTP(httpServer)
+}
+
+// serveHTTP runs the HTTP server (TLS or plain) until shutdown.
+func serveHTTP(httpServer *http.Server) {
+	var err error
+	if httpServer.TLSConfig != nil {
+		err = httpServer.ListenAndServeTLS("", "")
+	} else {
+		err = httpServer.ListenAndServe()
+	}
+	if err != nil && err != http.ErrServerClosed {
+		log.Fatalf("[wrapper] Server error: %v", err)
+	}
+}
+
+// shutdown performs graceful shutdown of all components.
+func shutdown(httpServer *http.Server, watcher *Watcher, proc *Process) {
+	watcher.Stop()
+	proc.Stop(25 * time.Second) // Stop always returns nil
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	httpServer.Shutdown(ctx) //nolint: shutdown errors are non-fatal
+
+	log.Printf("[wrapper] Shutdown complete")
+}
+
+// run is the main entry point logic. If sigCh is nil, it creates one
+// listening for SIGTERM/SIGINT.
+func run(sigCh <-chan os.Signal) {
+	cfg := parseAgentConfig()
+
+	log.Printf("[wrapper] convocate-agent-wrapper %s starting", version)
+	log.Printf("[wrapper] pod=%s node=%s flags=%v", cfg.podName, cfg.nodeName, cfg.claudeFlags)
+
+	metrics := NewMetrics()
+
+	proc, err := NewProcess(cfg.claudeFlags, cfg.workDir, metrics)
 	if err != nil {
 		log.Fatalf("[wrapper] Failed to start Claude CLI: %v", err)
 	}
 
-	// Start config watcher for CLAUDE.md
-	watcher := NewWatcher(claudeMdPath, 500*time.Millisecond, func() {
-		if restartErr := proc.Restart(claudeFlags); restartErr != nil {
-			log.Printf("[wrapper] Restart on config change failed: %v", restartErr)
-		}
-	})
+	httpServer, watcher := buildServer(cfg, proc, metrics)
+
 	go func() {
 		if watchErr := watcher.Start(); watchErr != nil {
 			log.Printf("[wrapper] Watcher error: %v", watchErr)
 		}
 	}()
 
-	// Build HTTP server
-	server := NewServer(proc, metrics, auth, version, claudeVersion, podName, nodeName)
-	mux := http.NewServeMux()
-	server.RegisterRoutes(mux)
+	startHTTPServer(httpServer, cfg)
 
-	// Configure TLS
-	var httpServer *http.Server
-	if fileExists(certPath) && fileExists(keyPath) {
-		cert, tlsErr := tls.LoadX509KeyPair(certPath, keyPath)
-		if tlsErr != nil {
-			log.Fatalf("[wrapper] Failed to load TLS cert: %v", tlsErr)
-		}
-		httpServer = &http.Server{
-			Addr:    listenAddr,
-			Handler: mux,
-			TLSConfig: &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				MinVersion:   tls.VersionTLS12,
-			},
-		}
-		log.Printf("[wrapper] HTTPS server listening on %s", listenAddr)
-		go func() {
-			if srvErr := httpServer.ListenAndServeTLS("", ""); srvErr != nil && srvErr != http.ErrServerClosed {
-				log.Fatalf("[wrapper] Server error: %v", srvErr)
-			}
-		}()
-	} else {
-		// Dev mode: plain HTTP (no TLS certs available)
-		httpServer = &http.Server{
-			Addr:    listenAddr,
-			Handler: mux,
-		}
-		log.Printf("[wrapper] HTTP server listening on %s (no TLS — dev mode)", listenAddr)
-		go func() {
-			if srvErr := httpServer.ListenAndServe(); srvErr != nil && srvErr != http.ErrServerClosed {
-				log.Fatalf("[wrapper] Server error: %v", srvErr)
-			}
-		}()
-	}
-
-	// Wait for SIGTERM/SIGINT
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-sigCh
 	log.Printf("[wrapper] Received %v, shutting down...", sig)
 
-	// Stop watcher
-	watcher.Stop()
-
-	// Stop Claude CLI
-	if stopErr := proc.Stop(25 * time.Second); stopErr != nil {
-		log.Printf("[wrapper] Process stop error: %v", stopErr)
-	}
-
-	// Shutdown HTTP server
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if shutErr := httpServer.Shutdown(ctx); shutErr != nil {
-		log.Printf("[wrapper] Server shutdown error: %v", shutErr)
-	}
-
-	log.Printf("[wrapper] Shutdown complete")
+	shutdown(httpServer, watcher, proc)
 }
 
 // envOr returns the value of an environment variable or a fallback.

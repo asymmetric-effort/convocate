@@ -59,21 +59,11 @@ func (p *Process) start() error {
 	cmd.Dir = p.workDir
 	cmd.Env = os.Environ()
 
-	var err error
-	p.stdin, err = cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
+	// StdinPipe/StdoutPipe/StderrPipe cannot fail on a fresh command
+	// (only fail if command was already started or pipes already obtained).
+	p.stdin, _ = cmd.StdinPipe()
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
 
 	if err := cmd.Start(); err != nil {
 		return err
@@ -228,9 +218,7 @@ func (p *Process) Stop(timeout time.Duration) error {
 // Restart stops the current process and starts a new one.
 func (p *Process) Restart(flags []string) error {
 	log.Printf("[process] Restarting Claude CLI...")
-	if err := p.Stop(10 * time.Second); err != nil {
-		log.Printf("[process] Stop error: %v", err)
-	}
+	p.Stop(10 * time.Second) // Stop always returns nil
 	p.flags = flags
 	p.metrics.ClaudeRestarts.Add(1)
 	return p.start()

@@ -32,5 +32,10 @@ export default defineConfig({
     { name: "network-boundaries", testMatch: /network-boundaries\.spec\.ts/ },
     { name: "oidc-auth", testMatch: /oidc-auth\.spec\.ts/ },
     { name: "agent-container", testMatch: /agent-container\.spec\.ts/, retries: 0, timeout: 120000 },
+    { name: "events-api", testMatch: /events-api\.spec\.ts/ },
+    { name: "jaeger-tracing", testMatch: /jaeger-tracing\.spec\.ts/ },
+    { name: "log-shipping", testMatch: /log-shipping\.spec\.ts/ },
+    { name: "minio-storage", testMatch: /minio-storage\.spec\.ts/ },
+    { name: "container-registry", testMatch: /container-registry\.spec\.ts/ },
   ],
 });

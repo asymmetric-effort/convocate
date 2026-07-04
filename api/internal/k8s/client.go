@@ -12,7 +12,7 @@ import (
 
 const AgentNamespace = "convocate-agents"
 
-var Client *kubernetes.Clientset
+var Client kubernetes.Interface
 var DynClient dynamic.Interface
 
 func Init() error {

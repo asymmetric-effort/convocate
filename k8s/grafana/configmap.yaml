@@ -25,17 +25,22 @@ data:
     enabled = true
     name = OpenBao
     allow_sign_up = true
+    auto_login = false
     client_id = $__env{OPENBAO_OIDC_CLIENT_ID}
     client_secret = $__env{OPENBAO_OIDC_CLIENT_SECRET}
     scopes = openid
     auth_url = https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
-    token_url = http://openbao.security.svc:8200/v1/identity/oidc/provider/default/token
-    api_url = http://openbao.security.svc:8200/v1/identity/oidc/provider/default/userinfo
+    token_url = https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
+    api_url = https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
     tls_skip_verify_insecure = true
     use_pkce = true
+    use_refresh_token = false
     role_attribute_path = contains(groups[*], 'admins') && 'Admin' || 'Viewer'
-    login_attribute_path = username
-    name_attribute_path = username
+    login_attribute_path = sub
+    name_attribute_path = sub
+    email_attribute_path = join('@', [sub, 'openbao.local'])
+    id_token_attribute_name = id_token
+    allow_assign_grafana_admin = true
 
     [dashboards]
     default_home_dashboard_path = /var/lib/grafana/dashboards/convocate-cluster.json

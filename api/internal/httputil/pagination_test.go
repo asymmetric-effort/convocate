@@ -59,3 +59,70 @@ func TestPaginate(t *testing.T) {
 		t.Errorf("items len = %d, want 0", len(result3))
 	}
 }
+
+func TestParsePagination_NegativeOffset(t *testing.T) {
+	r := httptest.NewRequest("GET", "/?offset=-5", nil)
+	offset, _ := ParsePagination(r)
+	if offset != 0 {
+		t.Errorf("offset = %d, want 0 (clamped)", offset)
+	}
+}
+
+func TestParsePagination_ZeroLimit(t *testing.T) {
+	r := httptest.NewRequest("GET", "/?limit=0", nil)
+	_, limit := ParsePagination(r)
+	if limit != 1 {
+		t.Errorf("limit = %d, want 1 (min)", limit)
+	}
+}
+
+func TestParsePagination_NegativeLimit(t *testing.T) {
+	r := httptest.NewRequest("GET", "/?limit=-10", nil)
+	_, limit := ParsePagination(r)
+	if limit != 1 {
+		t.Errorf("limit = %d, want 1 (min)", limit)
+	}
+}
+
+func TestParsePagination_InvalidValues(t *testing.T) {
+	r := httptest.NewRequest("GET", "/?offset=abc&limit=xyz", nil)
+	offset, limit := ParsePagination(r)
+	if offset != 0 {
+		t.Errorf("offset = %d, want 0 (default for invalid)", offset)
+	}
+	if limit != 25 {
+		t.Errorf("limit = %d, want 25 (default for invalid)", limit)
+	}
+}
+
+func TestPaginate_EmptySlice(t *testing.T) {
+	page := Paginate([]int{}, 0, 10)
+	if page.Total != 0 {
+		t.Errorf("total = %d, want 0", page.Total)
+	}
+	result := page.Items.([]int)
+	if len(result) != 0 {
+		t.Errorf("items len = %d, want 0", len(result))
+	}
+}
+
+func TestPaginate_ExactBoundary(t *testing.T) {
+	items := []string{"a", "b", "c"}
+	page := Paginate(items, 0, 3)
+	result := page.Items.([]string)
+	if len(result) != 3 {
+		t.Errorf("items len = %d, want 3", len(result))
+	}
+	if page.Total != 3 {
+		t.Errorf("total = %d, want 3", page.Total)
+	}
+}
+
+func TestPaginate_OffsetAtTotal(t *testing.T) {
+	items := []string{"a", "b"}
+	page := Paginate(items, 2, 5)
+	result := page.Items.([]string)
+	if len(result) != 0 {
+		t.Errorf("items len = %d, want 0", len(result))
+	}
+}

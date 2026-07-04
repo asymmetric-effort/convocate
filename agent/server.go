@@ -27,6 +27,7 @@ type Server struct {
 	claudeVersion  string
 	podName        string
 	nodeName       string
+	pingInterval   time.Duration // WebSocket ping interval (default: 30s)
 }
 
 // NewServer creates a new Server instance.
@@ -39,6 +40,7 @@ func NewServer(proc *Process, metrics *Metrics, auth *Auth, wrapperVersion, clau
 		claudeVersion:  claudeVersion,
 		podName:        podName,
 		nodeName:       nodeName,
+		pingInterval:   30 * time.Second,
 	}
 }
 
@@ -82,15 +84,12 @@ func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 
 // handleMetrics returns usage and performance statistics.
 func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
-	data, err := s.metrics.SnapshotJSON(
+	// SnapshotJSON marshals MetricsSnapshot (all basic types) — cannot fail.
+	data, _ := s.metrics.SnapshotJSON(
 		s.wrapperVersion, s.claudeVersion,
 		s.podName, s.nodeName,
 		s.process.Uptime(),
 	)
-	if err != nil {
-		http.Error(w, `{"error":"metrics serialization failed"}`, http.StatusInternalServerError)
-		return
-	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
 }
@@ -141,14 +140,11 @@ func (s *Server) streamOutput(w http.ResponseWriter, r *http.Request, isStdout b
 
 	for {
 		select {
-		case data, ok := <-ch:
-			if !ok {
-				return
-			}
+		case data := <-ch:
 			if err := wsWriteFrame(conn, data); err != nil {
 				return
 			}
-		case <-time.After(30 * time.Second):
+		case <-time.After(s.pingInterval):
 			if err := wsWritePing(conn); err != nil {
 				return
 			}

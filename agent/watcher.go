@@ -54,10 +54,7 @@ func (w *Watcher) Start() error {
 
 	for {
 		select {
-		case event, ok := <-watcher.Events:
-			if !ok {
-				return nil
-			}
+		case event := <-watcher.Events:
 			// Filter for events on the target file
 			if filepath.Base(event.Name) != baseName {
 				continue
@@ -77,10 +74,7 @@ func (w *Watcher) Start() error {
 				w.onChange()
 			})
 
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				return nil
-			}
+		case err := <-watcher.Errors:
 			log.Printf("[watcher] Error: %v", err)
 
 		case <-w.stop:

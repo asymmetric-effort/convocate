@@ -27,9 +27,14 @@ type ProjectResponse struct {
 	AgentID string `json:"agentId"`
 }
 
-// internalCall makes an HTTP request to a local API endpoint.
-// Used to delegate to existing sub-API handlers (ide, pb, repo, amgr).
-func internalCall(method, path string, body interface{}) ([]byte, int, error) {
+// internalCallFn is the function used to make internal API calls.
+// Tests can replace this to inject a mock server.
+var internalCallFn = func(method, path string, body interface{}) ([]byte, int, error) {
+	return doInternalCall("http://localhost:8443", method, path, body)
+}
+
+// doInternalCall makes an HTTP request to the given base URL + path.
+func doInternalCall(baseURL, method, path string, body interface{}) ([]byte, int, error) {
 	var reqBody io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -39,7 +44,7 @@ func internalCall(method, path string, body interface{}) ([]byte, int, error) {
 		reqBody = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, "http://localhost:8443"+path, reqBody)
+	req, err := http.NewRequest(method, baseURL+path, reqBody)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -54,6 +59,11 @@ func internalCall(method, path string, body interface{}) ([]byte, int, error) {
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 	return respBody, resp.StatusCode, nil
+}
+
+// internalCall wraps internalCallFn for backward compatibility.
+func internalCall(method, path string, body interface{}) ([]byte, int, error) {
+	return internalCallFn(method, path, body)
 }
 
 func Register(mux *http.ServeMux) {

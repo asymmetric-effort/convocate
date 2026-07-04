@@ -11,8 +11,30 @@ updates:
       - "dependencies"
       - "go"
 
+  - package-ecosystem: "gomod"
+    directory: "/metrics"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "go"
+
+  - package-ecosystem: "gomod"
+    directory: "/agent"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "go"
+
   - package-ecosystem: "npm"
-    directory: "/site"
+    directory: "/ui"
     schedule:
       interval: "weekly"
       day: "monday"

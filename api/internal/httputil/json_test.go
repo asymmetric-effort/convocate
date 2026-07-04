@@ -60,3 +60,75 @@ func TestReadJSON(t *testing.T) {
 		t.Errorf("Name = %q, want %q", target.Name, "test")
 	}
 }
+
+func TestReadJSON_InvalidBody(t *testing.T) {
+	body := bytes.NewBufferString(`{invalid json}`)
+	r := httptest.NewRequest("POST", "/", body)
+
+	var target struct {
+		Name string `json:"name"`
+	}
+	err := ReadJSON(r, &target)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON body")
+	}
+}
+
+func TestReadJSON_EmptyBody(t *testing.T) {
+	body := bytes.NewBufferString(``)
+	r := httptest.NewRequest("POST", "/", body)
+
+	var target struct {
+		Name string `json:"name"`
+	}
+	err := ReadJSON(r, &target)
+	if err == nil {
+		t.Fatal("expected error for empty body")
+	}
+}
+
+func TestWriteJSON_NilData(t *testing.T) {
+	w := httptest.NewRecorder()
+	WriteJSON(w, http.StatusOK, nil)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+}
+
+func TestWriteJSON_SliceData(t *testing.T) {
+	w := httptest.NewRecorder()
+	data := []string{"a", "b", "c"}
+	WriteJSON(w, http.StatusCreated, data)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusCreated)
+	}
+
+	var result []string
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if len(result) != 3 {
+		t.Errorf("len = %d, want 3", len(result))
+	}
+}
+
+func TestWriteError_Details(t *testing.T) {
+	w := httptest.NewRecorder()
+	WriteError(w, http.StatusUnprocessableEntity, "validation_failed", "field errors")
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnprocessableEntity)
+	}
+
+	var result Error
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result.Code != "validation_failed" {
+		t.Errorf("code = %q, want %q", result.Code, "validation_failed")
+	}
+	if result.Details != nil {
+		t.Errorf("details = %v, want nil", result.Details)
+	}
+}
