@@ -430,11 +430,23 @@ data:
           "gridPos": { "h": 6, "w": 24, "x": 0, "y": 76 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
-            "query": "from(bucket: \"logs\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\")\n  |> group(columns: [\"service\"])\n  |> last()",
+            "query": "from(bucket: \"logs\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\")\n  |> group(columns: [\"service\"])\n  |> last()\n  |> keep(columns: [\"_value\", \"service\"])",
             "refId": "A"
           }],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": ["lastNotNull"],
+              "fields": ""
+            },
+            "orientation": "horizontal",
+            "textMode": "value_and_name",
+            "colorMode": "background",
+            "graphMode": "none"
+          },
           "fieldConfig": {
             "defaults": {
+              "displayName": "${__field.labels.service}",
               "mappings": [
                 { "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }, "type": "value" }
               ],
@@ -473,11 +485,23 @@ data:
           "gridPos": { "h": 6, "w": 24, "x": 0, "y": 90 },
           "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
           "targets": [{
-            "query": "from(bucket: \"logs\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\")\n  |> group(columns: [\"service\"])\n  |> mean()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))",
+            "query": "from(bucket: \"logs\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\")\n  |> group(columns: [\"service\"])\n  |> mean()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))\n  |> keep(columns: [\"_value\", \"service\"])",
             "refId": "A"
           }],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": ["lastNotNull"],
+              "fields": ""
+            },
+            "orientation": "horizontal",
+            "textMode": "value_and_name",
+            "colorMode": "background",
+            "graphMode": "none"
+          },
           "fieldConfig": {
             "defaults": {
+              "displayName": "${__field.labels.service}",
               "unit": "percent",
               "min": 0,
               "max": 100,
