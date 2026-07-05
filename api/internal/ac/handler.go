@@ -21,6 +21,7 @@ func Register(mux *http.ServeMux) {
 	mux.Handle("DELETE /api/v1/ac/user/{userId}", middleware.Chain(http.HandlerFunc(h.deleteUser), auth, update))
 	mux.Handle("GET /api/v1/ac/group", middleware.Chain(http.HandlerFunc(h.listGroups), auth, view))
 	mux.Handle("POST /api/v1/ac/group", middleware.Chain(http.HandlerFunc(h.createGroup), auth, update))
+	mux.Handle("PATCH /api/v1/ac/group/{groupId}", middleware.Chain(http.HandlerFunc(h.updateGroup), auth, update))
 	mux.Handle("DELETE /api/v1/ac/group/{groupId}", middleware.Chain(http.HandlerFunc(h.deleteGroup), auth, update))
 	mux.Handle("PUT /api/v1/ac/group/{groupId}/user", middleware.Chain(http.HandlerFunc(h.setGroupUsers), auth, update))
 	mux.Handle("PUT /api/v1/ac/group/{groupId}/role", middleware.Chain(http.HandlerFunc(h.setGroupRoles), auth, update))
@@ -99,18 +100,43 @@ func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Name  string   `json:"name"`
+		Roles []string `json:"roles"`
+	}
+	if err := httputil.ReadJSON(r, &req); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
+		return
+	}
+	g, err := h.store.CreateGroup(req.Name, req.Roles)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
+		return
+	}
+	httputil.WriteJSON(w, http.StatusCreated, g)
+}
+
+func (h *Handler) updateGroup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
 		Name string `json:"name"`
 	}
 	if err := httputil.ReadJSON(r, &req); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "invalid request body")
 		return
 	}
-	g, err := h.store.CreateGroup(req.Name)
+	if req.Name == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "validation_failed", "name is required")
+		return
+	}
+	g, ok, err := h.store.UpdateGroup(r.PathValue("groupId"), req.Name)
 	if err != nil {
 		httputil.WriteError(w, http.StatusBadGateway, "backend_error", err.Error())
 		return
 	}
-	httputil.WriteJSON(w, http.StatusCreated, g)
+	if !ok {
+		httputil.WriteError(w, http.StatusNotFound, "not_found", "group not found")
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, g)
 }
 
 func (h *Handler) deleteGroup(w http.ResponseWriter, r *http.Request) {

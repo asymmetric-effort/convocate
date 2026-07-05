@@ -11,11 +11,12 @@ import (
 )
 
 type User struct {
-	ID     string   `json:"id"`
-	Email  string   `json:"email"`
-	Name   string   `json:"name"`
-	Status string   `json:"status"`
-	Groups []string `json:"groups"`
+	ID       string   `json:"id"`
+	Email    string   `json:"email"`
+	Name     string   `json:"name"`
+	Password string   `json:"password,omitempty"`
+	Status   string   `json:"status"`
+	Groups   []string `json:"groups"`
 }
 
 type Group struct {
@@ -33,10 +34,9 @@ type Role struct {
 }
 
 type GlobalSettings struct {
-	RequireMFA           bool `json:"requireMfa"`
-	SessionTimeoutMin    int  `json:"sessionTimeoutMinutes"`
-	PasswordMinLength    int  `json:"passwordMinLength"`
-	PasswordRotationDays int  `json:"passwordRotationDays"`
+	RequireMFA        bool `json:"requireMfa"`
+	SessionTimeoutMin int  `json:"sessionTimeoutMinutes"`
+	PasswordMinLength int  `json:"passwordMinLength"`
 }
 
 // Store wraps an OpenBao client for access control persistence.
@@ -309,16 +309,22 @@ func (s *Store) getUser(username string) (User, error) {
 	}, nil
 }
 
-// CreateUser creates a userpass login and a corresponding identity entity.
+// CreateUser creates a userpass login and a corresponding identity entity
+// with an entity alias linking the two.
 func (s *Store) CreateUser(u User) (User, error) {
-	username := u.Email
+	username := u.Name
 	if username == "" {
-		username = u.Name
+		username = u.Email
 	}
 
-	// Create userpass login.
+	password := u.Password
+	if password == "" {
+		password = "changeme"
+	}
+
+	// Create userpass login with the caller-supplied password.
 	_, err := s.baoRequest("PUT", "/v1/auth/userpass/users/"+username, map[string]any{
-		"password": "changeme", // Default password; caller should set via separate password-reset flow.
+		"password": password,
 	})
 	if err != nil {
 		return User{}, fmt.Errorf("create userpass user: %w", err)
@@ -343,6 +349,17 @@ func (s *Store) CreateUser(u User) (User, error) {
 		}
 	}
 
+	// Create entity alias linking the userpass user to the identity entity.
+	// Look up the userpass auth mount accessor first.
+	mountAccessor, err := s.getUserpassAccessor()
+	if err == nil && mountAccessor != "" {
+		_, _ = s.baoRequest("POST", "/v1/identity/entity-alias", map[string]any{
+			"name":           username,
+			"canonical_id":   id,
+			"mount_accessor": mountAccessor,
+		})
+	}
+
 	return User{
 		ID:     id,
 		Email:  u.Email,
@@ -350,6 +367,27 @@ func (s *Store) CreateUser(u User) (User, error) {
 		Status: "active",
 		Groups: []string{},
 	}, nil
+}
+
+// getUserpassAccessor returns the mount accessor for the userpass auth method.
+func (s *Store) getUserpassAccessor() (string, error) {
+	resp, err := s.baoRequest("GET", "/v1/sys/auth", nil)
+	if err != nil {
+		return "", fmt.Errorf("list auth mounts: %w", err)
+	}
+
+	// The response has mount paths as keys (e.g. "userpass/").
+	for key, val := range resp {
+		if !strings.HasPrefix(key, "userpass") {
+			continue
+		}
+		if m, ok := val.(map[string]any); ok {
+			if accessor, ok := m["accessor"].(string); ok {
+				return accessor, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("userpass auth mount not found")
 }
 
 // UpdateUser modifies a user. For status changes: disabling deletes the
@@ -401,6 +439,63 @@ func (s *Store) UpdateUser(id string, u User) (User, bool, error) {
 		_, _ = s.baoRequest("PUT", "/v1/auth/userpass/users/"+username, map[string]any{
 			"password": "changeme",
 		})
+	}
+
+	// Handle group membership changes if groups were provided.
+	if u.Groups != nil {
+		desiredGroups := make(map[string]bool, len(u.Groups))
+		for _, gid := range u.Groups {
+			desiredGroups[gid] = true
+		}
+
+		// List all groups to update membership.
+		allGroups, err := s.ListGroups()
+		if err != nil {
+			return User{}, false, fmt.Errorf("list groups for membership update: %w", err)
+		}
+
+		for _, g := range allGroups {
+			// Read the group to get current member_entity_ids.
+			resp, err := s.baoRequest("GET", "/v1/identity/group/id/"+g.ID, nil)
+			if err != nil {
+				continue
+			}
+			gData, _ := resp["data"].(map[string]any)
+			if gData == nil {
+				continue
+			}
+			currentMembers := mapStrSlice(gData, "member_entity_ids")
+			if currentMembers == nil {
+				currentMembers = []string{}
+			}
+
+			hasMember := false
+			for _, m := range currentMembers {
+				if m == id {
+					hasMember = true
+					break
+				}
+			}
+
+			if desiredGroups[g.ID] && !hasMember {
+				// Add entity to this group.
+				newMembers := append(currentMembers, id)
+				_, _ = s.baoRequest("POST", "/v1/identity/group/id/"+g.ID, map[string]any{
+					"member_entity_ids": newMembers,
+				})
+			} else if !desiredGroups[g.ID] && hasMember {
+				// Remove entity from this group.
+				newMembers := make([]string, 0, len(currentMembers))
+				for _, m := range currentMembers {
+					if m != id {
+						newMembers = append(newMembers, m)
+					}
+				}
+				_, _ = s.baoRequest("POST", "/v1/identity/group/id/"+g.ID, map[string]any{
+					"member_entity_ids": newMembers,
+				})
+			}
+		}
 	}
 
 	result, err := s.getUser(username)
@@ -478,11 +573,14 @@ func (s *Store) ListGroups() ([]Group, error) {
 	return groups, nil
 }
 
-// CreateGroup creates a new identity group.
-func (s *Store) CreateGroup(name string) (Group, error) {
+// CreateGroup creates a new identity group with optional role assignments.
+func (s *Store) CreateGroup(name string, roles []string) (Group, error) {
+	if roles == nil {
+		roles = []string{}
+	}
 	resp, err := s.baoRequest("POST", "/v1/identity/group", map[string]any{
 		"name":     name,
-		"policies": []string{},
+		"policies": roles,
 		"type":     "internal",
 	})
 	if err != nil {
@@ -499,8 +597,63 @@ func (s *Store) CreateGroup(name string) (Group, error) {
 		Name:      name,
 		Builtin:   false,
 		UserCount: 0,
-		Roles:     []string{},
+		Roles:     roles,
 	}, nil
+}
+
+// UpdateGroup updates the name of an identity group by ID. Builtin groups cannot be renamed.
+func (s *Store) UpdateGroup(id string, name string) (Group, bool, error) {
+	// Read group first to check builtin flag.
+	resp, err := s.baoRequest("GET", "/v1/identity/group/id/"+id, nil)
+	if err != nil {
+		return Group{}, false, nil
+	}
+	data, _ := resp["data"].(map[string]any)
+	if data == nil {
+		return Group{}, false, nil
+	}
+	if m, ok := data["metadata"].(map[string]any); ok {
+		if b, ok := m["builtin"].(string); ok && b == "true" {
+			return Group{}, false, fmt.Errorf("cannot rename builtin group")
+		}
+	}
+
+	_, err = s.baoRequest("POST", "/v1/identity/group/id/"+id, map[string]any{
+		"name": name,
+	})
+	if err != nil {
+		return Group{}, false, fmt.Errorf("update group name: %w", err)
+	}
+
+	// Read back group to return current state.
+	resp, err = s.baoRequest("GET", "/v1/identity/group/id/"+id, nil)
+	if err != nil {
+		return Group{}, false, fmt.Errorf("read back group: %w", err)
+	}
+	data, _ = resp["data"].(map[string]any)
+	if data == nil {
+		return Group{}, false, nil
+	}
+
+	members := mapStrSlice(data, "member_entity_ids")
+	policies := mapStrSlice(data, "policies")
+	if policies == nil {
+		policies = []string{}
+	}
+	builtin := false
+	if m, ok := data["metadata"].(map[string]any); ok {
+		if b, ok := m["builtin"].(string); ok && b == "true" {
+			builtin = true
+		}
+	}
+
+	return Group{
+		ID:        id,
+		Name:      name,
+		Builtin:   builtin,
+		UserCount: len(members),
+		Roles:     policies,
+	}, true, nil
 }
 
 // DeleteGroup deletes an identity group by ID. Builtin groups cannot be deleted.
@@ -709,26 +862,30 @@ func (s *Store) GetSettings() (GlobalSettings, error) {
 			RequireMFA:           false,
 			SessionTimeoutMin:    30,
 			PasswordMinLength:    12,
-			PasswordRotationDays: 90,
 		}, nil
+	}
+
+	defaults := GlobalSettings{
+		RequireMFA:        false,
+		SessionTimeoutMin: 30,
+		PasswordMinLength: 12,
 	}
 
 	data, _ := resp["data"].(map[string]any)
 	if data == nil {
-		return GlobalSettings{RequireMFA: false, SessionTimeoutMin: 30, PasswordMinLength: 12, PasswordRotationDays: 90}, nil
+		return defaults, nil
 	}
 
 	// KV v2 nests actual data under data.data.
 	inner, _ := data["data"].(map[string]any)
 	if inner == nil {
-		return GlobalSettings{RequireMFA: false, SessionTimeoutMin: 30, PasswordMinLength: 12, PasswordRotationDays: 90}, nil
+		return defaults, nil
 	}
 
 	gs := GlobalSettings{
 		RequireMFA:           false,
 		SessionTimeoutMin:    30,
 		PasswordMinLength:    12,
-		PasswordRotationDays: 90,
 	}
 	if v, ok := inner["requireMfa"].(bool); ok {
 		gs.RequireMFA = v
@@ -738,9 +895,6 @@ func (s *Store) GetSettings() (GlobalSettings, error) {
 	}
 	if v, ok := inner["passwordMinLength"].(float64); ok {
 		gs.PasswordMinLength = int(v)
-	}
-	if v, ok := inner["passwordRotationDays"].(float64); ok {
-		gs.PasswordRotationDays = int(v)
 	}
 
 	return gs, nil
@@ -752,7 +906,6 @@ func (s *Store) SetSettings(gs GlobalSettings) (GlobalSettings, error) {
 			"requireMfa":           gs.RequireMFA,
 			"sessionTimeoutMinutes": gs.SessionTimeoutMin,
 			"passwordMinLength":    gs.PasswordMinLength,
-			"passwordRotationDays": gs.PasswordRotationDays,
 		},
 	})
 	if err != nil {

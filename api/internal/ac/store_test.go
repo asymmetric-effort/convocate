@@ -166,7 +166,6 @@ func mockBao(t *testing.T) *httptest.Server {
 						"requireMfa":            true,
 						"sessionTimeoutMinutes": float64(60),
 						"passwordMinLength":     float64(16),
-						"passwordRotationDays":  float64(30),
 					},
 				},
 			})
@@ -293,7 +292,7 @@ func TestCreateGroup(t *testing.T) {
 	s, srv := newTestStore(t)
 	defer srv.Close()
 
-	g, err := s.CreateGroup("developers")
+	g, err := s.CreateGroup("developers", []string{"node-view", "node-create"})
 	if err != nil {
 		t.Fatalf("CreateGroup: %v", err)
 	}
@@ -302,6 +301,9 @@ func TestCreateGroup(t *testing.T) {
 	}
 	if g.ID == "" {
 		t.Error("group ID should not be empty")
+	}
+	if len(g.Roles) != 2 || g.Roles[0] != "node-view" || g.Roles[1] != "node-create" {
+		t.Errorf("expected roles [node-view, node-create], got %v", g.Roles)
 	}
 }
 
@@ -400,7 +402,6 @@ func TestSetSettings(t *testing.T) {
 		RequireMFA:           true,
 		SessionTimeoutMin:    45,
 		PasswordMinLength:    20,
-		PasswordRotationDays: 60,
 	})
 	if err != nil {
 		t.Fatalf("SetSettings: %v", err)
@@ -856,9 +857,9 @@ func TestCreateUser_NilEntityResp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// When entityResp is nil, ID falls back to username (email)
-	if u.ID != "test@test.com" {
-		t.Errorf("expected ID 'test@test.com', got %q", u.ID)
+	// When entityResp is nil, ID falls back to username (name)
+	if u.ID != "Test" {
+		t.Errorf("expected ID 'Test', got %q", u.ID)
 	}
 }
 

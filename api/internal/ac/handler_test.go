@@ -139,7 +139,7 @@ func TestHandlerCreateGroup_Happy(t *testing.T) {
 	h, srv := newTestAcHandler(t)
 	defer srv.Close()
 
-	req := newAuthRequest("POST", "/api/v1/ac/group", map[string]string{"name": "devs"})
+	req := newAuthRequest("POST", "/api/v1/ac/group", map[string]any{"name": "devs", "roles": []string{"node-view", "node-create"}})
 	rec := httptest.NewRecorder()
 	h.createGroup(rec, req)
 
@@ -289,7 +289,6 @@ func TestHandlerPutSettings_Happy(t *testing.T) {
 		RequireMFA:           true,
 		SessionTimeoutMin:    45,
 		PasswordMinLength:    20,
-		PasswordRotationDays: 60,
 	})
 	rec := httptest.NewRecorder()
 	h.putSettings(rec, req)
@@ -489,7 +488,7 @@ func TestHandlerCreateGroup_BackendError(t *testing.T) {
 	h, srv := newErrorHandler(t)
 	defer srv.Close()
 
-	req := newAuthRequest("POST", "/api/v1/ac/group", map[string]string{"name": "devs"})
+	req := newAuthRequest("POST", "/api/v1/ac/group", map[string]any{"name": "devs", "roles": []string{"node-view"}})
 	rec := httptest.NewRecorder()
 	h.createGroup(rec, req)
 
@@ -585,7 +584,7 @@ func TestHandlerPutSettings_BackendError(t *testing.T) {
 	h, srv := newErrorHandler(t)
 	defer srv.Close()
 
-	req := newAuthRequest("PUT", "/api/v1/ac/settings", GlobalSettings{RequireMFA: true, SessionTimeoutMin: 30, PasswordMinLength: 12, PasswordRotationDays: 90})
+	req := newAuthRequest("PUT", "/api/v1/ac/settings", GlobalSettings{RequireMFA: true, SessionTimeoutMin: 30, PasswordMinLength: 12})
 	rec := httptest.NewRecorder()
 	h.putSettings(rec, req)
 

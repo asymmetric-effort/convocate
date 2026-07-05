@@ -18,7 +18,7 @@ const h = createElement;
 
 interface User { id: string; email: string; name: string; status: string; groups: string[] }
 interface Group { id: string; name: string; builtin: boolean; userCount: number; roles: string[] }
-interface GlobalSettings { requireMfa: boolean; sessionTimeoutMinutes: number; passwordMinLength: number; passwordRotationDays: number }
+interface GlobalSettings { requireMfa: boolean; sessionTimeoutMinutes: number; passwordMinLength: number }
 interface MFAEnrollResult { url: string; barcode: string }
 
 // ---------------------------------------------------------------------------
@@ -53,10 +53,28 @@ async function fetchGroups(): Promise<Group[]> {
   return (await res.json()).items || [];
 }
 
-async function createGroup(name: string): Promise<Group> {
-  const res = await fetch("/api/v1/ac/group", { method: "POST", headers: authHeaders(), body: JSON.stringify({ name }) });
+async function createGroup(name: string, roles: string[]): Promise<Group> {
+  const res = await fetch("/api/v1/ac/group", { method: "POST", headers: authHeaders(), body: JSON.stringify({ name, roles }) });
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   return res.json();
+}
+
+async function setGroupRoles(groupId: string, roles: string[]): Promise<Group> {
+  const res = await fetch(`/api/v1/ac/group/${groupId}/role`, { method: "PUT", headers: authHeaders(), body: JSON.stringify({ roles }) });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+async function updateGroupName(groupId: string, name: string): Promise<Group> {
+  const res = await fetch(`/api/v1/ac/group/${groupId}`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ name }) });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+async function fetchRoles(): Promise<{ id: string; description: string }[]> {
+  const res = await fetch("/api/v1/ac/role?limit=200", { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return (await res.json()).items || [];
 }
 
 async function fetchSettings(): Promise<GlobalSettings> {
@@ -113,16 +131,27 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
   const [newUserName, setNewUserName] = useState("");
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupRoles, setNewGroupRoles] = useState<string[]>([]);
+  const [allRoles, setAllRoles] = useState<{ id: string; description: string }[]>([]);
+  const [showEditGroup, setShowEditGroup] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+  const [editGroupName, setEditGroupName] = useState("");
+  const [editGroupRoles, setEditGroupRoles] = useState<string[]>([]);
   const [mfaStatuses, setMfaStatuses] = useState<Record<string, boolean>>({});
   const [showMfaEnroll, setShowMfaEnroll] = useState(false);
   const [mfaEnrollResult, setMfaEnrollResult] = useState<MFAEnrollResult | null>(null);
   const [mfaEnrolling, setMfaEnrolling] = useState(false);
+  const [showEditUser, setShowEditUser] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editUserName, setEditUserName] = useState("");
+  const [editUserEmail, setEditUserEmail] = useState("");
+  const [editUserGroups, setEditUserGroups] = useState<string[]>([]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [u, g, s] = await Promise.all([fetchUsers(), fetchGroups(), fetchSettings()]);
-      setUsers(u); setGroups(g); setSettings(s);
+      const [u, g, s, r] = await Promise.all([fetchUsers(), fetchGroups(), fetchSettings(), fetchRoles()]);
+      setUsers(u); setGroups(g); setSettings(s); setAllRoles(r);
       // Load MFA statuses for all users in parallel
       const statusEntries = await Promise.all(
         u.map(async (user: User) => {
@@ -155,11 +184,35 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
   const handleCreateGroup = useCallback(async () => {
     if (!newGroupName.trim()) { setError("Group name is required."); return; }
     try {
-      await createGroup(newGroupName.trim());
-      setNewGroupName(""); setShowAddGroup(false);
+      await createGroup(newGroupName.trim(), newGroupRoles);
+      setNewGroupName(""); setNewGroupRoles([]); setShowAddGroup(false);
       await loadAll();
     } catch (err: any) { setError(err.message); }
-  }, [newGroupName, loadAll]);
+  }, [newGroupName, newGroupRoles, loadAll]);
+
+  const openEditGroup = useCallback((group: Group) => {
+    setEditingGroup(group);
+    setEditGroupName(group.name);
+    setEditGroupRoles([...group.roles]);
+    setShowEditGroup(true);
+  }, []);
+
+  const handleSaveEditGroup = useCallback(async () => {
+    if (!editingGroup) return;
+    if (!editGroupName.trim()) { setError("Group name is required."); return; }
+    try {
+      const nameChanged = editGroupName.trim() !== editingGroup.name;
+      const rolesChanged = JSON.stringify([...editGroupRoles].sort()) !== JSON.stringify([...editingGroup.roles].sort());
+      if (nameChanged) {
+        await updateGroupName(editingGroup.id, editGroupName.trim());
+      }
+      if (rolesChanged) {
+        await setGroupRoles(editingGroup.id, editGroupRoles);
+      }
+      setShowEditGroup(false);
+      await loadAll();
+    } catch (err: any) { setError(err.message); }
+  }, [editingGroup, editGroupName, editGroupRoles, loadAll]);
 
   const handleSaveSettings = useCallback(async () => {
     if (!settings) return;
@@ -184,6 +237,31 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
     } catch (err: any) { setError(err.message); }
   }, [loadAll]);
 
+  const openEditUser = useCallback((row: any) => {
+    const user = users.find((u) => u.id === row.id);
+    if (!user) return;
+    setEditingUser(user);
+    setEditUserName(user.name);
+    setEditUserEmail(user.email);
+    setEditUserGroups([...user.groups]);
+    setShowEditUser(true);
+  }, [users]);
+
+  const handleSaveEditUser = useCallback(async () => {
+    if (!editingUser) return;
+    if (!editUserName.trim()) { setError("Name is required."); return; }
+    if (!editUserEmail.trim()) { setError("Email is required."); return; }
+    try {
+      await fetch(`/api/v1/ac/user/${editingUser.id}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ name: editUserName.trim(), email: editUserEmail.trim(), groups: editUserGroups }),
+      });
+      setShowEditUser(false);
+      await loadAll();
+    } catch (err: any) { setError(err.message); }
+  }, [editingUser, editUserName, editUserEmail, editUserGroups, loadAll]);
+
   if (loading) {
     return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "access-control" },
       h("div", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center" } }, h(Spinner, null))
@@ -203,7 +281,8 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
           { key: "status", header: "Status", width: 100, render: (v: string) => h(Tag, { label: v, color: v === "active" ? "green" : "red", variant: "solid" as const, size: "sm" as const }) },
           { key: "mfa", header: "MFA", width: 100, render: (v: string) => h(Tag, { label: v, color: v === "Enrolled" ? "green" : "gray", variant: "solid" as const, size: "sm" as const }) },
           { key: "groups", header: "Groups", width: 150 },
-          { key: "actions", header: "", width: 260, render: (_: string, row: any) => h("div", { style: { display: "flex", gap: "4px" } },
+          { key: "actions", header: "", width: 320, render: (_: string, row: any) => h("div", { style: { display: "flex", gap: "4px" } },
+            h(Button, { variant: "secondary" as any, onClick: () => openEditUser(row) }, "Edit"),
             h(Button, {
               variant: (row.status === "active" ? "warning" : "primary") as any,
               onClick: () => {
@@ -239,11 +318,20 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
           { key: "userCount", header: "Users", width: 80 },
           { key: "roles", header: "Roles", width: 250 },
           { key: "builtin", header: "Built-in", width: 80 },
-          { key: "actions", header: "", width: 80, render: (_: string, row: any) =>
-            row.builtin === "Yes" ? null : h(Button, {
-              variant: "danger" as any,
-              onClick: () => fetch(`/api/v1/ac/group/${row.id}`, { method: "DELETE", headers: authHeaders() }).then(loadAll),
-            }, "Delete")
+          { key: "actions", header: "", width: 160, render: (_: string, row: any) =>
+            row.builtin === "No" ? h("div", { style: { display: "flex", gap: "4px" } },
+              h(Button, {
+                variant: "secondary" as any,
+                onClick: () => {
+                  const g = groups.find((gr) => gr.id === row.id);
+                  if (g) openEditGroup(g);
+                },
+              }, "Edit"),
+              h(Button, {
+                variant: "danger" as any,
+                onClick: () => fetch(`/api/v1/ac/group/${row.id}`, { method: "DELETE", headers: authHeaders() }).then(loadAll),
+              }, "Delete"),
+            ) : null
           },
         ],
         data: groups.map((g) => ({ id: g.id, name: g.name, userCount: String(g.userCount), roles: g.roles.join(", "), builtin: g.builtin ? "Yes" : "No" })),
@@ -266,10 +354,6 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
       h("div", null,
         h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px" } }, "Min Password Length"),
         h(TextField, { value: String(settings.passwordMinLength), onChange: (v: string) => setSettings({ ...settings, passwordMinLength: parseInt(v) || 0 }) })
-      ),
-      h("div", null,
-        h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px" } }, "Password Rotation (days)"),
-        h(TextField, { value: String(settings.passwordRotationDays), onChange: (v: string) => setSettings({ ...settings, passwordRotationDays: parseInt(v) || 0 }) })
       ),
       h("div", { style: { display: "flex", justifyContent: "flex-end" } },
         h(Button, { variant: "primary" as const, onClick: handleSaveSettings }, "Save Settings")
@@ -299,12 +383,32 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
       )
     ) : null,
     // Add Group dialog
-    showAddGroup ? h(Modal, { open: true, onClose: () => setShowAddGroup(false), title: "Add Group", size: "sm" as const },
+    showAddGroup ? h(Modal, { open: true, onClose: () => setShowAddGroup(false), title: "Add Group", size: "md" as const },
       h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },
         h(TextField, { placeholder: "Group name", value: newGroupName, onChange: (v: string) => setNewGroupName(v) }),
+        h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px" } }, "Assign Roles:"),
+        h("div", { style: { maxHeight: "200px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px", padding: "4px", backgroundColor: "#2a2a2a", borderRadius: "4px" } },
+          ...allRoles.map((role) =>
+            h("label", { key: role.id, style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer", padding: "2px 4px" } },
+              h("input", {
+                type: "checkbox",
+                checked: newGroupRoles.includes(role.id),
+                onChange: () => {
+                  if (newGroupRoles.includes(role.id)) {
+                    setNewGroupRoles(newGroupRoles.filter((r) => r !== role.id));
+                  } else {
+                    setNewGroupRoles([...newGroupRoles, role.id]);
+                  }
+                },
+              }),
+              h("span", null, role.id),
+              h("span", { style: { color: "#888", marginLeft: "4px" } }, `— ${role.description}`),
+            )
+          )
+        ),
         h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
           h(Button, { variant: "secondary" as const, onClick: () => setShowAddGroup(false) }, "Cancel"),
-          h(Button, { variant: "primary" as const, onClick: handleCreateGroup }, "Add")
+          h(Button, { variant: "primary" as const, onClick: handleCreateGroup }, "Create")
         )
       )
     ) : null,
@@ -321,6 +425,75 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
         ),
         h("div", { style: { display: "flex", justifyContent: "flex-end", width: "100%" } },
           h(Button, { variant: "primary" as const, onClick: () => { setShowMfaEnroll(false); setMfaEnrollResult(null); loadAll(); } }, "Done")
+        )
+      )
+    ) : null,
+    // Edit User dialog
+    showEditUser && editingUser ? h(Modal, { open: true, onClose: () => setShowEditUser(false), title: `Edit User: ${editingUser.name}`, size: "md" as const },
+      h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },
+        h("div", null,
+          h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px" } }, "Name"),
+          h(TextField, { value: editUserName, onChange: (v: string) => setEditUserName(v) })
+        ),
+        h("div", null,
+          h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px" } }, "Email"),
+          h(TextField, { value: editUserEmail, onChange: (v: string) => setEditUserEmail(v) })
+        ),
+        h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px" } }, "Group Membership:"),
+        h("div", { style: { maxHeight: "200px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px", padding: "4px", backgroundColor: "#2a2a2a", borderRadius: "4px" } },
+          ...groups.map((group) =>
+            h("label", { key: group.id, style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer", padding: "2px 4px" } },
+              h("input", {
+                type: "checkbox",
+                checked: editUserGroups.includes(group.id),
+                onChange: () => {
+                  if (editUserGroups.includes(group.id)) {
+                    setEditUserGroups(editUserGroups.filter((g) => g !== group.id));
+                  } else {
+                    setEditUserGroups([...editUserGroups, group.id]);
+                  }
+                },
+              }),
+              h("span", null, group.name),
+            )
+          )
+        ),
+        h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
+          h(Button, { variant: "secondary" as const, onClick: () => setShowEditUser(false) }, "Cancel"),
+          h(Button, { variant: "primary" as const, onClick: handleSaveEditUser }, "Save")
+        )
+      )
+    ) : null,
+    // Edit Group dialog
+    showEditGroup && editingGroup ? h(Modal, { open: true, onClose: () => setShowEditGroup(false), title: `Edit Group: ${editingGroup.name}`, size: "md" as const },
+      h("div", { style: { display: "flex", flexDirection: "column", gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px" } },
+        h("div", null,
+          h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px" } }, "Group Name"),
+          h(TextField, { value: editGroupName, onChange: (v: string) => setEditGroupName(v) })
+        ),
+        h("div", { style: { fontSize: "12px", color: "#aaa", marginBottom: "4px" } }, "Assign Roles:"),
+        h("div", { style: { maxHeight: "300px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "4px", padding: "4px", backgroundColor: "#2a2a2a", borderRadius: "4px" } },
+          ...allRoles.map((role) =>
+            h("label", { key: role.id, style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer", padding: "2px 4px" } },
+              h("input", {
+                type: "checkbox",
+                checked: editGroupRoles.includes(role.id),
+                onChange: () => {
+                  if (editGroupRoles.includes(role.id)) {
+                    setEditGroupRoles(editGroupRoles.filter((r) => r !== role.id));
+                  } else {
+                    setEditGroupRoles([...editGroupRoles, role.id]);
+                  }
+                },
+              }),
+              h("span", null, role.id),
+              h("span", { style: { color: "#888", marginLeft: "4px" } }, `— ${role.description}`),
+            )
+          )
+        ),
+        h("div", { style: { display: "flex", gap: "8px", justifyContent: "flex-end" } },
+          h(Button, { variant: "secondary" as const, onClick: () => setShowEditGroup(false) }, "Cancel"),
+          h(Button, { variant: "primary" as const, onClick: handleSaveEditGroup }, "Save")
         )
       )
     ) : null,
