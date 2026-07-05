@@ -8,13 +8,13 @@
 /** Check if the principal has a specific role */
 export function hasRole(principal: any, role: string): boolean {
   if (!principal || !principal.roles) return false;
-  return principal.roles.includes(role) || principal.roles.includes("admin");
+  return principal.roles.includes(role) || principal.roles.includes("admin") || principal.roles.includes("admin-policy");
 }
 
 /** Check if the principal has any of the given roles */
 export function hasAnyRole(principal: any, ...roles: string[]): boolean {
   if (!principal || !principal.roles) return false;
-  if (principal.roles.includes("admin")) return true;
+  if (principal.roles.includes("admin") || principal.roles.includes("admin-policy")) return true;
   return roles.some((r) => principal.roles.includes(r));
 }
 
