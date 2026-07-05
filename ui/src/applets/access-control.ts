@@ -146,6 +146,7 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
   const [editUserName, setEditUserName] = useState("");
   const [editUserEmail, setEditUserEmail] = useState("");
   const [editUserGroups, setEditUserGroups] = useState<string[]>([]);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; userId: string } | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -276,13 +277,22 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
     h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
       h(DataGrid, {
         columns: [
-          { key: "name", header: "Name", width: 150 },
-          { key: "email", header: "Email", width: 200 },
-          { key: "status", header: "Status", width: 100, render: (v: string) => h(Tag, { label: v, color: v === "active" ? "green" : "red", variant: "solid" as const, size: "sm" as const }) },
-          { key: "mfa", header: "MFA", width: 100, render: (v: string) => h(Tag, { label: v, color: v === "Enrolled" ? "green" : "gray", variant: "solid" as const, size: "sm" as const }) },
-          { key: "groups", header: "Groups", width: 150 },
-          { key: "actions", header: "", width: 320, render: (_: string, row: any) => h("div", { style: { display: "flex", gap: "4px" } },
-            h(Button, { variant: "secondary" as any, onClick: () => openEditUser(row) }, "Edit"),
+          { key: "name", header: "Name", width: 150, render: (v: string, row: any) => h("div", {
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
+          }, v) },
+          { key: "email", header: "Email", width: 200, render: (v: string, row: any) => h("div", {
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
+          }, v) },
+          { key: "status", header: "Status", width: 100, render: (v: string, row: any) => h("div", {
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
+          }, h(Tag, { label: v, color: v === "active" ? "green" : "red", variant: "solid" as const, size: "sm" as const })) },
+          { key: "mfa", header: "MFA", width: 100, render: (v: string, row: any) => h("div", {
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
+          }, h(Tag, { label: v, color: v === "Enrolled" ? "green" : "gray", variant: "solid" as const, size: "sm" as const })) },
+          { key: "groups", header: "Groups", width: 150, render: (v: string, row: any) => h("div", {
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
+          }, v) },
+          { key: "actions", header: "", width: 220, render: (_: string, row: any) => h("div", { style: { display: "flex", gap: "4px" } },
             h(Button, {
               variant: (row.status === "active" ? "warning" : "primary") as any,
               onClick: () => {
@@ -291,9 +301,6 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
               },
             }, row.status === "active" ? "Disable" : "Enable"),
             row.mfa === "Enrolled"
-              ? h(Button, { variant: "warning" as any, onClick: () => handleResetMFA(row.id) }, "Reset MFA")
-              : h(Button, { variant: "secondary" as any, onClick: () => handleEnrollMFA(row.id) }, "Enroll MFA"),
-            h(Button, { variant: "danger" as any, onClick: () => deleteUser(row.id).then(loadAll) }, "Delete"),
           ) },
         ],
         data: (() => {
@@ -361,7 +368,9 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
     ) : null
   );
 
-  return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "access-control" },
+  const menuItemStyle = { padding: "6px 12px", cursor: "pointer", fontSize: "13px", color: "#e0e0e0", whiteSpace: "nowrap" as const };
+
+  return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "access-control", onClick: () => setContextMenu(null) },
     error ? h("div", { style: { padding: "4px 8px", backgroundColor: "#3d1c1c", color: "#ff8888", fontSize: "12px", flexShrink: 0 }, onClick: () => setError("") }, error) : null,
     h("div", { style: { flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start" } },
       h(Tabs, { tabs: [
@@ -496,6 +505,22 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
           h(Button, { variant: "primary" as const, onClick: handleSaveEditGroup }, "Save")
         )
       )
+    ) : null,
+    // User row context menu
+    contextMenu ? h("div", {
+      style: {
+        position: "fixed", left: contextMenu.x + "px", top: contextMenu.y + "px",
+        backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
+        padding: "4px 0", zIndex: 1000, minWidth: "150px",
+      },
+      onClick: (e: MouseEvent) => e.stopPropagation(),
+    },
+      h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { openEditUser({ id: contextMenu.userId }); setContextMenu(null); } }, "Edit User"),
+      h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { if (confirm("Delete this user?")) deleteUser(contextMenu.userId).then(loadAll); setContextMenu(null); } }, "Delete User"),
+      h("div", { style: { height: "1px", backgroundColor: "#555", margin: "4px 0" } }),
+      mfaStatuses[contextMenu.userId]
+        ? h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { handleResetMFA(contextMenu.userId); setContextMenu(null); } }, "Reset MFA")
+        : h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { handleEnrollMFA(contextMenu.userId); setContextMenu(null); } }, "Enroll MFA"),
     ) : null,
   );
 }
