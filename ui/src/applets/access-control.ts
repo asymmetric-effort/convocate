@@ -217,7 +217,11 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
             h(Button, { variant: "danger" as any, onClick: () => deleteUser(row.id).then(loadAll) }, "Delete"),
           ) },
         ],
-        data: users.map((u) => ({ id: u.id, name: u.name, email: u.email, status: u.status, mfa: mfaStatuses[u.id] ? "Enrolled" : "Not Enrolled", groups: u.groups.join(", "), actions: "" })),
+        data: (() => {
+          const groupNameMap: Record<string, string> = {};
+          for (const g of groups) { groupNameMap[g.id] = g.name; }
+          return users.map((u) => ({ id: u.id, name: u.name, email: u.email, status: u.status, mfa: mfaStatuses[u.id] ? "Enrolled" : "Not Enrolled", groups: u.groups.map((gid: string) => groupNameMap[gid] || gid).join(", "), actions: "" }));
+        })(),
         striped: true,
       })
     )

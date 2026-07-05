@@ -47,7 +47,8 @@ const APPLETS: {
     defaultSize: { width: 1000, height: 420 }, resizable: false },
   { id: "pb", label: "Convocate Project Board", icon: "/img/icons/productboard.png", component: ProjectBoard },
   { id: "ide", label: "Code Monkey IDE", icon: "/img/icons/ide-monkey.png", component: CodeIDE },
-  { id: "ac", label: "Access Control", icon: "/img/icons/access-control.png", component: AccessControl },
+  { id: "ac", label: "Access Control", icon: "/img/icons/access-control.png", component: AccessControl,
+    defaultSize: { width: 1100, height: 520 }, resizable: false },
   { id: "repo", label: "Repo Manager", icon: "/img/icons/repo-man.png", component: RepoManager },
   { id: "sup", label: "Support Tool", icon: "/img/icons/support-tool.png", component: SupportTool },
 ];
