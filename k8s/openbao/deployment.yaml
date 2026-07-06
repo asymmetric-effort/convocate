@@ -91,6 +91,47 @@ spec:
               readOnly: true
             - name: audit-config
               mountPath: /fluent-bit/etc/
+        # Auto-unseal sidecar — polls OpenBao health and unseals on startup
+        - name: auto-unseal
+          image: 192.168.3.90:5000/convocate/openbao:latest
+          command: ["/busybox/sh", "-c"]
+          args:
+            - |
+              echo "Waiting for OpenBao to start..."
+              UNSEAL_KEY=$(cat /unseal/key)
+              while true; do
+                STATUS=$(/busybox/wget -q -O - "http://127.0.0.1:8200/v1/sys/health?sealedcode=200&uninitcode=200" 2>&1)
+                if echo "$STATUS" | /busybox/grep -q '"sealed":true'; then
+                  echo "OpenBao is sealed, unsealing..."
+                  /busybox/wget -q -O - --post-data="{\"key\":\"$UNSEAL_KEY\"}" \
+                    --header="Content-Type: application/json" \
+                    http://127.0.0.1:8200/v1/sys/unseal 2>&1
+                  echo "Unseal request sent"
+                fi
+                if echo "$STATUS" | /busybox/grep -q '"sealed":false'; then
+                  echo "OpenBao is unsealed"
+                  break
+                fi
+                /busybox/sleep 2
+              done
+              echo "Auto-unseal complete, sleeping..."
+              /busybox/sleep infinity
+          volumeMounts:
+            - name: unseal-key
+              mountPath: /unseal
+              readOnly: true
+          securityContext:
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              memory: "16Mi"
+              cpu: "10m"
+            limits:
+              memory: "32Mi"
+              cpu: "50m"
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -100,3 +141,6 @@ spec:
         - name: audit-config
           configMap:
             name: openbao-audit-fluentbit
+        - name: unseal-key
+          secret:
+            secretName: openbao-unseal-key
