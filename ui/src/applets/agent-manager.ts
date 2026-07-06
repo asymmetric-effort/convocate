@@ -174,16 +174,21 @@ function CreateAgentDialog({
   // Fetch existing project names and agents with existing containers when dialog opens
   useEffect(() => {
     if (!open) return;
-    fetchProjects().then((projects) => {
-      setExistingProjects(projects.map((p) => p.name));
-    }).catch(() => {});
-    fetchAgents(0, 200).then((page) => {
+    Promise.all([
+      fetchProjects().catch(() => []),
+      fetchAgents(0, 200).catch(() => ({ items: [] })),
+    ]).then(([projects, agentPage]) => {
+      const projectNames = new Set((projects as any[]).map((p: any) => p.name));
       const taken = new Set<string>();
-      for (const a of page.items || []) {
-        if (a.project) taken.add(a.project);
+      for (const a of agentPage.items || []) {
+        if (a.project) {
+          taken.add(a.project);
+          projectNames.add(a.project); // Merge agent projects into dropdown
+        }
       }
+      setExistingProjects(Array.from(projectNames));
       setProjectsWithAgents(taken);
-    }).catch(() => {});
+    });
   }, [open]);
 
   const hasDuplicateAgent = !isNewProject && project.trim() !== "" && projectsWithAgents.has(project.trim());
