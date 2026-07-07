@@ -1,0 +1,35 @@
+# Self-signed CA for agent-container TLS certificates.
+# cert-manager issues per-pod certificates from this CA.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: convocate-agent-ca
+  namespace: convocate-agents
+spec:
+  selfSigned: {}
+---
+# Root CA certificate issued by the self-signed issuer
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: convocate-agent-ca-cert
+  namespace: convocate-agents
+spec:
+  isCA: true
+  commonName: convocate-agent-ca
+  secretName: convocate-agent-ca-secret
+  issuerRef:
+    name: convocate-agent-ca
+    kind: Issuer
+  duration: 87600h # 10 years
+  renewBefore: 720h # 30 days
+---
+# CA issuer that signs per-pod certificates
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: convocate-agent-pod-ca
+  namespace: convocate-agents
+spec:
+  ca:
+    secretName: convocate-agent-ca-secret

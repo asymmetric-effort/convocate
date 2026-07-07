@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: verify-influxdb
+  namespace: o11y
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: verify-influxdb
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: verify
+          image: 192.168.3.90:5000/convocate/openbao:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["/busybox/sh", "-c"]
+          args:
+            - |
+              echo "=== InfluxDB Verification ==="
+              /busybox/wget -q --no-check-certificate -O - https://influxdb.o11y.svc:8086/health 2>&1
+              if [ $? -eq 0 ]; then
+                echo "PASS: InfluxDB is reachable and healthy"
+              else
+                echo "FAIL: InfluxDB is not reachable"
+                exit 1
+              fi
+      restartPolicy: OnFailure

@@ -1,28 +1,56 @@
 version: 2
 updates:
-  - package-ecosystem: gomod
-    directory: /
+  - package-ecosystem: "gomod"
+    directory: "/"
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
     labels:
-      - dependencies
-      - go
+      - "dependencies"
+      - "go"
 
-  - package-ecosystem: github-actions
-    directory: /
+  - package-ecosystem: "gomod"
+    directory: "/metrics"
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
     labels:
-      - dependencies
-      - ci
+      - "dependencies"
+      - "go"
 
-  - package-ecosystem: docker
-    directory: /
+  - package-ecosystem: "gomod"
+    directory: "/agent"
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
     labels:
-      - dependencies
-      - docker
+      - "dependencies"
+      - "go"
+
+  - package-ecosystem: "npm"
+    directory: "/ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "ci"

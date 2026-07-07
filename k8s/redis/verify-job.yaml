@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: verify-redis
+  namespace: data-layer
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: verify-redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: verify
+          image: 192.168.3.90:5000/convocate/redis:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["/usr/local/bin/redis-cli"]
+          args: ["-h", "redis.data-layer.svc", "ping"]
+      restartPolicy: OnFailure

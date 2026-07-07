@@ -1,120 +1,151 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-BUILD_DIR := build
-GO := go
-GOFLAGS := -trimpath
-LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION)"
+REGISTRY := 192.168.3.90:5000
+NAMESPACE := convocate
+IMAGES := openbao redis postgresql minio influxdb prometheus grafana jaeger api ui pdv metrics agent fluentbit
 
-BINARIES := convocate convocate-host convocate-agent
+.PHONY: all clean lint test test-metrics build cover deploy
 
-.PHONY: all generate build build-convocate build-convocate-host build-convocate-agent install clean lint lint-go lint-yaml lint-json lint-vuln test test-unit test-integration test-e2e release release/major release/minor
+all: build
 
-all: lint test build
-
-generate:
-	@echo "Generating embedded assets..."
-	$(GO) generate ./internal/assets/
-	@echo "Assets generated."
-
-build: build-convocate build-convocate-host build-convocate-agent
-	@echo "Build complete: $(BINARIES:%=$(BUILD_DIR)/%)"
-
-build-convocate: generate
-	@echo "Building convocate $(VERSION)..."
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/convocate ./cmd/convocate/
-
-build-convocate-host:
-	@echo "Building convocate-host $(VERSION)..."
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/convocate-host ./cmd/convocate-host/
-
-build-convocate-agent:
-	@echo "Building convocate-agent $(VERSION)..."
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/convocate-agent ./cmd/convocate-agent/
-
-install: build
-	@echo "Installing convocate, convocate-host, convocate-agent to /usr/local/bin..."
-	sudo install -m 0755 $(BUILD_DIR)/convocate  /usr/local/bin/convocate
-	sudo install -m 0755 $(BUILD_DIR)/convocate-host   /usr/local/bin/convocate-host
-	sudo install -m 0755 $(BUILD_DIR)/convocate-agent  /usr/local/bin/convocate-agent
-	@echo "Running 'convocate install' to finish setup..."
-	sudo /usr/local/bin/convocate install
-
+# ── clean ──────────────────────────────────────────────
 clean:
-	@echo "Cleaning..."
-	@rm -rf $(BUILD_DIR)
-	@rm -f coverage.out coverage.html
-	@$(GO) clean -testcache
-	@echo "Clean complete."
+	rm -rf build/
+	mkdir -p build/
+	-docker rmi $(addprefix $(REGISTRY)/convocate/,$(addsuffix :latest,$(IMAGES))) 2>/dev/null
 
-lint: lint-go lint-yaml lint-vuln
-	@echo "All linters passed."
+# ── lint ───────────────────────────────────────────────
+lint:
+	cd api && gofmt -l . && go vet ./...
 
-lint-go:
-	@echo "Running Go linter..."
-	go vet -v ./...
+# ── test ───────────────────────────────────────────────
+test:
+	cd api && go test ./...
+	cd metrics && go test ./...
+	cd agent && go test ./...
 
-lint-yaml:
-	@echo "Running YAML linter..."
-	@find . -name '*.yml' -o -name '*.yaml' | grep -v vendor | grep -v node_modules | xargs yamllint -s
+# ── test-metrics ──────────────────────────────────────────
+test-metrics:
+	./scripts/test-metrics.sh
 
-# lint-vuln scans the call graph against the Go vulnerability database
-# (vuln.go.dev). Auto-installs govulncheck if missing — first run pulls
-# the binary into $(go env GOBIN) (or ~/go/bin); subsequent runs hit the
-# cached binary.
-lint-vuln:
-	@echo "Running govulncheck against vuln.go.dev..."
-	@command -v govulncheck >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
-	@PATH="$$(go env GOBIN):$$(go env GOPATH)/bin:$$PATH" govulncheck ./...
+# ── build ──────────────────────────────────────────────
+build: $(addprefix build-,$(IMAGES))
 
-test: test-unit test-integration
-	@echo "All tests passed."
+build-openbao:
+	docker build -f docker/openbao.Dockerfile -t $(REGISTRY)/convocate/openbao:latest .
 
-test-unit:
-	@echo "Running unit tests..."
-	$(GO) test -v -race -count=1 -coverprofile=coverage.out ./internal/...
-	@$(GO) tool cover -func=coverage.out | tail -1
-	@echo "Unit tests complete."
+build-redis:
+	docker build -f docker/redis.Dockerfile -t $(REGISTRY)/convocate/redis:latest .
 
-test-integration:
-	@echo "Running integration tests..."
-	$(GO) test -v -race -count=1 -tags=integration ./test/integration/...
-	@echo "Integration tests complete."
+build-postgresql:
+	docker build -f docker/pg.Dockerfile -t $(REGISTRY)/convocate/postgresql:latest .
 
-test-e2e:
-	@echo "Running end-to-end tests..."
-	$(GO) test -v -count=1 -tags=e2e -timeout=300s ./test/e2e/...
-	@echo "End-to-end tests complete."
+build-minio:
+	docker build -f docker/minio.Dockerfile -t $(REGISTRY)/convocate/minio:latest .
 
-test-coverage: test-unit
-	@echo "Generating coverage report..."
-	@$(GO) tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report: coverage.html"
+build-influxdb:
+	docker build -f docker/influxdb.Dockerfile -t $(REGISTRY)/convocate/influxdb:latest .
 
-release:
-	@LATEST=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0"); \
-	MAJOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f1); \
-	MINOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f2); \
-	PATCH=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f3); \
-	NEXT="v$$MAJOR.$$MINOR.$$((PATCH + 1))"; \
-	echo "Bumping $$LATEST -> $$NEXT"; \
-	git tag "$$NEXT" && git push --tags && \
-	echo "Released $$NEXT"
+build-prometheus:
+	docker build -f docker/prometheus.Dockerfile -t $(REGISTRY)/convocate/prometheus:latest .
 
-release/minor:
-	@LATEST=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0"); \
-	MAJOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f1); \
-	MINOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f2); \
-	NEXT="v$$MAJOR.$$((MINOR + 1)).0"; \
-	echo "Bumping $$LATEST -> $$NEXT"; \
-	git tag "$$NEXT" && git push --tags && \
-	echo "Released $$NEXT"
+build-grafana:
+	docker build -f docker/grafana.Dockerfile -t $(REGISTRY)/convocate/grafana:latest .
 
-release/major:
-	@LATEST=$$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0"); \
-	MAJOR=$$(echo "$$LATEST" | sed 's/^v//' | cut -d. -f1); \
-	NEXT="v$$((MAJOR + 1)).0.0"; \
-	echo "Bumping $$LATEST -> $$NEXT"; \
-	git tag "$$NEXT" && git push --tags && \
-	echo "Released $$NEXT"
+build-jaeger:
+	docker build -f docker/jaeger.Dockerfile -t $(REGISTRY)/convocate/jaeger:latest .
+
+build-fluentbit:
+	docker build -f docker/fluentbit.Dockerfile -t $(REGISTRY)/convocate/fluentbit:latest .
+
+build-api:
+	docker build -f docker/api.Dockerfile -t $(REGISTRY)/convocate/api:latest .
+
+build-ui:
+	docker build -f docker/ui.Dockerfile -t $(REGISTRY)/convocate/ui:latest .
+
+build-pdv:
+	docker build -f docker/pdv.Dockerfile -t $(REGISTRY)/convocate/pdv:latest .
+
+build-metrics:
+	docker build -f docker/metrics.Dockerfile -t $(REGISTRY)/convocate/metrics:latest .
+
+build-agent:
+	docker build -f docker/agent.Dockerfile -t $(REGISTRY)/convocate/agent:latest .
+
+# ── cover ──────────────────────────────────────────────
+cover:
+	cd api && go test -coverprofile=build/coverage.out ./... && \
+	go tool cover -func=build/coverage.out | tail -1 | awk '{ \
+		gsub(/%/, "", $$3); \
+		if ($$3+0 < 98) { print "FAIL: coverage " $$3 "% < 98%"; exit 1 } \
+		else { print "PASS: coverage " $$3 "%" } \
+	}'
+
+# ── push ───────────────────────────────────────────────
+push: $(addprefix push-,$(IMAGES))
+
+push-%:
+	docker push $(REGISTRY)/convocate/$*:latest
+
+# ── deploy ─────────────────────────────────────────────
+deploy: build push k8s-apply k8s-verify
+	@echo "Deploy complete."
+
+k8s-apply:
+	kubectl apply -f k8s/namespace.yaml
+	kubectl apply -f k8s/storage.yaml
+	kubectl apply -f k8s/network-policies.yaml
+	# Security namespace
+	kubectl apply -f k8s/openbao/
+	kubectl rollout status deployment/openbao -n security --timeout=120s
+	# Data layer namespace
+	kubectl apply -f k8s/redis/
+	kubectl apply -f k8s/postgresql/
+	kubectl apply -f k8s/minio/
+	kubectl rollout status deployment/redis -n data-layer --timeout=120s
+	kubectl rollout status deployment/postgresql -n data-layer --timeout=120s
+	kubectl rollout status deployment/minio -n data-layer --timeout=120s
+	# Observability namespace
+	kubectl apply -f k8s/influxdb/
+	kubectl apply -f k8s/prometheus/
+	kubectl apply -f k8s/jaeger/
+	kubectl apply -f k8s/grafana/
+	kubectl rollout status deployment/influxdb -n o11y --timeout=120s
+	kubectl rollout status deployment/prometheus -n o11y --timeout=120s
+	kubectl rollout status deployment/jaeger -n o11y --timeout=120s
+	kubectl rollout status deployment/grafana -n o11y --timeout=120s
+	kubectl apply -f k8s/fluentbit/
+	kubectl rollout status daemonset/fluent-bit -n o11y --timeout=120s
+	kubectl apply -f k8s/metrics/
+	kubectl rollout status daemonset/node-metrics -n o11y --timeout=120s
+	# Application namespace
+	kubectl apply -f k8s/agent/
+	kubectl apply -f k8s/api/
+	kubectl apply -f k8s/ui/
+	kubectl rollout status deployment/convocate-api -n $(NAMESPACE) --timeout=120s
+	kubectl rollout status deployment/convocate-ui -n $(NAMESPACE) --timeout=120s
+	# Synthetic monitoring
+	kubectl apply -f k8s/pdv/synthetic-cronjob.yaml
+
+k8s-verify:
+	-kubectl delete job verify-openbao -n security 2>/dev/null
+	-kubectl delete job verify-redis verify-postgresql verify-minio -n data-layer 2>/dev/null
+	-kubectl delete job verify-influxdb -n o11y 2>/dev/null
+	-kubectl delete job verify-pdv -n $(NAMESPACE) 2>/dev/null
+	kubectl apply -f k8s/openbao/verify-job.yaml
+	kubectl apply -f k8s/redis/verify-job.yaml
+	kubectl apply -f k8s/postgresql/verify-job.yaml
+	kubectl apply -f k8s/minio/verify-job.yaml
+	kubectl apply -f k8s/influxdb/verify-job.yaml
+	kubectl apply -f k8s/pdv/verify-job.yaml
+	kubectl wait --for=condition=complete -n security job/verify-openbao --timeout=180s
+	kubectl wait --for=condition=complete -n data-layer job/verify-redis job/verify-postgresql job/verify-minio --timeout=180s
+	kubectl wait --for=condition=complete -n o11y job/verify-influxdb --timeout=180s
+	kubectl wait --for=condition=complete -n $(NAMESPACE) job/verify-pdv --timeout=180s
+	@echo "=== Verification Results ==="
+	@kubectl logs job/verify-openbao -n security 2>/dev/null | tail -1
+	@kubectl logs job/verify-redis -n data-layer 2>/dev/null | tail -1
+	@kubectl logs job/verify-postgresql -n data-layer 2>/dev/null | tail -1
+	@kubectl logs job/verify-minio -n data-layer 2>/dev/null | tail -1
+	@kubectl logs job/verify-influxdb -n o11y 2>/dev/null | tail -1
+	@echo "--- PDV ---"
+	@kubectl logs job/verify-pdv -n $(NAMESPACE) 2>/dev/null | tail -3

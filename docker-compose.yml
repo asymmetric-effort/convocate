@@ -1,0 +1,43 @@
+services:
+  redis:
+    build:
+      context: .
+      dockerfile: docker/redis.Dockerfile
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgresql:
+    build:
+      context: .
+      dockerfile: docker/pg.Dockerfile
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "/usr/lib/postgresql/17/bin/pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  openbao:
+    build:
+      context: .
+      dockerfile: docker/openbao.Dockerfile
+    ports:
+      - "8200:8200"
+    volumes:
+      - baodata:/openbao/data
+    environment:
+      - BAO_ADDR=http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
+
+volumes:
+  pgdata:
+  baodata:

@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: verify-pdv
+  namespace: convocate
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: verify-pdv
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pdv
+          image: 192.168.3.90:5000/convocate/pdv:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: API_URL
+              value: "http://convocate-api.convocate.svc:8443"
+            - name: UI_URL
+              value: "http://convocate-ui.convocate.svc:8080"
+      restartPolicy: OnFailure

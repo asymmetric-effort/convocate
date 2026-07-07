@@ -1,0 +1,541 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: o11y
+data:
+  convocate-cluster.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "title": "CPU Usage by Service",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [{
+            "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, container)",
+            "legendFormat": "{{namespace}}/{{container}}",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "fillOpacity": 10, "lineWidth": 1 }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Memory Usage by Service",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [{
+            "expr": "sum(container_memory_working_set_bytes{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}) by (namespace, container)",
+            "legendFormat": "{{namespace}}/{{container}}",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "fillOpacity": 10, "lineWidth": 1 }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Network I/O by Service",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [
+            {
+              "expr": "sum(label_replace(rate(container_network_receive_bytes_total{namespace=~\"convocate|data-layer|security|o11y\"}[5m]), \"service\", \"$1\", \"pod\", \"(.*)-[a-z0-9]+-[a-z0-9]+\")) by (namespace, service)",
+              "legendFormat": "rx {{namespace}}/{{service}}",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(label_replace(rate(container_network_transmit_bytes_total{namespace=~\"convocate|data-layer|security|o11y\"}[5m]), \"service\", \"$1\", \"pod\", \"(.*)-[a-z0-9]+-[a-z0-9]+\")) by (namespace, service)",
+              "legendFormat": "tx {{namespace}}/{{service}}",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": { "fillOpacity": 10, "lineWidth": 1 }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Disk I/O by Service",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [
+            {
+              "expr": "sum(rate(container_fs_reads_bytes_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, container)",
+              "legendFormat": "read {{namespace}}/{{container}}",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(container_fs_writes_bytes_total{namespace=~\"convocate|data-layer|security|o11y\", container!=\"\", container!=\"POD\"}[5m])) by (namespace, container)",
+              "legendFormat": "write {{namespace}}/{{container}}",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": { "fillOpacity": 10, "lineWidth": 1 }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Disk Usage by Storage Node",
+          "description": "Root filesystem usage on nodes hosting PV data (hostPath PVs share the node root filesystem). convocate04: redis, openbao. convocate05: postgresql, grafana, influxdb, jaeger, prometheus. convocate06: minio.",
+          "type": "gauge",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [
+            {
+              "expr": "container_fs_usage_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"} / container_fs_limit_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"} * 100",
+              "legendFormat": "{{kubernetes_io_hostname}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 70 },
+                  { "color": "red", "value": 90 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Disk Usage by Storage Node (bytes)",
+          "description": "Root filesystem usage over time on nodes hosting PV data",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [
+            {
+              "expr": "container_fs_usage_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"}",
+              "legendFormat": "used {{kubernetes_io_hostname}}",
+              "refId": "A"
+            },
+            {
+              "expr": "container_fs_limit_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"}",
+              "legendFormat": "total {{kubernetes_io_hostname}}",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "fillOpacity": 10, "lineWidth": 1 }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Log Error Count (from InfluxDB)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_field\"] == \"log\")\n  |> filter(fn: (r) => r[\"log\"] =~ /(?i)error|fail|panic|fatal/)\n  |> group(columns: [\"container_name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: count, createEmpty: false)\n  |> yield(name: \"errors\")",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "fillOpacity": 20,
+                "lineWidth": 2,
+                "drawStyle": "bars"
+              },
+              "color": { "mode": "palette-classic" }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Pod Restart Count",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 32 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [{
+            "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"convocate\"}[1h])) by (pod)",
+            "legendFormat": "{{namespace}}/{{pod}}",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Container Count by Namespace",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 8, "y": 32 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [{
+            "expr": "count(container_last_seen{namespace=~\"convocate|convocate-agents\"}) by (namespace)",
+            "legendFormat": "{{namespace}}",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Node Count",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 16, "y": 32 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [{
+            "expr": "count(up{job=\"kubernetes-nodes\"})",
+            "legendFormat": "Nodes",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "fixedColor": "blue", "mode": "fixed" }
+            },
+            "overrides": []
+          }
+        }
+        ,
+        {
+          "title": "OpenBao Secret Access Audit Trail",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"openbao.audit\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 100)",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": { "custom": { "displayMode": "auto" } },
+            "overrides": []
+          }
+        },
+        {
+          "title": "OpenBao Health Status",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 44 },
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "targets": [{
+            "expr": "count(container_last_seen{namespace=\"security\", container=\"openbao\"}) OR vector(0)",
+            "legendFormat": "OpenBao",
+            "refId": "A",
+            "instant": true
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }, "type": "value" }
+              ],
+              "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "OpenBao Secret Read/Write Count",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 9, "x": 6, "y": 44 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [
+            {
+              "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"openbao.audit\")\n  |> filter(fn: (r) => r[\"type\"] == \"request\" or r[\"type\"] == \"response\")\n  |> group(columns: [\"type\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: count, createEmpty: false)\n  |> yield(name: \"count\")",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "bars" }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "OpenBao Request Latency",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 9, "x": 15, "y": 44 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [
+            {
+              "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"openbao.audit\")\n  |> filter(fn: (r) => r[\"_field\"] == \"request\" and r[\"type\"] == \"response\")\n  |> map(fn: (r) => ({r with _value: duration(v: r._value) / 1000000}))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"latency\")",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          }
+        }
+        ,
+        {
+          "title": "PDV Test Pass/Fail Over Time",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pdv_run\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\" or r[\"_field\"] == \"failed\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "bars" }
+            },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "passed" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+              { "matcher": { "id": "byName", "options": "failed" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+            ]
+          }
+        },
+        {
+          "title": "PDV Test Duration by Suite",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pdv_test\")\n  |> filter(fn: (r) => r[\"_field\"] == \"duration_ms\")\n  |> group(columns: [\"project\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "PDV Latest Run Summary",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 12, "x": 0, "y": 60 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"pdv_run\")\n  |> filter(fn: (r) => r[\"_field\"] == \"total_duration_ms\" or r[\"_field\"] == \"passed\" or r[\"_field\"] == \"failed\")\n  |> last()",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Test Coverage by Package",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 64 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"test_coverage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"coverage\")\n  |> group(columns: [\"module\", \"package\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "custom": { "fillOpacity": 10, "lineWidth": 2 }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Test Pass/Fail by Module",
+          "type": "barchart",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 64 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"test_results\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\" or r[\"_field\"] == \"failed\")\n  |> group(columns: [\"module\", \"_field\"])\n  |> last()",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "fillOpacity": 80 }
+            },
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "passed" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+              { "matcher": { "id": "byName", "options": "failed" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+            ]
+          }
+        },
+        {
+          "title": "Overall Coverage Trend",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 12, "x": 12, "y": 60 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"test_coverage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"coverage\")\n  |> group()\n  |> last()\n  |> mean()",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 80 },
+                  { "color": "green", "value": 95 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Synthetic Check: Service Health Status",
+          "type": "bargauge",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 72 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\")\n  |> group(columns: [\"service\"])\n  |> last()\n  |> keep(columns: [\"_value\", \"service\"])",
+            "refId": "A"
+          }],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": ["lastNotNull"],
+              "fields": ""
+            },
+            "orientation": "horizontal",
+            "displayMode": "basic",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10,
+            "valueMode": "text"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "displayName": "${__field.labels.service}",
+              "min": 0,
+              "max": 1,
+              "mappings": [
+                { "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } }, "type": "value" }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Synthetic Check: Service Latency",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 80 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"latency_ms\")\n  |> group(columns: [\"service\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "color": { "mode": "palette-classic" }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Synthetic Check: Service Uptime (24h)",
+          "type": "bargauge",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 72 },
+          "datasource": { "type": "influxdb", "uid": "P951FEA4DE68E13C5" },
+          "targets": [{
+            "query": "from(bucket: \"logs\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"synthetic_check\")\n  |> filter(fn: (r) => r[\"_field\"] == \"passed\")\n  |> group(columns: [\"service\"])\n  |> mean()\n  |> map(fn: (r) => ({r with _value: r._value * 100.0}))\n  |> keep(columns: [\"_value\", \"service\"])",
+            "refId": "A"
+          }],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": ["lastNotNull"],
+              "fields": ""
+            },
+            "orientation": "horizontal",
+            "displayMode": "basic",
+            "showUnfilled": true,
+            "minVizWidth": 0,
+            "minVizHeight": 10,
+            "valueMode": "text"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "displayName": "${__field.labels.service}",
+              "unit": "percent",
+              "min": 0,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 90 },
+                  { "color": "green", "value": 99 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["convocate", "cluster", "monitoring"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "utc",
+      "title": "Convocate Cluster Overview",
+      "uid": "convocate-cluster",
+      "version": 1
+    }

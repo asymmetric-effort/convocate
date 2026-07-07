@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openbao-canary
+  namespace: security
+  labels:
+    app: openbao-canary
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 60
+      template:
+        metadata:
+          labels:
+            app: openbao-canary
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: canary
+              image: 192.168.3.90:5000/convocate/openbao:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  BAO_ADDR="http://openbao.security.svc:8200"
+
+                  # Authenticate via userpass and extract client_token
+                  LOGIN_RESP=$(wget -q -O - \
+                    --post-data='{"password":"PdvTest-2026-Secure"}' \
+                    "${BAO_ADDR}/v1/auth/userpass/login/pdv-test")
+                  CLIENT_TOKEN=$(echo "${LOGIN_RESP}" | sed 's/.*"client_token":"//' | sed 's/".*//')
+                  echo "Authenticated with userpass"
+
+                  # Read health endpoint with the token
+                  wget -q -O /dev/null \
+                    --header="X-Vault-Token: ${CLIENT_TOKEN}" \
+                    "${BAO_ADDR}/v1/sys/health" || true
+                  echo "Health check complete"
+
+                  # Write a canary value using root token
+                  TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                  wget -q -O /dev/null \
+                    --header="X-Vault-Token: ${ROOT_TOKEN}" \
+                    --post-data="{\"data\":{\"canary\":\"${TIMESTAMP}\"}}" \
+                    "${BAO_ADDR}/v1/secret/data/canary"
+                  echo "Wrote canary value: ${TIMESTAMP}"
+
+                  # Read the canary value back
+                  wget -q -O /dev/null \
+                    --header="X-Vault-Token: ${ROOT_TOKEN}" \
+                    "${BAO_ADDR}/v1/secret/data/canary"
+                  echo "Read canary value back"
+
+                  echo "Canary complete"
+              env:
+                - name: ROOT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: openbao-root-token
+                      key: token
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 50m
+                  memory: 32Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65534
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault

@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: verify-openbao
+  namespace: security
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: verify-openbao
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: verify
+          image: 192.168.3.90:5000/convocate/openbao:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: BAO_ADDR
+              value: "http://openbao.security.svc:8200"
+          command: ["/busybox/sh", "-c"]
+          args:
+            - |
+              echo "=== OpenBao Verification ==="
+              /usr/local/bin/bao status -format=json 2>&1 || true
+              STATUS=$(/usr/local/bin/bao status -format=json 2>/dev/null) || true
+              if echo "$STATUS" | /busybox/grep -q '"initialized"'; then
+                echo "PASS: OpenBao is reachable and responding"
+                exit 0
+              else
+                echo "FAIL: OpenBao is not responding"
+                exit 1
+              fi
+      restartPolicy: OnFailure

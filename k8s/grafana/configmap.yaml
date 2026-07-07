@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-config
+  namespace: o11y
+data:
+  grafana.ini: |
+    [server]
+    protocol = http
+    http_port = 3000
+    domain = grafana.asymmetric-effort.com
+    root_url = https://grafana.asymmetric-effort.com
+
+    [database]
+    type = sqlite3
+    path = /var/lib/grafana/grafana.db
+
+    [security]
+    admin_user = admin
+
+    [auth.anonymous]
+    enabled = false
+
+    [auth.generic_oauth]
+    enabled = true
+    name = OpenBao
+    allow_sign_up = true
+    auto_login = false
+    client_id = $__env{OPENBAO_OIDC_CLIENT_ID}
+    client_secret = $__env{OPENBAO_OIDC_CLIENT_SECRET}
+    scopes = openid
+    auth_url = https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
+    token_url = https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
+    api_url = https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
+    tls_skip_verify_insecure = true
+    use_pkce = true
+    use_refresh_token = false
+    role_attribute_path = contains(groups[*], 'admins') && 'Admin' || 'Viewer'
+    login_attribute_path = sub
+    name_attribute_path = sub
+    email_attribute_path = join('@', [sub, 'openbao.local'])
+    id_token_attribute_name = id_token
+    allow_assign_grafana_admin = true
+
+    [dashboards]
+    default_home_dashboard_path = /var/lib/grafana/dashboards/convocate-cluster.json
+
+    [log]
+    mode = console
+    level = info
+
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: https://prometheus.o11y.svc:9090
+        isDefault: true
+        jsonData:
+          tlsSkipVerify: true
+        editable: false
+      - name: InfluxDB
+        type: influxdb
+        access: proxy
+        url: https://influxdb.o11y.svc:8086
+        jsonData:
+          version: Flux
+          organization: convocate
+          defaultBucket: logs
+          tlsSkipVerify: true
+        secureJsonData:
+          token: $INFLUXDB_TOKEN
+        editable: false
+      - name: Jaeger
+        type: jaeger
+        access: proxy
+        url: http://jaeger.o11y.svc:16686
+        isDefault: false
+        editable: false
+
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: convocate
+        orgId: 1
+        folder: Convocate
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: false

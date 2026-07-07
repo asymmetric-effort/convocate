@@ -1,0 +1,18 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "convocate-ui",
+      "dependencies": {
+        "@asymmetric-effort/nogginlessdom": "^0.0.27",
+        "@asymmetric-effort/specifyjs": "^0.3.8",
+      },
+    },
+  },
+  "packages": {
+    "@asymmetric-effort/nogginlessdom": ["@asymmetric-effort/nogginlessdom@0.0.27", "", {}, "sha512-CLKqwQbS4UbQieT1C4k6YlgGhweXiuAya2FIqOdNyBMg5w/F920I83kYk0cLN+e3ifoLSyfnob2iSaJPnfe2dw=="],
+
+    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@0.3.8", "", {}, "sha512-iylvGhgQLQxGCIslfE0NsbMoUJ1JwwcymAe5Ii+Yki0dq6OyQIbwTVBSc5fHpdk8+27fakidhGhxOMJj3tRAWQ=="],
+  }
+}

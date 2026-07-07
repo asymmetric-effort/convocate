@@ -1,0 +1,24 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: prometheus-selfsigned
+  namespace: o11y
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: prometheus-tls
+  namespace: o11y
+spec:
+  secretName: prometheus-tls
+  issuerRef:
+    name: prometheus-selfsigned
+    kind: Issuer
+  dnsNames:
+    - prometheus
+    - prometheus.o11y.svc
+    - prometheus.o11y.svc.cluster.local
+  duration: 8760h
+  renewBefore: 720h
