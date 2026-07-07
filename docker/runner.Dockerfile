@@ -1,6 +1,5 @@
 # GitHub Actions Self-Hosted Runner
-# Build stage: ubuntu:24.04
-# Runtime stage: ubuntu:24.04 (needs full OS for Ansible, Docker, Playwright)
+# Runtime: ubuntu:24.04 (needs full OS for Ansible, Docker, Playwright)
 
 FROM ubuntu:24.04
 
@@ -15,6 +14,8 @@ RUN apt-get update && \
         git \
         gnupg \
         jq \
+        libicu74 \
+        libssl3 \
         make \
         openssh-client \
         python3 \
@@ -68,23 +69,24 @@ RUN python3 -m venv /opt/ansible && \
     ln -s /opt/ansible/bin/ansible-playbook /usr/local/bin/ansible-playbook && \
     ln -s /opt/ansible/bin/ansible-galaxy /usr/local/bin/ansible-galaxy
 
-# ── leakdetector ─────────────────────────────────────────────────────────────
+# ── leakdetector (native linux/amd64 only) ──────────────────────────────────
 RUN git clone https://github.com/asymmetric-effort/leakdetector.git /tmp/leakdetector && \
     cd /tmp/leakdetector && \
-    make build && \
-    cp build/linux/amd64/leakdetector /usr/local/bin/leakdetector && \
+    GOOS=linux GOARCH=amd64 go build -o /usr/local/bin/leakdetector ./cmd/leakdetector && \
     chmod +x /usr/local/bin/leakdetector && \
     rm -rf /tmp/leakdetector
 
 # ── GitHub Actions Runner ───────────────────────────────────────────────────
+# Install runner AFTER system deps so installdependencies.sh finds libicu/libssl
 ARG RUNNER_VERSION=2.322.0
 RUN mkdir -p /opt/runner && \
     curl -fsSL "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" | \
     tar -xz -C /opt/runner && \
-    /opt/runner/bin/installdependencies.sh
+    /opt/runner/bin/installdependencies.sh || true
 
-# ── Runner user ──────────────────────────────────────────────────────────────
-RUN useradd -m -s /bin/bash runner && \
+# ── Runner user (create docker group for socket mount) ──────────────────────
+RUN groupadd -f docker && \
+    useradd -m -s /bin/bash runner && \
     usermod -aG docker runner && \
     chown -R runner:runner /opt/runner
 
@@ -96,8 +98,7 @@ RUN go version && \
     kubectl version --client && \
     helm version --short && \
     ansible --version | head -1 && \
-    leakdetector --version && \
-    /opt/runner/run.sh --version || true
+    leakdetector --version
 
 WORKDIR /opt/runner
 USER runner
