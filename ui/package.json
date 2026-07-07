@@ -9,7 +9,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@asymmetric-effort/nogginlessdom": "^0.0.27",
+    "@asymmetric-effort/nogginlessdom": "^0.0.28",
     "@asymmetric-effort/specifyjs": "^0.3.8"
   }
 }
