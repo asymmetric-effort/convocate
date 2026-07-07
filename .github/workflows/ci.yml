@@ -11,7 +11,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
@@ -22,7 +22,7 @@ jobs:
     name: Test API
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
@@ -45,7 +45,7 @@ jobs:
     name: Test Metrics
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
@@ -68,7 +68,7 @@ jobs:
     name: Test Agent
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
@@ -91,7 +91,7 @@ jobs:
     name: Test UI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - name: Install and test
         working-directory: ui
@@ -111,7 +111,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, test-api, test-metrics, test-agent, test-ui]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build openbao
         run: docker build -f docker/openbao.Dockerfile -t convocate/openbao:ci .
       - name: Build redis
@@ -150,7 +150,7 @@ jobs:
   #   needs: [test-api]
   #   if: github.event_name == 'workflow_dispatch' || vars.INTEGRATION_TESTS_ENABLED == 'true'
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
   #     - uses: actions/setup-go@v5
   #       with:
   #         go-version: "1.26"
@@ -169,6 +169,6 @@ jobs:
   #   runs-on: ubuntu-latest
   #   needs: [build]
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
   #     - name: Run PDV tests (post-deploy only)
   #       run: echo "PDV tests run post-deploy against live K8s cluster"
