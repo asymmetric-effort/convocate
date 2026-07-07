@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 )
 
 func main() {
@@ -23,7 +24,7 @@ func main() {
 
 	fs := http.FileServer(http.Dir("public"))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		path := "public" + r.URL.Path
+		path := filepath.Join("public", filepath.Clean(r.URL.Path))
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			http.ServeFile(w, r, "public/index.html")
