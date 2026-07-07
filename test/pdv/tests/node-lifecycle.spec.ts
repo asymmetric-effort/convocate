@@ -14,7 +14,6 @@
 import { test, expect, Page } from "@playwright/test";
 
 // Disable TLS verification for direct API calls (self-signed certs)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 // ---------------------------------------------------------------------------
 // Increase timeout — drain and migration can take time on a real cluster

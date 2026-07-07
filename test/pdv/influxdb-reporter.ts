@@ -12,7 +12,14 @@ const INFLUXDB_TOKEN = process.env.INFLUXDB_TOKEN || "convocate-influx-token";
 const INFLUXDB_ORG = "convocate";
 const INFLUXDB_BUCKET = "logs";
 
+// lgtm[js/disabling-certificate-validation] — PDV tests run against K8s services with self-signed TLS certificates
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
+/** Escape a string for use as an InfluxDB line-protocol tag value.
+ *  Tag values must escape spaces, commas, and equals signs. */
+function escapeTagValue(s: string): string {
+  return s.replace(/[, =]/g, (c) => "\\" + c);
+}
 
 class InfluxDBReporter implements Reporter {
   private lines: string[] = [];
@@ -28,14 +35,14 @@ class InfluxDBReporter implements Reporter {
     const passed = status === "passed" ? 1 : 0;
     const failed = status === "failed" || status === "timedOut" ? 1 : 0;
     const durationMs = result.duration;
-    const project = test.parent?.project()?.name || "unknown";
-    const suite = test.parent?.title || "unknown";
-    const title = test.title.replace(/ /g, "\\ ").replace(/,/g, "\\,");
+    const project = escapeTagValue(test.parent?.project()?.name || "unknown");
+    const suite = escapeTagValue(test.parent?.title || "unknown");
+    const title = escapeTagValue(test.title);
 
     // InfluxDB line protocol: measurement,tag=value field=value timestamp
     const timestamp = Date.now() * 1000000; // nanoseconds
     this.lines.push(
-      `pdv_test,project=${project},suite=${suite.replace(/ /g, "\\ ")},test=${title},status=${status} passed=${passed}i,failed=${failed}i,duration_ms=${durationMs}i ${timestamp}`
+      `pdv_test,project=${project},suite=${suite},test=${title},status=${escapeTagValue(status)} passed=${passed}i,failed=${failed}i,duration_ms=${durationMs}i ${timestamp}`
     );
   }
 

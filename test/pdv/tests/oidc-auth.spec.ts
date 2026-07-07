@@ -8,7 +8,6 @@
 
 import { test, expect } from "@playwright/test";
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const GRAFANA_URL = process.env.GRAFANA_URL || "https://grafana.asymmetric-effort.com";
 const AUTH_URL = process.env.AUTH_URL || "https://auth.asymmetric-effort.com";

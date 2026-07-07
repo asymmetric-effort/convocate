@@ -8,7 +8,6 @@
 
 import { test, expect } from "@playwright/test";
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const REGISTRY_URL = process.env.REGISTRY_URL || "http://192.168.3.90:5000";
 

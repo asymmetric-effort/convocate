@@ -7,7 +7,6 @@
 
 import { test, expect } from "@playwright/test";
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const BASE = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
 const GRAFANA_URL = process.env.GRAFANA_URL || "https://grafana.asymmetric-effort.com";

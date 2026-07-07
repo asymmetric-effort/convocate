@@ -2,7 +2,6 @@
  * Repo Manager Applet — PDV Tests
  */
 import { test, expect, Page } from "@playwright/test";
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 const BASE = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
 function authHeaders() { return { "Content-Type": "application/json", Authorization: "Bearer mock-token" }; }
 

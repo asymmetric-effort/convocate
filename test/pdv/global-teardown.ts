@@ -3,6 +3,7 @@
  * Cleans up any test agents and projects left behind by failed or retried tests.
  */
 
+// lgtm[js/disabling-certificate-validation] — PDV tests run against K8s services with self-signed TLS certificates
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const BASE = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
