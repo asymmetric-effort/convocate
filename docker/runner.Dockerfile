@@ -78,7 +78,7 @@ RUN git clone https://github.com/asymmetric-effort/leakdetector.git /tmp/leakdet
 
 # ── GitHub Actions Runner ───────────────────────────────────────────────────
 # Install runner AFTER system deps so installdependencies.sh finds libicu/libssl
-ARG RUNNER_VERSION=2.322.0
+ARG RUNNER_VERSION=2.335.1
 RUN mkdir -p /opt/runner && \
     curl -fsSL "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" | \
     tar -xz -C /opt/runner && \
