@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ginger
+  namespace: o11y
+  labels:
+    app: ginger
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ginger
+  template:
+    metadata:
+      labels:
+        app: ginger
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ginger
+          image: 192.168.3.90:5000/convocate/ginger:v0.0.5-fixed
+          args:
+            - "--config"
+            - "/etc/ginger/config.yaml"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: INFLUXDB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: fluentbit-credentials
+                  key: HTTP_TOKEN
+          ports:
+            - containerPort: 4318
+              name: otlp-http
+            - containerPort: 16686
+              name: query
+            - containerPort: 14269
+              name: admin
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 14269
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 14269
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ginger
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: ginger-config
+        - name: tmp
+          emptyDir: {}

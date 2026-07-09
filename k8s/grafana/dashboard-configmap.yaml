@@ -101,7 +101,7 @@ data:
         },
         {
           "title": "Disk Usage by Storage Node",
-          "description": "Root filesystem usage on nodes hosting PV data (hostPath PVs share the node root filesystem). convocate04: redis, openbao. convocate05: postgresql, grafana, influxdb, jaeger, prometheus. convocate06: minio.",
+          "description": "Root filesystem usage on nodes hosting PV data (hostPath PVs share the node root filesystem). convocate04: redis, openbao. convocate05: postgresql, grafana, influxdb, prometheus. convocate06: minio.",
           "type": "gauge",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },

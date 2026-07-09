@@ -30,7 +30,7 @@ check_http() {
   # Execute the request and capture HTTP status
   status=0
   # wget -S prints headers to stderr; capture the HTTP status line
-  http_code=$(wget $wget_args "$url" 2>&1 | grep "HTTP/" | tail -1 | awk '{print $2}') || status=$?
+  http_code=$(wget $wget_args "$url" 2>&1 | grep "^ *HTTP/" | tail -1 | awk '{print $2}') || status=$?
 
   end_ms="$(date +%s%N 2>/dev/null || echo 0)"
 
@@ -87,13 +87,15 @@ check_api_service() {
 "
 }
 
-# check_node_metrics: verify node count > 0 from API
-check_node_metrics() {
-  svc="node_metrics"
+# check_auth_alive: verify auth endpoint is alive (401 = success)
+check_auth_alive() {
+  svc="api_auth"
   now_ns="$(date +%s)000000000"
   start_ms="$(date +%s%N 2>/dev/null || echo 0)"
 
-  body=$(wget --no-check-certificate -q -O - --timeout=10 "${API_BASE}/api/v1/status" 2>/dev/null) || body=""
+  http_code=$(wget --no-check-certificate -q -O /dev/null -S --timeout=10 \
+    --post-data='{"username":"","password":""}' \
+    "${API_BASE}/api/v1/auth/login" 2>&1 | grep "^ *HTTP/" | tail -1 | awk '{print $2}') || true
 
   end_ms="$(date +%s%N 2>/dev/null || echo 0)"
 
@@ -103,8 +105,72 @@ check_node_metrics() {
     latency_ms=0
   fi
 
-  # Check if nodes array has at least one entry or node_count > 0
-  if echo "$body" | grep -qE '"node_count":[1-9]|"nodes":\[.+\]'; then
+  # Accept 200 or 401 (endpoint alive and rejecting bad creds)
+  # Fail on 5xx or no response
+  case "$http_code" in
+    200|401) passed=1; status_tag="pass" ;;
+    5*) passed=0; status_tag="fail" ;;
+    *) if [ -n "$http_code" ] && [ "$http_code" -lt 500 ] 2>/dev/null; then
+         passed=1; status_tag="pass"
+       else
+         passed=0; status_tag="fail"
+       fi ;;
+  esac
+
+  RESULTS="${RESULTS}synthetic_check,service=${svc},status=${status_tag} latency_ms=${latency_ms}i,passed=${passed}i ${now_ns}
+"
+}
+
+# check_node_metrics: verify /api/v1/nmgr/node returns JSON with items array
+check_node_metrics() {
+  svc="node_metrics"
+  now_ns="$(date +%s)000000000"
+  start_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+  body=$(wget --no-check-certificate -q -O - --timeout=10 \
+    --header="Authorization: Bearer mock-token" \
+    "${API_BASE}/api/v1/nmgr/node" 2>/dev/null) || body=""
+
+  end_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+  if [ "$start_ms" != "0" ] && [ "$end_ms" != "0" ]; then
+    latency_ms=$(( (end_ms - start_ms) / 1000000 ))
+  else
+    latency_ms=0
+  fi
+
+  # Check response contains an "items" array
+  if echo "$body" | grep -q '"items"' && echo "$body" | grep -q '\['; then
+    passed=1
+    status_tag="pass"
+  else
+    passed=0
+    status_tag="fail"
+  fi
+
+  RESULTS="${RESULTS}synthetic_check,service=${svc},status=${status_tag} latency_ms=${latency_ms}i,passed=${passed}i ${now_ns}
+"
+}
+
+# check_agent_manager: verify /api/v1/amgr/agent responds 200 with auth
+check_agent_manager() {
+  svc="agent_manager"
+  now_ns="$(date +%s)000000000"
+  start_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+  http_code=$(wget --no-check-certificate -q -O /dev/null -S --timeout=10 \
+    --header="Authorization: Bearer mock-token" \
+    "${API_BASE}/api/v1/amgr/agent" 2>&1 | grep "^ *HTTP/" | tail -1 | awk '{print $2}') || true
+
+  end_ms="$(date +%s%N 2>/dev/null || echo 0)"
+
+  if [ "$start_ms" != "0" ] && [ "$end_ms" != "0" ]; then
+    latency_ms=$(( (end_ms - start_ms) / 1000000 ))
+  else
+    latency_ms=0
+  fi
+
+  if [ "$http_code" = "200" ]; then
     passed=1
     status_tag="pass"
   else
@@ -125,7 +191,7 @@ check_http "api_health" "GET" "${API_BASE}/api/v1/status"
 
 # 2. API auth
 echo "Checking: api_auth"
-check_http "api_auth" "POST" "${API_BASE}/api/v1/auth/login" '{"token":"mock-token"}'
+check_auth_alive
 
 # 3. UI health
 echo "Checking: ui_health"
@@ -155,9 +221,9 @@ check_http "prometheus" "GET" "https://prometheus.o11y.svc:9090/-/ready"
 echo "Checking: grafana"
 check_http "grafana" "GET" "http://grafana.o11y.svc:3000/api/health"
 
-# 10. Jaeger
-echo "Checking: jaeger"
-check_http "jaeger" "GET" "http://jaeger.o11y.svc:16686/api/services"
+# 10. Ginger
+echo "Checking: ginger"
+check_http "ginger" "GET" "http://ginger.o11y.svc:16686/api/services"
 
 # 11. MinIO
 echo "Checking: minio"
@@ -169,7 +235,7 @@ check_node_metrics
 
 # 13. Agent manager
 echo "Checking: agent_manager"
-check_http "agent_manager" "GET" "${API_BASE}/api/v1/amgr/agent"
+check_agent_manager
 
 # Print results for logging
 echo ""

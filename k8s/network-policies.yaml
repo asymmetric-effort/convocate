@@ -143,16 +143,16 @@ spec:
       ports:
         - port: 8086
 ---
-# Allow o11y pods to reach Jaeger on OTLP and query ports
+# Allow o11y pods to reach Ginger on OTLP, query, and admin ports
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-o11y-to-jaeger
+  name: allow-o11y-to-ginger
   namespace: o11y
 spec:
   podSelector:
     matchLabels:
-      app: jaeger
+      app: ginger
   policyTypes:
     - Ingress
   ingress:
@@ -163,14 +163,14 @@ spec:
                 operator: In
                 values: ["o11y", "convocate"]
       ports:
-        - port: 4317
-          protocol: TCP
         - port: 4318
           protocol: TCP
         - port: 16686
           protocol: TCP
+        - port: 14269
+          protocol: TCP
 ---
-# Allow Grafana to reach Prometheus, InfluxDB, and Jaeger
+# Allow Grafana to reach Prometheus, InfluxDB, and Ginger
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -181,7 +181,7 @@ spec:
     matchExpressions:
       - key: app
         operator: In
-        values: ["prometheus", "influxdb", "jaeger"]
+        values: ["prometheus", "influxdb", "ginger"]
   policyTypes:
     - Ingress
   ingress:
@@ -221,7 +221,7 @@ spec:
     matchExpressions:
       - key: app
         operator: In
-        values: ["influxdb", "prometheus", "grafana", "jaeger"]
+        values: ["influxdb", "prometheus", "grafana", "ginger"]
   policyTypes:
     - Ingress
   ingress:

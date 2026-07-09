@@ -75,7 +75,7 @@ data:
       - name: Jaeger
         type: jaeger
         access: proxy
-        url: http://jaeger.o11y.svc:16686
+        url: http://ginger.o11y.svc:16686
         isDefault: false
         editable: false
 

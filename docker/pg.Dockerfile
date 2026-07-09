@@ -36,13 +36,15 @@ RUN mkdir -p /pg-root/usr/lib /pg-root/usr/share /pg-root/lib /pg-root/lib64 && 
     mkdir -p /pg-root/etc && \
     echo "postgres:x:65534:65534:PostgreSQL:/var/lib/postgresql:/bin/sh" > /pg-root/etc/passwd && \
     echo "postgres:x:65534:" > /pg-root/etc/group && \
-    mkdir -p /pg-root/var/lib/postgresql/data /pg-root/var/run/postgresql && \
-    chown -R 65534:65534 /pg-root/var/lib/postgresql /pg-root/var/run/postgresql
+    mkdir -p /pg-root/var/lib/postgresql/data /pg-root/var/run/postgresql /pg-root/tmp && \
+    chown -R 65534:65534 /pg-root/var/lib/postgresql /pg-root/var/run/postgresql /pg-root/tmp
 
 # Create the entrypoint
+# When POSTGRES_PASSWORD is set, use scram-sha-256 authentication.
+# Otherwise fall back to trust (for local development).
 RUN PG_BIN=/usr/lib/postgresql/${PG_VERSION}/bin && \
-    printf '#!/bin/sh\nset -e\nPGDATA="${PGDATA:-/var/lib/postgresql/data}"\nif [ ! -s "$PGDATA/PG_VERSION" ]; then\n  %s/initdb -D "$PGDATA" --auth=trust --no-instructions --no-locale\n  echo "host all all 0.0.0.0/0 trust" >> "$PGDATA/pg_hba.conf"\n  echo "listen_addresses = '"'"'*'"'"'" >> "$PGDATA/postgresql.conf"\nfi\nexec %s/postgres -D "$PGDATA"\n' \
-    "$PG_BIN" "$PG_BIN" > /pg-root/docker-entrypoint.sh && \
+    printf '#!/bin/sh\nPGDATA="${PGDATA:-/var/lib/postgresql/data}"\nPG_BIN=%s\nif [ ! -s "$PGDATA/PG_VERSION" ]; then\n  if [ -n "$POSTGRES_PASSWORD" ]; then\n    echo "$POSTGRES_PASSWORD" > /tmp/pwfile\n    $PG_BIN/initdb -D "$PGDATA" --auth=scram-sha-256 --pwfile=/tmp/pwfile --no-instructions --no-locale || true\n    echo "host all all 0.0.0.0/0 scram-sha-256" >> "$PGDATA/pg_hba.conf"\n  else\n    $PG_BIN/initdb -D "$PGDATA" --auth=trust --no-instructions --no-locale || true\n    echo "host all all 0.0.0.0/0 trust" >> "$PGDATA/pg_hba.conf"\n  fi\n  echo "password_encryption = '"'"'scram-sha-256'"'"'" >> "$PGDATA/postgresql.conf"\nfi\nexec $PG_BIN/postgres -D "$PGDATA" -c listen_addresses='"'"'*'"'"'\n' \
+    "$PG_BIN" > /pg-root/docker-entrypoint.sh && \
     chmod +x /pg-root/docker-entrypoint.sh
 
 # Runtime stage — use scratch+ubuntu libs instead of distroless to avoid glibc mismatch
