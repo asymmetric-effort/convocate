@@ -1,5 +1,5 @@
 global:
-  registry: "192.168.3.90:5000"
+  registry: ""  # Set via --set global.registry or values override
   imageTag: "latest"
   domain: "asymmetric-effort.com"
 
@@ -45,7 +45,7 @@ postgresql:
   enabled: true
   storage: 5Gi
   hostPath: /mnt/data-layer/postgresql
-  nodeAffinity: convocate05
+  nodeAffinity: node-b-4
   resources:
     requests:
       cpu: 100m
@@ -58,7 +58,7 @@ redis:
   enabled: true
   storage: 1Gi
   hostPath: /mnt/data-layer/redis
-  nodeAffinity: convocate04
+  nodeAffinity: node-b-3
   resources:
     requests:
       cpu: 25m
@@ -71,7 +71,7 @@ minio:
   enabled: true
   storage: 10Gi
   hostPath: /mnt/data-layer/minio
-  nodeAffinity: convocate06
+  nodeAffinity: node-b-5
   resources:
     requests:
       cpu: 100m
@@ -84,7 +84,7 @@ influxdb:
   enabled: true
   storage: 100Gi
   hostPath: /mnt/o11y/influxdb
-  nodeAffinity: convocate05
+  nodeAffinity: node-b-4
   retention: "90d"
   resources:
     requests:
@@ -98,7 +98,7 @@ prometheus:
   enabled: true
   storage: 20Gi
   hostPath: /mnt/o11y/prometheus
-  nodeAffinity: convocate05
+  nodeAffinity: node-b-4
   retentionTime: "90d"
   resources:
     requests:
@@ -112,7 +112,7 @@ grafana:
   enabled: true
   storage: 5Gi
   hostPath: /mnt/o11y/grafana
-  nodeAffinity: convocate05
+  nodeAffinity: node-b-4
   resources:
     requests:
       cpu: 100m
@@ -156,7 +156,7 @@ openbao:
   enabled: true
   storage: 1Gi
   hostPath: /mnt/security/openbao
-  nodeAffinity: convocate04
+  nodeAffinity: node-b-3
   canarySchedule: "*/5 * * * *"
   secretSyncSchedule: "0 * * * *"
   resources:

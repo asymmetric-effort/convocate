@@ -101,13 +101,13 @@ data:
         },
         {
           "title": "Disk Usage by Storage Node",
-          "description": "Root filesystem usage on nodes hosting PV data (hostPath PVs share the node root filesystem). convocate04: redis, openbao. convocate05: postgresql, grafana, influxdb, prometheus. convocate06: minio.",
+          "description": "Root filesystem usage on nodes hosting PV data (hostPath PVs share the node root filesystem). node-b-3: redis, openbao. node-b-4: postgresql, grafana, influxdb, prometheus. node-b-5: minio.",
           "type": "gauge",
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [
             {
-              "expr": "container_fs_usage_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"} / container_fs_limit_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"} * 100",
+              "expr": "container_fs_usage_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"node-b-3|node-b-4|node-b-5\"} / container_fs_limit_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"node-b-3|node-b-4|node-b-5\"} * 100",
               "legendFormat": "{{`{{kubernetes_io_hostname}}`}}",
               "refId": "A"
             }
@@ -137,12 +137,12 @@ data:
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "targets": [
             {
-              "expr": "container_fs_usage_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"}",
+              "expr": "container_fs_usage_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"node-b-3|node-b-4|node-b-5\"}",
               "legendFormat": "used {{`{{kubernetes_io_hostname}}`}}",
               "refId": "A"
             },
             {
-              "expr": "container_fs_limit_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"convocate04|convocate05|convocate06\"}",
+              "expr": "container_fs_limit_bytes{id=\"/\", device=\"/dev/vda1\", kubernetes_io_hostname=~\"node-b-3|node-b-4|node-b-5\"}",
               "legendFormat": "total {{`{{kubernetes_io_hostname}}`}}",
               "refId": "B"
             }

@@ -18,7 +18,7 @@ spec:
             - key: kubernetes.io/hostname
               operator: In
               values:
-                - {{ .Values.nodeAffinity | default "convocate04" }}
+                - {{ .Values.nodeAffinity | default "node-b-3" }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
