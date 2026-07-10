@@ -7,6 +7,7 @@ INFLUXDB_URL="${INFLUXDB_URL:-https://influxdb.o11y.svc:8086}"
 INFLUXDB_TOKEN="${INFLUXDB_TOKEN:-}"
 INFLUXDB_ORG="${INFLUXDB_ORG:-convocate}"
 INFLUXDB_BUCKET="${INFLUXDB_BUCKET:-logs}"
+SERVICE_TOKEN="${SERVICE_TOKEN:-}"
 API_BASE="http://convocate-api.convocate.svc:8443"
 
 RESULTS=""
@@ -128,7 +129,7 @@ check_node_metrics() {
   start_ms="$(date +%s%N 2>/dev/null || echo 0)"
 
   body=$(wget --no-check-certificate -q -O - --timeout=10 \
-    --header="Authorization: Bearer mock-token" \
+    --header="Authorization: Bearer ${SERVICE_TOKEN}" \
     "${API_BASE}/api/v1/nmgr/node" 2>/dev/null) || body=""
 
   end_ms="$(date +%s%N 2>/dev/null || echo 0)"
@@ -159,7 +160,7 @@ check_agent_manager() {
   start_ms="$(date +%s%N 2>/dev/null || echo 0)"
 
   http_code=$(wget --no-check-certificate -q -O /dev/null -S --timeout=10 \
-    --header="Authorization: Bearer mock-token" \
+    --header="Authorization: Bearer ${SERVICE_TOKEN}" \
     "${API_BASE}/api/v1/amgr/agent" 2>&1 | grep "^ *HTTP/" | tail -1 | awk '{print $2}') || true
 
   end_ms="$(date +%s%N 2>/dev/null || echo 0)"

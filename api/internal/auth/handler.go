@@ -174,7 +174,7 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(auth, "Bearer ")
 
 	// Best-effort revocation; respond 204 regardless
-	if token != "" && token != "mock-token" {
+	if token != "" {
 		_ = openbaoRevokeSelf(token)
 	}
 

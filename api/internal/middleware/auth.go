@@ -11,19 +11,6 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/httputil"
 )
 
-var mockPrincipal = &httputil.Principal{
-	ID:       "usr-mock-admin",
-	Username: "admin",
-	Name:     "Mock Admin",
-	Email:    "admin@convocate.local",
-	Groups:   []string{"admins"},
-	Roles:    []string{"admin"},
-	IDP:      "local",
-	AuthorizedApplets: []string{
-		"nmgr", "amgr", "pb", "ide", "repo", "ac", "sup",
-	},
-}
-
 // openbaoAddr returns the OpenBao server address from env or default.
 func openbaoAddr() string {
 	if addr := os.Getenv("OPENBAO_ADDR"); addr != "" {
@@ -188,13 +175,6 @@ func Auth(next http.Handler) http.Handler {
 		}
 
 		token := auth[7:] // strip "Bearer "
-
-		// Backward compatibility: allow mock auth for PDV tests during transition
-		if token == "mock-token" && os.Getenv("ALLOW_MOCK_AUTH") == "true" {
-			ctx := httputil.ContextWithPrincipal(r.Context(), mockPrincipal)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
 
 		// Validate token via OpenBao
 		lookupResp, err := lookupTokenSelf(token)

@@ -371,10 +371,11 @@ func TestHandleLogout(t *testing.T) {
 	}
 }
 
-func TestHandleLogout_MockTokenSkipsRevoke(t *testing.T) {
-	// No OpenBao server needed - mock-token should skip revocation
+func TestHandleLogout_AnyTokenAttemptsRevoke(t *testing.T) {
+	// All tokens now attempt revocation (best-effort). Logout responds 204
+	// regardless of revocation outcome.
 	r := httptest.NewRequest("POST", "/api/v1/auth/logout", nil)
-	r.Header.Set("Authorization", "Bearer mock-token")
+	r.Header.Set("Authorization", "Bearer some-token")
 	w := httptest.NewRecorder()
 
 	handleLogout(w, r)

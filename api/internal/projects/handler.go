@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/events"
@@ -49,7 +50,7 @@ func doInternalCall(baseURL, method, path string, body interface{}) ([]byte, int
 		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer mock-token")
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("OPENBAO_TOKEN"))
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

@@ -1,0 +1,19 @@
+---
+openbao_namespace: security
+openbao_pki_root_ttl: "87600h"       # 10 years
+openbao_pki_intermediate_ttl: "43800h" # 5 years
+openbao_pki_cert_ttl: "24h"
+openbao_pki_cert_max_ttl: "24h"
+openbao_pki_root_cn: "Convocate Root CA"
+openbao_pki_intermediate_cn: "Convocate Intermediate CA"
+openbao_pki_organization: "Asymmetric Effort, LLC"
+openbao_pki_allowed_domains:
+  - "asymmetric-effort.com"
+  - "convocate.asymmetric-effort.com"
+openbao_pki_internal_domains:
+  - "svc.cluster.local"
+  - "svc"
+openbao_pki_key_type: "ec"
+openbao_pki_root_key_bits: 384
+openbao_pki_cert_key_bits: 256
+openbao_service_url: "http://openbao.security.svc:8200"

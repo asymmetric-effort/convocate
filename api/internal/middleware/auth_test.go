@@ -10,51 +10,8 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/httputil"
 )
 
-func TestAuth_MockToken(t *testing.T) {
-	os.Setenv("ALLOW_MOCK_AUTH", "true")
-	defer os.Unsetenv("ALLOW_MOCK_AUTH")
-
-	var got *httputil.Principal
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, ok := httputil.PrincipalFromContext(r.Context())
-		if !ok {
-			t.Error("expected principal in context")
-			return
-		}
-		got = p
-		w.WriteHeader(http.StatusOK)
-	})
-
-	handler := Auth(inner)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/test", nil)
-	r.Header.Set("Authorization", "Bearer mock-token")
-	handler.ServeHTTP(w, r)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if got == nil {
-		t.Fatal("principal was nil")
-	}
-	if got.ID != "usr-mock-admin" {
-		t.Errorf("ID = %q, want %q", got.ID, "usr-mock-admin")
-	}
-	if got.Username != "admin" {
-		t.Errorf("Username = %q, want %q", got.Username, "admin")
-	}
-	if got.IDP != "local" {
-		t.Errorf("IDP = %q, want %q", got.IDP, "local")
-	}
-	if len(got.AuthorizedApplets) != 7 {
-		t.Errorf("AuthorizedApplets len = %d, want 7", len(got.AuthorizedApplets))
-	}
-}
-
-func TestAuth_MockToken_Disabled(t *testing.T) {
-	os.Unsetenv("ALLOW_MOCK_AUTH")
-
-	// Set up a fake OpenBao that always rejects
+func TestAuth_MockTokenRejected(t *testing.T) {
+	// Mock auth is no longer supported — any token must validate via OpenBao.
 	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
@@ -70,6 +27,30 @@ func TestAuth_MockToken_Disabled(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/test", nil)
 	r.Header.Set("Authorization", "Bearer mock-token")
+	handler.ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestAuth_AnyInvalidTokenRejected(t *testing.T) {
+	// All tokens must validate via OpenBao — no special-case tokens.
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("handler should not be called")
+	})
+
+	handler := Auth(inner)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("Authorization", "Bearer any-invalid-token")
 	handler.ServeHTTP(w, r)
 
 	if w.Code != http.StatusUnauthorized {
@@ -131,8 +112,33 @@ func TestAuth_InvalidAuthScheme(t *testing.T) {
 }
 
 func TestAuth_QueryParamToken(t *testing.T) {
-	os.Setenv("ALLOW_MOCK_AUTH", "true")
-	defer os.Unsetenv("ALLOW_MOCK_AUTH")
+	// Mock OpenBao server that accepts valid-query-token
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/auth/token/lookup-self":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"entity_id": "ent-qp",
+					"policies":  []string{"admin-policy"},
+				},
+			})
+		case "/v1/identity/entity/id/ent-qp":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":        "ent-qp",
+					"name":      "queryuser",
+					"metadata":  map[string]string{"name": "Query User", "email": "qp@example.com"},
+					"policies":  []string{"default"},
+					"group_ids": []string{},
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
 
 	var called bool
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,7 +152,7 @@ func TestAuth_QueryParamToken(t *testing.T) {
 
 	handler := Auth(inner)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/test?token=mock-token", nil)
+	r := httptest.NewRequest("GET", "/test?token=valid-query-token", nil)
 	handler.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -609,8 +615,33 @@ func TestLookupEntity_ConnectionRefused(t *testing.T) {
 }
 
 func TestAuth_QueryParamFallback_NoHeader(t *testing.T) {
-	os.Setenv("ALLOW_MOCK_AUTH", "true")
-	defer os.Unsetenv("ALLOW_MOCK_AUTH")
+	// Mock OpenBao server that accepts the token
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/auth/token/lookup-self":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"entity_id": "ent-fb",
+					"policies":  []string{"admin-policy"},
+				},
+			})
+		case "/v1/identity/entity/id/ent-fb":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":        "ent-fb",
+					"name":      "fallbackuser",
+					"metadata":  map[string]string{"name": "Fallback User", "email": "fb@example.com"},
+					"policies":  []string{"default"},
+					"group_ids": []string{},
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
 
 	var called bool
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -621,7 +652,7 @@ func TestAuth_QueryParamFallback_NoHeader(t *testing.T) {
 	handler := Auth(inner)
 	w := httptest.NewRecorder()
 	// No Authorization header, only query param
-	r := httptest.NewRequest("GET", "/test?token=mock-token", nil)
+	r := httptest.NewRequest("GET", "/test?token=valid-fallback-token", nil)
 	handler.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {

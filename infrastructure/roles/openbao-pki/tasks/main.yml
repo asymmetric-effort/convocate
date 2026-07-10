@@ -1,0 +1,232 @@
+---
+# OpenBao PKI Configuration
+# Requires: openbao_root_token variable (pass via --extra-vars or vault)
+
+- name: Set BAO command prefix
+  ansible.builtin.set_fact:
+    bao_cmd: >-
+      kubectl exec -n {{ openbao_namespace }} deploy/openbao -c openbao --
+      env BAO_TOKEN={{ openbao_root_token }}
+      BAO_ADDR=http://127.0.0.1:8200
+      /usr/local/bin/bao
+
+# --- Root PKI ---
+
+- name: Check if root PKI is already enabled
+  ansible.builtin.command:
+    cmd: "{{ bao_cmd }} secrets list -format=json"
+  register: secrets_list
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Enable root PKI secrets engine
+  ansible.builtin.command:
+    cmd: "{{ bao_cmd }} secrets enable -path=pki pki"
+  when: "'pki/' not in (secrets_list.stdout | from_json)"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Tune root PKI max lease TTL
+  ansible.builtin.command:
+    cmd: "{{ bao_cmd }} secrets tune -max-lease-ttl={{ openbao_pki_root_ttl }} pki"
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Check if root CA exists
+  ansible.builtin.command:
+    cmd: "{{ bao_cmd }} read -format=json pki/cert/ca"
+  register: root_ca_check
+  failed_when: false
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Generate root CA
+  ansible.builtin.command:
+    cmd: >-
+      {{ bao_cmd }} write -format=json pki/root/generate/internal
+      common_name="{{ openbao_pki_root_cn }}"
+      organization="{{ openbao_pki_organization }}"
+      ttl={{ openbao_pki_root_ttl }}
+      key_type={{ openbao_pki_key_type }}
+      key_bits={{ openbao_pki_root_key_bits }}
+  register: root_ca_output
+  when: root_ca_check.rc != 0 or (root_ca_check.stdout | from_json).data.certificate is not defined
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Configure root CA URLs
+  ansible.builtin.command:
+    cmd: >-
+      {{ bao_cmd }} write pki/config/urls
+      issuing_certificates="{{ openbao_service_url }}/v1/pki/ca"
+      crl_distribution_points="{{ openbao_service_url }}/v1/pki/crl"
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+# --- Intermediate PKI ---
+
+- name: Enable intermediate PKI secrets engine
+  ansible.builtin.command:
+    cmd: "{{ bao_cmd }} secrets enable -path=pki_int pki"
+  when: "'pki_int/' not in (secrets_list.stdout | from_json)"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Tune intermediate PKI max lease TTL
+  ansible.builtin.command:
+    cmd: "{{ bao_cmd }} secrets tune -max-lease-ttl={{ openbao_pki_intermediate_ttl }} pki_int"
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Check if intermediate CA exists
+  ansible.builtin.command:
+    cmd: "{{ bao_cmd }} read -format=json pki_int/cert/ca"
+  register: int_ca_check
+  failed_when: false
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Generate intermediate CSR
+  ansible.builtin.command:
+    cmd: >-
+      {{ bao_cmd }} write -format=json pki_int/intermediate/generate/internal
+      common_name="{{ openbao_pki_intermediate_cn }}"
+      organization="{{ openbao_pki_organization }}"
+      key_type={{ openbao_pki_key_type }}
+      key_bits={{ openbao_pki_root_key_bits }}
+  register: int_csr_output
+  when: int_ca_check.rc != 0 or (int_ca_check.stdout | from_json).data.certificate is not defined
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Extract CSR from output
+  ansible.builtin.set_fact:
+    intermediate_csr: "{{ (int_csr_output.stdout | from_json).data.csr }}"
+  when: int_csr_output is changed
+
+- name: Sign intermediate CSR with root CA
+  ansible.builtin.command:
+    cmd: >-
+      {{ bao_cmd }} write -format=json pki/root/sign-intermediate
+      csr="{{ intermediate_csr }}"
+      format=pem_bundle
+      ttl={{ openbao_pki_intermediate_ttl }}
+  register: signed_int_output
+  when: int_csr_output is changed
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Extract signed certificate
+  ansible.builtin.set_fact:
+    signed_intermediate_cert: "{{ (signed_int_output.stdout | from_json).data.certificate }}"
+  when: signed_int_output is changed
+
+- name: Set signed intermediate certificate
+  ansible.builtin.command:
+    cmd: >-
+      {{ bao_cmd }} write pki_int/intermediate/set-signed
+      certificate="{{ signed_intermediate_cert }}"
+  when: signed_int_output is changed
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Configure intermediate CA URLs
+  ansible.builtin.command:
+    cmd: >-
+      {{ bao_cmd }} write pki_int/config/urls
+      issuing_certificates="{{ openbao_service_url }}/v1/pki_int/ca"
+      crl_distribution_points="{{ openbao_service_url }}/v1/pki_int/crl"
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+# --- PKI Roles ---
+
+- name: Create web-server PKI role
+  ansible.builtin.command:
+    cmd: >-
+      {{ bao_cmd }} write pki_int/roles/web-server
+      allowed_domains="{{ openbao_pki_allowed_domains | join(',') }}"
+      allow_subdomains=true
+      max_ttl={{ openbao_pki_cert_max_ttl }}
+      ttl={{ openbao_pki_cert_ttl }}
+      key_type={{ openbao_pki_key_type }}
+      key_bits={{ openbao_pki_cert_key_bits }}
+      require_cn=false
+      generate_lease=true
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Create internal-svc PKI role
+  ansible.builtin.command:
+    cmd: >-
+      {{ bao_cmd }} write pki_int/roles/internal-svc
+      allowed_domains="{{ openbao_pki_internal_domains | join(',') }}"
+      allow_subdomains=true
+      allow_bare_domains=true
+      allow_glob_domains=true
+      max_ttl={{ openbao_pki_cert_max_ttl }}
+      ttl={{ openbao_pki_cert_ttl }}
+      key_type={{ openbao_pki_key_type }}
+      key_bits={{ openbao_pki_cert_key_bits }}
+      require_cn=false
+      generate_lease=true
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+# --- Policy ---
+
+- name: Create pki-issue policy via API
+  ansible.builtin.uri:
+    url: "{{ openbao_service_url }}/v1/sys/policies/acl/pki-issue"
+    method: PUT
+    headers:
+      X-Vault-Token: "{{ openbao_root_token }}"
+    body_format: json
+    body:
+      policy: |
+        path "pki_int/sign/web-server" {
+          capabilities = ["create", "update"]
+        }
+        path "pki_int/issue/web-server" {
+          capabilities = ["create"]
+        }
+        path "pki_int/sign/internal-svc" {
+          capabilities = ["create", "update"]
+        }
+        path "pki_int/issue/internal-svc" {
+          capabilities = ["create"]
+        }
+    status_code: [200, 204]
+  delegate_to: localhost
+
+# --- Kubernetes Auth Role for cert-manager ---
+
+- name: Create cert-manager Kubernetes auth role
+  ansible.builtin.command:
+    cmd: >-
+      {{ bao_cmd }} write auth/kubernetes/role/cert-manager
+      bound_service_account_names=cert-manager
+      bound_service_account_namespaces=cert-manager
+      policies=pki-issue
+      ttl=1h
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+# --- Deploy ClusterIssuers ---
+
+- name: Apply OpenBao PKI ClusterIssuers
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ playbook_dir }}/../k8s/openbao/cluster-issuer.yaml"
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf

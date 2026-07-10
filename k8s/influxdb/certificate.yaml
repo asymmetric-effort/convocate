@@ -1,12 +1,4 @@
 apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: influxdb-selfsigned
-  namespace: o11y
-spec:
-  selfSigned: {}
----
-apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: influxdb-tls
@@ -14,11 +6,11 @@ metadata:
 spec:
   secretName: influxdb-tls
   issuerRef:
-    name: influxdb-selfsigned
-    kind: Issuer
+    name: openbao-pki-internal
+    kind: ClusterIssuer
   dnsNames:
     - influxdb
     - influxdb.o11y.svc
     - influxdb.o11y.svc.cluster.local
-  duration: 8760h # 1 year
-  renewBefore: 720h # 30 days
+  duration: 24h
+  renewBefore: 12h
