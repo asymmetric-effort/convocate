@@ -58,6 +58,7 @@ docker compose up --build
 - [CLAUDE.md](CLAUDE.md) — project instructions and coding standards
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution guidelines
 - [SECURITY.md](SECURITY.md) — security policy
+- [svr00 Cutover Runbook](docs/svr00-cutover.md) — infrastructure cutover from svr00 to convocate
 
 ## License
 

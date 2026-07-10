@@ -1,0 +1,8 @@
+#!/bin/bash
+# Scan staged files for secrets before commit
+leakdetector --skip-history --exit-code 1
+if [ $? -ne 0 ]; then
+  echo "ERROR: Secrets detected in staged files. Commit blocked."
+  echo "Review findings and remove secrets before committing."
+  exit 1
+fi

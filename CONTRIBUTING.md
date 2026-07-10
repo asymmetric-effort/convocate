@@ -60,6 +60,11 @@ make lint
 - Update documentation as needed
 - Follow existing code style and conventions
 
+## Infrastructure Cutover
+
+The svr00 repository cutover runbook is at [docs/svr00-cutover.md](docs/svr00-cutover.md).
+Run `scripts/verify-cutover-readiness.sh` to check prerequisites before cutover.
+
 ## Reporting Issues
 
 - Use GitHub Issues to report bugs

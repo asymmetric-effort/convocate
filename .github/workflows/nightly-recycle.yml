@@ -1,0 +1,51 @@
+# Nightly Cluster A Recycle
+#
+# Destroys and re-provisions Cluster A from scratch every night to ensure
+# the infrastructure-as-code playbooks stay healthy and the cluster never
+# accumulates drift.
+#
+# Schedule: 00:00 CT (05:00 UTC) daily.
+#
+# Required secrets:
+#   - CLUSTER_A_HOST    : Cluster A hypervisor/control-plane address
+#   - CLUSTER_A_CIDR    : Network CIDR for Cluster A VMs
+#   - HYPERVISOR_USER   : SSH user on the hypervisor
+#   - SSH_PRIVATE_KEY   : Ed25519 private key for Ansible
+#   - REGISTRY_HOST     : Container registry address
+#   - DNS_DOMAIN        : Base DNS domain for the cluster
+
+name: Nightly Cluster A Recycle
+
+on:
+  schedule:
+    - cron: '0 5 * * *'  # 00:00 CT = 05:00 UTC
+  workflow_dispatch:
+
+jobs:
+  recycle:
+    name: Recycle Cluster A
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+      - name: Recycle Cluster A
+        env:
+          CLUSTER_A_HOST: ${{ secrets.CLUSTER_A_HOST }}
+          CLUSTER_A_CIDR: ${{ secrets.CLUSTER_A_CIDR }}
+          HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+          DNS_DOMAIN: ${{ secrets.DNS_DOMAIN }}
+        run: |
+          # Write SSH key
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
+
+          ansible-playbook infrastructure/playbooks/recycle.yml \
+            -i infrastructure/inventory/cluster-a.yml
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/ansible_key

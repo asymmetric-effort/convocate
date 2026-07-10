@@ -41,5 +41,6 @@ export default defineConfig({
     { name: "log-shipping", testMatch: /log-shipping\.spec\.ts/ },
     { name: "minio-storage", testMatch: /minio-storage\.spec\.ts/ },
     { name: "container-registry", testMatch: /container-registry\.spec\.ts/ },
+    { name: "smoke", testMatch: /smoke\.spec\.ts/ },
   ],
 });

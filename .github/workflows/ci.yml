@@ -126,15 +126,15 @@ jobs:
   scan-secrets:
     name: Scan for Secrets
     runs-on: [self-hosted, linux, x64]
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - name: Run leakdetector
         run: leakdetector --skip-history --format sarif --report results.sarif
-      # - name: Upload SARIF to GitHub Security
-      #   uses: github/codeql-action/upload-sarif@v3
-      #   with:
-      #     sarif_file: results.sarif
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
 
   build:
     name: Build Docker Images

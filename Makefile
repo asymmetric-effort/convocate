@@ -4,9 +4,13 @@ IMAGES := openbao redis postgresql minio influxdb prometheus grafana api ui pdv 
 IMAGE_TAG := sha-$(shell git rev-parse --short HEAD)
 SEMVER := $(or $(shell git describe --tags --abbrev=0 2>/dev/null | awk -F. '{printf "%s.%s.%d", $$1, $$2, $$3+1}'),v2.0.1)
 
-.PHONY: all clean lint test test-metrics build cover deploy tag registry-cleanup
+.PHONY: all clean lint test test-metrics build cover deploy tag registry-cleanup setup
 
 all: build
+
+# ── setup ──────────────────────────────────────────────
+setup:
+	./scripts/install-hooks.sh
 
 # ── tag ───────────────────────────────────────────────
 tag:
