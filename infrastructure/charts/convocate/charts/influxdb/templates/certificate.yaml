@@ -1,0 +1,24 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: influxdb-selfsigned
+  namespace: {{ .Values.global.namespace | default "o11y" }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: influxdb-tls
+  namespace: {{ .Values.global.namespace | default "o11y" }}
+spec:
+  secretName: influxdb-tls
+  issuerRef:
+    name: influxdb-selfsigned
+    kind: Issuer
+  dnsNames:
+    - influxdb
+    - influxdb.{{ .Values.global.namespace | default "o11y" }}.svc
+    - influxdb.{{ .Values.global.namespace | default "o11y" }}.svc.cluster.local
+  duration: 8760h
+  renewBefore: 720h

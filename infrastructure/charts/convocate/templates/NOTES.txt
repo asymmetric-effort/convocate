@@ -1,0 +1,17 @@
+Convocate platform deployed to {{ .Release.Namespace }}.
+
+Namespaces:
+  - {{ include "convocate.namespace.app" . }} (API + UI)
+  - {{ include "convocate.namespace.data" . }} (PostgreSQL, Redis, MinIO)
+  - {{ include "convocate.namespace.security" . }} (OpenBao)
+  - {{ include "convocate.namespace.o11y" . }} (Prometheus, Grafana, InfluxDB, Ginger, Fluent Bit)
+
+Image registry: {{ .Values.global.registry }}
+Image tag: {{ .Values.global.imageTag }}
+Domain: {{ .Values.global.domain }}
+
+To check status:
+  kubectl get pods -n {{ include "convocate.namespace.app" . }}
+  kubectl get pods -n {{ include "convocate.namespace.data" . }}
+  kubectl get pods -n {{ include "convocate.namespace.security" . }}
+  kubectl get pods -n {{ include "convocate.namespace.o11y" . }}

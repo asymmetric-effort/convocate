@@ -1,0 +1,18 @@
+---
+- name: Create kube-vip manifest directory
+  ansible.builtin.file:
+    path: /etc/kubernetes/manifests
+    state: directory
+    mode: "0755"
+
+- name: Check if kube-vip manifest exists
+  ansible.builtin.stat:
+    path: /etc/kubernetes/manifests/kube-vip.yaml
+  register: kube_vip_manifest
+
+- name: Deploy kube-vip static pod manifest
+  ansible.builtin.template:
+    src: kube-vip-static.yaml.j2
+    dest: /etc/kubernetes/manifests/kube-vip.yaml
+    mode: "0600"
+  when: not kube_vip_manifest.stat.exists

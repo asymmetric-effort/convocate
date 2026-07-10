@@ -1,0 +1,9 @@
+---
+- name: Bootstrap OpenBao on Kubernetes
+  hosts: control_plane_primary
+  gather_facts: true
+  become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  roles:
+    - openbao

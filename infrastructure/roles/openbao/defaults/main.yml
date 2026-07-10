@@ -1,0 +1,43 @@
+---
+openbao_namespace: openbao
+openbao_chart_version: "2.1.0"
+openbao_replicas: 3
+openbao_storage_size: "10Gi"
+
+# Seal configuration
+openbao_key_shares: 5
+openbao_key_threshold: 3
+
+# Secret engines to enable
+openbao_secret_engines:
+  - path: convocate
+    type: kv-v2
+    description: "Convocate application secrets"
+
+# Auth methods to enable
+openbao_auth_methods:
+  - path: kubernetes
+    type: kubernetes
+    description: "Kubernetes auth"
+
+# Policies
+openbao_policies:
+  - name: convocate-api
+    rules: |
+      path "convocate/data/*" {
+        capabilities = ["read", "list"]
+      }
+      path "convocate/metadata/*" {
+        capabilities = ["list"]
+      }
+  - name: convocate-admin
+    rules: |
+      path "convocate/*" {
+        capabilities = ["create", "read", "update", "delete", "list"]
+      }
+      path "sys/health" {
+        capabilities = ["read"]
+      }
+      path "sys/mounts" {
+        capabilities = ["read", "list"]
+      }

@@ -1,0 +1,9 @@
+tunnel: {{ cloudflared_tunnel_name }}
+credentials-file: {{ cloudflared_config_dir }}/credentials.json
+
+ingress:
+{% for route in cloudflared_routes %}
+  - hostname: {{ route.hostname }}
+    service: {{ route.service }}
+{% endfor %}
+  - service: {{ cloudflared_catch_all_service }}

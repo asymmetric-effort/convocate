@@ -1,0 +1,5 @@
+apiVersion: v2
+name: openbao
+description: OpenBao secret management for Convocate
+version: 0.1.0
+type: application

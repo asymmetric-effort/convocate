@@ -1,0 +1,24 @@
+---
+vm_nodes:
+  - "node-{{ cluster_name }}-0"
+  - "node-{{ cluster_name }}-1"
+  - "node-{{ cluster_name }}-2"
+  - "node-{{ cluster_name }}-3"
+  - "node-{{ cluster_name }}-4"
+  - "node-{{ cluster_name }}-5"
+
+cloud_image_path: "/var/lib/libvirt/images/ubuntu-24.04-server-cloudimg-amd64.img"
+vm_pool_path: /var/lib/libvirt/images
+vm_cpus: 2
+vm_memory_mb: 8192
+vm_disk_gb: 17
+vm_network: default
+vm_os_variant: ubuntu24.04
+
+# cloud-init
+vm_user: convocate
+ssh_public_key: ""
+vm_password_hash: ""
+
+# Derived: base IP from cluster CIDR, VMs get .20+index
+vm_ip_offset: 20

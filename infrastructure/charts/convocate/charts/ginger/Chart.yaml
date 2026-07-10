@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ginger
+description: Ginger tracing collector for Convocate
+version: 0.1.0
+type: application

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: prometheus
+description: Prometheus monitoring for Convocate
+version: 0.1.0
+type: application

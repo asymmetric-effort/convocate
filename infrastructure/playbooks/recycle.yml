@@ -1,0 +1,21 @@
+---
+- name: "Step 1: Destroy existing VMs"
+  ansible.builtin.import_playbook: destroy.yml
+
+- name: "Step 2: Provision new VMs"
+  ansible.builtin.import_playbook: provision.yml
+
+- name: "Step 3: Build Kubernetes cluster"
+  ansible.builtin.import_playbook: cluster.yml
+
+- name: "Step 4: Apply CIS hardening"
+  ansible.builtin.import_playbook: harden.yml
+
+- name: "Step 5: Verify cluster health"
+  ansible.builtin.import_playbook: verify.yml
+
+- name: "Step 6: Bootstrap OpenBao"
+  ansible.builtin.import_playbook: openbao-bootstrap.yml
+
+- name: "Step 7: Deploy application"
+  ansible.builtin.import_playbook: deploy.yml

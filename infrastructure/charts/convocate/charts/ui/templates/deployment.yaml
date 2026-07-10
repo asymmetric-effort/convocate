@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: convocate-ui
+  namespace: {{ .Values.global.namespace | default "convocate" }}
+  labels:
+    app: convocate-ui
+spec:
+  replicas: {{ .Values.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: convocate-ui
+  template:
+    metadata:
+      labels:
+        app: convocate-ui
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ui
+          image: "{{ .Values.global.registry }}/convocate/ui:{{ .Values.global.imageTag }}"
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          ports:
+            - containerPort: {{ .Values.port | default 8080 }}
+              name: http
+          env:
+            - name: PORT
+              value: {{ .Values.port | default 8080 | quote }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.port | default 8080 }}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.port | default 8080 }}
+            initialDelaySeconds: 5
+            periodSeconds: 20

@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: {{ .Values.global.namespace | default "data-layer" }}
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: "{{ .Values.global.registry }}/convocate/redis:{{ .Values.global.imageTag }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          ports:
+            - containerPort: 6379
+              name: redis
+          args: ["--bind", "0.0.0.0", "--port", "6379", "--protected-mode", "no", "--save", "", "--appendonly", "no", "--dir", "/tmp"]
+          readinessProbe:
+            exec:
+              command: ["/usr/local/bin/redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["/usr/local/bin/redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 20

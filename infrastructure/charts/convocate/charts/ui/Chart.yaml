@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ui
+description: Convocate Web UI
+version: 0.1.0
+type: application

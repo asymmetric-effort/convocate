@@ -1,0 +1,124 @@
+---
+# CIS Benchmark: File permissions on control plane configuration files
+- name: "CIS 1.1.1-1.1.8: Set file permissions on control plane config"
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/kubernetes/admin.conf, mode: "0600" }
+    - { path: /etc/kubernetes/controller-manager.conf, mode: "0600" }
+    - { path: /etc/kubernetes/scheduler.conf, mode: "0600" }
+  when: inventory_hostname in groups['control_plane']
+  failed_when: false
+
+- name: "CIS 1.1.9-1.1.14: Set file permissions on PKI files"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - /etc/kubernetes/pki/ca.key
+    - /etc/kubernetes/pki/apiserver.key
+    - /etc/kubernetes/pki/apiserver-kubelet-client.key
+    - /etc/kubernetes/pki/front-proxy-ca.key
+    - /etc/kubernetes/pki/front-proxy-client.key
+    - /etc/kubernetes/pki/sa.key
+  when: inventory_hostname in groups['control_plane']
+  failed_when: false
+
+- name: "CIS 1.1.15-1.1.20: Set file permissions on PKI certs"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - /etc/kubernetes/pki/ca.crt
+    - /etc/kubernetes/pki/apiserver.crt
+    - /etc/kubernetes/pki/apiserver-kubelet-client.crt
+    - /etc/kubernetes/pki/front-proxy-ca.crt
+    - /etc/kubernetes/pki/front-proxy-client.crt
+    - /etc/kubernetes/pki/sa.pub
+  when: inventory_hostname in groups['control_plane']
+  failed_when: false
+
+- name: "CIS 4.1.1-4.1.2: Set kubelet config permissions"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - /var/lib/kubelet/config.yaml
+    - /etc/kubernetes/kubelet.conf
+  failed_when: false
+
+- name: Copy admission configuration
+  ansible.builtin.copy:
+    src: admission-config.yaml
+    dest: /etc/kubernetes/admission-config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  when: inventory_hostname in groups['control_plane']
+
+- name: "CIS 5.2: Apply default deny CiliumNetworkPolicy"
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: cilium.io/v2
+      kind: CiliumNetworkPolicy
+      metadata:
+        name: default-deny-all
+        namespace: default
+      spec:
+        endpointSelector: {}
+        ingress:
+          - {}
+        egress:
+          - {}
+  when: inventory_hostname == groups['control_plane_primary'][0]
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: "CIS 5.1.6: Verify no automounted service account tokens"
+  ansible.builtin.command:
+    cmd: >-
+      kubectl get serviceaccount default -n default
+      -o jsonpath='{.automountServiceAccountToken}'
+  register: sa_automount
+  changed_when: false
+  when: inventory_hostname == groups['control_plane_primary'][0]
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: "CIS: Disable automount on default service account"
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: default
+        namespace: default
+      automountServiceAccountToken: false
+  when: inventory_hostname == groups['control_plane_primary'][0]
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: "CIS 4.2.6: Ensure --protect-kernel-defaults is set"
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^protectKernelDefaults:'
+    line: 'protectKernelDefaults: true'
+  notify: restart kubelet
+
+- name: "CIS 4.2.12: Ensure RotateKubeletServerCertificate is enabled"
+  ansible.builtin.lineinfile:
+    path: /var/lib/kubelet/config.yaml
+    regexp: '^serverTLSBootstrap:'
+    line: 'serverTLSBootstrap: true'
+  notify: restart kubelet

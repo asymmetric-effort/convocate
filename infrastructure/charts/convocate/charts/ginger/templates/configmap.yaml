@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ginger-config
+  namespace: {{ .Values.global.namespace | default "o11y" }}
+data:
+  config.yaml: |
+    server:
+      otlp_http_port: 4318
+      query_port: 16686
+      admin_port: 14269
+
+    storage:
+      backend: influxdb
+      influxdb:
+        endpoint: https://influxdb.{{ .Values.global.namespace | default "o11y" }}.svc:8086
+        org: convocate
+        bucket: traces
+        token: ${INFLUXDB_TOKEN}
+
+    tls:
+      enabled: false
+
+    sampling:
+      type: adaptive
+      adaptive:
+        target_samples_per_second: 1.0
+        initial_sampling_rate: 1.0

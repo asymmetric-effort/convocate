@@ -1,0 +1,52 @@
+---
+apiVersion: audit.k8s.io/v1
+kind: Policy
+rules:
+  # Do not log requests to the following
+  - level: None
+    resources:
+      - group: ""
+        resources: ["endpoints", "services", "services/status"]
+  - level: None
+    users: ["system:kube-proxy"]
+    verbs: ["watch"]
+    resources:
+      - group: ""
+        resources: ["endpoints", "services", "services/status"]
+  # Do not log authenticated requests to certain non-resource URL paths
+  - level: None
+    userGroups: ["system:authenticated"]
+    nonResourceURLs:
+      - "/api*"
+      - "/version"
+      - "/healthz*"
+      - "/readyz*"
+      - "/livez*"
+  # Do not log events requests
+  - level: None
+    resources:
+      - group: ""
+        resources: ["events"]
+  # Log metadata for secrets, configmaps, and tokenreviews
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps"]
+      - group: authentication.k8s.io
+        resources: ["tokenreviews"]
+    omitStages:
+      - RequestReceived
+  # Log request body for changes to pods, deployments, statefulsets, daemonsets
+  - level: Request
+    resources:
+      - group: ""
+        resources: ["pods"]
+      - group: apps
+        resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["create", "update", "patch", "delete"]
+    omitStages:
+      - RequestReceived
+  # Log metadata for all other requests
+  - level: Metadata
+    omitStages:
+      - RequestReceived

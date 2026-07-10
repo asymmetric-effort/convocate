@@ -1,0 +1,141 @@
+---
+- name: Ensure libvirt is running
+  ansible.builtin.service:
+    name: libvirtd
+    state: started
+    enabled: true
+
+- name: Check cloud image exists
+  ansible.builtin.stat:
+    path: "{{ cloud_image_path }}"
+  register: cloud_image_stat
+
+- name: Fail if cloud image is missing
+  ansible.builtin.fail:
+    msg: "Cloud image not found at {{ cloud_image_path }}"
+  when: not cloud_image_stat.stat.exists
+
+- name: Create VM disks from cloud image
+  ansible.builtin.command:
+    cmd: >-
+      qemu-img create -f qcow2 -F qcow2
+      -b {{ cloud_image_path }}
+      {{ vm_pool_path }}/{{ item }}.qcow2
+      {{ vm_disk_gb }}G
+    creates: "{{ vm_pool_path }}/{{ item }}.qcow2"
+  loop: "{{ vm_nodes }}"
+
+- name: Generate cloud-init meta-data
+  ansible.builtin.copy:
+    content: |
+      instance-id: {{ item }}
+      local-hostname: {{ item }}
+    dest: "{{ vm_pool_path }}/{{ item }}-meta-data"
+    mode: "0644"
+  loop: "{{ vm_nodes }}"
+
+- name: Calculate VM IP address
+  ansible.builtin.set_fact:
+    vm_ips: >-
+      {{ vm_ips | default({}) | combine({
+        item: cluster_cidr | ansible.utils.ipaddr('network') | ansible.utils.ipmath(vm_ip_offset + idx)
+      }) }}
+  loop: "{{ vm_nodes }}"
+  loop_control:
+    index_var: idx
+
+- name: Generate cloud-init user-data
+  ansible.builtin.copy:
+    content: |
+      #cloud-config
+      hostname: {{ item }}
+      manage_etc_hosts: true
+      users:
+        - name: {{ vm_user }}
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          shell: /bin/bash
+          lock_passwd: false
+          {% if vm_password_hash %}
+          passwd: {{ vm_password_hash }}
+          {% endif %}
+          ssh_authorized_keys:
+            - {{ ssh_public_key }}
+      package_update: true
+      packages:
+        - qemu-guest-agent
+      runcmd:
+        - systemctl enable --now qemu-guest-agent
+      power_state:
+        mode: reboot
+        condition: true
+    dest: "{{ vm_pool_path }}/{{ item }}-user-data"
+    mode: "0644"
+  loop: "{{ vm_nodes }}"
+
+- name: Generate cloud-init network-config
+  ansible.builtin.copy:
+    content: |
+      version: 2
+      ethernets:
+        enp1s0:
+          dhcp4: false
+          addresses:
+            - {{ vm_ips[item] }}/{{ cluster_cidr | ansible.utils.ipaddr('prefix') }}
+          routes:
+            - to: default
+              via: {{ cluster_cidr | ansible.utils.ipaddr('1') | ansible.utils.ipaddr('address') }}
+          nameservers:
+            addresses:
+              - 1.1.1.1
+              - 8.8.8.8
+    dest: "{{ vm_pool_path }}/{{ item }}-network-config"
+    mode: "0644"
+  loop: "{{ vm_nodes }}"
+
+- name: Create cloud-init ISO
+  ansible.builtin.command:
+    cmd: >-
+      genisoimage -output {{ vm_pool_path }}/{{ item }}-cidata.iso
+      -volid cidata -joliet -rock
+      {{ vm_pool_path }}/{{ item }}-user-data
+      {{ vm_pool_path }}/{{ item }}-meta-data
+      {{ vm_pool_path }}/{{ item }}-network-config
+    creates: "{{ vm_pool_path }}/{{ item }}-cidata.iso"
+  loop: "{{ vm_nodes }}"
+
+- name: Check if VM already exists
+  community.libvirt.virt:
+    command: list_vms
+  register: existing_vms
+
+- name: Create VMs
+  ansible.builtin.command:
+    cmd: >-
+      virt-install
+      --name {{ item }}
+      --ram {{ vm_memory_mb }}
+      --vcpus {{ vm_cpus }}
+      --disk path={{ vm_pool_path }}/{{ item }}.qcow2,format=qcow2,bus=virtio
+      --disk path={{ vm_pool_path }}/{{ item }}-cidata.iso,device=cdrom
+      --os-variant {{ vm_os_variant }}
+      --network network={{ vm_network }},model=virtio
+      --graphics none
+      --console pty,target_type=serial
+      --noautoconsole
+      --import
+  when: item not in existing_vms.list_vms
+  loop: "{{ vm_nodes }}"
+
+- name: Wait for VMs to be reachable via SSH
+  ansible.builtin.wait_for:
+    host: "{{ vm_ips[item] }}"
+    port: 22
+    delay: 10
+    timeout: 300
+    state: started
+  loop: "{{ vm_nodes }}"
+
+- name: Print VM IP assignments
+  ansible.builtin.debug:
+    msg: "{{ item }}: {{ vm_ips[item] }}"
+  loop: "{{ vm_nodes }}"

@@ -1,0 +1,61 @@
+---
+- name: Deploy Convocate application
+  hosts: control_plane_primary
+  gather_facts: true
+  become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  vars:
+    convocate_namespace: convocate
+    convocate_chart_path: "{{ lookup('env', 'CONVOCATE_CHART_PATH') | default('../helm/convocate', true) }}"
+  tasks:
+    - name: Create application namespace
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ convocate_namespace }}"
+
+    - name: Add Helm repos if needed
+      ansible.builtin.command:
+        cmd: "helm repo update"
+      changed_when: false
+      failed_when: false
+
+    - name: Deploy Convocate via Helm
+      kubernetes.core.helm:
+        name: convocate
+        chart_ref: "{{ convocate_chart_path }}"
+        release_namespace: "{{ convocate_namespace }}"
+        create_namespace: true
+        wait: true
+        timeout: "10m0s"
+        values:
+          cluster:
+            name: "{{ cluster_name }}"
+            domain: "{{ dns_domain }}"
+          registry:
+            host: "{{ registry_host }}"
+          api:
+            replicas: 2
+          ui:
+            replicas: 2
+
+    - name: Wait for deployment rollout
+      ansible.builtin.command:
+        cmd: >-
+          kubectl rollout status deployment/convocate-api
+          -n {{ convocate_namespace }} --timeout=300s
+      changed_when: false
+
+    - name: Verify application pods are running
+      ansible.builtin.command:
+        cmd: "kubectl get pods -n {{ convocate_namespace }} --no-headers"
+      register: app_pods
+      changed_when: false
+
+    - name: Print deployment status
+      ansible.builtin.debug:
+        msg: "{{ app_pods.stdout_lines }}"

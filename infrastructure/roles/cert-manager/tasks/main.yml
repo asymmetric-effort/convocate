@@ -1,0 +1,92 @@
+---
+- name: Check if cert-manager namespace exists
+  ansible.builtin.command:
+    cmd: kubectl get namespace cert-manager
+  register: cert_manager_ns_check
+  failed_when: false
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Install cert-manager
+  ansible.builtin.command:
+    cmd: >-
+      kubectl apply -f
+      https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.yaml
+  when: cert_manager_ns_check.rc != 0
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Wait for cert-manager webhook to be ready
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=Available
+      deployment/cert-manager-webhook
+      -n cert-manager --timeout=120s
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Wait for cert-manager controller to be ready
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=Available
+      deployment/cert-manager
+      -n cert-manager --timeout=120s
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Pause for webhook readiness
+  ansible.builtin.pause:
+    seconds: 15
+
+- name: Create self-signed ClusterIssuer
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: selfsigned-issuer
+      spec:
+        selfSigned: {}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Create CA ClusterIssuer
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata:
+        name: convocate-ca
+        namespace: cert-manager
+      spec:
+        isCA: true
+        commonName: convocate-ca
+        secretName: convocate-ca-secret
+        privateKey:
+          algorithm: ECDSA
+          size: 256
+        issuerRef:
+          name: selfsigned-issuer
+          kind: ClusterIssuer
+          group: cert-manager.io
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Create CA-backed ClusterIssuer
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: convocate-ca-issuer
+      spec:
+        ca:
+          secretName: convocate-ca-secret
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf

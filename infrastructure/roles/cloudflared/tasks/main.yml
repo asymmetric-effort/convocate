@@ -1,0 +1,77 @@
+---
+- name: Add cloudflared GPG key
+  ansible.builtin.shell:
+    cmd: >-
+      curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg |
+      gpg --dearmor -o /usr/share/keyrings/cloudflare-main.gpg
+    creates: /usr/share/keyrings/cloudflare-main.gpg
+
+- name: Add cloudflared apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg]
+      https://pkg.cloudflare.com/cloudflared
+      {{ ansible_distribution_release }} main
+    filename: cloudflared
+    state: present
+
+- name: Install cloudflared
+  ansible.builtin.apt:
+    name: cloudflared
+    state: present
+    update_cache: true
+
+- name: Create cloudflared system user
+  ansible.builtin.user:
+    name: "{{ cloudflared_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create cloudflared config directory
+  ansible.builtin.file:
+    path: "{{ cloudflared_config_dir }}"
+    state: directory
+    owner: "{{ cloudflared_user }}"
+    group: "{{ cloudflared_group }}"
+    mode: "0750"
+
+- name: Deploy cloudflared configuration
+  ansible.builtin.template:
+    src: config.yml.j2
+    dest: "{{ cloudflared_config_dir }}/config.yml"
+    owner: "{{ cloudflared_user }}"
+    group: "{{ cloudflared_group }}"
+    mode: "0640"
+  notify: restart cloudflared
+
+- name: Create cloudflared systemd service
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Cloudflare Tunnel
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=notify
+      User={{ cloudflared_user }}
+      Group={{ cloudflared_group }}
+      ExecStart=/usr/bin/cloudflared tunnel --config {{ cloudflared_config_dir }}/config.yml run
+      Restart=on-failure
+      RestartSec=5s
+      LimitNOFILE=65536
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/cloudflared.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart cloudflared
+
+- name: Enable and start cloudflared
+  ansible.builtin.service:
+    name: cloudflared
+    state: started
+    enabled: true

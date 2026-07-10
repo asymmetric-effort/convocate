@@ -1,0 +1,34 @@
+---
+all:
+  vars:
+    cluster_name: a
+    cluster_cidr: "{{ lookup('env', 'CLUSTER_A_CIDR') }}"
+    cluster_host: "{{ lookup('env', 'CLUSTER_A_HOST') }}"
+    vm_cpus: 2
+    vm_memory_mb: 8192
+    vm_disk_gb: 17
+    registry_host: "{{ lookup('env', 'REGISTRY_HOST') }}"
+    dns_domain: "{{ lookup('env', 'DNS_DOMAIN') }}"
+  children:
+    hypervisor:
+      hosts:
+        svr00:
+          ansible_host: "{{ lookup('env', 'CLUSTER_A_HOST') }}"
+          ansible_user: "{{ lookup('env', 'HYPERVISOR_USER') }}"
+    control_plane_primary:
+      hosts:
+        node-a-0:
+    control_plane:
+      hosts:
+        node-a-0:
+        node-a-1:
+        node-a-2:
+    workers:
+      hosts:
+        node-a-3:
+        node-a-4:
+        node-a-5:
+    k8s_nodes:
+      children:
+        control_plane:
+        workers:

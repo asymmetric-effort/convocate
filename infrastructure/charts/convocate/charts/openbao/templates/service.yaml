@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: openbao
+  namespace: {{ .Values.global.namespace | default "security" }}
+spec:
+  selector:
+    app: openbao
+  ports:
+    - port: 8200
+      targetPort: 8200
+      name: api
+  type: ClusterIP

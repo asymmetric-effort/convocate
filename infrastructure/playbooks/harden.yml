@@ -1,0 +1,6 @@
+---
+- name: Apply CIS hardening to Kubernetes nodes
+  hosts: k8s_nodes
+  gather_facts: true
+  roles:
+    - cis-hardening

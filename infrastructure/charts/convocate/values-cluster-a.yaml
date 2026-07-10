@@ -1,0 +1,27 @@
+global:
+  imageTag: ""  # Set by CI
+
+postgresql:
+  storage: 2Gi
+
+influxdb:
+  storage: 10Gi
+
+api:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+ui:
+  resources:
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+prometheus:
+  storage: 5Gi
+  retentionTime: "30d"
+
+grafana:
+  storage: 2Gi

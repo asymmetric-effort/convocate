@@ -1,0 +1,5 @@
+---
+containerd_version: "1.7.*"
+containerd_config_dir: /etc/containerd
+containerd_config_file: /etc/containerd/config.toml
+containerd_sandbox_image: "registry.k8s.io/pause:3.10"

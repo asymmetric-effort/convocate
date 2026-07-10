@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: prometheus-pv
+spec:
+  capacity:
+    storage: {{ .Values.storage | default "20Gi" }}
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: {{ .Values.hostPath | default "/mnt/o11y/prometheus" }}
+    type: DirectoryOrCreate
+  storageClassName: local
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ .Values.nodeAffinity | default "convocate05" }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+  namespace: {{ .Values.global.namespace | default "o11y" }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local
+  volumeName: prometheus-pv
+  resources:
+    requests:
+      storage: {{ .Values.storage | default "20Gi" }}

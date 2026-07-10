@@ -1,0 +1,24 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: prometheus-selfsigned
+  namespace: {{ .Values.global.namespace | default "o11y" }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: prometheus-tls
+  namespace: {{ .Values.global.namespace | default "o11y" }}
+spec:
+  secretName: prometheus-tls
+  issuerRef:
+    name: prometheus-selfsigned
+    kind: Issuer
+  dnsNames:
+    - prometheus
+    - prometheus.{{ .Values.global.namespace | default "o11y" }}.svc
+    - prometheus.{{ .Values.global.namespace | default "o11y" }}.svc.cluster.local
+  duration: 8760h
+  renewBefore: 720h

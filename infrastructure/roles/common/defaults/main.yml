@@ -1,0 +1,18 @@
+---
+kube_version: "v1.31.14"
+kube_package_version: "1.31.14-1.1"
+
+# Kernel modules required for Kubernetes
+kernel_modules:
+  - overlay
+  - br_netfilter
+
+# Sysctl settings for Kubernetes networking
+sysctl_settings:
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.ip_forward: 1
+
+# Kubernetes apt repository
+kube_apt_key_url: "https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key"
+kube_apt_repo: "https://pkgs.k8s.io/core:/stable:/v1.31/deb/"

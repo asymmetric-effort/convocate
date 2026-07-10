@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: convocate-api
+  namespace: {{ .Values.global.namespace | default "convocate" }}
+  labels:
+    app: convocate-api
+spec:
+  replicas: {{ .Values.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: convocate-api
+  template:
+    metadata:
+      labels:
+        app: convocate-api
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName | default "convocate-api" }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: "{{ .Values.global.registry }}/convocate/api:{{ .Values.global.imageTag }}"
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.env.OTEL_SERVICE_NAME | default "convocate-api" | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.env.OTEL_EXPORTER_OTLP_ENDPOINT | default "http://ginger.o11y.svc:4318" | quote }}
+            - name: OPENBAO_ADDR
+              value: {{ .Values.env.OPENBAO_ADDR | default "http://openbao.security.svc:8200" | quote }}
+            - name: OPENBAO_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openbao-root-token
+                  key: token
+            - name: OPENBAO_MFA_METHOD_ID
+              value: {{ .Values.env.OPENBAO_MFA_METHOD_ID | default "" | quote }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: DATABASE_URL
+            - name: ALLOW_MOCK_AUTH
+              value: {{ .Values.env.ALLOW_MOCK_AUTH | default "true" | quote }}
+          ports:
+            - containerPort: {{ .Values.port | default 8443 }}
+              name: api
+          readinessProbe:
+            httpGet:
+              path: /api/v1/status
+              port: {{ .Values.port | default 8443 }}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/status
+              port: {{ .Values.port | default 8443 }}
+            initialDelaySeconds: 5
+            periodSeconds: 20
+---
+# ServiceAccount + RBAC for convocate-api
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccountName | default "convocate-api" }}
+  namespace: {{ .Values.global.namespace | default "convocate" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: convocate-api
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "create"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: convocate-api
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccountName | default "convocate-api" }}
+    namespace: {{ .Values.global.namespace | default "convocate" }}
+roleRef:
+  kind: ClusterRole
+  name: convocate-api
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: convocate-api-agents
+  namespace: convocate-agents
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: convocate-api-agents
+  namespace: convocate-agents
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccountName | default "convocate-api" }}
+    namespace: {{ .Values.global.namespace | default "convocate" }}
+roleRef:
+  kind: Role
+  name: convocate-api-agents
+  apiGroup: rbac.authorization.k8s.io

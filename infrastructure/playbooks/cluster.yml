@@ -1,0 +1,36 @@
+---
+- name: Prepare all Kubernetes nodes
+  hosts: k8s_nodes
+  gather_facts: true
+  roles:
+    - common
+    - containerd
+    - registry
+
+- name: Initialize primary control plane
+  hosts: control_plane_primary
+  gather_facts: true
+  roles:
+    - kubeadm-init
+    - kube-vip
+
+- name: Join additional control plane nodes
+  hosts: control_plane:!control_plane_primary
+  gather_facts: true
+  serial: 1
+  roles:
+    - kubeadm-join-cp
+    - kube-vip
+
+- name: Join worker nodes
+  hosts: workers
+  gather_facts: true
+  roles:
+    - kubeadm-join-worker
+
+- name: Install CNI and cluster services
+  hosts: control_plane_primary
+  gather_facts: true
+  roles:
+    - cilium
+    - cert-manager

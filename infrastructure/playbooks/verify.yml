@@ -1,0 +1,101 @@
+---
+- name: Verify cluster health
+  hosts: control_plane_primary
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Check all nodes are Ready
+      ansible.builtin.command:
+        cmd: kubectl get nodes --no-headers
+      register: node_status
+      changed_when: false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+
+    - name: Fail if any node is not Ready
+      ansible.builtin.assert:
+        that:
+          - "'NotReady' not in node_status.stdout"
+        fail_msg: "One or more nodes are not Ready"
+        success_msg: "All nodes are Ready"
+
+    - name: Verify Cilium CNI is operational
+      ansible.builtin.command:
+        cmd: cilium status --wait
+      register: cilium_check
+      changed_when: false
+      timeout: 120
+
+    - name: Check CoreDNS pods are running
+      ansible.builtin.command:
+        cmd: kubectl get pods -n kube-system -l k8s-app=kube-dns --no-headers
+      register: dns_pods
+      changed_when: false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+
+    - name: Fail if CoreDNS is not running
+      ansible.builtin.assert:
+        that:
+          - "'Running' in dns_pods.stdout"
+        fail_msg: "CoreDNS pods are not running"
+        success_msg: "CoreDNS is operational"
+
+    - name: Test DNS resolution inside cluster
+      ansible.builtin.command:
+        cmd: >-
+          kubectl run dns-test --rm -i --restart=Never
+          --image=busybox:1.36
+          --command -- nslookup kubernetes.default.svc.cluster.local
+      register: dns_test
+      changed_when: false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      timeout: 60
+
+    - name: Verify cert-manager is ready
+      ansible.builtin.command:
+        cmd: kubectl get pods -n cert-manager --no-headers
+      register: cert_manager_pods
+      changed_when: false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+
+    - name: Fail if cert-manager pods are not running
+      ansible.builtin.assert:
+        that:
+          - "'Running' in cert_manager_pods.stdout"
+        fail_msg: "cert-manager pods are not running"
+        success_msg: "cert-manager is operational"
+
+    - name: Test PersistentVolume provisioning
+      ansible.builtin.shell: |
+        set -e
+        cat <<'PVEOF' | kubectl apply -f -
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: verify-pvc-test
+          namespace: default
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Mi
+        PVEOF
+        sleep 5
+        kubectl get pvc verify-pvc-test -n default --no-headers
+        kubectl delete pvc verify-pvc-test -n default --ignore-not-found
+      register: pv_test
+      changed_when: false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+
+    - name: Print verification summary
+      ansible.builtin.debug:
+        msg:
+          - "Cluster verification complete"
+          - "Nodes: {{ node_status.stdout_lines | length }} total"
+          - "CNI: Cilium operational"
+          - "DNS: Functional"
+          - "cert-manager: Running"

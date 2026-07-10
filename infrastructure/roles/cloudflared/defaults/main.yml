@@ -1,0 +1,16 @@
+---
+cloudflared_tunnel_token: ""
+cloudflared_tunnel_name: "convocate-tunnel"
+cloudflared_config_dir: /etc/cloudflared
+cloudflared_user: cloudflared
+cloudflared_group: cloudflared
+
+# WARP routes - two routes for the tunnel
+cloudflared_routes:
+  - hostname: "api.{{ dns_domain }}"
+    service: "http://localhost:8080"
+  - hostname: "app.{{ dns_domain }}"
+    service: "http://localhost:3000"
+
+# Catch-all
+cloudflared_catch_all_service: "http_status:404"

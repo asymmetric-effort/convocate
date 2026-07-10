@@ -1,0 +1,27 @@
+---
+- name: Create containerd registry config directory
+  ansible.builtin.file:
+    path: /etc/containerd/certs.d/{{ registry_host }}:{{ registry_port }}
+    state: directory
+    mode: "0755"
+  when: registry_host is defined and registry_host | length > 0
+
+- name: Configure containerd registry mirror
+  ansible.builtin.copy:
+    content: |
+      [host."http://{{ registry_host }}:{{ registry_port }}"]
+        capabilities = ["pull", "resolve"]
+        skip_verify = true
+    dest: /etc/containerd/certs.d/{{ registry_host }}:{{ registry_port }}/hosts.toml
+    mode: "0644"
+  when: registry_host is defined and registry_host | length > 0
+  notify: restart containerd for registry
+
+- name: Ensure containerd config uses registry config path
+  ansible.builtin.lineinfile:
+    path: /etc/containerd/config.toml
+    regexp: '^\s*config_path\s*='
+    line: '      config_path = "/etc/containerd/certs.d"'
+    insertafter: '\[plugins\."io\.containerd\.grpc\.v1\.cri"\.registry\]'
+  when: registry_host is defined and registry_host | length > 0
+  notify: restart containerd for registry

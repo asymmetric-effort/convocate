@@ -1,0 +1,5 @@
+apiVersion: v2
+name: postgresql
+description: PostgreSQL database for Convocate
+version: 0.1.0
+type: application

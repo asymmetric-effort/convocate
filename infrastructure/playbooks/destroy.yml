@@ -1,0 +1,40 @@
+---
+- name: Destroy all cluster VMs
+  hosts: hypervisor
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Get list of cluster VMs
+      ansible.builtin.shell: |
+        virsh list --all --name | grep "^node-{{ cluster_name }}-" || true
+      register: vm_list
+      changed_when: false
+
+    - name: Destroy running VMs
+      ansible.builtin.command:
+        cmd: "virsh destroy {{ item }}"
+      loop: "{{ vm_list.stdout_lines }}"
+      when: vm_list.stdout_lines | length > 0
+      register: destroy_result
+      failed_when: false
+      changed_when: "'destroyed' in destroy_result.stdout | default('')"
+
+    - name: Undefine VMs and remove storage
+      ansible.builtin.command:
+        cmd: "virsh undefine {{ item }} --remove-all-storage --nvram"
+      loop: "{{ vm_list.stdout_lines }}"
+      when: vm_list.stdout_lines | length > 0
+      register: undefine_result
+      failed_when: false
+      changed_when: "'undefined' in undefine_result.stdout | default('')"
+
+    - name: Remove cloud-init ISOs
+      ansible.builtin.file:
+        path: "{{ vm_pool_path }}/{{ item }}-cidata.iso"
+        state: absent
+      loop: "{{ vm_list.stdout_lines }}"
+      when: vm_list.stdout_lines | length > 0
+
+    - name: Print destroyed VMs
+      ansible.builtin.debug:
+        msg: "Destroyed VMs: {{ vm_list.stdout_lines | default([]) | join(', ') }}"

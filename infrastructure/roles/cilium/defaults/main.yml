@@ -1,0 +1,7 @@
+---
+cilium_version: "1.16"
+cilium_cli_version: "v0.16.24"
+cilium_hubble_enabled: true
+cilium_hubble_relay_enabled: true
+cilium_hubble_ui_enabled: true
+cilium_install_timeout: "300s"

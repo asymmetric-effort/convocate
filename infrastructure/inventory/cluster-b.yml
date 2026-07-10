@@ -1,0 +1,34 @@
+---
+all:
+  vars:
+    cluster_name: b
+    cluster_cidr: "{{ lookup('env', 'CLUSTER_B_CIDR') }}"
+    cluster_host: "{{ lookup('env', 'CLUSTER_B_HOST') }}"
+    vm_cpus: 8
+    vm_memory_mb: 16384
+    vm_disk_gb: 17
+    registry_host: "{{ lookup('env', 'REGISTRY_HOST') }}"
+    dns_domain: "{{ lookup('env', 'DNS_DOMAIN') }}"
+  children:
+    hypervisor:
+      hosts:
+        svr00:
+          ansible_host: "{{ lookup('env', 'CLUSTER_B_HOST') }}"
+          ansible_user: "{{ lookup('env', 'HYPERVISOR_USER') }}"
+    control_plane_primary:
+      hosts:
+        node-b-0:
+    control_plane:
+      hosts:
+        node-b-0:
+        node-b-1:
+        node-b-2:
+    workers:
+      hosts:
+        node-b-3:
+        node-b-4:
+        node-b-5:
+    k8s_nodes:
+      children:
+        control_plane:
+        workers:

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: minio
+description: MinIO object storage for Convocate
+version: 0.1.0
+type: application

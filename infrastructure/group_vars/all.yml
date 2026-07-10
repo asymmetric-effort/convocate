@@ -1,0 +1,52 @@
+---
+# Kubernetes version pinning
+kube_version: "v1.31.14"
+kube_package_version: "1.31.14-1.1"
+
+# Container runtime
+containerd_version: "1.7.*"
+containerd_config_dir: /etc/containerd
+
+# Networking
+pod_cidr: "10.244.0.0/16"
+service_cidr: "10.96.0.0/12"
+cluster_dns: "10.96.0.10"
+
+# Cilium
+cilium_version: "1.16"
+cilium_hubble_enabled: true
+
+# cert-manager
+cert_manager_version: "v1.16.3"
+
+# kube-vip
+kube_vip_version: "v0.8.7"
+kube_vip_interface: "eth0"
+
+# Cloud image
+cloud_image_path: "{{ lookup('env', 'CLOUD_IMAGE_PATH') | default('/var/lib/libvirt/images/ubuntu-24.04-server-cloudimg-amd64.img', true) }}"
+vm_pool_path: /var/lib/libvirt/images
+
+# SSH
+ssh_public_key: "{{ lookup('env', 'SSH_PUBLIC_KEY') }}"
+
+# VM user
+vm_user: "{{ lookup('env', 'VM_USER') | default('convocate', true) }}"
+vm_password_hash: "{{ lookup('env', 'VM_PASSWORD_HASH') }}"
+
+# API VIP - derived from cluster CIDR (uses .10 in the subnet)
+api_vip: "{{ cluster_cidr | ansible.utils.ipaddr('10') | ansible.utils.ipaddr('address') }}"
+
+# cloudflared
+cloudflared_tunnel_token: "{{ lookup('env', 'CLOUDFLARED_TUNNEL_TOKEN') }}"
+cloudflared_tunnel_name: "{{ lookup('env', 'CLOUDFLARED_TUNNEL_NAME') | default('convocate-tunnel', true) }}"
+
+# OpenBao
+openbao_namespace: openbao
+openbao_chart_version: "2.1.0"
+
+# Registry
+registry_port: 5000
+
+# DNS domain
+dns_domain: "{{ lookup('env', 'DNS_DOMAIN') | default('convocate.local', true) }}"

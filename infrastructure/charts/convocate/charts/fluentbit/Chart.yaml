@@ -1,0 +1,5 @@
+apiVersion: v2
+name: fluentbit
+description: Fluent Bit log collector for Convocate
+version: 0.1.0
+type: application

@@ -1,0 +1,184 @@
+global:
+  registry: "192.168.3.90:5000"
+  imageTag: "latest"
+  domain: "asymmetric-effort.com"
+
+namespaces:
+  app: convocate
+  agents: convocate-agents
+  data: data-layer
+  security: security
+  o11y: o11y
+
+api:
+  enabled: true
+  replicas: 1
+  port: 8443
+  serviceAccountName: convocate-api
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  env:
+    OTEL_SERVICE_NAME: "convocate-api"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://ginger.o11y.svc:4318"
+    OPENBAO_ADDR: "http://openbao.security.svc:8200"
+    OPENBAO_MFA_METHOD_ID: "be724fc0-04d7-3597-40a4-18e284acdc3f"
+    ALLOW_MOCK_AUTH: "true"
+
+ui:
+  enabled: true
+  replicas: 1
+  port: 8080
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+postgresql:
+  enabled: true
+  storage: 5Gi
+  hostPath: /mnt/data-layer/postgresql
+  nodeAffinity: convocate05
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+redis:
+  enabled: true
+  storage: 1Gi
+  hostPath: /mnt/data-layer/redis
+  nodeAffinity: convocate04
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+minio:
+  enabled: true
+  storage: 10Gi
+  hostPath: /mnt/data-layer/minio
+  nodeAffinity: convocate06
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+influxdb:
+  enabled: true
+  storage: 100Gi
+  hostPath: /mnt/o11y/influxdb
+  nodeAffinity: convocate05
+  retention: "90d"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+prometheus:
+  enabled: true
+  storage: 20Gi
+  hostPath: /mnt/o11y/prometheus
+  nodeAffinity: convocate05
+  retentionTime: "90d"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+grafana:
+  enabled: true
+  storage: 5Gi
+  hostPath: /mnt/o11y/grafana
+  nodeAffinity: convocate05
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ginger:
+  enabled: true
+  imageTag: "v0.0.5-fixed"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+fluentbit:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+node-metrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+openbao:
+  enabled: true
+  storage: 1Gi
+  hostPath: /mnt/security/openbao
+  nodeAffinity: convocate04
+  canarySchedule: "*/5 * * * *"
+  secretSyncSchedule: "0 * * * *"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  auditForwarder:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+  autoUnseal:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 50m
+        memory: 32Mi

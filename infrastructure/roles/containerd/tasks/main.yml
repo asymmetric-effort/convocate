@@ -1,0 +1,39 @@
+---
+- name: Install containerd
+  ansible.builtin.apt:
+    name: "containerd={{ containerd_version }}"
+    state: present
+    update_cache: true
+
+- name: Create containerd config directory
+  ansible.builtin.file:
+    path: "{{ containerd_config_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Generate default containerd config
+  ansible.builtin.shell:
+    cmd: "containerd config default > {{ containerd_config_file }}"
+    creates: "{{ containerd_config_file }}"
+
+- name: Enable SystemdCgroup in containerd
+  ansible.builtin.lineinfile:
+    path: "{{ containerd_config_file }}"
+    regexp: '(\s*)SystemdCgroup\s*='
+    line: '\1SystemdCgroup = true'
+    backrefs: true
+  notify: restart containerd
+
+- name: Set sandbox image in containerd config
+  ansible.builtin.lineinfile:
+    path: "{{ containerd_config_file }}"
+    regexp: '(\s*)sandbox_image\s*='
+    line: '\1sandbox_image = "{{ containerd_sandbox_image }}"'
+    backrefs: true
+  notify: restart containerd
+
+- name: Enable and start containerd
+  ansible.builtin.service:
+    name: containerd
+    state: started
+    enabled: true

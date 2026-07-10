@@ -1,0 +1,153 @@
+---
+- name: Create OpenBao namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ openbao_namespace }}"
+
+- name: Add OpenBao Helm repository
+  ansible.builtin.command:
+    cmd: helm repo add openbao https://openbao.github.io/openbao-helm
+  register: helm_repo_add
+  changed_when: "'has been added' in helm_repo_add.stdout"
+  failed_when: false
+
+- name: Update Helm repositories
+  ansible.builtin.command:
+    cmd: helm repo update
+  changed_when: false
+
+- name: Check if OpenBao is already installed
+  ansible.builtin.command:
+    cmd: "helm status openbao -n {{ openbao_namespace }}"
+  register: openbao_status
+  failed_when: false
+  changed_when: false
+
+- name: Install OpenBao via Helm
+  ansible.builtin.command:
+    cmd: >-
+      helm install openbao openbao/openbao
+      --namespace {{ openbao_namespace }}
+      --version {{ openbao_chart_version }}
+      --set server.ha.enabled=true
+      --set server.ha.replicas={{ openbao_replicas }}
+      --set server.dataStorage.size={{ openbao_storage_size }}
+      --set ui.enabled=true
+      --set injector.enabled=true
+      --wait --timeout 5m
+  when: openbao_status.rc != 0
+
+- name: Wait for OpenBao pods to be running
+  ansible.builtin.command:
+    cmd: >-
+      kubectl wait --for=condition=Ready pod
+      -l app.kubernetes.io/name=openbao
+      -n {{ openbao_namespace }}
+      --timeout=300s
+  changed_when: false
+  retries: 3
+  delay: 10
+  register: openbao_pods_ready
+  until: openbao_pods_ready.rc == 0
+
+- name: Check if OpenBao is initialized
+  ansible.builtin.command:
+    cmd: >-
+      kubectl exec openbao-0 -n {{ openbao_namespace }} --
+      bao status -format=json
+  register: bao_status
+  failed_when: false
+  changed_when: false
+
+- name: Initialize OpenBao
+  ansible.builtin.command:
+    cmd: >-
+      kubectl exec openbao-0 -n {{ openbao_namespace }} --
+      bao operator init
+      -key-shares={{ openbao_key_shares }}
+      -key-threshold={{ openbao_key_threshold }}
+      -format=json
+  register: bao_init
+  when: >-
+    bao_status.rc != 0 or
+    (bao_status.stdout | from_json).initialized is defined and
+    not (bao_status.stdout | from_json).initialized
+
+- name: Save init output as fact
+  ansible.builtin.set_fact:
+    openbao_init_output: "{{ bao_init.stdout | from_json }}"
+  when: bao_init is changed
+
+- name: Display unseal keys (save these securely)
+  ansible.builtin.debug:
+    msg: >-
+      CRITICAL: Save these unseal keys securely.
+      They will not be shown again.
+      Keys: {{ openbao_init_output.unseal_keys_b64 | default('already initialized') }}
+      Root token: {{ openbao_init_output.root_token | default('already initialized') }}
+  when: bao_init is changed
+
+- name: Unseal OpenBao (first threshold keys)
+  ansible.builtin.command:
+    cmd: >-
+      kubectl exec openbao-0 -n {{ openbao_namespace }} --
+      bao operator unseal {{ item }}
+  loop: "{{ openbao_init_output.unseal_keys_b64[:openbao_key_threshold] }}"
+  when: bao_init is changed
+  no_log: true
+
+- name: Enable secret engines
+  ansible.builtin.command:
+    cmd: >-
+      kubectl exec openbao-0 -n {{ openbao_namespace }} --
+      bao secrets enable -path={{ item.path }}
+      -description="{{ item.description }}"
+      {{ item.type }}
+  loop: "{{ openbao_secret_engines }}"
+  when: bao_init is changed
+  environment:
+    BAO_TOKEN: "{{ openbao_init_output.root_token | default('') }}"
+  failed_when: false
+
+- name: Enable auth methods
+  ansible.builtin.command:
+    cmd: >-
+      kubectl exec openbao-0 -n {{ openbao_namespace }} --
+      bao auth enable -path={{ item.path }}
+      -description="{{ item.description }}"
+      {{ item.type }}
+  loop: "{{ openbao_auth_methods }}"
+  when: bao_init is changed
+  environment:
+    BAO_TOKEN: "{{ openbao_init_output.root_token | default('') }}"
+  failed_when: false
+
+- name: Create policies
+  ansible.builtin.shell:
+    cmd: >-
+      kubectl exec -i openbao-0 -n {{ openbao_namespace }} --
+      bao policy write {{ item.name }} - <<'POLICY'
+      {{ item.rules }}
+      POLICY
+  loop: "{{ openbao_policies }}"
+  when: bao_init is changed
+  environment:
+    BAO_TOKEN: "{{ openbao_init_output.root_token | default('') }}"
+
+- name: Configure Kubernetes auth method
+  ansible.builtin.command:
+    cmd: >-
+      kubectl exec openbao-0 -n {{ openbao_namespace }} --
+      bao write auth/kubernetes/config
+      kubernetes_host="https://kubernetes.default.svc:443"
+  when: bao_init is changed
+  environment:
+    BAO_TOKEN: "{{ openbao_init_output.root_token | default('') }}"
+
+# TODO: OIDC configuration
+# TODO: MFA configuration
+# TODO: Generate application-specific secrets programmatically

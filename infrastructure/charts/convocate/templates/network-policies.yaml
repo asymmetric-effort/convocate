@@ -1,0 +1,303 @@
+# NetworkPolicy: deny convocate-agents from accessing data-layer namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-agents-to-data-layer
+  namespace: {{ include "convocate.namespace.data" . }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values:
+                  - {{ include "convocate.namespace.agents" . }}
+---
+# NetworkPolicy: deny convocate-agents from accessing security namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-agents-to-security
+  namespace: {{ include "convocate.namespace.security" . }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values:
+                  - {{ include "convocate.namespace.agents" . }}
+---
+# Default deny all ingress in convocate namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ include "convocate.namespace.app" . }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Allow ingress-nginx to reach convocate-api
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-app
+  namespace: {{ include "convocate.namespace.app" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: convocate-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: {{ .Values.api.port | default 8443 }}
+    - from:
+        - podSelector:
+            matchLabels:
+              app: convocate-ui
+      ports:
+        - port: {{ .Values.api.port | default 8443 }}
+---
+# Allow ingress-nginx to reach convocate-ui
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-ui
+  namespace: {{ include "convocate.namespace.app" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: convocate-ui
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: {{ .Values.ui.port | default 8080 }}
+---
+# Default deny all ingress in o11y namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ include "convocate.namespace.o11y" . }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Allow Grafana from ingress-nginx
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-grafana
+  namespace: {{ include "convocate.namespace.o11y" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 3000
+---
+# Allow Fluent Bit to reach InfluxDB
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-fluentbit-to-influxdb
+  namespace: {{ include "convocate.namespace.o11y" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: influxdb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: fluent-bit
+      ports:
+        - port: 8086
+---
+# Allow o11y pods to reach Ginger on OTLP, query, and admin ports
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-o11y-to-ginger
+  namespace: {{ include "convocate.namespace.o11y" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ginger
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [{{ include "convocate.namespace.o11y" . | quote }}, {{ include "convocate.namespace.app" . | quote }}]
+      ports:
+        - port: 4318
+          protocol: TCP
+        - port: 16686
+          protocol: TCP
+        - port: 14269
+          protocol: TCP
+---
+# Allow Grafana to reach Prometheus, InfluxDB, and Ginger
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-grafana-to-datasources
+  namespace: {{ include "convocate.namespace.o11y" . }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: ["prometheus", "influxdb", "ginger"]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: grafana
+---
+# Allow Prometheus to scrape itself
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-self
+  namespace: {{ include "convocate.namespace.o11y" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 9090
+---
+# Allow synthetic-checks to reach o11y services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-synthetic-checks-to-o11y
+  namespace: {{ include "convocate.namespace.o11y" . }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: ["influxdb", "prometheus", "grafana", "ginger"]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "convocate.namespace.app" . }}
+          podSelector:
+            matchLabels:
+              app: synthetic-checks
+      ports:
+        - port: 8086
+        - port: 9090
+        - port: 3000
+        - port: 16686
+---
+# Allow synthetic-checks to reach convocate-api
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-synthetic-checks-to-api
+  namespace: {{ include "convocate.namespace.app" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: convocate-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: synthetic-checks
+      ports:
+        - port: {{ .Values.api.port | default 8443 }}
+---
+# Allow synthetic-checks to reach convocate-ui
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-synthetic-checks-to-ui
+  namespace: {{ include "convocate.namespace.app" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: convocate-ui
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: synthetic-checks
+      ports:
+        - port: {{ .Values.ui.port | default 8080 }}
+---
+# Allow node-metrics to reach convocate-api
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-to-api
+  namespace: {{ include "convocate.namespace.app" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: convocate-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "convocate.namespace.o11y" . }}
+          podSelector:
+            matchLabels:
+              app: node-metrics
+      ports:
+        - port: {{ .Values.api.port | default 8443 }}

@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgresql-init
+  namespace: {{ .Values.global.namespace | default "data-layer" }}
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: postgresql-init
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: init
+          image: "{{ .Values.global.registry }}/convocate/postgresql:{{ .Values.global.imageTag }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: POSTGRES_PASSWORD
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              PSQL="/usr/lib/postgresql/17/bin/psql"
+              PG_HOST="postgresql.{{ .Values.global.namespace | default "data-layer" }}.svc"
+              PG_USER="postgres"
+
+              echo "=== PostgreSQL Initialization ==="
+              /usr/lib/postgresql/17/bin/pg_isready -h "$PG_HOST" -U "$PG_USER" -t 60 || exit 1
+
+              echo "Creating database and user..."
+              echo "SELECT 'CREATE DATABASE convocate' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'convocate') \gexec" | \
+                $PSQL -h "$PG_HOST" -U "$PG_USER" || echo "Database may already exist"
+
+              echo "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'convocate') THEN CREATE ROLE convocate WITH LOGIN PASSWORD '$PGPASSWORD'; END IF; END \$\$;" | \
+                $PSQL -h "$PG_HOST" -U "$PG_USER" || exit 1
+
+              echo "ALTER ROLE convocate WITH PASSWORD '$PGPASSWORD';" | \
+                $PSQL -h "$PG_HOST" -U "$PG_USER" || exit 1
+
+              echo "Granting permissions..."
+              echo "GRANT ALL PRIVILEGES ON DATABASE convocate TO convocate; GRANT ALL PRIVILEGES ON SCHEMA public TO convocate; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO convocate; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO convocate;" | \
+                $PSQL -h "$PG_HOST" -U "$PG_USER" -d convocate || exit 1
+
+              echo "=== PostgreSQL initialization complete ==="
+      restartPolicy: OnFailure
