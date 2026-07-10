@@ -286,9 +286,9 @@ func TestHandlerPutSettings_Happy(t *testing.T) {
 	defer srv.Close()
 
 	req := newAuthRequest("PUT", "/api/v1/ac/settings", GlobalSettings{
-		RequireMFA:           true,
-		SessionTimeoutMin:    45,
-		PasswordMinLength:    20,
+		RequireMFA:        true,
+		SessionTimeoutMin: 45,
+		PasswordMinLength: 20,
 	})
 	rec := httptest.NewRecorder()
 	h.putSettings(rec, req)
@@ -713,5 +713,270 @@ func TestHandlerGetSettings_StoreReturnsDefaults(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&gs)
 	if !gs.RequireMFA {
 		t.Error("expected RequireMFA=true from mock")
+	}
+}
+
+// --- updateGroup handler tests ---
+
+func TestHandlerUpdateGroup_Happy(t *testing.T) {
+	h, srv := newTestAcHandler(t)
+	defer srv.Close()
+
+	req := newAuthRequest("PATCH", "/api/v1/ac/group/grp-001", map[string]string{"name": "new-name"})
+	req.SetPathValue("groupId", "grp-001")
+	rec := httptest.NewRecorder()
+	h.updateGroup(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlerUpdateGroup_BadBody(t *testing.T) {
+	h, srv := newTestAcHandler(t)
+	defer srv.Close()
+
+	req := httptest.NewRequest("PATCH", "/api/v1/ac/group/grp-001", bytes.NewReader([]byte("bad")))
+	req.SetPathValue("groupId", "grp-001")
+	ctx := httputil.ContextWithPrincipal(req.Context(), &httputil.Principal{Roles: []string{"admin"}})
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	h.updateGroup(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandlerUpdateGroup_EmptyName(t *testing.T) {
+	h, srv := newTestAcHandler(t)
+	defer srv.Close()
+
+	req := newAuthRequest("PATCH", "/api/v1/ac/group/grp-001", map[string]string{"name": ""})
+	req.SetPathValue("groupId", "grp-001")
+	rec := httptest.NewRecorder()
+	h.updateGroup(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestHandlerUpdateGroup_NotFound(t *testing.T) {
+	// Server returns 404 for group lookup
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"errors":["not found"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	h := &Handler{store: s}
+
+	req := newAuthRequest("PATCH", "/api/v1/ac/group/grp-999", map[string]string{"name": "newname"})
+	req.SetPathValue("groupId", "grp-999")
+	rec := httptest.NewRecorder()
+	h.updateGroup(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestHandlerUpdateGroup_Builtin(t *testing.T) {
+	h, srv := newTestAcHandler(t)
+	defer srv.Close()
+
+	req := newAuthRequest("PATCH", "/api/v1/ac/group/grp-builtin", map[string]string{"name": "newname"})
+	req.SetPathValue("groupId", "grp-builtin")
+	rec := httptest.NewRecorder()
+	h.updateGroup(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 (builtin error), got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlerUpdateGroup_BackendError(t *testing.T) {
+	// GET returns non-builtin group, POST update fails
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "grp-001", "name": "test",
+					"metadata": map[string]any{"builtin": "false"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"errors":["fail"]}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	h := &Handler{store: s}
+
+	req := newAuthRequest("PATCH", "/api/v1/ac/group/grp-001", map[string]string{"name": "newname"})
+	req.SetPathValue("groupId", "grp-001")
+	rec := httptest.NewRecorder()
+	h.updateGroup(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- MFA handler tests ---
+
+func TestHandlerEnrollMFA_Happy(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "admin-generate") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"url":     "otpauth://totp/test",
+					"barcode": "base64barcode",
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	h := &Handler{store: s}
+
+	req := newAuthRequest("POST", "/api/v1/ac/user/eid-alice/mfa/enroll", nil)
+	req.SetPathValue("userId", "eid-alice")
+	rec := httptest.NewRecorder()
+	h.enrollMFA(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlerEnrollMFA_BackendError(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	h := &Handler{store: s}
+
+	req := newAuthRequest("POST", "/api/v1/ac/user/eid-alice/mfa/enroll", nil)
+	req.SetPathValue("userId", "eid-alice")
+	rec := httptest.NewRecorder()
+	h.enrollMFA(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", rec.Code)
+	}
+}
+
+func TestHandlerDestroyMFA_Happy(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	h := &Handler{store: s}
+
+	req := newAuthRequest("DELETE", "/api/v1/ac/user/eid-alice/mfa", nil)
+	req.SetPathValue("userId", "eid-alice")
+	rec := httptest.NewRecorder()
+	h.destroyMFA(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlerDestroyMFA_BackendError(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	h := &Handler{store: s}
+
+	req := newAuthRequest("DELETE", "/api/v1/ac/user/eid-alice/mfa", nil)
+	req.SetPathValue("userId", "eid-alice")
+	rec := httptest.NewRecorder()
+	h.destroyMFA(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", rec.Code)
+	}
+}
+
+func TestHandlerMFAStatus_Happy(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id": "eid-alice",
+				"mfa_secrets": map[string]any{
+					"test-method": map[string]any{"type": "totp"},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	h := &Handler{store: s}
+
+	req := newAuthRequest("GET", "/api/v1/ac/user/eid-alice/mfa/status", nil)
+	req.SetPathValue("userId", "eid-alice")
+	rec := httptest.NewRecorder()
+	h.mfaStatus(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var result map[string]bool
+	json.NewDecoder(rec.Body).Decode(&result)
+	if !result["enrolled"] {
+		t.Error("expected enrolled=true")
+	}
+}
+
+func TestHandlerMFAStatus_BackendError(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	h := &Handler{store: s}
+
+	req := newAuthRequest("GET", "/api/v1/ac/user/eid-alice/mfa/status", nil)
+	req.SetPathValue("userId", "eid-alice")
+	rec := httptest.NewRecorder()
+	h.mfaStatus(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", rec.Code)
 	}
 }

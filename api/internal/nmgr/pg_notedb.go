@@ -12,8 +12,22 @@ import (
 type pgNoteDB struct{}
 
 func (pgNoteDB) HasDB() bool { return db.Pool != nil }
+
+// pgRows abstracts the pgx Rows interface for testability.
+type pgRows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Close()
+}
+
+// queryNotes is the function used to execute the list notes query.
+// Tests replace it with a mock that returns fake rows.
+var queryNotes = func(ctx context.Context, nodeID string) (pgRows, error) {
+	return db.Pool.Query(ctx, "SELECT author, created_at, text FROM node_notes WHERE node_id = $1 ORDER BY created_at", nodeID)
+}
+
 func (pgNoteDB) ListNotes(ctx context.Context, nodeID string) (notes []types.Note, _ error) {
-	rows, err := db.Pool.Query(ctx, "SELECT author, created_at, text FROM node_notes WHERE node_id = $1 ORDER BY created_at", nodeID)
+	rows, err := queryNotes(ctx, nodeID)
 	if err != nil {
 		return nil, err
 	}

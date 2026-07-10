@@ -110,10 +110,10 @@ func mockBao(t *testing.T) *httptest.Server {
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"id":                "grp-001",
-				"name":             "admins",
-				"metadata":         map[string]any{"builtin": "true"},
+				"name":              "admins",
+				"metadata":          map[string]any{"builtin": "true"},
 				"member_entity_ids": []string{"eid-alice"},
-				"policies":         []string{"admin"},
+				"policies":          []string{"admin"},
 			},
 		})
 	})
@@ -143,10 +143,10 @@ func mockBao(t *testing.T) *httptest.Server {
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
 					"id":                id,
-					"name":             "test-group",
-					"metadata":         map[string]any{"builtin": builtin},
+					"name":              "test-group",
+					"metadata":          map[string]any{"builtin": builtin},
 					"member_entity_ids": []string{"eid-alice"},
-					"policies":         []string{"admin"},
+					"policies":          []string{"admin"},
 				},
 			})
 		case "POST":
@@ -399,9 +399,9 @@ func TestSetSettings(t *testing.T) {
 	defer srv.Close()
 
 	gs, err := s.SetSettings(GlobalSettings{
-		RequireMFA:           true,
-		SessionTimeoutMin:    45,
-		PasswordMinLength:    20,
+		RequireMFA:        true,
+		SessionTimeoutMin: 45,
+		PasswordMinLength: 20,
 	})
 	if err != nil {
 		t.Fatalf("SetSettings: %v", err)
@@ -899,9 +899,9 @@ func TestListGroups_SkipErrorGroups(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"id":                "grp-002",
-				"name":             "grp2",
+				"name":              "grp2",
 				"member_entity_ids": []string{},
-				"policies":         []string{"admin"},
+				"policies":          []string{"admin"},
 			},
 		})
 	}))
@@ -952,7 +952,7 @@ func TestListGroups_NonBuiltinNoPolicies(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"id":                "grp-001",
-				"name":             "grp1",
+				"name":              "grp1",
 				"member_entity_ids": []string{"a"},
 			},
 		})
@@ -984,10 +984,10 @@ func TestSetGroupUsers_WithMetadata(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"id":                "grp-001",
-				"name":             "test",
-				"metadata":         map[string]any{"builtin": "true"},
+				"name":              "test",
+				"metadata":          map[string]any{"builtin": "true"},
 				"member_entity_ids": []string{"a", "b"},
-				"policies":         []string{"admin"},
+				"policies":          []string{"admin"},
 			},
 		})
 	}))
@@ -1018,10 +1018,10 @@ func TestSetGroupRoles_WithMetadata(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"id":                "grp-001",
-				"name":             "test",
-				"metadata":         map[string]any{"builtin": "true"},
+				"name":              "test",
+				"metadata":          map[string]any{"builtin": "true"},
 				"member_entity_ids": []string{"a"},
-				"policies":         []string{"admin", "node-view"},
+				"policies":          []string{"admin", "node-view"},
 			},
 		})
 	}))
@@ -1229,7 +1229,7 @@ func TestSetGroupUsers_NilPolicies(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"id":                "grp-001",
-				"name":             "test",
+				"name":              "test",
 				"member_entity_ids": []string{},
 				// No policies field
 			},
@@ -1259,7 +1259,7 @@ func TestSetGroupRoles_NilPolicies(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"id":                "grp-001",
-				"name":             "test",
+				"name":              "test",
 				"member_entity_ids": []string{},
 			},
 		})
@@ -1307,5 +1307,1159 @@ func TestMapStrSlice(t *testing.T) {
 	got = mapStrSlice(m, "data", "missing")
 	if got != nil {
 		t.Error("expected nil for missing key")
+	}
+}
+
+// --- UpdateGroup store tests ---
+
+func TestUpdateGroup_Happy(t *testing.T) {
+	s, srv := newTestStore(t)
+	defer srv.Close()
+
+	g, ok, err := s.UpdateGroup("grp-001", "new-name")
+	if err != nil {
+		t.Fatalf("UpdateGroup: %v", err)
+	}
+	if !ok {
+		t.Error("expected ok=true")
+	}
+	if g.ID != "grp-001" {
+		t.Errorf("expected ID 'grp-001', got %q", g.ID)
+	}
+}
+
+func TestUpdateGroup_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"errors":["not found"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, ok, err := s.UpdateGroup("grp-999", "new-name")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected ok=false for not found")
+	}
+}
+
+func TestUpdateGroup_NilData(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"data": nil})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, ok, err := s.UpdateGroup("grp-001", "new-name")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected ok=false for nil data")
+	}
+}
+
+func TestUpdateGroup_Builtin(t *testing.T) {
+	s, srv := newTestStore(t)
+	defer srv.Close()
+
+	_, ok, err := s.UpdateGroup("grp-builtin", "new-name")
+	if err == nil {
+		t.Error("expected error for builtin group")
+	}
+	if ok {
+		t.Error("expected ok=false for builtin group")
+	}
+}
+
+func TestUpdateGroup_PostFails(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "grp-001", "name": "test",
+					"metadata": map[string]any{"builtin": "false"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"errors":["fail"]}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, _, err := s.UpdateGroup("grp-001", "new-name")
+	if err == nil {
+		t.Error("expected error from post failure")
+	}
+}
+
+func TestUpdateGroup_ReadbackFails(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			// First GET: initial read of group
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "grp-001", "name": "test",
+					"metadata": map[string]any{"builtin": "false"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if callCount > 1 && r.Method == "GET" {
+			// Readback GET fails
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"errors":["fail"]}`))
+			return
+		}
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, _, err := s.UpdateGroup("grp-001", "new-name")
+	if err == nil {
+		t.Error("expected error from readback failure")
+	}
+}
+
+func TestUpdateGroup_ReadbackNilData(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "grp-001", "name": "test",
+					"metadata": map[string]any{"builtin": "false"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// Subsequent GET returns nil data
+		json.NewEncoder(w).Encode(map[string]any{"data": nil})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, ok, _ := s.UpdateGroup("grp-001", "new-name")
+	if ok {
+		t.Error("expected ok=false for nil data readback")
+	}
+}
+
+// --- MFA store tests ---
+
+func TestEnrollMFA_Happy(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"url":     "otpauth://totp/test",
+				"barcode": "base64data",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	result, err := s.EnrollMFA("eid-alice")
+	if err != nil {
+		t.Fatalf("EnrollMFA: %v", err)
+	}
+	if result.URL != "otpauth://totp/test" {
+		t.Errorf("expected URL 'otpauth://totp/test', got %q", result.URL)
+	}
+	if result.Barcode != "base64data" {
+		t.Errorf("expected Barcode 'base64data', got %q", result.Barcode)
+	}
+}
+
+func TestEnrollMFA_NoMethodID(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "")
+	s := &Store{addr: "http://localhost", token: "t", client: &http.Client{}, roles: NewStore().roles}
+	_, err := s.EnrollMFA("eid-alice")
+	if err == nil {
+		t.Error("expected error for no method ID")
+	}
+}
+
+func TestEnrollMFA_BackendError(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, err := s.EnrollMFA("eid-alice")
+	if err == nil {
+		t.Error("expected error from backend failure")
+	}
+}
+
+func TestEnrollMFA_EmptyData(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"data": nil})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, err := s.EnrollMFA("eid-alice")
+	if err == nil {
+		t.Error("expected error for empty data")
+	}
+}
+
+func TestDestroyMFA_Happy(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	err := s.DestroyMFA("eid-alice")
+	if err != nil {
+		t.Fatalf("DestroyMFA: %v", err)
+	}
+}
+
+func TestDestroyMFA_NoMethodID(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "")
+	s := &Store{addr: "http://localhost", token: "t", client: &http.Client{}, roles: NewStore().roles}
+	err := s.DestroyMFA("eid-alice")
+	if err == nil {
+		t.Error("expected error for no method ID")
+	}
+}
+
+func TestDestroyMFA_BackendError(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	err := s.DestroyMFA("eid-alice")
+	if err == nil {
+		t.Error("expected error from backend failure")
+	}
+}
+
+func TestGetMFAStatus_Enrolled(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id": "eid-alice",
+				"mfa_secrets": map[string]any{
+					"test-method": map[string]any{"type": "totp"},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	enrolled, err := s.GetMFAStatus("eid-alice")
+	if err != nil {
+		t.Fatalf("GetMFAStatus: %v", err)
+	}
+	if !enrolled {
+		t.Error("expected enrolled=true")
+	}
+}
+
+func TestGetMFAStatus_NotEnrolled(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id": "eid-alice",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	enrolled, err := s.GetMFAStatus("eid-alice")
+	if err != nil {
+		t.Fatalf("GetMFAStatus: %v", err)
+	}
+	if enrolled {
+		t.Error("expected enrolled=false")
+	}
+}
+
+func TestGetMFAStatus_BackendError(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, err := s.GetMFAStatus("eid-alice")
+	if err == nil {
+		t.Error("expected error from backend failure")
+	}
+}
+
+func TestGetMFAStatus_NilData(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "test-method")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"data": nil})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	enrolled, err := s.GetMFAStatus("eid-alice")
+	if err != nil {
+		t.Fatalf("GetMFAStatus: %v", err)
+	}
+	if enrolled {
+		t.Error("expected enrolled=false for nil data")
+	}
+}
+
+func TestGetMFAStatus_NoMethodID(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id": "eid-alice",
+				"mfa_secrets": map[string]any{
+					"some-method": map[string]any{"type": "totp"},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	enrolled, err := s.GetMFAStatus("eid-alice")
+	if err != nil {
+		t.Fatalf("GetMFAStatus: %v", err)
+	}
+	if enrolled {
+		t.Error("expected enrolled=false when method ID not set")
+	}
+}
+
+func TestMfaMethodID(t *testing.T) {
+	t.Setenv("OPENBAO_MFA_METHOD_ID", "my-method-id")
+	s := &Store{}
+	if s.mfaMethodID() != "my-method-id" {
+		t.Errorf("expected 'my-method-id', got %q", s.mfaMethodID())
+	}
+}
+
+// --- getUserpassAccessor tests ---
+
+func TestGetUserpassAccessor_Happy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"userpass/": map[string]any{
+				"accessor": "auth_userpass_abc123",
+				"type":     "userpass",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	accessor, err := s.getUserpassAccessor()
+	if err != nil {
+		t.Fatalf("getUserpassAccessor: %v", err)
+	}
+	if accessor != "auth_userpass_abc123" {
+		t.Errorf("expected 'auth_userpass_abc123', got %q", accessor)
+	}
+}
+
+func TestGetUserpassAccessor_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"token/": map[string]any{
+				"accessor": "auth_token_abc123",
+				"type":     "token",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, err := s.getUserpassAccessor()
+	if err == nil {
+		t.Error("expected error for missing userpass mount")
+	}
+}
+
+func TestGetUserpassAccessor_BackendError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, err := s.getUserpassAccessor()
+	if err == nil {
+		t.Error("expected error from backend failure")
+	}
+}
+
+// --- UpdateUser with groups tests ---
+
+func TestUpdateUser_WithGroups(t *testing.T) {
+	// Test UpdateUser when groups are provided, triggering the group membership update logic
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		// GET entity by ID
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/entity/id/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		// POST to update entity metadata
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "/identity/entity/id/") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// LIST groups
+		if r.Method == "LIST" && strings.Contains(r.URL.Path, "/identity/group/name") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"keys": []any{"grp1"},
+				},
+			})
+			return
+		}
+		// GET group by name
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":                "grp-001",
+					"name":              "grp1",
+					"member_entity_ids": []any{"eid-other"},
+					"policies":          []any{"admin"},
+				},
+			})
+			return
+		}
+		// GET group by ID
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/id/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":                "grp-001",
+					"name":              "grp1",
+					"member_entity_ids": []any{"eid-other"},
+					"policies":          []any{"admin"},
+				},
+			})
+			return
+		}
+		// POST group update
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "/identity/group/id/") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// GET entity by name (readback)
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/entity/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	// Add user to grp-001
+	_, ok, err := s.UpdateUser("eid-test", User{Groups: []string{"grp-001"}})
+	if err != nil {
+		t.Fatalf("UpdateUser: %v", err)
+	}
+	if !ok {
+		t.Error("expected ok=true")
+	}
+}
+
+func TestUpdateUser_RemoveFromGroup(t *testing.T) {
+	// Test removing user from a group (user is currently a member)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/entity/id/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == "LIST" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"keys": []any{"grp1"}},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":                "grp-001",
+					"name":              "grp1",
+					"member_entity_ids": []any{"eid-test"},
+					"policies":          []any{"admin"},
+				},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/id/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":                "grp-001",
+					"name":              "grp1",
+					"member_entity_ids": []any{"eid-test"},
+					"policies":          []any{"admin"},
+				},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/entity/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	// Empty groups => remove from all groups
+	_, ok, err := s.UpdateUser("eid-test", User{Groups: []string{}})
+	if err != nil {
+		t.Fatalf("UpdateUser: %v", err)
+	}
+	if !ok {
+		t.Error("expected ok=true")
+	}
+}
+
+func TestCreateGroup_NilRoles(t *testing.T) {
+	s, srv := newTestStore(t)
+	defer srv.Close()
+
+	g, err := s.CreateGroup("testers", nil)
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if len(g.Roles) != 0 {
+		t.Errorf("expected 0 roles, got %d", len(g.Roles))
+	}
+}
+
+func TestCreateUser_FallbackToEmail(t *testing.T) {
+	s, srv := newTestStore(t)
+	defer srv.Close()
+
+	u, err := s.CreateUser(User{Email: "fallback@test.com"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if u.Email != "fallback@test.com" {
+		t.Errorf("expected email 'fallback@test.com', got %q", u.Email)
+	}
+}
+
+func TestCreateUser_WithPassword(t *testing.T) {
+	s, srv := newTestStore(t)
+	defer srv.Close()
+
+	u, err := s.CreateUser(User{Email: "pw@test.com", Name: "PW", Password: "mysecret"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if u.Name != "PW" {
+		t.Errorf("expected name 'PW', got %q", u.Name)
+	}
+}
+
+func TestBaoRequest_WithBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Error("expected Content-Type application/json for body request")
+		}
+		if r.Header.Get("X-Vault-Token") != "test-token" {
+			t.Errorf("expected X-Vault-Token 'test-token', got %q", r.Header.Get("X-Vault-Token"))
+		}
+		json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "test-token", client: srv.Client(), roles: NewStore().roles}
+	result, err := s.baoRequest("POST", "/v1/test", map[string]string{"key": "val"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Error("expected non-nil result")
+	}
+}
+
+func TestMapStrSlice_MissingKey(t *testing.T) {
+	m := map[string]any{"a": "b"}
+	got := mapStrSlice(m, "missing")
+	if got != nil {
+		t.Errorf("expected nil for missing key, got %v", got)
+	}
+}
+
+func TestMapStr_EmptyKeys(t *testing.T) {
+	m := map[string]any{"a": "b"}
+	got := mapStr(m)
+	if got != "" {
+		t.Errorf("expected empty for no keys, got %q", got)
+	}
+}
+
+func TestMapStrSlice_EmptyKeys(t *testing.T) {
+	m := map[string]any{"a": "b"}
+	got := mapStrSlice(m)
+	if got != nil {
+		t.Errorf("expected nil for no keys, got %v", got)
+	}
+}
+
+func TestNewStore_DefaultAddr(t *testing.T) {
+	t.Setenv("OPENBAO_ADDR", "")
+	s := NewStore()
+	if s.addr != "http://openbao.security.svc:8200" {
+		t.Errorf("expected default addr, got %q", s.addr)
+	}
+}
+
+func TestNewStore_CustomAddr(t *testing.T) {
+	t.Setenv("OPENBAO_ADDR", "http://localhost:8200/")
+	s := NewStore()
+	if s.addr != "http://localhost:8200" {
+		t.Errorf("expected trimmed addr, got %q", s.addr)
+	}
+}
+
+func TestBaoRequest_ReadBodyError(t *testing.T) {
+	// Use a server that closes the connection mid-stream to trigger io.ReadAll error.
+	// Hard to trigger in practice. Instead test the unreachable http.NewRequest error
+	// by using an invalid method.
+	s := &Store{addr: "http://localhost", token: "t", client: &http.Client{}, roles: NewStore().roles}
+	// Invalid URL character triggers NewRequest error
+	_, err := s.baoRequest("GET", "://bad\x00url", nil)
+	if err == nil {
+		t.Error("expected error for bad URL")
+	}
+}
+
+func TestBaoList_NewRequestError(t *testing.T) {
+	s := &Store{addr: "http://localhost", token: "t", client: &http.Client{}, roles: NewStore().roles}
+	_, err := s.baoList("://bad\x00url")
+	if err == nil {
+		t.Error("expected error for bad URL")
+	}
+}
+
+func TestBaoList_ConnectionError(t *testing.T) {
+	s := &Store{addr: "http://127.0.0.1:1", token: "t", client: &http.Client{}, roles: NewStore().roles}
+	_, err := s.baoList("/v1/test")
+	if err == nil {
+		t.Error("expected error for connection refused")
+	}
+}
+
+func TestBaoRequest_ConnectionError(t *testing.T) {
+	s := &Store{addr: "http://127.0.0.1:1", token: "t", client: &http.Client{}, roles: NewStore().roles}
+	_, err := s.baoRequest("GET", "/v1/test", nil)
+	if err == nil {
+		t.Error("expected error for connection refused")
+	}
+}
+
+func TestUpdateUser_ListGroupsError(t *testing.T) {
+	// UpdateUser with Groups set but ListGroups fails
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			// GET entity by ID
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" && callCount == 2 {
+			// POST metadata update succeeds
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == "LIST" {
+			// LIST groups fails
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"errors":["fail"]}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"errors":["fail"]}`))
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, _, err := s.UpdateUser("eid-test", User{Groups: []string{"grp-001"}})
+	if err == nil {
+		t.Error("expected error from ListGroups failure")
+	}
+}
+
+func TestUpdateUser_GroupReadError(t *testing.T) {
+	// UpdateUser with Groups set, ListGroups succeeds but reading individual group fails (should be skipped)
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			// GET entity by ID
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == "LIST" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"keys": []any{"grp1"}},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "grp-001", "name": "grp1",
+					"member_entity_ids": []any{}, "policies": []any{},
+				},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/id/") {
+			// Group read by ID fails (should be skipped in continue)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"errors":["fail"]}`))
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/entity/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, ok, err := s.UpdateUser("eid-test", User{Groups: []string{"grp-001"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected ok=true")
+	}
+}
+
+func TestUpdateUser_GroupNilData(t *testing.T) {
+	// Group read returns nil data -- should be skipped
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == "LIST" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"keys": []any{"grp1"}},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "grp-001", "name": "grp1",
+					"member_entity_ids": []any{}, "policies": []any{},
+				},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/id/") {
+			json.NewEncoder(w).Encode(map[string]any{"data": nil})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/entity/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, ok, err := s.UpdateUser("eid-test", User{Groups: []string{"grp-001"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected ok=true")
+	}
+}
+
+func TestUpdateUser_GroupNilMembers(t *testing.T) {
+	// Group read returns data with nil member_entity_ids
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == "LIST" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"keys": []any{"grp1"}},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "grp-001", "name": "grp1",
+					"member_entity_ids": []any{}, "policies": []any{},
+				},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/id/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":   "grp-001",
+					"name": "grp1",
+					// No member_entity_ids field
+				},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/entity/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	_, ok, err := s.UpdateUser("eid-test", User{Groups: []string{"grp-001"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected ok=true")
+	}
+}
+
+func TestUpdateGroup_ReadbackWithNoPolicies(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "grp-001", "name": "test",
+					"metadata": map[string]any{"builtin": "false"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// Readback GET returns group with no policies
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id":                "grp-001",
+				"name":              "new-name",
+				"member_entity_ids": []any{"a"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	g, ok, err := s.UpdateGroup("grp-001", "new-name")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected ok=true")
+	}
+	if len(g.Roles) != 0 {
+		t.Errorf("expected 0 roles, got %d", len(g.Roles))
+	}
+}
+
+func TestCreateUser_WithAccessor(t *testing.T) {
+	// Test the entity alias creation path when getUserpassAccessor succeeds
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// PUT userpass user
+		if r.Method == "PUT" && strings.Contains(r.URL.Path, "/auth/userpass/users/") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// POST identity entity
+		if r.Method == "POST" && r.URL.Path == "/v1/identity/entity" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"id": "eid-new"},
+			})
+			return
+		}
+		// GET sys/auth (for getUserpassAccessor)
+		if r.Method == "GET" && r.URL.Path == "/v1/sys/auth" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"userpass/": map[string]any{
+					"accessor": "auth_userpass_abc",
+					"type":     "userpass",
+				},
+			})
+			return
+		}
+		// POST entity-alias
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "/identity/entity-alias") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"id": "alias-1"},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	u, err := s.CreateUser(User{Email: "test@test.com", Name: "Test"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if u.ID != "eid-new" {
+		t.Errorf("expected ID 'eid-new', got %q", u.ID)
+	}
+}
+
+func TestUpdateUser_RemoveKeepsOtherMembers(t *testing.T) {
+	// Test removing a user from a group that has other members,
+	// covering the `if m != id` branch in the remove loop
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/entity/id/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == "LIST" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"keys": []any{"grp1"}},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":                "grp-001",
+					"name":              "grp1",
+					"member_entity_ids": []any{"eid-test", "eid-keeper"},
+					"policies":          []any{},
+				},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/group/id/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":                "grp-001",
+					"name":              "grp1",
+					"member_entity_ids": []any{"eid-test", "eid-keeper"},
+				},
+			})
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/identity/entity/name/") {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "eid-test", "name": "testuser",
+					"metadata": map[string]any{"email": "t@t.com", "name": "Test"},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	// Empty desired groups => remove eid-test from grp-001, keeping eid-keeper
+	_, ok, err := s.UpdateUser("eid-test", User{Groups: []string{}})
+	if err != nil {
+		t.Fatalf("UpdateUser: %v", err)
+	}
+	if !ok {
+		t.Error("expected ok=true")
+	}
+}
+
+func TestUpdateGroup_ReadbackBuiltin(t *testing.T) {
+	// Test the readback path where group shows builtin=true
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 && r.Method == "GET" {
+			// Initial read: not builtin
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id": "grp-001", "name": "test",
+					"metadata": map[string]any{"builtin": "false"},
+				},
+			})
+			return
+		}
+		if r.Method == "POST" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// Readback shows builtin=true
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id":                "grp-001",
+				"name":              "new-name",
+				"metadata":          map[string]any{"builtin": "true"},
+				"member_entity_ids": []any{},
+				"policies":          []any{"admin"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
+	g, ok, err := s.UpdateGroup("grp-001", "new-name")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected ok=true")
+	}
+	if !g.Builtin {
+		t.Error("expected builtin=true in readback")
+	}
+}
+
+func TestBaoRequest_MarshalError(t *testing.T) {
+	s := &Store{addr: "http://localhost", token: "t", client: &http.Client{}, roles: NewStore().roles}
+	// channels cannot be marshaled to JSON
+	_, err := s.baoRequest("GET", "/v1/test", make(chan int))
+	if err == nil {
+		t.Error("expected error for unmarshalable body")
+	}
+	if !strings.Contains(err.Error(), "marshal request body") {
+		t.Errorf("expected marshal error, got: %v", err)
 	}
 }

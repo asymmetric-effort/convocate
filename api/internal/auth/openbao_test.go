@@ -608,6 +608,44 @@ func TestOpenbaoMFAMethodID_Empty(t *testing.T) {
 	}
 }
 
+func TestOpenbaoLogin_BadURL(t *testing.T) {
+	os.Setenv("OPENBAO_ADDR", "http://127.0.0.1:1")
+	defer os.Unsetenv("OPENBAO_ADDR")
+	// Connection refused triggers the client.Do error path
+	_, err := openbaoLogin("user", "pass")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestOpenbaoMFAValidate_BadRequest(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	_, err := openbaoMFAValidate("req-123", "method-abc", "123456")
+	if err == nil {
+		t.Fatal("expected error for bad request status")
+	}
+}
+
+func TestOpenbaoMFAValidate_Unauthorized(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	_, err := openbaoMFAValidate("req-123", "method-abc", "123456")
+	if err == nil {
+		t.Fatal("expected error for unauthorized status")
+	}
+}
+
 func TestBuildPrincipalFromEntity_SkipsEmptyPolicies(t *testing.T) {
 	entity := &openbaoEntityResponse{}
 	entity.Data.ID = "ent-004"

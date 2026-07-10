@@ -11,13 +11,27 @@ import (
 
 var Redis *redis.Client
 
+func defaultRedisNewClient(opts *redis.Options) *redis.Client {
+	return redis.NewClient(opts)
+}
+
+func defaultRedisPing(ctx context.Context, client *redis.Client) error {
+	return client.Ping(ctx).Err()
+}
+
+// redisNewClient creates a Redis client; tests replace it to avoid real connections.
+var redisNewClient = defaultRedisNewClient
+
+// redisPing pings the Redis client; tests replace it to simulate ping failures.
+var redisPing = defaultRedisPing
+
 func InitRedis() error {
 	addr := os.Getenv("REDIS_URL")
 	if addr == "" {
 		addr = "redis.data-layer.svc:6379"
 	}
 
-	Redis = redis.NewClient(&redis.Options{
+	Redis = redisNewClient(&redis.Options{
 		Addr:         addr,
 		DB:           0,
 		DialTimeout:  5 * time.Second,
@@ -29,7 +43,7 @@ func InitRedis() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := Redis.Ping(ctx).Err(); err != nil {
+	if err := redisPing(ctx, Redis); err != nil {
 		return fmt.Errorf("ping redis: %w", err)
 	}
 

@@ -8,7 +8,12 @@ import (
 	"testing"
 
 	"github.com/asymmetric-effort/convocate/internal/httputil"
+	"github.com/asymmetric-effort/convocate/internal/llm"
 )
+
+func llmEndpoint() string     { return llm.Endpoint() }
+func setLLMEndpoint(s string) { llm.SetEndpoint(s) }
+func setLLMKey(s string)      { llm.SetAPIKey(s) }
 
 func newAuthRequest(method, path string, body interface{}) *http.Request {
 	var buf bytes.Buffer
@@ -339,6 +344,57 @@ func TestRegister(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestRenderBoard_LLMError(t *testing.T) {
+	h := newHandler()
+	// SPECIFICATION.md exists in default store; set LLM to fail
+	origEndpoint := llmEndpoint()
+	setLLMEndpoint("http://localhost:1") // unreachable
+	setLLMKey("test-key")
+	defer func() {
+		setLLMEndpoint(origEndpoint)
+		setLLMKey("")
+	}()
+
+	req := newAuthRequest("POST", "/api/v1/ide/project/prj-001/render-board", nil)
+	req.SetPathValue("projectId", "prj-001")
+	rec := httptest.NewRecorder()
+	h.renderBoard(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
+func TestRenderBoard_Success(t *testing.T) {
+	// Start a fake LLM server that returns valid decomposition JSON
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"content": []map[string]string{
+				{"type": "text", "text": `{"containers":[],"cards":[{"title":"Task 1","status":"todo","content":"do it","containerIndex":0,"x":10,"y":10,"w":100,"h":50}],"edges":[]}`},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	setLLMEndpoint(server.URL)
+	setLLMKey("test-key")
+	defer func() {
+		setLLMEndpoint("")
+		setLLMKey("")
+	}()
+
+	h := newHandler()
+	req := newAuthRequest("POST", "/api/v1/ide/project/prj-001/render-board", nil)
+	req.SetPathValue("projectId", "prj-001")
+	rec := httptest.NewRecorder()
+	h.renderBoard(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d; body: %s", rec.Code, rec.Body.String())
 	}
 }
 

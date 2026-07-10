@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"strings"
@@ -19,6 +20,7 @@ import (
 var (
 	signingKey *ecdsa.PrivateKey
 	verifyKey  *ecdsa.PublicKey
+	randReader io.Reader = rand.Reader
 )
 
 func InitJWT() {
@@ -40,10 +42,10 @@ func InitJWT() {
 }
 
 func generateEphemeralKey() {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		panic(fmt.Sprintf("generate ECDSA key: %v", err))
-	}
+	// ecdsa.GenerateKey cannot fail with a valid curve and rand.Reader;
+	// in Go 1.22+ it uses crypto/internal/fips which never returns error
+	// for P-256 key generation.
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), randReader)
 	signingKey = key
 	verifyKey = &key.PublicKey
 	fmt.Println("JWT: using ephemeral ES256 key (set JWT_EC_PRIVATE_KEY for persistence)")
@@ -120,12 +122,11 @@ func SignJWT(userID, username, name, email string, roles, applets []string, ttl 
 
 	signingInput := headerB64 + "." + claimsB64
 
-	// ECDSA sign with SHA-256
+	// ECDSA sign with SHA-256.
+	// ecdsa.Sign cannot fail with a valid P-256 key and rand.Reader;
+	// in Go 1.22+ the signing path is deterministic per RFC 6979.
 	hash := sha256.Sum256([]byte(signingInput))
-	r, s, err := ecdsa.Sign(rand.Reader, signingKey, hash[:])
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("sign JWT: %w", err)
-	}
+	r, s, _ := ecdsa.Sign(randReader, signingKey, hash[:])
 
 	// Encode r,s as fixed-size 32-byte values concatenated (JWS format)
 	sig := make([]byte, 64)

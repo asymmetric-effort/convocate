@@ -348,6 +348,22 @@ func TestDeleteProject_Error(t *testing.T) {
 	}
 }
 
+func TestDoInternalCall_MarshalError(t *testing.T) {
+	// Pass an unmarshalable body (channel) to trigger json.Marshal error
+	_, _, err := doInternalCall("http://localhost:1", "POST", "/test", make(chan int))
+	if err == nil {
+		t.Fatal("expected error for unmarshalable body")
+	}
+}
+
+func TestDoInternalCall_InvalidURL(t *testing.T) {
+	// Pass an invalid URL to trigger http.NewRequest error
+	_, _, err := doInternalCall("://\x00bad", "GET", "/test", nil)
+	if err == nil {
+		t.Fatal("expected error for invalid URL")
+	}
+}
+
 func TestDeleteProject_NotFound(t *testing.T) {
 	srv := startMockSubAPIs(t)
 	defer srv.Close()

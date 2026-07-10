@@ -1,10 +1,15 @@
 package events
 
 import (
+	"bufio"
 	"context"
+	"encoding/binary"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -424,6 +429,124 @@ func TestHandleEvents_WebSocket_FullPath(t *testing.T) {
 	// If we get here, the response should be 101 (upgraded) or an error
 }
 
+func TestHandleSSE_Keepalive(t *testing.T) {
+	hub := newTestHub()
+	origDefault := DefaultHub
+	DefaultHub = hub
+	origInterval := keepaliveInterval
+	keepaliveInterval = 5 * time.Millisecond
+	defer func() {
+		DefaultHub = origDefault
+		keepaliveInterval = origInterval
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r := httptest.NewRequest("GET", "/api/v1/events/nmgr/nodes", nil)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		handleSSE(w, r, "nmgr/nodes", nil)
+		close(done)
+	}()
+
+	// Wait long enough for keepalive to fire
+	time.Sleep(30 * time.Millisecond)
+	cancel()
+	<-done
+
+	body := w.Body.String()
+	if !strings.Contains(body, ": keepalive") {
+		t.Fatalf("expected keepalive comment in SSE output, got: %s", body)
+	}
+}
+
+func TestHandleSSE_SubDone(t *testing.T) {
+	hub := newTestHub()
+	origDefault := DefaultHub
+	DefaultHub = hub
+	defer func() { DefaultHub = origDefault }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r := httptest.NewRequest("GET", "/api/v1/events/nmgr/nodes", nil)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		handleSSE(w, r, "nmgr/nodes", nil)
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Unsubscribe all subscribers to trigger sub.done
+	hub.mu.RLock()
+	subs := hub.subscribers["nmgr/nodes"]
+	var subList []*subscriber
+	for s := range subs {
+		subList = append(subList, s)
+	}
+	hub.mu.RUnlock()
+
+	for _, s := range subList {
+		hub.Unsubscribe("nmgr/nodes", s)
+	}
+
+	select {
+	case <-done:
+		// expected
+	case <-time.After(time.Second):
+		t.Fatal("handleSSE did not exit after sub.done closed")
+	}
+}
+
+// nonFlushWriter is an http.ResponseWriter that does NOT implement http.Flusher.
+type nonFlushWriter struct {
+	header http.Header
+	code   int
+	body   []byte
+}
+
+func (w *nonFlushWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *nonFlushWriter) Write(b []byte) (int, error) {
+	w.body = append(w.body, b...)
+	return len(b), nil
+}
+
+func (w *nonFlushWriter) WriteHeader(code int) {
+	w.code = code
+}
+
+func TestHandleSSE_NoFlusher(t *testing.T) {
+	hub := newTestHub()
+	origDefault := DefaultHub
+	DefaultHub = hub
+	defer func() { DefaultHub = origDefault }()
+
+	r := httptest.NewRequest("GET", "/api/v1/events/nmgr/nodes", nil)
+	w := &nonFlushWriter{}
+
+	// Should return immediately since w doesn't implement http.Flusher
+	handleSSE(w, r, "nmgr/nodes", nil)
+
+	// Verify headers were still set
+	if w.Header().Get("Content-Type") != "text/event-stream" {
+		t.Fatal("expected Content-Type to be set even without flusher")
+	}
+}
+
 func TestHandleSSE_WithTypeFilter(t *testing.T) {
 	hub := newTestHub()
 	origDefault := DefaultHub
@@ -461,6 +584,386 @@ func TestHandleSSE_WithTypeFilter(t *testing.T) {
 		t.Fatal("expected event data")
 	}
 	// Should only have one "data:" entry (the wanted one)
+}
+
+func TestHandleEvents_WebSocket_EventLoop_DataAndClose(t *testing.T) {
+	hub := newTestHub()
+	origDefault := DefaultHub
+	DefaultHub = hub
+	defer func() { DefaultHub = origDefault }()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("applet", "nmgr")
+		r.SetPathValue("channel", "nodes")
+		handleEvents(w, r)
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// Dial raw TCP to the test server
+	addr := strings.TrimPrefix(server.URL, "http://")
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	// Send WebSocket upgrade request
+	req := "GET / HTTP/1.1\r\n" +
+		"Host: " + addr + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+		"Sec-WebSocket-Version: 13\r\n\r\n"
+	conn.Write([]byte(req))
+
+	// Read response
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("read response failed: %v", err)
+	}
+	if resp.StatusCode != 101 {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	// Wait for subscription to be registered
+	time.Sleep(20 * time.Millisecond)
+
+	// Publish an event
+	hub.Publish("nmgr/nodes", "test.event", "hello")
+	time.Sleep(20 * time.Millisecond)
+
+	// Read the WebSocket frame
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	hdr := make([]byte, 2)
+	_, err = io.ReadFull(reader, hdr)
+	if err != nil {
+		t.Fatalf("failed to read WS frame header: %v", err)
+	}
+	if hdr[0] != 0x81 {
+		t.Fatalf("expected text frame 0x81, got 0x%02x", hdr[0])
+	}
+	payloadLen := int(hdr[1] & 0x7F)
+	if payloadLen == 126 {
+		ext := make([]byte, 2)
+		io.ReadFull(reader, ext)
+		payloadLen = int(binary.BigEndian.Uint16(ext))
+	}
+	payload := make([]byte, payloadLen)
+	io.ReadFull(reader, payload)
+	if !strings.Contains(string(payload), "test.event") {
+		t.Fatalf("expected payload to contain test.event, got: %s", string(payload))
+	}
+
+	// Close the connection to trigger WS write error path
+	conn.Close()
+}
+
+func TestHandleEvents_WebSocket_Keepalive(t *testing.T) {
+	hub := newTestHub()
+	origDefault := DefaultHub
+	DefaultHub = hub
+	origInterval := keepaliveInterval
+	keepaliveInterval = 5 * time.Millisecond
+	defer func() {
+		DefaultHub = origDefault
+		keepaliveInterval = origInterval
+	}()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("applet", "nmgr")
+		r.SetPathValue("channel", "nodes")
+		handleEvents(w, r)
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	req := "GET / HTTP/1.1\r\n" +
+		"Host: " + addr + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+		"Sec-WebSocket-Version: 13\r\n\r\n"
+	conn.Write([]byte(req))
+
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("read response failed: %v", err)
+	}
+	if resp.StatusCode != 101 {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	// Wait for keepalive ping to fire
+	time.Sleep(30 * time.Millisecond)
+
+	// Read ping frame
+	conn.SetReadDeadline(time.Now().Add(time.Second))
+	hdr := make([]byte, 2)
+	_, err = io.ReadFull(reader, hdr)
+	if err != nil {
+		t.Fatalf("failed to read ping frame: %v", err)
+	}
+	if hdr[0] != 0x89 {
+		t.Fatalf("expected ping frame 0x89, got 0x%02x", hdr[0])
+	}
+
+	conn.Close()
+}
+
+func TestHandleEvents_WebSocket_SubDone(t *testing.T) {
+	hub := newTestHub()
+	origDefault := DefaultHub
+	DefaultHub = hub
+	defer func() { DefaultHub = origDefault }()
+
+	handlerDone := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("applet", "nmgr")
+		r.SetPathValue("channel", "nodes")
+		handleEvents(w, r)
+		close(handlerDone)
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	defer conn.Close()
+
+	req := "GET / HTTP/1.1\r\n" +
+		"Host: " + addr + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+		"Sec-WebSocket-Version: 13\r\n\r\n"
+	conn.Write([]byte(req))
+
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("read response failed: %v", err)
+	}
+	if resp.StatusCode != 101 {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Force close the sub.done channel by unsubscribing
+	hub.mu.RLock()
+	subs := hub.subscribers["nmgr/nodes"]
+	var subList []*subscriber
+	for s := range subs {
+		subList = append(subList, s)
+	}
+	hub.mu.RUnlock()
+
+	for _, s := range subList {
+		hub.Unsubscribe("nmgr/nodes", s)
+	}
+
+	select {
+	case <-handlerDone:
+		// expected
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleEvents did not exit after sub.done closed")
+	}
+}
+
+func TestHandleEvents_WebSocket_WriteError(t *testing.T) {
+	hub := newTestHub()
+	origDefault := DefaultHub
+	DefaultHub = hub
+	defer func() { DefaultHub = origDefault }()
+
+	handlerDone := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("applet", "nmgr")
+		r.SetPathValue("channel", "nodes")
+		handleEvents(w, r)
+		close(handlerDone)
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+
+	req := "GET / HTTP/1.1\r\n" +
+		"Host: " + addr + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+		"Sec-WebSocket-Version: 13\r\n\r\n"
+	conn.Write([]byte(req))
+
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("read response failed: %v", err)
+	}
+	if resp.StatusCode != 101 {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	// Close the client TCP connection with RST to ensure write errors
+	if tc, ok := conn.(*net.TCPConn); ok {
+		tc.SetLinger(0)
+	}
+	conn.Close()
+	time.Sleep(20 * time.Millisecond)
+
+	// Publish many messages to trigger a write error (OS may buffer one)
+	for i := 0; i < 100; i++ {
+		hub.Publish("nmgr/nodes", "test", strings.Repeat("x", 1000))
+	}
+
+	select {
+	case <-handlerDone:
+		// expected - handler should exit on write error
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleEvents did not exit after write error")
+	}
+}
+
+func TestHandleEvents_WebSocket_PingError(t *testing.T) {
+	hub := newTestHub()
+	origDefault := DefaultHub
+	DefaultHub = hub
+	origInterval := keepaliveInterval
+	keepaliveInterval = 5 * time.Millisecond
+	defer func() {
+		DefaultHub = origDefault
+		keepaliveInterval = origInterval
+	}()
+
+	handlerDone := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("applet", "nmgr")
+		r.SetPathValue("channel", "nodes")
+		handleEvents(w, r)
+		close(handlerDone)
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+
+	req := "GET / HTTP/1.1\r\n" +
+		"Host: " + addr + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+		"Sec-WebSocket-Version: 13\r\n\r\n"
+	conn.Write([]byte(req))
+
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatalf("read response failed: %v", err)
+	}
+	if resp.StatusCode != 101 {
+		t.Fatalf("expected 101, got %d", resp.StatusCode)
+	}
+
+	// Close connection so the keepalive ping will fail
+	conn.Close()
+
+	select {
+	case <-handlerDone:
+		// expected - handler should exit on ping write error
+	case <-time.After(2 * time.Second):
+		t.Fatal("handleEvents did not exit after ping error")
+	}
+}
+
+func TestWsReadDiscard_NonEOFError(t *testing.T) {
+	server, client := net.Pipe()
+
+	done := make(chan struct{})
+	go func() {
+		wsReadDiscard(client)
+		close(done)
+	}()
+
+	// Set a read deadline on client to force a non-EOF error
+	client.SetReadDeadline(time.Now().Add(5 * time.Millisecond))
+
+	select {
+	case <-done:
+		// expected - wsReadDiscard should exit on timeout (non-EOF) error
+	case <-time.After(time.Second):
+		t.Fatal("wsReadDiscard did not exit on non-EOF error")
+	}
+	server.Close()
+	client.Close()
+}
+
+// failHijackWriter implements http.ResponseWriter and http.Hijacker but always
+// fails the Hijack call.
+type failHijackWriter struct {
+	header http.Header
+	code   int
+}
+
+func (w *failHijackWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *failHijackWriter) Write(b []byte) (int, error) {
+	return len(b), nil
+}
+
+func (w *failHijackWriter) WriteHeader(code int) {
+	w.code = code
+}
+
+func (w *failHijackWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return nil, nil, fmt.Errorf("hijack failed")
+}
+
+func TestUpgradeWebSocket_HijackError(t *testing.T) {
+	r := httptest.NewRequest("GET", "/ws", nil)
+	r.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	w := &failHijackWriter{}
+
+	conn, err := upgradeWebSocket(w, r)
+	if err == nil {
+		if conn != nil {
+			conn.Close()
+		}
+		t.Fatal("expected error for hijack failure")
+	}
 }
 
 func TestHandleEvents_SSE_PathValues(t *testing.T) {

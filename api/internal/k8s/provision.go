@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"time"
@@ -17,6 +18,29 @@ type ProvisionRequest struct {
 	User     string // SSH user (password auth)
 	Password string // SSH password
 	Location string // convocate.io/location label value
+}
+
+// JoinCommandFn is a function type that obtains join credentials from the
+// control plane. Tests replace this variable to avoid creating real K8s Jobs.
+var JoinCommandFn = func(ctx context.Context) (string, error) {
+	return getJoinCommandViaJob(ctx)
+}
+
+// WaitForNodeByIPFn polls for a node with the given IP. Tests replace this.
+var WaitForNodeByIPFn = waitForNodeByIP
+
+// drainSleep is used by DrainAndDeleteNode to wait for evictions.
+// Tests replace this to avoid real delays.
+var drainSleep = time.Sleep
+
+// joinPodTimeout controls how long getJoinCommandViaJob waits for the pod.
+// Tests replace this with a short duration.
+var joinPodTimeout = 2 * time.Minute
+
+// getLogStream reads pod logs. Tests replace this to inject mock log data.
+var getLogStream = func(ctx context.Context, namespace, podName string) (io.ReadCloser, error) {
+	logReq := Client.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{})
+	return logReq.Stream(ctx)
 }
 
 // ProvisionNode prepares a blank Ubuntu machine and joins it to the K8s cluster.
@@ -112,7 +136,7 @@ echo "[provision] base preparation complete"
 
 	// Step 2: Get bootstrap token and discovery kubeconfig from control plane
 	log.Printf("[provision] generating join credentials via K8s Job on control plane")
-	joinOutput, err := getJoinCommandViaJob(ctx)
+	joinOutput, err := JoinCommandFn(ctx)
 	if err != nil {
 		return fmt.Errorf("get join credentials: %w", err)
 	}
@@ -167,7 +191,7 @@ echo "[provision] kubeadm join complete"
 
 	// Step 4: Wait for node to appear in the cluster
 	log.Printf("[provision] waiting for node to become Ready...")
-	nodeName, err := waitForNodeByIP(ctx, host, 3*time.Minute)
+	nodeName, err := WaitForNodeByIPFn(ctx, host, 3*time.Minute)
 	if err != nil {
 		return fmt.Errorf("node did not become ready: %w", err)
 	}
@@ -247,7 +271,7 @@ func DrainAndDeleteNode(ctx context.Context, nodeName string) error {
 	}
 
 	// Wait briefly for evictions to propagate
-	time.Sleep(5 * time.Second)
+	drainSleep(5 * time.Second)
 
 	// Delete the node object from the cluster
 	log.Printf("[deprovision] deleting node %s from cluster", nodeName)
@@ -381,7 +405,7 @@ func getJoinCommandViaJob(ctx context.Context) (string, error) {
 	}()
 
 	// Wait for the pod to complete
-	deadline := time.Now().Add(2 * time.Minute)
+	deadline := time.Now().Add(joinPodTimeout)
 	for time.Now().Before(deadline) {
 		p, err := Client.CoreV1().Pods("kube-system").Get(ctx, podName, metav1.GetOptions{})
 		if err == nil {
@@ -389,12 +413,11 @@ func getJoinCommandViaJob(ctx context.Context) (string, error) {
 				break
 			}
 		}
-		time.Sleep(2 * time.Second)
+		retrySleep(2 * time.Second)
 	}
 
 	// Read logs
-	logReq := Client.CoreV1().Pods("kube-system").GetLogs(podName, &corev1.PodLogOptions{})
-	logStream, err := logReq.Stream(ctx)
+	logStream, err := getLogStream(ctx, "kube-system", podName)
 	if err != nil {
 		return "", fmt.Errorf("get join-token logs: %w", err)
 	}
@@ -452,7 +475,7 @@ func waitForNodeByIP(ctx context.Context, ip string, timeout time.Duration) (str
 	for time.Now().Before(deadline) {
 		nodes, err := Client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		if err != nil {
-			time.Sleep(5 * time.Second)
+			drainSleep(5 * time.Second)
 			continue
 		}
 		for i := range nodes.Items {
@@ -468,7 +491,7 @@ func waitForNodeByIP(ctx context.Context, ip string, timeout time.Duration) (str
 				}
 			}
 		}
-		time.Sleep(5 * time.Second)
+		drainSleep(5 * time.Second)
 	}
 	return "", fmt.Errorf("timed out waiting for node with IP %s", ip)
 }

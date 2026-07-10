@@ -177,10 +177,10 @@ func TestAuth_ValidOpenBaoToken(t *testing.T) {
 		case "/v1/identity/entity/id/ent-123":
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": map[string]any{
-					"id":       "ent-123",
-					"name":     "testuser",
-					"metadata": map[string]string{"name": "Test User", "email": "test@example.com"},
-					"policies": []string{"default"},
+					"id":        "ent-123",
+					"name":      "testuser",
+					"metadata":  map[string]string{"name": "Test User", "email": "test@example.com"},
+					"policies":  []string{"default"},
 					"group_ids": []string{"grp-1"},
 				},
 			})

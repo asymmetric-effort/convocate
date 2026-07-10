@@ -2,11 +2,15 @@ package k8s
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	fakedynamic "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/asymmetric-effort/convocate/internal/types"
 )
@@ -556,5 +560,353 @@ func TestCreateAgentCertificate_NilDynClient(t *testing.T) {
 	err := CreateAgentCertificate(ctx, "test-pod")
 	if err != nil {
 		t.Fatalf("expected nil error with nil DynClient, got %v", err)
+	}
+}
+
+func TestListAgentPods_Error(t *testing.T) {
+	// Use a clientset where the namespace doesn't exist — fake client
+	// doesn't actually error on missing namespace for List, so we test
+	// that we get an empty list gracefully.
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	agents, err := ListAgentPods(ctx)
+	if err != nil {
+		t.Fatalf("ListAgentPods: %v", err)
+	}
+	if len(agents) != 0 {
+		t.Fatalf("expected 0 agents, got %d", len(agents))
+	}
+}
+
+func TestDeleteAgentPod_WithDynClient(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	// Set DynClient to a fake dynamic client
+	DynClient = fakedynamic.NewSimpleDynamicClient(runtime.NewScheme())
+	defer func() { DynClient = nil }()
+	ctx := context.Background()
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: AgentNamespace}}
+	cs.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "agent-dyn", Namespace: AgentNamespace},
+		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "agent", Image: "test"}}},
+	}
+	cs.CoreV1().Pods(AgentNamespace).Create(ctx, pod, metav1.CreateOptions{})
+
+	// DeleteAgentPod logs warnings for missing associated resources but still succeeds
+	err := DeleteAgentPod(ctx, "agent-dyn")
+	if err != nil {
+		t.Fatalf("DeleteAgentPod: %v", err)
+	}
+}
+
+func TestDeleteAgentPod_NotFound(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	DynClient = nil
+	ctx := context.Background()
+
+	// Deleting a nonexistent pod — err is returned from the pod delete
+	err := DeleteAgentPod(ctx, "nonexistent-pod")
+	// The function returns the pod delete error even though it continues cleanup
+	if err == nil {
+		t.Fatal("expected error for nonexistent pod")
+	}
+}
+
+func TestCreateAgentPod_ClaudeMdDefault(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	DynClient = nil
+	ctx := context.Background()
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: AgentNamespace}}
+	cs.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+
+	req := types.CreateAgentRequest{
+		Project: "proj-claudemd",
+		// ClaudeMd empty — should use default
+	}
+	_, err := CreateAgentPod(ctx, req, "user1")
+	if err != nil {
+		t.Fatalf("CreateAgentPod: %v", err)
+	}
+
+	cm, _ := cs.CoreV1().ConfigMaps(AgentNamespace).Get(ctx, "cm-agent-proj-claudemd", metav1.GetOptions{})
+	if cm.Data["CLAUDE.md"] != defaultClaudeMd {
+		t.Fatal("expected default CLAUDE.md content")
+	}
+}
+
+func TestCreateAgentCertificate_WithDynClient(t *testing.T) {
+	// Test with a fake dynamic client
+	DynClient = fakedynamic.NewSimpleDynamicClient(runtime.NewScheme())
+	defer func() { DynClient = nil }()
+	ctx := context.Background()
+
+	// This will attempt to create a Certificate resource
+	// The fake dynamic client won't error on creation
+	err := CreateAgentCertificate(ctx, "test-cert-pod")
+	if err != nil {
+		t.Fatalf("CreateAgentCertificate with DynClient: %v", err)
+	}
+}
+
+func TestCreateAgentPVC_AlreadyExists(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: AgentNamespace}}
+	cs.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+
+	// Create twice — second should not error
+	err := CreateAgentPVC(ctx, "dup-pod", "1Gi")
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	err = CreateAgentPVC(ctx, "dup-pod", "1Gi")
+	if err != nil {
+		t.Fatalf("second create should not error: %v", err)
+	}
+}
+
+func TestCreateAgentConfigMap_AlreadyExists(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: AgentNamespace}}
+	cs.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+
+	err := CreateAgentConfigMap(ctx, "dup-pod", "content")
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	err = CreateAgentConfigMap(ctx, "dup-pod", "content2")
+	if err != nil {
+		t.Fatalf("second create should not error: %v", err)
+	}
+}
+
+func TestCreateAgentSecret_AlreadyExists(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: AgentNamespace}}
+	cs.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+
+	err := CreateAgentSecret(ctx, "dup-pod", "key1")
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	err = CreateAgentSecret(ctx, "dup-pod", "key2")
+	if err != nil {
+		t.Fatalf("second create should not error: %v", err)
+	}
+}
+
+func TestListAgentPods_ListError(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	cs.PrependReactor("list", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("api server unavailable")
+	})
+
+	_, err := ListAgentPods(ctx)
+	if err == nil {
+		t.Fatal("expected error from ListAgentPods")
+	}
+}
+
+func TestCreateAgentPVC_NonExistsError(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	cs.PrependReactor("create", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("storage class not found")
+	})
+
+	err := CreateAgentPVC(ctx, "test-pod", "5Gi")
+	if err == nil {
+		t.Fatal("expected error from CreateAgentPVC")
+	}
+}
+
+func TestCreateAgentConfigMap_NonExistsError(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	cs.PrependReactor("create", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("forbidden")
+	})
+
+	err := CreateAgentConfigMap(ctx, "test-pod", "content")
+	if err == nil {
+		t.Fatal("expected error from CreateAgentConfigMap")
+	}
+}
+
+func TestCreateAgentSecret_NonExistsError(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	cs.PrependReactor("create", "secrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("quota exceeded")
+	})
+
+	err := CreateAgentSecret(ctx, "test-pod", "key1")
+	if err == nil {
+		t.Fatal("expected error from CreateAgentSecret")
+	}
+}
+
+func TestCreateAgentPod_PVCError(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	DynClient = nil
+	ctx := context.Background()
+
+	cs.PrependReactor("create", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("storage error")
+	})
+
+	req := types.CreateAgentRequest{Project: "proj-fail-pvc"}
+	_, err := CreateAgentPod(ctx, req, "user1")
+	if err == nil {
+		t.Fatal("expected error from CreateAgentPod when PVC fails")
+	}
+}
+
+func TestCreateAgentPod_ConfigMapError(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	DynClient = nil
+	ctx := context.Background()
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: AgentNamespace}}
+	cs.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+
+	cs.PrependReactor("create", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("configmap error")
+	})
+
+	req := types.CreateAgentRequest{Project: "proj-fail-cm"}
+	_, err := CreateAgentPod(ctx, req, "user1")
+	if err == nil {
+		t.Fatal("expected error from CreateAgentPod when ConfigMap fails")
+	}
+}
+
+func TestCreateAgentPod_SecretError(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	DynClient = nil
+	ctx := context.Background()
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: AgentNamespace}}
+	cs.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+
+	cs.PrependReactor("create", "secrets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("secret error")
+	})
+
+	req := types.CreateAgentRequest{Project: "proj-fail-secret", AnthropicApiKey: "sk-test"}
+	_, err := CreateAgentPod(ctx, req, "user1")
+	if err == nil {
+		t.Fatal("expected error from CreateAgentPod when Secret fails")
+	}
+}
+
+func TestCreateAgentPod_PodCreateError(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	DynClient = nil
+	ctx := context.Background()
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: AgentNamespace}}
+	cs.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+
+	cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("pod quota exceeded")
+	})
+
+	req := types.CreateAgentRequest{Project: "proj-fail-pod"}
+	_, err := CreateAgentPod(ctx, req, "user1")
+	if err == nil {
+		t.Fatal("expected error from CreateAgentPod when pod creation fails")
+	}
+}
+
+func TestCreateAgentCertificate_AlreadyExists(t *testing.T) {
+	scheme := runtime.NewScheme()
+	DynClient = fakedynamic.NewSimpleDynamicClient(scheme)
+	defer func() { DynClient = nil }()
+	ctx := context.Background()
+
+	// First create should succeed
+	err := CreateAgentCertificate(ctx, "cert-dup")
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	// Second create should succeed (already exists is tolerated)
+	err = CreateAgentCertificate(ctx, "cert-dup")
+	if err != nil {
+		t.Fatalf("second create should not error: %v", err)
+	}
+}
+
+func TestCreateAgentCertificate_NonExistsError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	dc := fakedynamic.NewSimpleDynamicClient(scheme)
+	DynClient = dc
+	defer func() { DynClient = nil }()
+	ctx := context.Background()
+
+	dc.PrependReactor("create", "certificates", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("cert-manager not installed")
+	})
+
+	err := CreateAgentCertificate(ctx, "cert-err")
+	if err == nil {
+		t.Fatal("expected error from CreateAgentCertificate")
+	}
+}
+
+func TestCreateAgentPod_CertificateFailsNonFatal(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	// Set up DynClient that fails on certificate creation (non "already exists" error)
+	scheme := runtime.NewScheme()
+	dc := fakedynamic.NewSimpleDynamicClient(scheme)
+	DynClient = dc
+	defer func() { DynClient = nil }()
+
+	dc.PrependReactor("create", "certificates", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("cert-manager CRD not installed")
+	})
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: AgentNamespace}}
+	cs.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+
+	req := types.CreateAgentRequest{Project: "proj-certfail"}
+	agent, err := CreateAgentPod(ctx, req, "user1")
+	if err != nil {
+		t.Fatalf("CreateAgentPod should succeed even if cert fails: %v", err)
+	}
+	if agent == nil {
+		t.Fatal("expected non-nil agent")
 	}
 }

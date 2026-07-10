@@ -859,9 +859,9 @@ func (s *Store) GetSettings() (GlobalSettings, error) {
 	if err != nil {
 		// Return defaults if KV path does not exist yet.
 		return GlobalSettings{
-			RequireMFA:           false,
-			SessionTimeoutMin:    30,
-			PasswordMinLength:    12,
+			RequireMFA:        false,
+			SessionTimeoutMin: 30,
+			PasswordMinLength: 12,
 		}, nil
 	}
 
@@ -883,9 +883,9 @@ func (s *Store) GetSettings() (GlobalSettings, error) {
 	}
 
 	gs := GlobalSettings{
-		RequireMFA:           false,
-		SessionTimeoutMin:    30,
-		PasswordMinLength:    12,
+		RequireMFA:        false,
+		SessionTimeoutMin: 30,
+		PasswordMinLength: 12,
 	}
 	if v, ok := inner["requireMfa"].(bool); ok {
 		gs.RequireMFA = v
@@ -903,9 +903,9 @@ func (s *Store) GetSettings() (GlobalSettings, error) {
 func (s *Store) SetSettings(gs GlobalSettings) (GlobalSettings, error) {
 	_, err := s.baoRequest("PUT", "/v1/convocate/data/settings", map[string]any{
 		"data": map[string]any{
-			"requireMfa":           gs.RequireMFA,
+			"requireMfa":            gs.RequireMFA,
 			"sessionTimeoutMinutes": gs.SessionTimeoutMin,
-			"passwordMinLength":    gs.PasswordMinLength,
+			"passwordMinLength":     gs.PasswordMinLength,
 		},
 	})
 	if err != nil {

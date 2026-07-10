@@ -13,7 +13,9 @@ type subscriber struct {
 	done chan struct{}
 	// types restricts which event types this subscriber receives.
 	// nil means all events pass (backward compatible).
-	types map[string]bool
+	types    map[string]bool
+	closedMu sync.Mutex
+	closed   bool
 }
 
 type Hub struct {
@@ -61,7 +63,12 @@ func (h *Hub) Unsubscribe(channel string, sub *subscriber) {
 			delete(h.subscribers, channel)
 		}
 	}
-	close(sub.done)
+	sub.closedMu.Lock()
+	if !sub.closed {
+		sub.closed = true
+		close(sub.done)
+	}
+	sub.closedMu.Unlock()
 }
 
 func (h *Hub) Publish(channel string, eventType string, payload any) {

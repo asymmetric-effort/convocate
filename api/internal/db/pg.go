@@ -11,6 +11,20 @@ import (
 
 var Pool *pgxpool.Pool
 
+func defaultPgNewWithConfig(ctx context.Context, cfg *pgxpool.Config) (*pgxpool.Pool, error) {
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
+func defaultPgPing(ctx context.Context, pool *pgxpool.Pool) error {
+	return pool.Ping(ctx)
+}
+
+// pgNewWithConfig is the pool constructor; tests replace it to avoid real connections.
+var pgNewWithConfig = defaultPgNewWithConfig
+
+// pgPing pings the pool; tests replace it to simulate ping failures.
+var pgPing = defaultPgPing
+
 func InitPostgres() error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -29,12 +43,12 @@ func InitPostgres() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	pool, err := pgNewWithConfig(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("connect to postgres: %w", err)
 	}
 
-	if err := pool.Ping(ctx); err != nil {
+	if err := pgPing(ctx, pool); err != nil {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 

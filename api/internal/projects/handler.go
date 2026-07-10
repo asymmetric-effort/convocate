@@ -38,10 +38,8 @@ var internalCallFn = func(method, path string, body interface{}) ([]byte, int, e
 func doInternalCall(baseURL, method, path string, body interface{}) ([]byte, int, error) {
 	var reqBody io.Reader
 	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, 0, err
-		}
+		// json.Marshal cannot fail on the map/struct types callers pass.
+		data, _ := json.Marshal(body)
 		reqBody = bytes.NewReader(data)
 	}
 

@@ -34,14 +34,20 @@ type nodeMetricsResponse struct {
 
 // fetchNodeMetrics queries the K8s Metrics API for live CPU and memory
 // usage per node. Returns nil on error (caller falls back gracefully).
-func fetchNodeMetrics(ctx context.Context) map[string]metricsUsage {
+// metricsRawFetcher fetches raw metrics data from the K8s API.
+// Tests replace this to inject test data.
+var metricsRawFetcher = func(ctx context.Context) ([]byte, error) {
 	cs, ok := Client.(*kubernetes.Clientset)
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("client is not *kubernetes.Clientset")
 	}
-	data, err := cs.RESTClient().Get().
+	return cs.RESTClient().Get().
 		AbsPath("/apis/metrics.k8s.io/v1beta1/nodes").
 		DoRaw(ctx)
+}
+
+func fetchNodeMetrics(ctx context.Context) map[string]metricsUsage {
+	data, err := metricsRawFetcher(ctx)
 	if err != nil {
 		return nil
 	}

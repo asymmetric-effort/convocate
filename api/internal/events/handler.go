@@ -15,6 +15,10 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/middleware"
 )
 
+// keepaliveInterval controls the keepalive/ping frequency for SSE and WebSocket
+// connections. Tests override this to avoid 30-second waits.
+var keepaliveInterval = 30 * time.Second
+
 func Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/events/{applet}/{channel...}", middleware.Chain(
 		http.HandlerFunc(handleEvents),
@@ -70,7 +74,7 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 		case <-sub.done:
 			return
-		case <-time.After(30 * time.Second):
+		case <-time.After(keepaliveInterval):
 			// Send ping to keep connection alive
 			if err := wsWritePing(conn); err != nil {
 				return
@@ -102,7 +106,7 @@ func handleSSE(w http.ResponseWriter, r *http.Request, channel string, typeFilte
 			return
 		case <-r.Context().Done():
 			return
-		case <-time.After(30 * time.Second):
+		case <-time.After(keepaliveInterval):
 			fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		}

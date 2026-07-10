@@ -634,6 +634,78 @@ func TestVerifyJWT_WrongSignatureLength(t *testing.T) {
 	}
 }
 
+func TestOpenbaoLogin_UnexpectedStatus(t *testing.T) {
+	// Server returns 503 (not 400/401/403) → triggers "unexpected status" path
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("service unavailable"))
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	_, err := openbaoLogin("testuser", "testpass")
+	if err == nil {
+		t.Fatal("expected error for unexpected status")
+	}
+}
+
+func TestOpenbaoMFAValidate_UnexpectedStatus(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("service unavailable"))
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	_, err := openbaoMFAValidate("req-1", "method-1", "123456")
+	if err == nil {
+		t.Fatal("expected error for unexpected status")
+	}
+}
+
+func TestOpenbaoRevokeSelf_ErrorStatus(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bao.Close()
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	defer os.Unsetenv("OPENBAO_ADDR")
+
+	err := openbaoRevokeSelf("tok")
+	if err == nil {
+		t.Fatal("expected error for error status")
+	}
+}
+
+func TestRolesToApplets_VariousPolicies(t *testing.T) {
+	tests := []struct {
+		policies []string
+		contains string
+	}{
+		{[]string{"agent-manage"}, "amgr"},
+		{[]string{"pb-read"}, "pb"},
+		{[]string{"ide-write"}, "ide"},
+		{[]string{"access-admin"}, "ac"},
+		{[]string{"repo-push"}, "repo"},
+		{[]string{"support-ticket"}, "sup"},
+	}
+	for _, tt := range tests {
+		applets := rolesToApplets(tt.policies)
+		found := false
+		for _, a := range applets {
+			if a == tt.contains {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("policies %v should include applet %q, got %v", tt.policies, tt.contains, applets)
+		}
+	}
+}
+
 func TestRegister(t *testing.T) {
 	mux := http.NewServeMux()
 	Register(mux)

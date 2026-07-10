@@ -2,6 +2,7 @@ package nmgr
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -240,6 +241,151 @@ func TestPgNoteDB_AddNote_Error(t *testing.T) {
 	_, err := ndb.AddNote(ctx, "node-001", "admin", "test note")
 	if err == nil {
 		t.Error("expected error from bogus connection")
+	}
+}
+
+func TestK8sNodeManager_ProvisionNode(t *testing.T) {
+	setupFakeK8s(t)
+	mgr := k8sNodeManager{}
+	ctx := context.Background()
+
+	// Override SSHExecutor, JoinCommandFn, and WaitForNodeByIPFn to avoid real SSH/K8s ops
+	origSSH := k8s.GetSSHExecutor()
+	origJoin := k8s.JoinCommandFn
+	origWait := k8s.WaitForNodeByIPFn
+	k8s.SetSSHExecutor(&mockSSHExec{})
+	k8s.JoinCommandFn = func(ctx context.Context) (string, error) {
+		return "TOKEN=abc123\napiVersion: v1\nkind: Config\nclusters:\n- cluster:\n    server: https://10.0.0.1:6443\n", nil
+	}
+	k8s.WaitForNodeByIPFn = func(ctx context.Context, ip string, timeout time.Duration) (string, error) {
+		return "node-provisioned", nil
+	}
+	defer func() {
+		k8s.SetSSHExecutor(origSSH)
+		k8s.JoinCommandFn = origJoin
+		k8s.WaitForNodeByIPFn = origWait
+	}()
+
+	err := mgr.ProvisionNode(ctx, k8s.ProvisionRequest{
+		Host:     "10.0.0.99",
+		User:     "testuser",
+		Password: "testpass",
+		Location: "rack-1",
+	})
+	if err != nil {
+		t.Fatalf("ProvisionNode: %v", err)
+	}
+}
+
+// mockSSHExec implements k8s.SSHExecutor for testing
+type mockSSHExec struct{}
+
+func (m *mockSSHExec) Exec(host, user, password, script string) error {
+	return nil
+}
+func (m *mockSSHExec) ExecWithOutput(host, user, password, cmd string) (string, error) {
+	return "", nil
+}
+
+// --- pgNoteDB with mock rows ---
+
+type mockPgRows struct {
+	data    [][]any
+	cursor  int
+	scanErr error
+}
+
+func (r *mockPgRows) Next() bool {
+	return r.cursor < len(r.data)
+}
+
+func (r *mockPgRows) Scan(dest ...any) error {
+	if r.scanErr != nil {
+		r.cursor++
+		return r.scanErr
+	}
+	row := r.data[r.cursor]
+	r.cursor++
+	for i, v := range row {
+		switch d := dest[i].(type) {
+		case *string:
+			*d = v.(string)
+		case *time.Time:
+			*d = v.(time.Time)
+		}
+	}
+	return nil
+}
+
+func (r *mockPgRows) Close() {}
+
+func TestPgNoteDB_ListNotes_Success(t *testing.T) {
+	origQuery := queryNotes
+	now := time.Now().UTC()
+	queryNotes = func(ctx context.Context, nodeID string) (pgRows, error) {
+		return &mockPgRows{
+			data: [][]any{
+				{"admin", now, "first note"},
+				{"user1", now.Add(time.Hour), "second note"},
+			},
+		}, nil
+	}
+	defer func() { queryNotes = origQuery }()
+
+	ndb := pgNoteDB{}
+	notes, err := ndb.ListNotes(context.Background(), "node-001")
+	if err != nil {
+		t.Fatalf("ListNotes: %v", err)
+	}
+	if len(notes) != 2 {
+		t.Fatalf("expected 2 notes, got %d", len(notes))
+	}
+	if notes[0].Author != "admin" {
+		t.Errorf("expected author 'admin', got %q", notes[0].Author)
+	}
+	if notes[1].Text != "second note" {
+		t.Errorf("expected text 'second note', got %q", notes[1].Text)
+	}
+}
+
+func TestPgNoteDB_ListNotes_EmptyResult(t *testing.T) {
+	origQuery := queryNotes
+	queryNotes = func(ctx context.Context, nodeID string) (pgRows, error) {
+		return &mockPgRows{data: [][]any{}}, nil
+	}
+	defer func() { queryNotes = origQuery }()
+
+	ndb := pgNoteDB{}
+	notes, err := ndb.ListNotes(context.Background(), "node-001")
+	if err != nil {
+		t.Fatalf("ListNotes: %v", err)
+	}
+	if notes == nil {
+		t.Error("expected non-nil empty slice")
+	}
+	if len(notes) != 0 {
+		t.Errorf("expected 0 notes, got %d", len(notes))
+	}
+}
+
+func TestPgNoteDB_ListNotes_ScanError(t *testing.T) {
+	origQuery := queryNotes
+	queryNotes = func(ctx context.Context, nodeID string) (pgRows, error) {
+		return &mockPgRows{
+			data:    [][]any{{"admin", time.Now(), "note"}},
+			scanErr: fmt.Errorf("scan error"),
+		}, nil
+	}
+	defer func() { queryNotes = origQuery }()
+
+	ndb := pgNoteDB{}
+	notes, err := ndb.ListNotes(context.Background(), "node-001")
+	if err != nil {
+		t.Fatalf("ListNotes: %v", err)
+	}
+	// Scan error means note is skipped
+	if len(notes) != 0 {
+		t.Errorf("expected 0 notes (scan failed), got %d", len(notes))
 	}
 }
 

@@ -1,6 +1,11 @@
 package auth
 
 import (
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -110,5 +115,71 @@ func TestES256Algorithm(t *testing.T) {
 	}
 	if claims.Sub != "usr-001" {
 		t.Errorf("unexpected Sub: %s", claims.Sub)
+	}
+}
+
+func TestVerifyJWT_ValidSigBadClaims(t *testing.T) {
+	InitJWT()
+
+	// Create a token with valid signature but invalid JSON claims
+	// by directly signing a header + invalid-base64 claims
+	headerJSON, _ := json.Marshal(jwtHeader{Alg: "ES256", Typ: "JWT"})
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+
+	// Use a claims string that is valid base64 but invalid JSON
+	invalidJSON := base64.RawURLEncoding.EncodeToString([]byte("not valid json{{{"))
+	signingInput := headerB64 + "." + invalidJSON
+
+	hash := sha256.Sum256([]byte(signingInput))
+	r, s, err := ecdsa.Sign(rand.Reader, signingKey, hash[:])
+	if err != nil {
+		t.Fatalf("sign failed: %v", err)
+	}
+
+	sig := make([]byte, 64)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	copy(sig[32-len(rBytes):32], rBytes)
+	copy(sig[64-len(sBytes):64], sBytes)
+	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
+
+	token := signingInput + "." + sigB64
+
+	_, err = VerifyJWT(token)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON claims")
+	}
+}
+
+func TestVerifyJWT_ValidSigBadBase64Claims(t *testing.T) {
+	InitJWT()
+
+	// Create a token where claims part is not valid base64
+	// The signature is valid over the raw string including invalid base64
+	headerJSON, _ := json.Marshal(jwtHeader{Alg: "ES256", Typ: "JWT"})
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+
+	// "%%" is not valid base64url
+	badB64Claims := "%%not-valid-base64%%"
+	signingInput := headerB64 + "." + badB64Claims
+
+	hash := sha256.Sum256([]byte(signingInput))
+	r, s, err := ecdsa.Sign(rand.Reader, signingKey, hash[:])
+	if err != nil {
+		t.Fatalf("sign failed: %v", err)
+	}
+
+	sig := make([]byte, 64)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	copy(sig[32-len(rBytes):32], rBytes)
+	copy(sig[64-len(sBytes):64], sBytes)
+	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
+
+	token := signingInput + "." + sigB64
+
+	_, err = VerifyJWT(token)
+	if err == nil {
+		t.Fatal("expected error for bad base64 claims")
 	}
 }

@@ -15,19 +15,32 @@ const AgentNamespace = "convocate-agents"
 var Client kubernetes.Interface
 var DynClient dynamic.Interface
 
+// newClientset creates a typed K8s client from config. Tests replace this.
+var newClientset = func(config *rest.Config) (kubernetes.Interface, error) {
+	return kubernetes.NewForConfig(config)
+}
+
+// newDynClient creates a dynamic K8s client from config. Tests replace this.
+var newDynClient = func(config *rest.Config) (dynamic.Interface, error) {
+	return dynamic.NewForConfig(config)
+}
+
+// inClusterConfig attempts to load in-cluster K8s config. Tests replace this.
+var inClusterConfig = rest.InClusterConfig
+
 func Init() error {
 	config, err := getConfig()
 	if err != nil {
 		return fmt.Errorf("k8s config: %w", err)
 	}
 
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := newClientset(config)
 	if err != nil {
 		return fmt.Errorf("k8s client: %w", err)
 	}
 	Client = clientset
 
-	dynClient, err := dynamic.NewForConfig(config)
+	dynClient, err := newDynClient(config)
 	if err != nil {
 		return fmt.Errorf("k8s dynamic client: %w", err)
 	}
@@ -38,7 +51,7 @@ func Init() error {
 
 func getConfig() (*rest.Config, error) {
 	// In-cluster config (when running as a pod)
-	config, err := rest.InClusterConfig()
+	config, err := inClusterConfig()
 	if err == nil {
 		return config, nil
 	}

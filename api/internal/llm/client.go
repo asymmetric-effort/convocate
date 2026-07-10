@@ -48,6 +48,15 @@ type CompletionResponse struct {
 	Content []ContentBlock `json:"content"`
 }
 
+// Endpoint returns the current LLM endpoint.
+func Endpoint() string { return endpoint }
+
+// SetEndpoint overrides the LLM endpoint (for testing).
+func SetEndpoint(s string) { endpoint = s }
+
+// SetAPIKey overrides the LLM API key (for testing).
+func SetAPIKey(s string) { apiKey = s }
+
 func Complete(systemPrompt, userPrompt string) (string, error) {
 	if apiKey == "" {
 		return "", fmt.Errorf("LLM_API_KEY not configured")

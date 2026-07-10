@@ -14,12 +14,60 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// SSHExecutor abstracts SSH command execution for testability.
+type SSHExecutor interface {
+	Exec(host, user, password, script string) error
+	ExecWithOutput(host, user, password, cmd string) (string, error)
+}
+
+// defaultSSHExecutor uses sshpass + ssh for real SSH execution.
+type defaultSSHExecutor struct{}
+
+// sshExecutor is the active SSH implementation. Tests replace this.
+var sshExecutor SSHExecutor = &defaultSSHExecutor{}
+
 // corev1Secret is an alias to avoid import conflicts in provision.go.
 type corev1Secret = corev1.Secret
 
-// sshExec runs a script on the remote host via sshpass + ssh.
-// The API container must have openssh-client and sshpass installed.
+func (d *defaultSSHExecutor) Exec(host, user, password, script string) error {
+	return sshExecReal(host, user, password, script)
+}
+
+func (d *defaultSSHExecutor) ExecWithOutput(host, user, password, cmd string) (string, error) {
+	return sshExecWithOutputReal(host, user, password, cmd)
+}
+
+// SetSSHExecutor replaces the SSH executor (for testing from external packages).
+func SetSSHExecutor(e SSHExecutor) { sshExecutor = e }
+
+// GetSSHExecutor returns the current SSH executor.
+func GetSSHExecutor() SSHExecutor { return sshExecutor }
+
+// sshExec runs a script on the remote host via the active SSHExecutor.
 func sshExec(host, user, password, script string) error {
+	return sshExecutor.Exec(host, user, password, script)
+}
+
+// sshExecWithOutput runs a command and returns stdout via the active SSHExecutor.
+func sshExecWithOutput(host, user, password, cmd string) (string, error) {
+	return sshExecutor.ExecWithOutput(host, user, password, cmd)
+}
+
+// execCommandCombinedOutput runs exec.Command and returns CombinedOutput.
+// Tests replace this to avoid shelling out to real processes.
+var execCommandCombinedOutput = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+// execCommandOutput runs exec.Command and returns Output (stdout only).
+// Tests replace this to avoid shelling out to real processes.
+var execCommandOutput = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).Output()
+}
+
+// sshExecReal runs a script on the remote host via sshpass + ssh.
+// The API container must have openssh-client and sshpass installed.
+func sshExecReal(host, user, password, script string) error {
 	addr := host
 	if !strings.Contains(addr, ":") {
 		addr = addr + ":22"
@@ -40,8 +88,7 @@ func sshExec(host, user, password, script string) error {
 		script,
 	}
 
-	cmd := exec.Command("sshpass", args...)
-	output, err := cmd.CombinedOutput()
+	output, err := execCommandCombinedOutput("sshpass", args...)
 	if len(output) > 0 {
 		for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
 			if line != "" {
@@ -55,8 +102,8 @@ func sshExec(host, user, password, script string) error {
 	return nil
 }
 
-// sshExecWithOutput runs a command on the remote host and returns stdout.
-func sshExecWithOutput(host, user, password, cmd string) (string, error) {
+// sshExecWithOutputReal runs a command on the remote host and returns stdout.
+func sshExecWithOutputReal(host, user, password, cmd string) (string, error) {
 	addr := host
 	if !strings.Contains(addr, ":") {
 		addr = addr + ":22"
@@ -73,8 +120,7 @@ func sshExecWithOutput(host, user, password, cmd string) (string, error) {
 		cmd,
 	}
 
-	c := exec.Command("sshpass", args...)
-	out, err := c.Output()
+	out, err := execCommandOutput("sshpass", args...)
 	if err != nil {
 		return string(out), fmt.Errorf("ssh exec: %w", err)
 	}
@@ -104,6 +150,10 @@ func base64Decode(s string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(s)
 }
 
+// retrySleep is the function used by sshExecRetry to wait between attempts.
+// Tests replace this to avoid real delays.
+var retrySleep = time.Sleep
+
 // sshExecRetry retries sshExec up to maxAttempts times with a delay between
 // attempts. This handles the case where the target VM has just booted and SSH
 // isn't ready yet.
@@ -115,7 +165,7 @@ func sshExecRetry(host, user, password, script string, maxAttempts int, delay ti
 			return nil
 		}
 		log.Printf("[ssh:%s] attempt %d/%d failed: %v — retrying in %v", host, i+1, maxAttempts, lastErr, delay)
-		time.Sleep(delay)
+		retrySleep(delay)
 	}
 	return lastErr
 }

@@ -46,6 +46,36 @@ func TestInit_CustomValues(t *testing.T) {
 	}
 }
 
+func TestEndpoint(t *testing.T) {
+	orig := endpoint
+	defer func() { endpoint = orig }()
+
+	endpoint = "http://test:1234"
+	if Endpoint() != "http://test:1234" {
+		t.Fatalf("expected http://test:1234, got %s", Endpoint())
+	}
+}
+
+func TestSetEndpoint(t *testing.T) {
+	orig := endpoint
+	defer func() { endpoint = orig }()
+
+	SetEndpoint("http://new:5678")
+	if endpoint != "http://new:5678" {
+		t.Fatalf("expected http://new:5678, got %s", endpoint)
+	}
+}
+
+func TestSetAPIKey(t *testing.T) {
+	orig := apiKey
+	defer func() { apiKey = orig }()
+
+	SetAPIKey("new-key")
+	if apiKey != "new-key" {
+		t.Fatalf("expected new-key, got %s", apiKey)
+	}
+}
+
 func TestComplete_NoAPIKey(t *testing.T) {
 	apiKey = ""
 
@@ -160,5 +190,34 @@ func TestComplete_ConnectionError(t *testing.T) {
 	_, err := Complete("system", "user")
 	if err == nil {
 		t.Fatal("expected error for connection failure")
+	}
+}
+
+func TestComplete_InvalidEndpointURL(t *testing.T) {
+	endpoint = "://\x00bad" // invalid URL triggers http.NewRequest error
+	apiKey = "test-key"
+
+	_, err := Complete("system", "user")
+	if err == nil {
+		t.Fatal("expected error for invalid endpoint URL")
+	}
+}
+
+func TestComplete_ReadBodyError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100") // lie about content length
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("short")) // write less than declared
+	}))
+	defer server.Close()
+
+	endpoint = server.URL
+	apiKey = "test-key"
+
+	// The io.ReadAll may or may not error depending on the http transport,
+	// but the response will be incomplete JSON, triggering parse error at minimum
+	_, err := Complete("system", "user")
+	if err == nil {
+		t.Fatal("expected error for truncated response body")
 	}
 }

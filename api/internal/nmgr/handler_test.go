@@ -40,15 +40,15 @@ func (m *mockNoteDB) AddNote(ctx context.Context, nodeID, author, text string) (
 // ---------------------------------------------------------------------------
 
 type mockNodeManager struct {
-	listNodesFn          func(ctx context.Context) ([]types.Node, error)
-	getNodeFn            func(ctx context.Context, name string) (*types.Node, error)
-	getNodeDetailFn      func(ctx context.Context, name string) (*types.NodeDetail, error)
-	cordonNodeFn         func(ctx context.Context, name string) error
-	uncordonNodeFn       func(ctx context.Context, name string) error
+	listNodesFn            func(ctx context.Context) ([]types.Node, error)
+	getNodeFn              func(ctx context.Context, name string) (*types.Node, error)
+	getNodeDetailFn        func(ctx context.Context, name string) (*types.NodeDetail, error)
+	cordonNodeFn           func(ctx context.Context, name string) error
+	uncordonNodeFn         func(ctx context.Context, name string) error
 	countAgentPodsOnNodeFn func(ctx context.Context, nodeName string) (int, error)
 	listAgentPodsOnNodeFn  func(ctx context.Context, nodeName string) ([]types.Agent, error)
-	drainAndDeleteNodeFn func(ctx context.Context, nodeName string) error
-	provisionNodeFn      func(ctx context.Context, req k8s.ProvisionRequest) error
+	drainAndDeleteNodeFn   func(ctx context.Context, nodeName string) error
+	provisionNodeFn        func(ctx context.Context, req k8s.ProvisionRequest) error
 }
 
 func (m *mockNodeManager) ListNodes(ctx context.Context) ([]types.Node, error) {
@@ -676,9 +676,9 @@ func TestGetNotesFromDB_Empty(t *testing.T) {
 func TestJitterMetrics(t *testing.T) {
 	s := NewStore()
 	s.Create(Node{ID: "node-001", IP: "1.2.3.4", Status: "Ready",
-		LoadAvg:     LoadAvg{One: 1.0, Five: 1.0, Fifteen: 1.0},
-		MemUsedGB:   4.0, MemTotalGB: 16.0,
-		DiskUsedGB:  50.0, DiskTotalGB: 200.0})
+		LoadAvg:   LoadAvg{One: 1.0, Five: 1.0, Fifteen: 1.0},
+		MemUsedGB: 4.0, MemTotalGB: 16.0,
+		DiskUsedGB: 50.0, DiskTotalGB: 200.0})
 
 	s.JitterMetrics()
 	nodes := s.List()
@@ -1495,8 +1495,8 @@ func TestStopK8s_CountReadyNodesError(t *testing.T) {
 func TestCollectAndPublishMetrics_NonK8s(t *testing.T) {
 	h := newTestHandler()
 	h.store.Create(Node{ID: "node-001", IP: "1.2.3.4", Status: "Ready",
-		LoadAvg:    LoadAvg{One: 1.0, Five: 1.0, Fifteen: 1.0},
-		MemUsedGB:  4.0, MemTotalGB: 16.0,
+		LoadAvg:   LoadAvg{One: 1.0, Five: 1.0, Fifteen: 1.0},
+		MemUsedGB: 4.0, MemTotalGB: 16.0,
 		DiskUsedGB: 50.0, DiskTotalGB: 200.0})
 
 	// Should not panic

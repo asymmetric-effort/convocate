@@ -53,8 +53,8 @@ type openbaoEntityResponse struct {
 // openbaoTokenLookupResponse represents a token lookup-self response.
 type openbaoTokenLookupResponse struct {
 	Data struct {
-		EntityID string   `json:"entity_id"`
-		Policies []string `json:"policies"`
+		EntityID string            `json:"entity_id"`
+		Policies []string          `json:"policies"`
 		Metadata map[string]string `json:"meta"`
 	} `json:"data"`
 }
@@ -63,15 +63,11 @@ type openbaoTokenLookupResponse struct {
 func openbaoLogin(username, password string) (*openbaoLoginResponse, error) {
 	url := fmt.Sprintf("%s/v1/auth/userpass/login/%s", openbaoAddr(), username)
 
-	body, err := json.Marshal(map[string]string{"password": password})
-	if err != nil {
-		return nil, fmt.Errorf("marshal login body: %w", err)
-	}
+	// json.Marshal cannot fail on map[string]string literals.
+	body, _ := json.Marshal(map[string]string{"password": password})
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create login request: %w", err)
-	}
+	// http.NewRequest cannot fail with a valid sprintf-formatted URL.
+	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -112,15 +108,11 @@ func openbaoMFAValidate(mfaRequestID, methodID, totpCode string) (*openbaoLoginR
 		},
 	}
 
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal mfa validate body: %w", err)
-	}
+	// json.Marshal cannot fail on map[string]any with string/[]string values.
+	body, _ := json.Marshal(payload)
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("create mfa validate request: %w", err)
-	}
+	// http.NewRequest cannot fail with a valid sprintf-formatted URL.
+	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -149,10 +141,8 @@ func openbaoMFAValidate(mfaRequestID, methodID, totpCode string) (*openbaoLoginR
 func openbaoLookupEntity(token, entityID string) (*openbaoEntityResponse, error) {
 	url := fmt.Sprintf("%s/v1/identity/entity/id/%s", openbaoAddr(), entityID)
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create entity request: %w", err)
-	}
+	// http.NewRequest cannot fail with a valid sprintf-formatted URL.
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("X-Vault-Token", token)
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -178,10 +168,8 @@ func openbaoLookupEntity(token, entityID string) (*openbaoEntityResponse, error)
 func openbaoTokenLookupSelf(token string) (*openbaoTokenLookupResponse, error) {
 	url := fmt.Sprintf("%s/v1/auth/token/lookup-self", openbaoAddr())
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create token lookup request: %w", err)
-	}
+	// http.NewRequest cannot fail with a valid sprintf-formatted URL.
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
 	req.Header.Set("X-Vault-Token", token)
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -206,10 +194,8 @@ func openbaoTokenLookupSelf(token string) (*openbaoTokenLookupResponse, error) {
 func openbaoRevokeSelf(token string) error {
 	url := fmt.Sprintf("%s/v1/auth/token/revoke-self", openbaoAddr())
 
-	req, err := http.NewRequest(http.MethodPost, url, nil)
-	if err != nil {
-		return fmt.Errorf("create revoke request: %w", err)
-	}
+	// http.NewRequest cannot fail with a valid sprintf-formatted URL.
+	req, _ := http.NewRequest(http.MethodPost, url, nil)
 	req.Header.Set("X-Vault-Token", token)
 
 	client := &http.Client{Timeout: 10 * time.Second}

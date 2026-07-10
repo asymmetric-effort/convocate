@@ -2,12 +2,15 @@ package k8s
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/asymmetric-effort/convocate/internal/types"
 )
@@ -478,12 +481,264 @@ func TestParseQuantityBytes(t *testing.T) {
 }
 
 func TestFetchNodeMetrics_FakeClient(t *testing.T) {
-	// Fake client doesn't implement RESTClient(), so fetchNodeMetrics
-	// should gracefully return nil
 	setupFakeClient()
 	ctx := context.Background()
 	result := fetchNodeMetrics(ctx)
 	if result != nil {
 		t.Fatal("expected nil from fetchNodeMetrics with fake client")
+	}
+}
+
+func TestCordonNode_NotFound(t *testing.T) {
+	setupFakeClient()
+	ctx := context.Background()
+	err := CordonNode(ctx, "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent node")
+	}
+}
+
+func TestUncordonNode_NotFound(t *testing.T) {
+	setupFakeClient()
+	ctx := context.Background()
+	err := UncordonNode(ctx, "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent node")
+	}
+}
+
+func TestUpdateNodeLabels_NotFound(t *testing.T) {
+	setupFakeClient()
+	ctx := context.Background()
+	err := UpdateNodeLabels(ctx, "nonexistent", map[string]string{"k": "v"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent node")
+	}
+}
+
+func TestCountAgentPodsOnNode_Empty(t *testing.T) {
+	setupFakeClient()
+	ctx := context.Background()
+	count, err := CountAgentPodsOnNode(ctx, "no-such-node")
+	if err != nil {
+		t.Fatalf("CountAgentPodsOnNode: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0, got %d", count)
+	}
+}
+
+func TestListAgentPodsOnNode_Empty(t *testing.T) {
+	setupFakeClient()
+	ctx := context.Background()
+	agents, err := ListAgentPodsOnNode(ctx, "no-such-node")
+	if err != nil {
+		t.Fatalf("ListAgentPodsOnNode: %v", err)
+	}
+	if len(agents) != 0 {
+		t.Fatalf("expected 0 agents, got %d", len(agents))
+	}
+}
+
+func TestK8sNodeToNode_ZeroDiskCapacity(t *testing.T) {
+	// Node with zero capacity
+	n := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "zero-node"},
+		Status: corev1.NodeStatus{
+			Capacity:    corev1.ResourceList{},
+			Allocatable: corev1.ResourceList{},
+		},
+	}
+	result := k8sNodeToNode(n, nil)
+	if result.DiskUsedGB != -1 {
+		t.Fatalf("expected diskUsedGB -1 for zero capacity, got %f", result.DiskUsedGB)
+	}
+}
+
+func TestK8sNodeToNode_MetricsZeroMem(t *testing.T) {
+	n := makeNode("node-zeromem", true, false, nil)
+	metrics := map[string]metricsUsage{
+		"node-zeromem": {CPUCores: 1.0, MemBytes: 0},
+	}
+	result := k8sNodeToNode(n, metrics)
+	if result.MemUsedGB != -1 {
+		t.Fatalf("expected memUsedGB -1 for zero mem bytes, got %f", result.MemUsedGB)
+	}
+}
+
+func TestPodToAgent_NilLabels(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod-no-labels"},
+		Spec:       corev1.PodSpec{NodeName: "node1"},
+		Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	agent := podToAgent(pod)
+	if agent.ID != "pod-no-labels" {
+		t.Fatalf("expected ID pod-no-labels, got %s", agent.ID)
+	}
+	if agent.Project != "" {
+		t.Fatalf("expected empty project, got %s", agent.Project)
+	}
+}
+
+func TestListNodes_Error(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	cs.PrependReactor("list", "nodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("api server unavailable")
+	})
+
+	_, err := ListNodes(ctx)
+	if err == nil {
+		t.Fatal("expected error from ListNodes")
+	}
+}
+
+func TestCountAgentPodsOnNode_Error(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	cs.PrependReactor("list", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("api error")
+	})
+
+	_, err := CountAgentPodsOnNode(ctx, "test-node")
+	if err == nil {
+		t.Fatal("expected error from CountAgentPodsOnNode")
+	}
+}
+
+func TestListAgentPodsOnNode_Error(t *testing.T) {
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	cs.PrependReactor("list", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("api error")
+	})
+
+	_, err := ListAgentPodsOnNode(ctx, "test-node")
+	if err == nil {
+		t.Fatal("expected error from ListAgentPodsOnNode")
+	}
+}
+
+func TestUncordonNode_UpdateError(t *testing.T) {
+	cs := setupFakeClient()
+	ctx := context.Background()
+
+	n := makeNode("uncordon-err", true, true, nil)
+	cs.CoreV1().Nodes().Create(ctx, n, metav1.CreateOptions{})
+
+	cs.PrependReactor("update", "nodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("update failed")
+	})
+
+	err := UncordonNode(ctx, "uncordon-err")
+	if err == nil {
+		t.Fatal("expected error from UncordonNode update")
+	}
+}
+
+func TestUpdateNodeLabels_UpdateError(t *testing.T) {
+	cs := setupFakeClient()
+	ctx := context.Background()
+
+	n := makeNode("label-err", true, false, nil)
+	cs.CoreV1().Nodes().Create(ctx, n, metav1.CreateOptions{})
+
+	cs.PrependReactor("update", "nodes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("update failed")
+	})
+
+	err := UpdateNodeLabels(ctx, "label-err", map[string]string{"k": "v"})
+	if err == nil {
+		t.Fatal("expected error from UpdateNodeLabels update")
+	}
+}
+
+func TestFetchNodeMetrics_Success(t *testing.T) {
+	origFetcher := metricsRawFetcher
+	defer func() { metricsRawFetcher = origFetcher }()
+
+	metricsJSON := `{
+		"items": [
+			{
+				"metadata": {"name": "node-1"},
+				"usage": {"cpu": "500m", "memory": "2Gi"}
+			},
+			{
+				"metadata": {"name": "node-2"},
+				"usage": {"cpu": "2", "memory": "4096Mi"}
+			}
+		]
+	}`
+
+	metricsRawFetcher = func(ctx context.Context) ([]byte, error) {
+		return []byte(metricsJSON), nil
+	}
+
+	result := fetchNodeMetrics(context.Background())
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 nodes in metrics, got %d", len(result))
+	}
+	m1 := result["node-1"]
+	if m1.CPUCores < 0.49 || m1.CPUCores > 0.51 {
+		t.Fatalf("expected node-1 CPU ~0.5, got %f", m1.CPUCores)
+	}
+	m2 := result["node-2"]
+	if m2.CPUCores < 1.99 || m2.CPUCores > 2.01 {
+		t.Fatalf("expected node-2 CPU ~2.0, got %f", m2.CPUCores)
+	}
+}
+
+func TestFetchNodeMetrics_FetchError(t *testing.T) {
+	origFetcher := metricsRawFetcher
+	defer func() { metricsRawFetcher = origFetcher }()
+
+	metricsRawFetcher = func(ctx context.Context) ([]byte, error) {
+		return nil, fmt.Errorf("metrics API unavailable")
+	}
+
+	result := fetchNodeMetrics(context.Background())
+	if result != nil {
+		t.Fatal("expected nil result on error")
+	}
+}
+
+func TestFetchNodeMetrics_EmptyItems(t *testing.T) {
+	origFetcher := metricsRawFetcher
+	defer func() { metricsRawFetcher = origFetcher }()
+
+	metricsRawFetcher = func(ctx context.Context) ([]byte, error) {
+		return []byte(`{"items":[]}`), nil
+	}
+
+	result := fetchNodeMetrics(context.Background())
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(result) != 0 {
+		t.Fatalf("expected 0 entries, got %d", len(result))
+	}
+}
+
+func TestFetchNodeMetrics_InvalidJSON(t *testing.T) {
+	origFetcher := metricsRawFetcher
+	defer func() { metricsRawFetcher = origFetcher }()
+
+	metricsRawFetcher = func(ctx context.Context) ([]byte, error) {
+		return []byte("not valid json{{{"), nil
+	}
+
+	result := fetchNodeMetrics(context.Background())
+	if result != nil {
+		t.Fatal("expected nil result for invalid JSON")
 	}
 }

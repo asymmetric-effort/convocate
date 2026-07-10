@@ -20,13 +20,13 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockAgentManager struct {
-	listFn           func(ctx context.Context) ([]types.Agent, error)
-	getFn            func(ctx context.Context, name string) (*types.Agent, error)
-	createFn         func(ctx context.Context, req types.CreateAgentRequest, owner string) (*types.Agent, error)
-	deleteFn         func(ctx context.Context, name string) error
-	stopFn           func(ctx context.Context, name string) error
+	listFn            func(ctx context.Context) ([]types.Agent, error)
+	getFn             func(ctx context.Context, name string) (*types.Agent, error)
+	createFn          func(ctx context.Context, req types.CreateAgentRequest, owner string) (*types.Agent, error)
+	deleteFn          func(ctx context.Context, name string) error
+	stopFn            func(ctx context.Context, name string) error
 	updateConfigMapFn func(ctx context.Context, podName, claudeMd string) error
-	getIPFn          func(ctx context.Context, name string) (string, error)
+	getIPFn           func(ctx context.Context, name string) (string, error)
 }
 
 func (m *mockAgentManager) ListAgentPods(ctx context.Context) ([]types.Agent, error) {
