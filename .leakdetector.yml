@@ -2,7 +2,7 @@
 # See: https://leakdetector.asymmetric-effort.com
 
 # Allowlist patterns for test fixtures (not real secrets)
-allowlist:
+allowlists:
   # Test fixture tokens used in unit/integration tests
   - description: "Test fixture mock tokens in Go test files"
     paths:
