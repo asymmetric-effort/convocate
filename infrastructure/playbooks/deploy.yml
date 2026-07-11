@@ -59,3 +59,308 @@
     - name: Print deployment status
       ansible.builtin.debug:
         msg: "{{ app_pods.stdout_lines }}"
+
+    # --- OpenBao post-deploy initialization ---
+
+    - name: Wait for OpenBao pod to be running
+      ansible.builtin.command:
+        cmd: >-
+          kubectl wait --for=condition=Ready pod
+          -l app=openbao -n security --timeout=120s
+      changed_when: false
+      retries: 3
+      delay: 10
+      register: bao_ready
+      until: bao_ready.rc == 0
+
+    - name: Check OpenBao initialization status
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl exec deploy/openbao -n security -c openbao --
+          wget -qO- http://localhost:8200/v1/sys/health 2>/dev/null || true
+      register: bao_health_raw
+      changed_when: false
+
+    - name: Parse OpenBao health
+      ansible.builtin.set_fact:
+        bao_initialized: "{{ (bao_health_raw.stdout | from_json).initialized | default(false) }}"
+        bao_sealed: "{{ (bao_health_raw.stdout | from_json).sealed | default(true) }}"
+      when: bao_health_raw.stdout | length > 0
+
+    - name: Initialize OpenBao (first deploy only)
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl exec deploy/openbao -n security -c openbao --
+          wget -qO- --post-data='{"secret_shares":1,"secret_threshold":1}'
+          http://localhost:8200/v1/sys/init
+      register: bao_init_result
+      when: not (bao_initialized | default(false))
+
+    - name: Save init credentials
+      ansible.builtin.set_fact:
+        bao_unseal_key: "{{ (bao_init_result.stdout | from_json).keys[0] }}"
+        bao_root_token: "{{ (bao_init_result.stdout | from_json).root_token }}"
+      when: bao_init_result is changed
+      no_log: true
+
+    - name: Unseal OpenBao
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl exec deploy/openbao -n security -c openbao --
+          wget -qO- --post-data='{"key":"{{ bao_unseal_key }}"}'
+          http://localhost:8200/v1/sys/unseal
+      when: bao_init_result is changed
+      no_log: true
+
+    - name: Store unseal key as K8s secret
+      ansible.builtin.command:
+        cmd: >-
+          kubectl create secret generic openbao-unseal-key
+          -n security --from-literal=unseal-key={{ bao_unseal_key }}
+          --dry-run=client -o yaml
+      register: unseal_secret_yaml
+      when: bao_init_result is changed
+      no_log: true
+
+    - name: Apply unseal key secret
+      ansible.builtin.shell:
+        cmd: "echo '{{ unseal_secret_yaml.stdout }}' | kubectl apply -f -"
+      when: bao_init_result is changed
+      no_log: true
+
+    - name: Store root token in all namespaces
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl create secret generic openbao-root-token
+          -n {{ item }} --from-literal=token={{ bao_root_token }}
+          --dry-run=client -o yaml | kubectl apply -f -
+      loop:
+        - security
+        - "{{ convocate_namespace }}"
+        - data-layer
+        - o11y
+      when: bao_init_result is changed
+      no_log: true
+
+    - name: Enable userpass auth method
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl exec deploy/openbao -n security -c openbao --
+          wget -qO- --post-data='{"type":"userpass"}'
+          --header='X-Vault-Token:{{ bao_root_token }}'
+          http://localhost:8200/v1/sys/auth/userpass
+      when: bao_init_result is changed
+      failed_when: false
+      no_log: true
+
+    - name: Create admin policy
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl exec deploy/openbao -n security -c openbao --
+          wget -qO- --method=PUT
+          --body-data='{"policy":"path \"*\" { capabilities = [\"create\",\"read\",\"update\",\"delete\",\"list\",\"sudo\"] }"}'
+          --header='X-Vault-Token:{{ bao_root_token }}'
+          http://localhost:8200/v1/sys/policies/acl/admin-policy
+      when: bao_init_result is changed
+      no_log: true
+
+    - name: Create admin user
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl exec deploy/openbao -n security -c openbao --
+          wget -qO-
+          --post-data='{"password":"{{ openbao_admin_password }}","policies":"admin-policy"}'
+          --header='X-Vault-Token:{{ bao_root_token }}'
+          http://localhost:8200/v1/auth/userpass/users/admin
+      when: bao_init_result is changed
+      no_log: true
+
+    - name: Create admin identity entity
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl exec deploy/openbao -n security -c openbao --
+          wget -qO-
+          --post-data='{"name":"admin","metadata":{"name":"Administrator","email":"admin@asymmetric-effort.com"},"policies":["admin-policy"]}'
+          --header='X-Vault-Token:{{ bao_root_token }}'
+          http://localhost:8200/v1/identity/entity
+      when: bao_init_result is changed
+      no_log: true
+
+    - name: Restart API to pick up new token
+      ansible.builtin.command:
+        cmd: >-
+          kubectl rollout restart deployment/convocate-api
+          -n {{ convocate_namespace }}
+      when: bao_init_result is changed
+
+    - name: Wait for API rollout
+      ansible.builtin.command:
+        cmd: >-
+          kubectl rollout status deployment/convocate-api
+          -n {{ convocate_namespace }} --timeout=120s
+      changed_when: false
+
+    # --- Nginx reverse proxy + TLS (on hypervisor) ---
+
+- name: Configure nginx reverse proxy on hypervisor
+  hosts: hypervisor
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Install nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Create SSL directory
+      ansible.builtin.file:
+        path: /etc/nginx/ssl
+        state: directory
+        mode: "0700"
+
+    - name: Generate self-signed TLS certificate
+      ansible.builtin.command:
+        cmd: >-
+          openssl req -x509 -newkey rsa:2048
+          -keyout /etc/nginx/ssl/convocate.key
+          -out /etc/nginx/ssl/convocate.crt
+          -days 365 -nodes
+          -subj "/CN=app.convocate.asymmetric-effort.com/O=Convocate"
+          -addext "subjectAltName=DNS:app.convocate.asymmetric-effort.com,DNS:grafana.asymmetric-effort.com,DNS:auth.asymmetric-effort.com"
+        creates: /etc/nginx/ssl/convocate.crt
+
+    - name: Deploy nginx site configs
+      ansible.builtin.copy:
+        content: |
+          # Convocate app
+          server {
+              listen 80;
+              server_name app.convocate.asymmetric-effort.com;
+              return 301 https://$host$request_uri;
+          }
+          server {
+              listen 443 ssl;
+              server_name app.convocate.asymmetric-effort.com;
+              ssl_certificate /etc/nginx/ssl/convocate.crt;
+              ssl_certificate_key /etc/nginx/ssl/convocate.key;
+              location /api/ {
+                  proxy_pass http://localhost:38443;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+              }
+              location / {
+                  proxy_pass http://localhost:38080;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+          # Grafana
+          server {
+              listen 80;
+              server_name grafana.asymmetric-effort.com;
+              return 301 https://$host$request_uri;
+          }
+          server {
+              listen 443 ssl;
+              server_name grafana.asymmetric-effort.com;
+              ssl_certificate /etc/nginx/ssl/convocate.crt;
+              ssl_certificate_key /etc/nginx/ssl/convocate.key;
+              location / {
+                  proxy_pass http://localhost:38300;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+              }
+          }
+          # OpenBao (auth)
+          server {
+              listen 80;
+              server_name auth.asymmetric-effort.com;
+              return 301 https://$host$request_uri;
+          }
+          server {
+              listen 443 ssl;
+              server_name auth.asymmetric-effort.com;
+              ssl_certificate /etc/nginx/ssl/convocate.crt;
+              ssl_certificate_key /etc/nginx/ssl/convocate.key;
+              location / {
+                  proxy_pass http://localhost:38200;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+        dest: /etc/nginx/sites-available/convocate
+        mode: "0644"
+      notify: reload nginx
+
+    - name: Enable convocate site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/convocate
+        dest: /etc/nginx/sites-enabled/convocate
+        state: link
+      notify: reload nginx
+
+    - name: Remove default site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: reload nginx
+
+    - name: Deploy port-forward service script
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          while true; do
+            kubectl port-forward --address 0.0.0.0 -n convocate svc/convocate-ui 38080:8080 2>/dev/null &
+            kubectl port-forward --address 0.0.0.0 -n convocate svc/convocate-api 38443:8443 2>/dev/null &
+            kubectl port-forward --address 0.0.0.0 -n o11y svc/grafana 38300:3000 2>/dev/null &
+            kubectl port-forward --address 0.0.0.0 -n security svc/openbao 38200:8200 2>/dev/null &
+            wait
+            sleep 2
+          done
+        dest: /usr/local/bin/convocate-port-forwards.sh
+        mode: "0755"
+
+    - name: Deploy port-forward systemd service
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+          Description=Convocate kubectl port-forwards
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ ansible_user }}
+          Environment=KUBECONFIG=/home/{{ ansible_user }}/.kube/config
+          ExecStart=/usr/local/bin/convocate-port-forwards.sh
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/convocate-port-forwards.service
+        mode: "0644"
+      notify: restart port-forwards
+
+  handlers:
+    - name: reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+
+    - name: restart port-forwards
+      ansible.builtin.systemd:
+        name: convocate-port-forwards
+        state: restarted
+        daemon_reload: true
+        enabled: true
