@@ -28,7 +28,7 @@ data:
     auto_login = false
     client_id = $__env{OPENBAO_OIDC_CLIENT_ID}
     client_secret = $__env{OPENBAO_OIDC_CLIENT_SECRET}
-    scopes = openid
+    scopes = openid profile groups
     auth_url = https://auth.{{ .Values.global.domain | default "asymmetric-effort.com" }}/ui/vault/identity/oidc/provider/default/authorize
     token_url = https://auth.{{ .Values.global.domain | default "asymmetric-effort.com" }}/v1/identity/oidc/provider/default/token
     api_url = https://auth.{{ .Values.global.domain | default "asymmetric-effort.com" }}/v1/identity/oidc/provider/default/userinfo
