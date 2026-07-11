@@ -6,8 +6,8 @@ allowlists:
   # Test fixture tokens used in unit/integration tests
   - description: "Test fixture mock tokens in Go test files"
     paths:
-      - "**/*_test.go"
-    patterns:
+      - ".*_test\\.go$"
+    regexes:
       - "mock-token"
       - "Bearer mock-token"
       - "tok-.*"
@@ -15,27 +15,24 @@ allowlists:
   # Test fixture tokens in PDV test files
   - description: "PDV test helper auth headers"
     paths:
-      - "test/pdv/**/*.ts"
-    patterns:
+      - "test/pdv/.*\\.ts$"
+    regexes:
       - "mock-token"
       - "Bearer mock-token"
 
   # Helm template Go syntax (looks like secrets but isn't)
   - description: "Helm template syntax"
     paths:
-      - "infrastructure/charts/**/*.yaml"
-      - "infrastructure/charts/**/*.tpl"
+      - "infrastructure/charts/.*\\.(yaml|tpl)$"
 
   # Ansible vault references
   - description: "Ansible variable references"
     paths:
-      - "infrastructure/**/*.yml"
-      - "infrastructure/**/*.yaml"
-      - "infrastructure/**/*.j2"
+      - "infrastructure/.*\\.(yml|yaml|j2)$"
 
   # OpenBao configuration paths (not secrets, just path references)
   - description: "OpenBao API path references"
-    patterns:
+    regexes:
       - "/v1/auth/userpass/"
       - "/v1/identity/"
       - "/v1/sys/"
