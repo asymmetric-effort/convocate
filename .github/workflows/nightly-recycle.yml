@@ -51,7 +51,9 @@ jobs:
           export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
 
           ansible-playbook playbooks/recycle.yml \
-            -i inventory/cluster-a.yml
+            -i inventory/cluster-a.yml \
+            -e "ssh_public_key='$SSH_PUBLIC_KEY'" \
+            -e "vm_password_hash='$VM_PASSWORD_HASH'"
       - name: Cleanup SSH key
         if: always()
         run: rm -f ~/.ssh/ansible_key
