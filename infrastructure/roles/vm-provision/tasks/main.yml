@@ -137,7 +137,6 @@
       {{ vm_pool_path }}/{{ item }}-user-data
       {{ vm_pool_path }}/{{ item }}-meta-data
       {{ vm_pool_path }}/{{ item }}-network-config
-    creates: "{{ vm_pool_path }}/{{ item }}-cidata.iso"
   loop: "{{ vm_nodes }}"
 
 - name: Check if VM already exists

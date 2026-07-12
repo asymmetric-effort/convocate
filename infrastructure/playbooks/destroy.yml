@@ -28,12 +28,12 @@
       failed_when: false
       changed_when: "'undefined' in undefine_result.stdout | default('')"
 
-    - name: Remove cloud-init ISOs
-      ansible.builtin.file:
-        path: "{{ vm_pool_path }}/{{ item }}-cidata.iso"
-        state: absent
+    - name: Remove cloud-init files
+      ansible.builtin.shell:
+        cmd: "rm -f {{ vm_pool_path }}/{{ item }}-cidata.iso {{ vm_pool_path }}/{{ item }}-meta-data {{ vm_pool_path }}/{{ item }}-user-data {{ vm_pool_path }}/{{ item }}-network-config {{ vm_pool_path }}/{{ item }}.qcow2"
       loop: "{{ vm_list.stdout_lines }}"
       when: vm_list.stdout_lines | length > 0
+      changed_when: true
 
     - name: Print destroyed VMs
       ansible.builtin.debug:
