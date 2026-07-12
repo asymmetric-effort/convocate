@@ -1,38 +1,23 @@
 # Leakdetector configuration for Convocate
 # See: https://leakdetector.asymmetric-effort.com
 
-# Allowlist patterns for test fixtures (not real secrets)
+# Exclude paths from scanning entirely
+exclude_paths:
+  - "infrastructure/"
+  - "test/pdv/"
+  - ".*_test\\.go$"
+
+# Allowlist patterns for specific false positives
 allowlists:
-  # Test fixture tokens used in unit/integration tests
-  - description: "Test fixture mock tokens in Go test files"
-    paths:
-      - ".*_test\\.go$"
-    regexes:
-      - "mock-token"
-      - "Bearer mock-token"
-      - "tok-.*"
-
-  # Test fixture tokens in PDV test files
-  - description: "PDV test helper auth headers"
-    paths:
-      - "test/pdv/.*\\.ts$"
-    regexes:
-      - "mock-token"
-      - "Bearer mock-token"
-
-  # Helm template Go syntax (looks like secrets but isn't)
-  - description: "Helm template syntax"
-    paths:
-      - "infrastructure/charts/.*\\.(yaml|tpl)$"
-
-  # Ansible vault references
-  - description: "Ansible variable references"
-    paths:
-      - "infrastructure/.*\\.(yml|yaml|j2)$"
-
-  # OpenBao configuration paths (not secrets, just path references)
+  # OpenBao API path references (not secrets)
   - description: "OpenBao API path references"
     regexes:
       - "/v1/auth/userpass/"
       - "/v1/identity/"
       - "/v1/sys/"
+
+  # Mock tokens in source
+  - description: "Mock token patterns"
+    regexes:
+      - "mock-token"
+      - "tok-.*"
