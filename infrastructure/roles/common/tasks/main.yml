@@ -45,6 +45,15 @@
       - conntrack
       - ipset
       - python3-kubernetes
+
+- name: Install Helm
+  ansible.builtin.shell:
+    cmd: |
+      if ! command -v helm &>/dev/null; then
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      fi
+  args:
+    creates: /usr/local/bin/helm
     state: present
     update_cache: true
 

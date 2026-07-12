@@ -13,7 +13,7 @@ concurrency:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
@@ -24,7 +24,7 @@ jobs:
 
   test-api:
     name: Test API
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
@@ -60,7 +60,7 @@ jobs:
 
   test-metrics:
     name: Test Metrics
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
@@ -83,7 +83,7 @@ jobs:
 
   test-agent:
     name: Test Agent
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
@@ -106,7 +106,7 @@ jobs:
 
   test-ui:
     name: Test UI
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
