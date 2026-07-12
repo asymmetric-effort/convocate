@@ -37,6 +37,7 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
           DNS_DOMAIN: ${{ secrets.DNS_DOMAIN }}
+        working-directory: infrastructure
         run: |
           # Write SSH key
           mkdir -p ~/.ssh
@@ -44,8 +45,8 @@ jobs:
           chmod 600 ~/.ssh/ansible_key
           export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
 
-          ansible-playbook infrastructure/playbooks/recycle.yml \
-            -i infrastructure/inventory/cluster-a.yml
+          ansible-playbook playbooks/recycle.yml \
+            -i inventory/cluster-a.yml
       - name: Cleanup SSH key
         if: always()
         run: rm -f ~/.ssh/ansible_key
