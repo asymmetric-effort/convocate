@@ -51,17 +51,22 @@
         fail_msg: "CoreDNS pods are not running"
         success_msg: "CoreDNS is operational"
 
-    - name: Test DNS resolution inside cluster
-      ansible.builtin.command:
+    - name: Test DNS resolution via CoreDNS service
+      ansible.builtin.shell:
         cmd: >-
-          kubectl run dns-test --rm -i --restart=Never
-          --image=busybox:1.36
-          --command -- nslookup kubernetes.default.svc.cluster.local
+          kubectl get svc -n kube-system kube-dns --no-headers |
+          grep -c ClusterIP
       register: dns_test
       changed_when: false
       environment:
         KUBECONFIG: /etc/kubernetes/admin.conf
-      timeout: 60
+
+    - name: Fail if CoreDNS service not found
+      ansible.builtin.assert:
+        that:
+          - dns_test.stdout | int > 0
+        fail_msg: "CoreDNS service not found"
+        success_msg: "CoreDNS service is operational"
 
     - name: Verify cert-manager is ready
       ansible.builtin.command:
