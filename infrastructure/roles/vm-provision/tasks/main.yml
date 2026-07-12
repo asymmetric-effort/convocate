@@ -5,6 +5,17 @@
     state: started
     enabled: true
 
+- name: Ensure libvirt network has DHCP for initial boot
+  ansible.builtin.shell:
+    cmd: >-
+      virsh net-dumpxml {{ vm_network }} | grep -q '<dhcp>' ||
+      virsh net-update {{ vm_network }} add ip-dhcp-range
+      '<range start="{{ cluster_cidr | ansible.utils.ipaddr("100") | ansible.utils.ipaddr("address") }}"
+      end="{{ cluster_cidr | ansible.utils.ipaddr("199") | ansible.utils.ipaddr("address") }}"/>'
+      --live --config
+  changed_when: false
+  failed_when: false
+
 - name: Check cloud image exists
   ansible.builtin.stat:
     path: "{{ cloud_image_path }}"
@@ -50,6 +61,7 @@
       #cloud-config
       hostname: {{ item }}
       manage_etc_hosts: true
+      ssh_pwauth: true
       users:
         - name: {{ vm_user }}
           sudo: ALL=(ALL) NOPASSWD:ALL
@@ -58,16 +70,15 @@
           {% if vm_password_hash %}
           passwd: {{ vm_password_hash }}
           {% endif %}
+          {% if ssh_public_key %}
           ssh_authorized_keys:
             - {{ ssh_public_key }}
+          {% endif %}
       package_update: true
       packages:
         - qemu-guest-agent
       runcmd:
         - systemctl enable --now qemu-guest-agent
-      power_state:
-        mode: reboot
-        condition: true
     dest: "{{ vm_pool_path }}/{{ item }}-user-data"
     mode: "0644"
   loop: "{{ vm_nodes }}"
@@ -77,7 +88,9 @@
     content: |
       version: 2
       ethernets:
-        enp1s0:
+        id0:
+          match:
+            name: en*
           dhcp4: false
           addresses:
             - {{ vm_ips[item] }}/{{ cluster_cidr | ansible.utils.ipaddr('prefix') }}
