@@ -20,11 +20,17 @@
         success_msg: "All nodes are Ready"
 
     - name: Verify Cilium CNI is operational
-      ansible.builtin.command:
-        cmd: cilium status --wait
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl exec -n kube-system ds/cilium -- cilium-dbg status --brief
       register: cilium_check
       changed_when: false
       timeout: 120
+      retries: 3
+      delay: 10
+      until: cilium_check.rc == 0
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
 
     - name: Check CoreDNS pods are running
       ansible.builtin.command:
