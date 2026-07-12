@@ -167,11 +167,29 @@
   when: item not in existing_vms.list_vms
   loop: "{{ vm_nodes }}"
 
+- name: Wait for VMs to get DHCP leases
+  ansible.builtin.shell:
+    cmd: >-
+      virsh domifaddr {{ item }} 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1
+  register: vm_ip_check
+  until: vm_ip_check.stdout | length > 0
+  retries: 30
+  delay: 10
+  loop: "{{ vm_nodes }}"
+
+- name: Build VM IP map from DHCP
+  ansible.builtin.set_fact:
+    vm_ips: >-
+      {{ vm_ips | default({}) | combine({
+        item.item: item.stdout | trim
+      }) }}
+  loop: "{{ vm_ip_check.results }}"
+
 - name: Wait for VMs to be reachable via SSH
   ansible.builtin.wait_for:
     host: "{{ vm_ips[item] }}"
     port: 22
-    delay: 10
+    delay: 5
     timeout: 300
     state: started
   loop: "{{ vm_nodes }}"
@@ -179,4 +197,11 @@
 - name: Print VM IP assignments
   ansible.builtin.debug:
     msg: "{{ item }}: {{ vm_ips[item] }}"
+  loop: "{{ vm_nodes }}"
+
+- name: Update inventory host_vars with discovered IPs
+  ansible.builtin.add_host:
+    name: "{{ item }}"
+    ansible_host: "{{ vm_ips[item] }}"
+    ansible_user: "{{ vm_user }}"
   loop: "{{ vm_nodes }}"
