@@ -44,6 +44,7 @@
       - socat
       - conntrack
       - ipset
+      - python3-kubernetes
     state: present
     update_cache: true
 
