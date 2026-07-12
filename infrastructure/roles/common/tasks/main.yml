@@ -54,7 +54,7 @@
 
 - name: Install Python kubernetes library for Ansible modules
   ansible.builtin.shell:
-    cmd: pip3 install --break-system-packages kubernetes 2>/dev/null || pip3 install kubernetes 2>/dev/null || true
+    cmd: pip3 install --break-system-packages --ignore-installed PyYAML kubernetes
   changed_when: false
 
 - name: Install Helm
