@@ -43,7 +43,7 @@ cloudflared_tunnel_name: "{{ lookup('env', 'CLOUDFLARED_TUNNEL_NAME') | default(
 
 # OpenBao
 openbao_namespace: openbao
-openbao_chart_version: "2.1.0"
+openbao_chart_version: "0.28.4"
 
 # OpenBao passwords (override with env or extra-vars in production)
 openbao_admin_password: "{{ lookup('env', 'OPENBAO_ADMIN_PASSWORD') | default('Convocate-Admin-2026', true) }}"
