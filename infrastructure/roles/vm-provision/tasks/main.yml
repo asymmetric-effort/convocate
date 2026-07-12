@@ -98,11 +98,10 @@
           passwd: {{ vm_password_hash | default('!') }}
           ssh_authorized_keys:
             - {{ ssh_public_key | default('ssh-ed25519 PLACEHOLDER') }}
-      package_update: true
-      packages:
-        - qemu-guest-agent
+      package_update: false
+      package_upgrade: false
       runcmd:
-        - systemctl enable --now qemu-guest-agent
+        - apt-get update -qq && apt-get install -y -qq qemu-guest-agent && systemctl enable --now qemu-guest-agent || true
     dest: "{{ vm_pool_path }}/{{ item }}-user-data"
     mode: "0644"
   loop: "{{ vm_nodes }}"
