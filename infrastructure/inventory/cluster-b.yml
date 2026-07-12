@@ -7,6 +7,7 @@ all:
     vm_cpus: 8
     vm_memory_mb: 16384
     vm_disk_gb: 17
+    vm_network: convocate-net
     registry_host: "{{ lookup('env', 'REGISTRY_HOST') }}"
     dns_domain: "{{ lookup('env', 'DNS_DOMAIN') }}"
   children:

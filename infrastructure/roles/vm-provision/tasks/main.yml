@@ -5,6 +5,34 @@
     state: started
     enabled: true
 
+- name: Check if libvirt network exists
+  ansible.builtin.shell:
+    cmd: virsh net-info {{ vm_network }} 2>/dev/null
+  register: net_check
+  changed_when: false
+  failed_when: false
+
+- name: Create libvirt network if missing
+  ansible.builtin.shell:
+    cmd: |
+      cat > /tmp/{{ vm_network }}.xml <<XML
+      <network>
+        <name>{{ vm_network }}</name>
+        <forward mode="nat"><nat><port start="1024" end="65535"/></nat></forward>
+        <bridge name="virbr-{{ cluster_name }}" stp="on" delay="0"/>
+        <ip address="{{ cluster_cidr | ansible.utils.ipaddr('1') | ansible.utils.ipaddr('address') }}" netmask="{{ cluster_cidr | ansible.utils.ipaddr('netmask') }}">
+          <dhcp>
+            <range start="{{ cluster_cidr | ansible.utils.ipaddr('100') | ansible.utils.ipaddr('address') }}" end="{{ cluster_cidr | ansible.utils.ipaddr('199') | ansible.utils.ipaddr('address') }}"/>
+          </dhcp>
+        </ip>
+      </network>
+      XML
+      virsh net-define /tmp/{{ vm_network }}.xml
+      virsh net-start {{ vm_network }}
+      virsh net-autostart {{ vm_network }}
+      rm -f /tmp/{{ vm_network }}.xml
+  when: net_check.rc != 0
+
 - name: Ensure libvirt network has DHCP for initial boot
   ansible.builtin.shell:
     cmd: >-
