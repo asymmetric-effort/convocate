@@ -67,7 +67,7 @@
 - name: Generate cloud-init meta-data
   ansible.builtin.copy:
     content: |
-      instance-id: {{ item }}
+      instance-id: {{ item }}-{{ ansible_date_time.epoch }}
       local-hostname: {{ item }}
     dest: "{{ vm_pool_path }}/{{ item }}-meta-data"
     mode: "0644"
