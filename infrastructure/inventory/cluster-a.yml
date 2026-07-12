@@ -10,12 +10,14 @@ all:
     vm_network: convocate-a-net
     registry_host: "{{ lookup('env', 'REGISTRY_HOST') }}"
     dns_domain: "{{ lookup('env', 'DNS_DOMAIN') }}"
+    ansible_ssh_common_args: '-o ProxyJump={{ lookup("env", "HYPERVISOR_USER") }}@{{ lookup("env", "CLUSTER_A_HOST") }}'
   children:
     hypervisor:
       hosts:
         svr00:
           ansible_host: "{{ lookup('env', 'CLUSTER_A_HOST') }}"
           ansible_user: "{{ lookup('env', 'HYPERVISOR_USER') }}"
+          ansible_ssh_common_args: ""
     control_plane_primary:
       hosts:
         node-a-0:

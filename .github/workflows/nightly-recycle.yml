@@ -37,12 +37,17 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
           DNS_DOMAIN: ${{ secrets.DNS_DOMAIN }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+          VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
         working-directory: infrastructure
         run: |
-          # Write SSH key
+          # Write SSH key for ansible and ProxyJump
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
           chmod 600 ~/.ssh/ansible_key
+          cp ~/.ssh/ansible_key ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" > ~/.ssh/config
           export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
 
           ansible-playbook playbooks/recycle.yml \
