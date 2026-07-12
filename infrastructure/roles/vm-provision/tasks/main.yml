@@ -64,6 +64,20 @@
     creates: "{{ vm_pool_path }}/{{ item }}.qcow2"
   loop: "{{ vm_nodes }}"
 
+- name: Inject user and SSH key into disk image
+  ansible.builtin.shell:
+    cmd: >-
+      virt-customize -a {{ vm_pool_path }}/{{ item }}.qcow2
+      --run-command 'useradd -m -s /bin/bash -G sudo {{ vm_user }} || true'
+      --run-command 'echo "{{ vm_user }} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/{{ vm_user }}'
+      --run-command 'mkdir -p /home/{{ vm_user }}/.ssh && chmod 700 /home/{{ vm_user }}/.ssh'
+      --run-command 'echo "{{ ssh_public_key }}" > /home/{{ vm_user }}/.ssh/authorized_keys'
+      --run-command 'chmod 600 /home/{{ vm_user }}/.ssh/authorized_keys'
+      --run-command 'chown -R $(id -u {{ vm_user }}):$(id -g {{ vm_user }}) /home/{{ vm_user }}/.ssh'
+      --run-command 'sed -i "s/^#*PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config'
+      --hostname {{ item }}
+  loop: "{{ vm_nodes }}"
+
 - name: Generate cloud-init meta-data
   ansible.builtin.copy:
     content: |
