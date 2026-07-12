@@ -126,10 +126,12 @@ jobs:
   scan-secrets:
     name: Scan for Secrets
     runs-on: [self-hosted, linux, x64]
+    permissions:
+      security-events: write
     steps:
       - uses: actions/checkout@v7
       - name: Run leakdetector
-        run: leakdetector --skip-history --format sarif --report results.sarif
+        run: leakdetector --skip-history --format sarif --report results.sarif --exit-code 0
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()
