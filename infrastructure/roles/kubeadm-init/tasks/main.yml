@@ -27,6 +27,12 @@
     mode: "0600"
   when: not admin_conf.stat.exists
 
+- name: Add API VIP to primary control plane interface (for kubeadm init)
+  ansible.builtin.command:
+    cmd: ip addr add {{ api_vip }}/{{ cluster_cidr | ansible.utils.ipaddr('prefix') }} dev {{ ansible_default_ipv4.interface }}
+  when: not admin_conf.stat.exists
+  failed_when: false
+
 - name: Initialize Kubernetes cluster
   ansible.builtin.command:
     cmd: >-
