@@ -95,13 +95,9 @@
           sudo: ALL=(ALL) NOPASSWD:ALL
           shell: /bin/bash
           lock_passwd: false
-          {% if vm_password_hash %}
-          passwd: {{ vm_password_hash }}
-          {% endif %}
-          {% if ssh_public_key %}
+          passwd: {{ vm_password_hash | default('!') }}
           ssh_authorized_keys:
-            - {{ ssh_public_key }}
-          {% endif %}
+            - {{ ssh_public_key | default('ssh-ed25519 PLACEHOLDER') }}
       package_update: true
       packages:
         - qemu-guest-agent
