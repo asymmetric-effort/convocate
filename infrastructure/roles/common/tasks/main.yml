@@ -44,14 +44,6 @@
       - socat
       - conntrack
       - ipset
-      - python3-pip
-
-- name: Install Python kubernetes library
-  ansible.builtin.pip:
-    name: kubernetes
-    state: present
-    break_system_packages: true
-
 - name: Install Helm
   ansible.builtin.shell:
     cmd: |
