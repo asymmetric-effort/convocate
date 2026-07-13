@@ -7,8 +7,15 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   vars:
     convocate_namespace: convocate
-    convocate_chart_path: "{{ lookup('env', 'CONVOCATE_CHART_PATH') | default('../helm/convocate', true) }}"
+    convocate_chart_path: "/tmp/convocate-chart"
   tasks:
+    - name: Copy Helm chart to target node
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../charts/convocate/"
+        dest: "{{ convocate_chart_path }}/"
+        mode: "0644"
+        directory_mode: "0755"
+
     - name: Create application namespace
       ansible.builtin.command:
         cmd: kubectl create namespace {{ convocate_namespace }}
