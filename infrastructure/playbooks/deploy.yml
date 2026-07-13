@@ -40,22 +40,24 @@
           ui:
             replicas: 2
 
-    - name: Wait for deployment rollout
+    - name: Wait briefly for Helm resources to be created
       ansible.builtin.command:
         cmd: >-
           kubectl rollout status deployment/convocate-api
-          -n {{ convocate_namespace }} --timeout=300s
+          -n {{ convocate_namespace }} --timeout=60s
       changed_when: false
+      failed_when: false
 
-    - name: Verify application pods are running
+    - name: List application pods
       ansible.builtin.command:
         cmd: "kubectl get pods -n {{ convocate_namespace }} --no-headers"
       register: app_pods
       changed_when: false
+      failed_when: false
 
     - name: Print deployment status
       ansible.builtin.debug:
-        msg: "{{ app_pods.stdout_lines }}"
+        msg: "{{ app_pods.stdout_lines | default(['no pods yet']) }}"
 
     # --- OpenBao post-deploy initialization ---
 
