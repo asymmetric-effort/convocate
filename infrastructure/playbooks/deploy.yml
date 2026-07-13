@@ -48,7 +48,7 @@
           --namespace default
           --set cluster.name={{ cluster_name }}
           --set cluster.domain={{ dns_domain }}
-          --set global.registry={{ registry_host }}:{{ registry_port }}
+          --set global.registry={{ registry_host }}:{{ registry_port | default('5000') }}
           --set api.replicas=2
           --set ui.replicas=2
           --timeout 10m0s
