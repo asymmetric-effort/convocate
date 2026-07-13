@@ -351,6 +351,7 @@
 - name: Configure nginx reverse proxy on hypervisor
   hosts: hypervisor
   gather_facts: true
+  when: skip_nginx | default(false) | bool == false
   become: true
   tasks:
     - name: Install nginx
