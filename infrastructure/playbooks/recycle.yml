@@ -14,8 +14,11 @@
 - name: "Step 5: Verify cluster health"
   ansible.builtin.import_playbook: verify.yml
 
-- name: "Step 6: Bootstrap OpenBao"
-  ansible.builtin.import_playbook: openbao-bootstrap.yml
+# OpenBao is deployed as part of the umbrella Helm chart in deploy.yml.
+# The standalone openbao-bootstrap.yml is for manual HA setups only.
+#
+# - name: "Step 6: Bootstrap OpenBao"
+#   ansible.builtin.import_playbook: openbao-bootstrap.yml
 
-- name: "Step 7: Deploy application"
+- name: "Step 6: Deploy application"
   ansible.builtin.import_playbook: deploy.yml
