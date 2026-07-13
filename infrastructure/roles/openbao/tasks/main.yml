@@ -36,23 +36,26 @@
       --set server.ha.enabled=true
       --set server.ha.replicas={{ openbao_replicas }}
       --set server.dataStorage.size={{ openbao_storage_size }}
+      --set server.ha.enabled=false
+      --set server.ha.replicas=1
+      --set server.dataStorage.size={{ openbao_storage_size }}
       --set ui.enabled=true
-      --set injector.enabled=true
-      --wait --timeout 5m
+      --set injector.enabled=false
+      --timeout 5m
   when: openbao_status.rc != 0
 
-- name: Wait for OpenBao pods to be running
-  ansible.builtin.command:
+- name: Wait for OpenBao pod to exist
+  ansible.builtin.shell:
     cmd: >-
-      kubectl wait --for=condition=Ready pod
-      -l app.kubernetes.io/name=openbao
-      -n {{ openbao_namespace }}
-      --timeout=300s
-  changed_when: false
-  retries: 3
+      kubectl get pods -n {{ openbao_namespace }}
+      -l app.kubernetes.io/name=openbao --no-headers 2>/dev/null | grep -c .
+  register: openbao_pods_exist
+  until: openbao_pods_exist.stdout | int > 0
+  retries: 30
   delay: 10
-  register: openbao_pods_ready
-  until: openbao_pods_ready.rc == 0
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Check if OpenBao is initialized
   ansible.builtin.command:
