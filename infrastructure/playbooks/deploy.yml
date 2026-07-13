@@ -26,9 +26,8 @@
       kubernetes.core.helm:
         name: convocate
         chart_ref: "{{ convocate_chart_path }}"
-        release_namespace: "{{ convocate_namespace }}"
-        create_namespace: true
-        wait: true
+        release_namespace: default
+        wait: false
         timeout: "10m0s"
         values:
           cluster:
