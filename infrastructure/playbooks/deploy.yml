@@ -163,8 +163,8 @@
 
     - name: Save init credentials
       ansible.builtin.set_fact:
-        bao_unseal_key: "{{ (bao_init_result.stdout | from_json).keys[0] }}"
-        bao_root_token: "{{ (bao_init_result.stdout | from_json).root_token }}"
+        bao_unseal_key: "{{ (bao_init_result.stdout | from_json)['keys'][0] }}"
+        bao_root_token: "{{ (bao_init_result.stdout | from_json)['root_token'] }}"
       when: bao_init_result is changed
       no_log: true
 
