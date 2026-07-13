@@ -51,6 +51,13 @@
           --set global.registry={{ registry_host }}:{{ registry_port | default('5000') }}
           --set api.replicas=2
           --set ui.replicas=2
+          --set postgresql.nodeAffinity=node-{{ cluster_name }}-4
+          --set redis.nodeAffinity=node-{{ cluster_name }}-3
+          --set minio.nodeAffinity=node-{{ cluster_name }}-5
+          --set openbao.nodeAffinity=node-{{ cluster_name }}-3
+          --set influxdb.nodeAffinity=node-{{ cluster_name }}-4
+          --set prometheus.nodeAffinity=node-{{ cluster_name }}-4
+          --set grafana.nodeAffinity=node-{{ cluster_name }}-4
           --timeout 10m0s
 
     - name: Wait briefly for Helm resources to be created
