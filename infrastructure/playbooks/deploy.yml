@@ -321,9 +321,9 @@
           {{ bao_url }}/v1/identity/oidc/scope/{{ item.name }}
       loop:
         - name: profile
-          body: '{"template":"{\"name\": {{identity.entity.metadata.name}}, \"email\": {{identity.entity.metadata.email}}}"}'
+          body: '{"template":"{\"name\": {% raw %}{{identity.entity.metadata.name}}{% endraw %}, \"email\": {% raw %}{{identity.entity.metadata.email}}{% endraw %}}"}'
         - name: groups
-          body: '{"template":"{\"groups\": {{identity.entity.groups.names}}}"}'
+          body: '{"template":"{\"groups\": {% raw %}{{identity.entity.groups.names}}{% endraw %}}"}'
       when: bao_init_result is changed
       no_log: true
 
