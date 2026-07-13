@@ -38,8 +38,10 @@
     - name: Create placeholder secrets for initial boot
       ansible.builtin.shell:
         cmd: |
-          for ns in security convocate data-layer o11y; do
+          for ns in security convocate convocate-agents data-layer o11y; do
             kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
+            kubectl label ns $ns app.kubernetes.io/managed-by=Helm --overwrite
+            kubectl annotate ns $ns meta.helm.sh/release-name=convocate meta.helm.sh/release-namespace=default --overwrite
           done
           kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder --dry-run=client -o yaml | kubectl apply -f -
