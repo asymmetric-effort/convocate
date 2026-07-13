@@ -130,10 +130,20 @@
       register: bao_ready
       until: bao_ready.rc == 0
 
+    - name: Get OpenBao ClusterIP
+      ansible.builtin.shell:
+        cmd: kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}'
+      register: bao_clusterip_result
+      changed_when: false
+
+    - name: Set OpenBao URL
+      ansible.builtin.set_fact:
+        bao_url: "http://{{ bao_clusterip_result.stdout }}:8200"
+
     - name: Check OpenBao initialization status
       ansible.builtin.shell:
         cmd: >-
-          curl -s http://openbao.security.svc:8200/v1/sys/health 2>/dev/null || true
+          curl -s {{ bao_url }}/v1/sys/health 2>/dev/null || true
       register: bao_health_raw
       changed_when: false
 
@@ -147,7 +157,7 @@
       ansible.builtin.shell:
         cmd: >-
           curl -s -d '{"secret_shares":1,"secret_threshold":1}'
-          http://openbao.security.svc:8200/v1/sys/init
+          {{ bao_url }}/v1/sys/init
       register: bao_init_result
       when: not (bao_initialized | default(false))
 
@@ -162,7 +172,7 @@
       ansible.builtin.shell:
         cmd: >-
           curl -s -d '{"key":"{{ bao_unseal_key }}"}'
-          http://openbao.security.svc:8200/v1/sys/unseal
+          {{ bao_url }}/v1/sys/unseal
       when: bao_init_result is changed
       no_log: true
 
@@ -201,7 +211,7 @@
         cmd: >-
           curl -s -d '{"type":"userpass"}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/sys/auth/userpass
+          {{ bao_url }}/v1/sys/auth/userpass
       when: bao_init_result is changed
       failed_when: false
       no_log: true
@@ -211,7 +221,7 @@
         cmd: >-
           curl -s -X PUT -d '{"policy":"path \"*\" { capabilities = [\"create\",\"read\",\"update\",\"delete\",\"list\",\"sudo\"] }"}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/sys/policies/acl/admin-policy
+          {{ bao_url }}/v1/sys/policies/acl/admin-policy
       when: bao_init_result is changed
       no_log: true
 
@@ -219,9 +229,9 @@
       ansible.builtin.shell:
         cmd: >-
           curl -s
-          --post-data='{"password":"{{ openbao_admin_password }}","policies":"admin-policy"}'
+          -d '{"password":"{{ openbao_admin_password }}","policies":"admin-policy"}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/auth/userpass/users/admin
+          {{ bao_url }}/v1/auth/userpass/users/admin
       when: bao_init_result is changed
       no_log: true
 
@@ -229,9 +239,9 @@
       ansible.builtin.shell:
         cmd: >-
           curl -s
-          --post-data='{"name":"admin","metadata":{"name":"Administrator","email":"admin@asymmetric-effort.com"},"policies":["admin-policy"]}'
+          -d '{"name":"admin","metadata":{"name":"Administrator","email":"admin@asymmetric-effort.com"},"policies":["admin-policy"]}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/identity/entity
+          {{ bao_url }}/v1/identity/entity
       when: bao_init_result is changed
       no_log: true
 
@@ -239,7 +249,7 @@
       ansible.builtin.shell:
         cmd: >-
           curl -s -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/sys/auth
+          {{ bao_url }}/v1/sys/auth
       register: bao_auth_result
       when: bao_init_result is changed
       no_log: true
@@ -254,7 +264,7 @@
         cmd: >-
           curl -s -X PUT -d '{"policy":"path \"auth/token/lookup-self\" { capabilities = [\"read\"] }\npath \"identity/entity/id/*\" { capabilities = [\"read\"] }"}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/sys/policies/acl/login-only
+          {{ bao_url }}/v1/sys/policies/acl/login-only
       when: bao_init_result is changed
       no_log: true
 
@@ -263,7 +273,7 @@
         cmd: >-
           curl -s -d '{"password":"{{ item.pass }}","policies":"{{ item.policies }}"}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/auth/userpass/users/{{ item.name }}
+          {{ bao_url }}/v1/auth/userpass/users/{{ item.name }}
       loop:
         - { name: samcaldwell, pass: "{{ openbao_samcaldwell_password }}", policies: "admin-policy" }
         - { name: pdv-test, pass: "PdvTest-2026-Secure", policies: "login-only" }
@@ -275,7 +285,7 @@
         cmd: >-
           curl -s -d '{"name":"{{ item.name }}","metadata":{"name":"{{ item.display }}","email":"{{ item.email }}"},"policies":["{{ item.policies }}"]}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/identity/entity
+          {{ bao_url }}/v1/identity/entity
       loop:
         - { name: samcaldwell, display: "Sam Caldwell", email: "sam@asymmetric-effort.com", policies: "admin-policy" }
         - { name: pdv-test, display: "PDV Test", email: "pdv@asymmetric-effort.com", policies: "login-only" }
@@ -288,7 +298,7 @@
         cmd: >-
           curl -s -d '{"name":"admins","policies":["admin-policy"],"type":"internal"}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/identity/group
+          {{ bao_url }}/v1/identity/group
       when: bao_init_result is changed
       no_log: true
 
@@ -299,7 +309,7 @@
         cmd: >-
           curl -s -X PUT -d '{"allowed_client_ids":["*"],"algorithm":"RS256","rotation_period":"24h"}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/identity/oidc/key/default
+          {{ bao_url }}/v1/identity/oidc/key/default
       when: bao_init_result is changed
       no_log: true
 
@@ -308,7 +318,7 @@
         cmd: >-
           curl -s -X PUT -d '{{ item.body }}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/identity/oidc/scope/{{ item.name }}
+          {{ bao_url }}/v1/identity/oidc/scope/{{ item.name }}
       loop:
         - name: profile
           body: '{"template":"{\"name\": {{identity.entity.metadata.name}}, \"email\": {{identity.entity.metadata.email}}}"}'
@@ -322,7 +332,7 @@
         cmd: >-
           curl -s -X PUT -d '{"redirect_uris":["https://grafana.asymmetric-effort.com/login/generic_oauth"],"assignments":["allow_all"],"key":"default","id_token_ttl":"30m","access_token_ttl":"1h"}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/identity/oidc/client/grafana
+          {{ bao_url }}/v1/identity/oidc/client/grafana
       when: bao_init_result is changed
       no_log: true
 
@@ -331,7 +341,7 @@
         cmd: >-
           curl -s -X PUT -d '{"issuer":"https://auth.asymmetric-effort.com","allowed_client_ids":["*"],"scopes_supported":["profile","groups"]}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/identity/oidc/provider/default
+          {{ bao_url }}/v1/identity/oidc/provider/default
       when: bao_init_result is changed
       no_log: true
 
@@ -339,7 +349,7 @@
       ansible.builtin.shell:
         cmd: >-
           curl -s -H 'X-Vault-Token:{{ bao_root_token }}'
-          http://openbao.security.svc:8200/v1/identity/oidc/client/grafana
+          {{ bao_url }}/v1/identity/oidc/client/grafana
       register: oidc_client_result
       when: bao_init_result is changed
       no_log: true
