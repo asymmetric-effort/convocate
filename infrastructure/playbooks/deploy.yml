@@ -42,15 +42,10 @@
           HELM_ANNOT_NAME="meta.helm.sh/release-name=convocate"
           HELM_ANNOT_NS="meta.helm.sh/release-namespace=default"
 
-          label_for_helm() {
-            local kind=$1 name=$2 ns=$3
-            kubectl label $kind $name -n $ns $HELM_LABELS --overwrite 2>/dev/null
-            kubectl annotate $kind $name -n $ns $HELM_ANNOT_NAME $HELM_ANNOT_NS --overwrite 2>/dev/null
-          }
-
           for ns in security convocate convocate-agents data-layer o11y; do
             kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
-            label_for_helm ns $ns ""
+            kubectl label namespace $ns $HELM_LABELS --overwrite
+            kubectl annotate namespace $ns $HELM_ANNOT_NAME $HELM_ANNOT_NS --overwrite
           done
           kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder --dry-run=client -o yaml | kubectl apply -f -
@@ -72,7 +67,8 @@
           # Label all secrets for Helm ownership
           for ns in security convocate data-layer o11y; do
             for secret in $(kubectl get secrets -n $ns --no-headers -o custom-columns=:metadata.name 2>/dev/null | grep -v default-token | grep -v ^$); do
-              label_for_helm secret $secret $ns
+              kubectl label secret $secret -n $ns $HELM_LABELS --overwrite 2>/dev/null
+              kubectl annotate secret $secret -n $ns $HELM_ANNOT_NAME $HELM_ANNOT_NS --overwrite 2>/dev/null
             done
           done
       changed_when: false
