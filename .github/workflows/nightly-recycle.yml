@@ -27,6 +27,8 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
+      - name: Run leakdetector
+        run: leakdetector --skip-history --exit-code 0
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r infrastructure/requirements.yml
       - name: Recycle Cluster A

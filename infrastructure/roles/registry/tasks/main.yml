@@ -17,10 +17,18 @@
   when: registry_host is defined and registry_host | length > 0
   notify: restart containerd for registry
 
-- name: Ensure containerd config uses registry config path
+- name: Replace empty config_path in containerd config
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: '(\s*)config_path\s*=\s*""'
+    replace: '\1config_path = "/etc/containerd/certs.d"'
+  when: registry_host is defined and registry_host | length > 0
+  notify: restart containerd for registry
+
+- name: Ensure config_path is set in containerd config
   ansible.builtin.lineinfile:
     path: /etc/containerd/config.toml
-    regexp: '^\s*config_path\s*='
+    regexp: '^\s*config_path\s*=\s*"/etc/containerd/certs\.d"'
     line: '      config_path = "/etc/containerd/certs.d"'
     insertafter: '\[plugins\."io\.containerd\.grpc\.v1\.cri"\.registry\]'
   when: registry_host is defined and registry_host | length > 0

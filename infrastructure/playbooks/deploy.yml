@@ -1,4 +1,23 @@
 ---
+- name: Create hostPath directories on all nodes
+  hosts: k8s_nodes
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Create hostPath directories for persistent volumes
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0777"
+      loop:
+        - /mnt/data-layer/postgresql
+        - /mnt/data-layer/redis
+        - /mnt/data-layer/minio
+        - /mnt/security/openbao
+        - /mnt/o11y/influxdb
+        - /mnt/o11y/prometheus
+        - /mnt/o11y/grafana
+
 - name: Deploy Convocate application
   hosts: control_plane_primary
   gather_facts: true
@@ -23,22 +42,16 @@
       failed_when: false
 
     - name: Deploy Convocate via Helm
-      kubernetes.core.helm:
-        name: convocate
-        chart_ref: "{{ convocate_chart_path }}"
-        release_namespace: default
-        wait: false
-        timeout: "10m0s"
-        values:
-          cluster:
-            name: "{{ cluster_name }}"
-            domain: "{{ dns_domain }}"
-          registry:
-            host: "{{ registry_host }}"
-          api:
-            replicas: 2
-          ui:
-            replicas: 2
+      ansible.builtin.command:
+        cmd: >-
+          helm upgrade --install convocate {{ convocate_chart_path }}
+          --namespace default
+          --set cluster.name={{ cluster_name }}
+          --set cluster.domain={{ dns_domain }}
+          --set global.registry={{ registry_host }}:{{ registry_port }}
+          --set api.replicas=2
+          --set ui.replicas=2
+          --timeout 10m0s
 
     - name: Wait briefly for Helm resources to be created
       ansible.builtin.command:
