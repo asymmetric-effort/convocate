@@ -133,8 +133,7 @@
     - name: Check OpenBao initialization status
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- http://localhost:8200/v1/sys/health 2>/dev/null || true
+          curl -s http://openbao.security.svc:8200/v1/sys/health 2>/dev/null || true
       register: bao_health_raw
       changed_when: false
 
@@ -147,9 +146,8 @@
     - name: Initialize OpenBao (first deploy only)
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --post-data='{"secret_shares":1,"secret_threshold":1}'
-          http://localhost:8200/v1/sys/init
+          curl -s -d '{"secret_shares":1,"secret_threshold":1}'
+          http://openbao.security.svc:8200/v1/sys/init
       register: bao_init_result
       when: not (bao_initialized | default(false))
 
@@ -163,9 +161,8 @@
     - name: Unseal OpenBao
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --post-data='{"key":"{{ bao_unseal_key }}"}'
-          http://localhost:8200/v1/sys/unseal
+          curl -s -d '{"key":"{{ bao_unseal_key }}"}'
+          http://openbao.security.svc:8200/v1/sys/unseal
       when: bao_init_result is changed
       no_log: true
 
@@ -202,10 +199,9 @@
     - name: Enable userpass auth method
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --post-data='{"type":"userpass"}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/sys/auth/userpass
+          curl -s -d '{"type":"userpass"}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/sys/auth/userpass
       when: bao_init_result is changed
       failed_when: false
       no_log: true
@@ -213,42 +209,37 @@
     - name: Create admin policy
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --method=PUT
-          --body-data='{"policy":"path \"*\" { capabilities = [\"create\",\"read\",\"update\",\"delete\",\"list\",\"sudo\"] }"}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/sys/policies/acl/admin-policy
+          curl -s -X PUT -d '{"policy":"path \"*\" { capabilities = [\"create\",\"read\",\"update\",\"delete\",\"list\",\"sudo\"] }"}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/sys/policies/acl/admin-policy
       when: bao_init_result is changed
       no_log: true
 
     - name: Create admin user
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO-
+          curl -s
           --post-data='{"password":"{{ openbao_admin_password }}","policies":"admin-policy"}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/auth/userpass/users/admin
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/auth/userpass/users/admin
       when: bao_init_result is changed
       no_log: true
 
     - name: Create admin identity entity
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO-
+          curl -s
           --post-data='{"name":"admin","metadata":{"name":"Administrator","email":"admin@asymmetric-effort.com"},"policies":["admin-policy"]}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/identity/entity
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/identity/entity
       when: bao_init_result is changed
       no_log: true
 
     - name: Get userpass accessor
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/sys/auth
+          curl -s -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/sys/auth
       register: bao_auth_result
       when: bao_init_result is changed
       no_log: true
@@ -261,21 +252,18 @@
     - name: Create login-only policy
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --method=PUT
-          --body-data='{"policy":"path \"auth/token/lookup-self\" { capabilities = [\"read\"] }\npath \"identity/entity/id/*\" { capabilities = [\"read\"] }"}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/sys/policies/acl/login-only
+          curl -s -X PUT -d '{"policy":"path \"auth/token/lookup-self\" { capabilities = [\"read\"] }\npath \"identity/entity/id/*\" { capabilities = [\"read\"] }"}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/sys/policies/acl/login-only
       when: bao_init_result is changed
       no_log: true
 
     - name: Create samcaldwell and pdv-test users
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --post-data='{"password":"{{ item.pass }}","policies":"{{ item.policies }}"}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/auth/userpass/users/{{ item.name }}
+          curl -s -d '{"password":"{{ item.pass }}","policies":"{{ item.policies }}"}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/auth/userpass/users/{{ item.name }}
       loop:
         - { name: samcaldwell, pass: "{{ openbao_samcaldwell_password }}", policies: "admin-policy" }
         - { name: pdv-test, pass: "PdvTest-2026-Secure", policies: "login-only" }
@@ -285,10 +273,9 @@
     - name: Create identity entities for users
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --post-data='{"name":"{{ item.name }}","metadata":{"name":"{{ item.display }}","email":"{{ item.email }}"},"policies":["{{ item.policies }}"]}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/identity/entity
+          curl -s -d '{"name":"{{ item.name }}","metadata":{"name":"{{ item.display }}","email":"{{ item.email }}"},"policies":["{{ item.policies }}"]}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/identity/entity
       loop:
         - { name: samcaldwell, display: "Sam Caldwell", email: "sam@asymmetric-effort.com", policies: "admin-policy" }
         - { name: pdv-test, display: "PDV Test", email: "pdv@asymmetric-effort.com", policies: "login-only" }
@@ -299,10 +286,9 @@
     - name: Create admins group
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --post-data='{"name":"admins","policies":["admin-policy"],"type":"internal"}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/identity/group
+          curl -s -d '{"name":"admins","policies":["admin-policy"],"type":"internal"}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/identity/group
       when: bao_init_result is changed
       no_log: true
 
@@ -311,22 +297,18 @@
     - name: Create OIDC key
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --method=PUT
-          --body-data='{"allowed_client_ids":["*"],"algorithm":"RS256","rotation_period":"24h"}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/identity/oidc/key/default
+          curl -s -X PUT -d '{"allowed_client_ids":["*"],"algorithm":"RS256","rotation_period":"24h"}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/identity/oidc/key/default
       when: bao_init_result is changed
       no_log: true
 
     - name: Create OIDC scopes
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --method=PUT
-          --body-data='{{ item.body }}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/identity/oidc/scope/{{ item.name }}
+          curl -s -X PUT -d '{{ item.body }}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/identity/oidc/scope/{{ item.name }}
       loop:
         - name: profile
           body: '{"template":"{\"name\": {{identity.entity.metadata.name}}, \"email\": {{identity.entity.metadata.email}}}"}'
@@ -338,31 +320,26 @@
     - name: Create OIDC Grafana client
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --method=PUT
-          --body-data='{"redirect_uris":["https://grafana.asymmetric-effort.com/login/generic_oauth"],"assignments":["allow_all"],"key":"default","id_token_ttl":"30m","access_token_ttl":"1h"}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/identity/oidc/client/grafana
+          curl -s -X PUT -d '{"redirect_uris":["https://grafana.asymmetric-effort.com/login/generic_oauth"],"assignments":["allow_all"],"key":"default","id_token_ttl":"30m","access_token_ttl":"1h"}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/identity/oidc/client/grafana
       when: bao_init_result is changed
       no_log: true
 
     - name: Create OIDC provider
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --method=PUT
-          --body-data='{"issuer":"https://auth.asymmetric-effort.com","allowed_client_ids":["*"],"scopes_supported":["profile","groups"]}'
-          --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/identity/oidc/provider/default
+          curl -s -X PUT -d '{"issuer":"https://auth.asymmetric-effort.com","allowed_client_ids":["*"],"scopes_supported":["profile","groups"]}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/identity/oidc/provider/default
       when: bao_init_result is changed
       no_log: true
 
     - name: Read OIDC client credentials
       ansible.builtin.shell:
         cmd: >-
-          kubectl exec deploy/openbao -n security -c openbao --
-          wget -qO- --header='X-Vault-Token:{{ bao_root_token }}'
-          http://localhost:8200/v1/identity/oidc/client/grafana
+          curl -s -H 'X-Vault-Token:{{ bao_root_token }}'
+          http://openbao.security.svc:8200/v1/identity/oidc/client/grafana
       register: oidc_client_result
       when: bao_init_result is changed
       no_log: true
