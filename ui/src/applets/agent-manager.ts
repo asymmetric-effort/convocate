@@ -232,7 +232,7 @@ function CreateAgentDialog({
 
   if (!open) return null;
 
-  const darkStyle = { display: "flex", flexDirection: "column" as const, gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px", maxHeight: "60vh", overflowY: "auto" as const };
+  const darkStyle = { display: "flex", flexDirection: "column" as const, gap: "12px", padding: "16px", backgroundColor: "#1e1e1e", color: "#e0e0e0", borderRadius: "0 0 8px 8px", maxHeight: "60vh", overflowY: "auto" as const, border: "1px solid #444", marginTop: "-1px" };
   const sectionLabel = (text: string) => h("div", { style: { fontSize: "11px", color: "#aaa", marginTop: "4px", textTransform: "uppercase", letterSpacing: "1px" } }, text);
 
   return h(
@@ -309,7 +309,7 @@ function CreateAgentDialog({
         placeholder: "e.g. my-registry.io",
         label: "Additional egress hosts",
       }),
-      h("div", { style: { fontSize: "11px", color: "#666" } },
+      h("div", { style: { fontSize: "11px", color: "#888" } },
         "Default: Anthropic API, GitHub, npm, PyPI. Add extra hosts above."
       ),
 
@@ -421,6 +421,8 @@ function AgentDetailDialog({
     color: "#e0e0e0",
     borderRadius: "0 0 8px 8px",
     padding: "16px",
+    border: "1px solid #444",
+    marginTop: "-1px",
   };
 
   if (loading) {
