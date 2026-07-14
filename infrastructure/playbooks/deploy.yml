@@ -45,7 +45,7 @@
         cmd: |
           HELM_LABELS="app.kubernetes.io/managed-by=Helm"
           HELM_ANNOT_NAME="meta.helm.sh/release-name=convocate"
-          HELM_ANNOT_NS="meta.helm.sh/release-namespace=default"
+          HELM_ANNOT_NS="meta.helm.sh/release-namespace={{ convocate_namespace }}"
 
           for ns in security convocate convocate-agents data-layer o11y; do
             kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
@@ -88,7 +88,7 @@
       ansible.builtin.command:
         cmd: >-
           helm upgrade --install convocate {{ convocate_chart_path }}
-          --namespace default
+          --namespace {{ convocate_namespace }}
           --set cluster.name={{ cluster_name }}
           --set cluster.domain={{ dns_domain }}
           --set global.registry={{ registry_host }}:{{ registry_port | default('5000') }}
