@@ -81,3 +81,42 @@ test.describe("Smoke: PostgreSQL", () => {
     expect(["ok", "healthy"]).toContain(data.status);
   });
 });
+
+async function getAdminToken(): Promise<string> {
+  const res = await fetch(`${BASE}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "admin", password: "Convocate-Admin-2026" }),
+  });
+  if (res.status !== 200) {
+    throw new Error(`Admin login failed: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.accessToken;
+}
+
+test.describe("Smoke: K8s-dependent endpoints", () => {
+  let token: string;
+
+  test.beforeAll(async () => {
+    token = await getAdminToken();
+  });
+
+  test("Node Manager lists nodes without 500", async () => {
+    const res = await fetch(`${BASE}/api/v1/nmgr/node`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.items).toBeDefined();
+  });
+
+  test("Agent Manager lists agents without 500", async () => {
+    const res = await fetch(`${BASE}/api/v1/amgr/agent`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.items).toBeDefined();
+  });
+});

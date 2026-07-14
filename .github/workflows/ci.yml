@@ -190,6 +190,20 @@ jobs:
             echo '=== OpenBao Health ==='
             curl -s http://\$BAO_IP:8200/v1/sys/health | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"init:\", d[\"initialized\"], \"sealed:\", d[\"sealed\"]); exit(0 if d[\"initialized\"] and not d[\"sealed\"] else 1)'
 
+            echo '=== Authenticated K8s Endpoints ==='
+            TOKEN=\$(curl -s -X POST http://\$BAO_IP:8200/v1/auth/userpass/login/admin -d '{\"password\":\"Convocate-Admin-2026\"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"auth\"][\"client_token\"])')
+            echo \"Got auth token\"
+
+            echo '=== Node Manager ==='
+            NM_STATUS=\$(curl -s -o /dev/null -w '%{http_code}' http://\$API_IP:8443/api/v1/nmgr/node -H \"Authorization: Bearer \$TOKEN\")
+            echo \"Node Manager status: \$NM_STATUS\"
+            [ \"\$NM_STATUS\" = '200' ] || { echo 'FAIL: Node Manager returned '\$NM_STATUS; curl -s http://\$API_IP:8443/api/v1/nmgr/node -H \"Authorization: Bearer \$TOKEN\"; exit 1; }
+
+            echo '=== Agent Manager ==='
+            AM_STATUS=\$(curl -s -o /dev/null -w '%{http_code}' http://\$API_IP:8443/api/v1/amgr/agent -H \"Authorization: Bearer \$TOKEN\")
+            echo \"Agent Manager status: \$AM_STATUS\"
+            [ \"\$AM_STATUS\" = '200' ] || { echo 'FAIL: Agent Manager returned '\$AM_STATUS; curl -s http://\$API_IP:8443/api/v1/amgr/agent -H \"Authorization: Bearer \$TOKEN\"; exit 1; }
+
             echo '=== All Pods ==='
             sudo kubectl get pods -n convocate --no-headers
             sudo kubectl get pods -n security -l app=openbao --no-headers
