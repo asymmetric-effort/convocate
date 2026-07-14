@@ -1,10 +1,15 @@
 ---
-- name: Create hostPath directories on all nodes
-  hosts: k8s_nodes
-  gather_facts: false
+- name: Deploy Convocate application
+  hosts: control_plane_primary
+  gather_facts: true
   become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  vars:
+    convocate_namespace: convocate
+    convocate_chart_path: "/tmp/convocate-chart"
   tasks:
-    - name: Create hostPath directories for persistent volumes
+    - name: Create hostPath directories on this node
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
@@ -17,17 +22,8 @@
         - /mnt/o11y/influxdb
         - /mnt/o11y/prometheus
         - /mnt/o11y/grafana
+      failed_when: false
 
-- name: Deploy Convocate application
-  hosts: control_plane_primary
-  gather_facts: true
-  become: true
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  vars:
-    convocate_namespace: convocate
-    convocate_chart_path: "/tmp/convocate-chart"
-  tasks:
     - name: Copy Helm chart to target node
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../charts/convocate/"

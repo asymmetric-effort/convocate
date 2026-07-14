@@ -34,3 +34,22 @@
   roles:
     - cilium
     - cert-manager
+
+- name: Create hostPath directories for persistent volumes
+  hosts: k8s_nodes
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Create hostPath directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0777"
+      loop:
+        - /mnt/data-layer/postgresql
+        - /mnt/data-layer/redis
+        - /mnt/data-layer/minio
+        - /mnt/security/openbao
+        - /mnt/o11y/influxdb
+        - /mnt/o11y/prometheus
+        - /mnt/o11y/grafana
