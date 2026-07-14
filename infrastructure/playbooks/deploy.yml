@@ -9,6 +9,15 @@
     convocate_namespace: convocate
     convocate_chart_path: "/tmp/convocate-chart"
   tasks:
+    - name: Ensure Helm is installed
+      ansible.builtin.shell:
+        cmd: |
+          if ! command -v helm &>/dev/null; then
+            curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          fi
+      args:
+        creates: /usr/local/bin/helm
+
     - name: Create hostPath directories on this node
       ansible.builtin.file:
         path: "{{ item }}"
