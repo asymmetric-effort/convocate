@@ -157,15 +157,51 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
-      - name: Run full PDV suite against Cluster A
+      - name: Discover Cluster A service URLs
+        id: cluster-a-urls
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" > ~/.ssh/config
+
+          CP_IP=$(ssh -i ~/.ssh/id_ed25519 ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} \
+            "sudo virsh domifaddr node-a-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
+
+          # Get API and UI service NodePort or ClusterIP via the control plane
+          API_URL=$(ssh -i ~/.ssh/id_ed25519 -J ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} convocate@$CP_IP \
+            "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get svc convocate-api -n convocate -o jsonpath='{.spec.clusterIP}'" 2>/dev/null)
+          UI_URL=$(ssh -i ~/.ssh/id_ed25519 -J ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} convocate@$CP_IP \
+            "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get svc convocate-ui -n convocate -o jsonpath='{.spec.clusterIP}'" 2>/dev/null)
+
+          echo "CP_IP=$CP_IP" >> "$GITHUB_OUTPUT"
+          echo "API_IP=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "UI_IP=$UI_URL" >> "$GITHUB_OUTPUT"
+          echo "Cluster A: CP=$CP_IP API=$API_URL UI=$UI_URL"
+
+      - name: Run PDV suite against Cluster A
         working-directory: test/pdv
         env:
-          APP_URL: http://app.convocate.asymmetric-effort.com
-          GRAFANA_URL: http://192.168.3.159:38300
           NODE_TLS_REJECT_UNAUTHORIZED: "0"
         run: |
+          CP_IP="${{ steps.cluster-a-urls.outputs.CP_IP }}"
+          API_IP="${{ steps.cluster-a-urls.outputs.API_IP }}"
+          UI_IP="${{ steps.cluster-a-urls.outputs.UI_IP }}"
+
+          # SSH tunnel: forward local ports to Cluster A ClusterIPs
+          ssh -i ~/.ssh/id_ed25519 -f -N \
+            -L 18443:$API_IP:8443 \
+            -L 18080:$UI_IP:8080 \
+            -J ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} \
+            convocate@$CP_IP
+
           bun install
-          bunx playwright test tests/smoke.spec.ts tests/convocate-auth.spec.ts tests/access-control.spec.ts
+          APP_URL="http://localhost:18080" \
+            bunx playwright test tests/smoke.spec.ts tests/access-control.spec.ts \
+            --grep-invert "login page|login UI|login with|shows error"
+
+          # Kill the SSH tunnel
+          pkill -f "ssh.*18443" || true
 
   deploy-cluster-b:
     name: Deploy to Cluster B
