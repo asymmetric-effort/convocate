@@ -47,11 +47,16 @@
           HELM_ANNOT_NAME="meta.helm.sh/release-name=convocate"
           HELM_ANNOT_NS="meta.helm.sh/release-namespace={{ convocate_namespace }}"
 
-          # Wait for any namespaces stuck in Terminating state
+          # Handle namespaces stuck in Terminating state (remove finalizers to unblock)
           for ns in security convocate convocate-agents data-layer o11y; do
             if kubectl get namespace $ns -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
-              echo "Waiting for namespace $ns to finish terminating..."
-              kubectl wait --for=delete namespace/$ns --timeout=120s 2>/dev/null || true
+              echo "Namespace $ns stuck in Terminating — removing finalizers..."
+              kubectl get namespace $ns -o json | python3 -c '
+          import sys, json
+          ns = json.load(sys.stdin)
+          ns["spec"]["finalizers"] = []
+          json.dump(ns, sys.stdout)' | kubectl replace --raw "/api/v1/namespaces/$ns/finalize" -f - 2>/dev/null || true
+              kubectl wait --for=delete namespace/$ns --timeout=60s 2>/dev/null || true
             fi
             kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
             kubectl label namespace $ns $HELM_LABELS --overwrite 2>/dev/null || true
