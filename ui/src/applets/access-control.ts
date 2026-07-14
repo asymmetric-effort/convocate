@@ -515,12 +515,27 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
       },
       onClick: (e: MouseEvent) => e.stopPropagation(),
     },
+      h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => {
+        const user = users.find((u) => u.id === contextMenu.userId);
+        const newStatus = user && user.status === "active" ? "disabled" : "active";
+        fetch(`/api/v1/ac/user/${contextMenu.userId}`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ status: newStatus }) }).then(loadAll);
+        setContextMenu(null);
+      } }, (() => { const u = users.find((u) => u.id === contextMenu.userId); return u && u.status === "active" ? "Disable User" : "Enable User"; })()),
+      h("div", { style: { height: "1px", backgroundColor: "#555", margin: "4px 0" } }),
       h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { openEditUser({ id: contextMenu.userId }); setContextMenu(null); } }, "Edit User"),
-      h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { if (confirm("Delete this user?")) deleteUser(contextMenu.userId).then(loadAll); setContextMenu(null); } }, "Delete User"),
+      h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => {
+        const newPass = prompt("Enter new password for this user:");
+        if (newPass) {
+          fetch(`/api/v1/ac/user/${contextMenu.userId}`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ password: newPass }) }).then(loadAll);
+        }
+        setContextMenu(null);
+      } }, "Reset Password"),
       h("div", { style: { height: "1px", backgroundColor: "#555", margin: "4px 0" } }),
       mfaStatuses[contextMenu.userId]
         ? h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { handleResetMFA(contextMenu.userId); setContextMenu(null); } }, "Reset MFA")
         : h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { handleEnrollMFA(contextMenu.userId); setContextMenu(null); } }, "Enroll MFA"),
+      h("div", { style: { height: "1px", backgroundColor: "#555", margin: "4px 0" } }),
+      h("div", { style: { ...menuItemStyle, color: "#ff6666" }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { if (confirm("Are you sure you want to delete this user?")) deleteUser(contextMenu.userId).then(loadAll); setContextMenu(null); } }, "Delete User"),
     ) : null,
   );
 }
