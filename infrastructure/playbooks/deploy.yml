@@ -54,6 +54,9 @@
               kubectl wait --for=delete namespace/$ns --timeout=120s 2>/dev/null || true
             fi
             kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
+            kubectl label namespace $ns $HELM_LABELS --overwrite 2>/dev/null || true
+            kubectl annotate namespace $ns $HELM_ANNOT_NAME --overwrite 2>/dev/null || true
+            kubectl annotate namespace $ns $HELM_ANNOT_NS --overwrite 2>/dev/null || true
           done
           kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder --dry-run=client -o yaml | kubectl apply -f -
@@ -76,23 +79,19 @@
           # (don't use helm uninstall — it cascades and deletes managed resources)
           kubectl delete secret -n default -l owner=helm,name=convocate --ignore-not-found 2>/dev/null || true
 
-          # Fix Helm ownership on ALL existing resources: overwrite annotations
-          # to match the target namespace so helm upgrade --install can adopt them.
+          # Fix Helm ownership on ALL existing resources (single patch per resource)
+          PATCH='{"metadata":{"labels":{"app.kubernetes.io/managed-by":"Helm"},"annotations":{"meta.helm.sh/release-name":"convocate","meta.helm.sh/release-namespace":"{{ convocate_namespace }}"}}}'
           for ns in security convocate convocate-agents data-layer o11y; do
             for kind in secret configmap service serviceaccount deployment daemonset statefulset networkpolicy role rolebinding cronjob job pvc; do
-              for name in $(kubectl get $kind -n $ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -v '^$'); do
-                kubectl label $kind "$name" -n $ns $HELM_LABELS --overwrite 2>/dev/null || true
-                kubectl annotate $kind "$name" -n $ns $HELM_ANNOT_NAME --overwrite 2>/dev/null || true
-                kubectl annotate $kind "$name" -n $ns $HELM_ANNOT_NS --overwrite 2>/dev/null || true
+              kubectl get $kind -n $ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -v '^$' | while read name; do
+                kubectl patch $kind "$name" -n $ns --type merge -p "$PATCH" 2>/dev/null || true
               done
             done
           done
           # Fix cluster-scoped resources
           for kind in clusterrole clusterrolebinding; do
-            for name in $(kubectl get $kind --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -E "convocate|openbao|grafana|influxdb|prometheus|redis|minio|postgresql|fluentbit|ginger|node-metrics" | grep -v '^$'); do
-              kubectl label $kind "$name" $HELM_LABELS --overwrite 2>/dev/null || true
-              kubectl annotate $kind "$name" $HELM_ANNOT_NAME --overwrite 2>/dev/null || true
-              kubectl annotate $kind "$name" $HELM_ANNOT_NS --overwrite 2>/dev/null || true
+            kubectl get $kind --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -E "convocate|openbao|grafana|influxdb|prometheus|redis|minio|postgresql|fluentbit|ginger|node-metrics" | grep -v '^$' | while read name; do
+              kubectl patch $kind "$name" --type merge -p "$PATCH" 2>/dev/null || true
             done
           done
       changed_when: false
