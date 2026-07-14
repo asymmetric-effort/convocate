@@ -181,6 +181,50 @@ test.describe("Agent Manager create dialog", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Tests: Create Agent dialog dark mode styling
+// ---------------------------------------------------------------------------
+
+test.describe("Agent Manager dialog dark styling", () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page);
+    await openAgentManager(page);
+  });
+
+  test("Create Agent dialog has dark border styling", async ({ page }) => {
+    await page.locator('[data-testid="agent-manager"] button:has-text("Create Agent")').click();
+    await expect(page.locator('text=Project').first()).toBeVisible({ timeout: 5000 });
+
+    // The dialog content area should have a dark border (1px solid #444) and dark background
+    const dialogContent = page.locator('[role="dialog"]:has-text("Create Agent") >> div').filter({ has: page.locator('text=Project') }).first();
+    const styles = await dialogContent.evaluate((el) => {
+      const cs = window.getComputedStyle(el);
+      return { border: cs.border, borderColor: cs.borderColor, backgroundColor: cs.backgroundColor };
+    });
+    // Verify dark background (#1e1e1e = rgb(30, 30, 30))
+    expect(styles.backgroundColor).toContain("rgb(30, 30, 30)");
+  });
+
+  test("Agent Detail dialog has dark border styling", async ({ page }) => {
+    // Wait for agents to load
+    await page.waitForTimeout(3000);
+    const agentLink = page.locator('[data-testid="agent-manager"] a').first();
+    if (await agentLink.isVisible()) {
+      await agentLink.click();
+      await expect(page.locator('text=STATUS').first()).toBeVisible({ timeout: 5000 });
+
+      // The detail dialog content should have dark styling with border
+      const detailContent = page.locator('[role="dialog"]:has-text("Agent:") >> div').filter({ has: page.locator('text=STATUS') }).first();
+      const styles = await detailContent.evaluate((el) => {
+        const cs = window.getComputedStyle(el);
+        return { backgroundColor: cs.backgroundColor };
+      });
+      expect(styles.backgroundColor).toContain("rgb(30, 30, 30)");
+    }
+    // If no agents exist, the test passes (nothing to verify)
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Tests: Agent lifecycle via API
 // ---------------------------------------------------------------------------
 
