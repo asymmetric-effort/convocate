@@ -97,3 +97,123 @@ jobs:
           build_push pdv pdv
           build_push metrics metrics
           build_push agent agent
+
+  deploy-cluster-a:
+    name: Deploy to Cluster A
+    needs: ci
+    runs-on: [self-hosted, linux, x64]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      CLUSTER_A_HOST: ${{ secrets.CLUSTER_A_HOST }}
+      CLUSTER_A_CIDR: ${{ secrets.CLUSTER_A_CIDR }}
+      HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+      DNS_DOMAIN: ${{ secrets.DNS_DOMAIN }}
+      SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+      VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+      - name: Deploy to Cluster A
+        working-directory: infrastructure
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          cp ~/.ssh/ansible_key ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" > ~/.ssh/config
+          export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
+
+          ansible-playbook playbooks/deploy.yml \
+            -i inventory/cluster-a.yml \
+            -e "ssh_public_key='$SSH_PUBLIC_KEY'" \
+            -e "vm_password_hash='$VM_PASSWORD_HASH'" \
+            -e "skip_nginx=true"
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/ansible_key ~/.ssh/id_ed25519
+
+  pdv-cluster-a:
+    name: PDV Tests (Cluster A)
+    needs: deploy-cluster-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - name: Run full PDV suite against Cluster A
+        working-directory: test/pdv
+        env:
+          APP_URL: http://app.convocate.asymmetric-effort.com
+          GRAFANA_URL: http://192.168.3.159:38300
+          NODE_TLS_REJECT_UNAUTHORIZED: "0"
+        run: |
+          bun install
+          bunx playwright test tests/smoke.spec.ts tests/convocate-auth.spec.ts tests/access-control.spec.ts
+
+  deploy-cluster-b:
+    name: Deploy to Cluster B
+    needs: pdv-cluster-a
+    runs-on: [self-hosted, linux, x64]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      CLUSTER_B_HOST: ${{ secrets.CLUSTER_B_HOST }}
+      CLUSTER_B_CIDR: ${{ secrets.CLUSTER_B_CIDR }}
+      HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+      DNS_DOMAIN: ${{ secrets.DNS_DOMAIN }}
+      SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+      VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+      - name: Deploy to Cluster B
+        working-directory: infrastructure
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          cp ~/.ssh/ansible_key ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking no" > ~/.ssh/config
+          export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
+
+          ansible-playbook playbooks/deploy.yml \
+            -i inventory/cluster-b.yml \
+            -e "ssh_public_key='$SSH_PUBLIC_KEY'" \
+            -e "vm_password_hash='$VM_PASSWORD_HASH'"
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/ansible_key ~/.ssh/id_ed25519
+
+  smoke-cluster-b:
+    name: Smoke Tests (Cluster B)
+    needs: deploy-cluster-b
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - name: Run smoke tests against Cluster B
+        working-directory: test/pdv
+        env:
+          APP_URL: https://app.convocate.asymmetric-effort.com
+          GRAFANA_URL: https://grafana.asymmetric-effort.com
+          NODE_TLS_REJECT_UNAUTHORIZED: "0"
+        run: |
+          bun install
+          bunx playwright test tests/smoke.spec.ts
+      - name: Rollback on failure
+        if: failure()
+        working-directory: infrastructure
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          echo "StrictHostKeyChecking no" > ~/.ssh/config
+          export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
+          echo "Smoke tests failed — rollback would execute here"
+          rm -f ~/.ssh/ansible_key
