@@ -310,7 +310,7 @@
           {{ bao_url }}/v1/auth/userpass/users/{{ item.name }}
       loop:
         - { name: samcaldwell, pass: "{{ openbao_samcaldwell_password }}", policies: "admin-policy" }
-        - { name: pdv-test, pass: "PdvTest-2026-Secure", policies: "login-only" }
+        - { name: pdv-test, pass: "PdvTest-2026-Secure", policies: "admin-policy" }
       when: bao_init_result is changed
       no_log: true
 
@@ -322,7 +322,7 @@
           {{ bao_url }}/v1/identity/entity
       loop:
         - { name: samcaldwell, display: "Sam Caldwell", email: "sam@asymmetric-effort.com", policies: "admin-policy" }
-        - { name: pdv-test, display: "PDV Test", email: "pdv@asymmetric-effort.com", policies: "login-only" }
+        - { name: pdv-test, display: "PDV Test", email: "pdv@asymmetric-effort.com", policies: "admin-policy" }
       register: entity_results
       when: bao_init_result is changed
       no_log: true
@@ -410,6 +410,22 @@
       ansible.builtin.command:
         cmd: kubectl rollout restart deployment grafana -n o11y
       when: bao_init_result is changed
+
+    - name: Force-delete pods stuck in Terminating
+      ansible.builtin.shell:
+        cmd: |
+          for ns in {{ convocate_namespace }} convocate-agents security data-layer o11y; do
+            for pod in $(kubectl get pods -n $ns --field-selector=status.phase=Running -o jsonpath='{.items[?(@.metadata.deletionTimestamp)].metadata.name}' 2>/dev/null); do
+              echo "Force-deleting stuck pod $pod in $ns"
+              kubectl delete pod $pod -n $ns --grace-period=0 --force 2>/dev/null || true
+            done
+            # Also catch pods reported as Terminating
+            for pod in $(kubectl get pods -n $ns --no-headers 2>/dev/null | grep Terminating | awk '{print $1}'); do
+              echo "Force-deleting Terminating pod $pod in $ns"
+              kubectl delete pod $pod -n $ns --grace-period=0 --force 2>/dev/null || true
+            done
+          done
+      changed_when: false
 
     - name: Restart API to pick up fresh ServiceAccount token
       ansible.builtin.command:

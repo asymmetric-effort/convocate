@@ -82,14 +82,14 @@ test.describe("Smoke: PostgreSQL", () => {
   });
 });
 
-async function getAdminToken(): Promise<string> {
+async function getPdvToken(): Promise<string> {
   const res = await fetch(`${BASE}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "admin", password: "Convocate-Admin-2026" }),
+    body: JSON.stringify({ username: "pdv-test", password: "PdvTest-2026-Secure" }),
   });
   if (res.status !== 200) {
-    throw new Error(`Admin login failed: ${res.status}`);
+    throw new Error(`PDV login failed: ${res.status}`);
   }
   const data = await res.json();
   return data.accessToken;
@@ -99,10 +99,10 @@ test.describe("Smoke: K8s-dependent endpoints", () => {
   let token: string;
 
   test.beforeAll(async () => {
-    token = await getAdminToken();
+    token = await getPdvToken();
   });
 
-  test("Node Manager lists nodes without 500", async () => {
+  test("Node Manager lists nodes", async () => {
     const res = await fetch(`${BASE}/api/v1/nmgr/node`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -111,7 +111,7 @@ test.describe("Smoke: K8s-dependent endpoints", () => {
     expect(data.items).toBeDefined();
   });
 
-  test("Agent Manager lists agents without 500", async () => {
+  test("Agent Manager lists agents", async () => {
     const res = await fetch(`${BASE}/api/v1/amgr/agent`, {
       headers: { Authorization: `Bearer ${token}` },
     });
