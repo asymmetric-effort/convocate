@@ -127,11 +127,25 @@ jobs:
           echo "StrictHostKeyChecking no" > ~/.ssh/config
           export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
 
+          # Discover Cluster A control plane IP from hypervisor
+          CP_IP=$(ssh -i ~/.ssh/ansible_key ${HYPERVISOR_USER}@${CLUSTER_A_HOST} \
+            "sudo virsh domifaddr node-a-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
+          echo "Cluster A control plane IP: $CP_IP"
+
+          if [ -z "$CP_IP" ]; then
+            echo "ERROR: Could not discover Cluster A control plane IP. Is the nightly recycle running?"
+            exit 1
+          fi
+
+          # Create host_vars with discovered IP
+          mkdir -p inventory/host_vars
+          echo "ansible_host: $CP_IP" > inventory/host_vars/node-a-0.yml
+          echo "ansible_user: convocate" >> inventory/host_vars/node-a-0.yml
+
           ansible-playbook playbooks/deploy.yml \
             -i inventory/cluster-a.yml \
             -e "ssh_public_key='$SSH_PUBLIC_KEY'" \
-            -e "vm_password_hash='$VM_PASSWORD_HASH'" \
-            -e "skip_nginx=true"
+            -e "vm_password_hash='$VM_PASSWORD_HASH'"
       - name: Cleanup SSH key
         if: always()
         run: rm -f ~/.ssh/ansible_key ~/.ssh/id_ed25519
@@ -181,6 +195,21 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           echo "StrictHostKeyChecking no" > ~/.ssh/config
           export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
+
+          # Discover Cluster B control plane IP from hypervisor
+          CP_IP=$(ssh -i ~/.ssh/ansible_key ${HYPERVISOR_USER}@${CLUSTER_B_HOST} \
+            "sudo virsh domifaddr node-b-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
+          echo "Cluster B control plane IP: $CP_IP"
+
+          if [ -z "$CP_IP" ]; then
+            echo "ERROR: Could not discover Cluster B control plane IP."
+            exit 1
+          fi
+
+          # Create host_vars with discovered IP
+          mkdir -p inventory/host_vars
+          echo "ansible_host: $CP_IP" > inventory/host_vars/node-b-0.yml
+          echo "ansible_user: convocate" >> inventory/host_vars/node-b-0.yml
 
           ansible-playbook playbooks/deploy.yml \
             -i inventory/cluster-b.yml \
