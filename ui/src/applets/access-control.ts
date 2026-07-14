@@ -277,33 +277,18 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
     ) : null,
     h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
       h(DataGrid, {
-        columns: [
-          { key: "name", header: "Name", width: 150, render: (v: string, row: any) => h("div", {
-            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
-          }, v) },
-          { key: "email", header: "Email", width: 200, render: (v: string, row: any) => h("div", {
-            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
-          }, v) },
-          { key: "status", header: "Status", width: 100, render: (v: string, row: any) => h("div", {
-            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
-          }, h(Tag, { label: v, color: v === "active" ? "green" : "red", variant: "solid" as const, size: "sm" as const })) },
-          { key: "mfa", header: "MFA", width: 100, render: (v: string, row: any) => h("div", {
-            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
-          }, h(Tag, { label: v, color: v === "Enrolled" ? "green" : "gray", variant: "solid" as const, size: "sm" as const })) },
-          { key: "groups", header: "Groups", width: 150, render: (v: string, row: any) => h("div", {
-            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); },
-          }, v) },
-          { key: "actions", header: "", width: 220, render: (_: string, row: any) => h("div", { style: { display: "flex", gap: "4px" } },
-            h(Button, {
-              variant: (row.status === "active" ? "warning" : "primary") as any,
-              onClick: () => {
-                const newStatus = row.status === "active" ? "disabled" : "active";
-                fetch(`/api/v1/ac/user/${row.id}`, { method: "PATCH", headers: authHeaders(), body: JSON.stringify({ status: newStatus }) }).then(loadAll);
-              },
-            }, row.status === "active" ? "Disable" : "Enable"),
-            row.mfa === "Enrolled"
-          ) },
-        ],
+        columns: (() => {
+          const userCell = (row: any, ...children: any[]) => h("div", {
+            style: { width: "100%", height: "100%", display: "flex", alignItems: "center", margin: "-4px", padding: "4px", boxSizing: "border-box" as const },
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, userId: row.id }); setGroupContextMenu(null); },
+          }, ...children);
+          return [
+          { key: "name", header: "Name", width: 150, render: (v: string, row: any) => userCell(row, v) },
+          { key: "email", header: "Email", width: 200, render: (v: string, row: any) => userCell(row, v) },
+          { key: "status", header: "Status", width: 100, render: (v: string, row: any) => userCell(row, h(Tag, { label: v, color: v === "active" ? "green" : "red", variant: "solid" as const, size: "sm" as const })) },
+          { key: "mfa", header: "MFA", width: 100, render: (v: string, row: any) => userCell(row, h(Tag, { label: v, color: v === "Enrolled" ? "green" : "gray", variant: "solid" as const, size: "sm" as const })) },
+          { key: "groups", header: "Groups", width: 150, render: (v: string, row: any) => userCell(row, v) },
+        ]; })(),
         data: (() => {
           const groupNameMap: Record<string, string> = {};
           for (const g of groups) { groupNameMap[g.id] = g.name; }
@@ -321,20 +306,17 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
     ) : null,
     h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
       h(DataGrid, {
-        columns: [
-          { key: "name", header: "Name", width: 200, render: (v: string, row: any) => h("div", {
-            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: row.id }); },
-          }, v) },
-          { key: "userCount", header: "Users", width: 80, render: (v: string, row: any) => h("div", {
-            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: row.id }); },
-          }, v) },
-          { key: "roles", header: "Roles", width: 300, render: (v: string, row: any) => h("div", {
-            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: row.id }); },
-          }, v) },
-          { key: "builtin", header: "Built-in", width: 80, render: (v: string, row: any) => h("div", {
-            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: row.id }); },
-          }, v) },
-        ],
+        columns: (() => {
+          const groupCell = (row: any, ...children: any[]) => h("div", {
+            style: { width: "100%", height: "100%", display: "flex", alignItems: "center", margin: "-4px", padding: "4px", boxSizing: "border-box" as const },
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: row.id }); setContextMenu(null); },
+          }, ...children);
+          return [
+          { key: "name", header: "Name", width: 200, render: (v: string, row: any) => groupCell(row, v) },
+          { key: "userCount", header: "Users", width: 80, render: (v: string, row: any) => groupCell(row, v) },
+          { key: "roles", header: "Roles", width: 300, render: (v: string, row: any) => groupCell(row, v) },
+          { key: "builtin", header: "Built-in", width: 80, render: (v: string, row: any) => groupCell(row, v) },
+        ]; })(),
         data: groups.map((g) => ({ id: g.id, name: g.name, userCount: String(g.userCount), roles: g.roles.join(", "), builtin: g.builtin ? "Yes" : "No" })),
         striped: true,
       })
