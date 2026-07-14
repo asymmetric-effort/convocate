@@ -84,6 +84,12 @@
           # (don't use helm uninstall — it cascades and deletes managed resources)
           kubectl delete secret -n default -l owner=helm,name=convocate --ignore-not-found 2>/dev/null || true
 
+          # Clear stale claimRefs on Released PVs so new PVCs can bind
+          for pv in $(kubectl get pv --no-headers -o custom-columns=NAME:.metadata.name,STATUS:.status.phase 2>/dev/null | grep Released | awk '{print $1}' | grep -E "openbao|postgresql|redis|minio|influxdb|prometheus|grafana"); do
+            echo "Clearing stale claimRef on PV $pv"
+            kubectl patch pv "$pv" --type merge -p '{"spec":{"claimRef":null}}' 2>/dev/null || true
+          done
+
           # Fix Helm ownership on ALL existing resources (single patch per resource)
           PATCH='{"metadata":{"labels":{"app.kubernetes.io/managed-by":"Helm"},"annotations":{"meta.helm.sh/release-name":"convocate","meta.helm.sh/release-namespace":"{{ convocate_namespace }}"}}}'
           for ns in security convocate convocate-agents data-layer o11y; do
