@@ -229,9 +229,19 @@ jobs:
           echo "StrictHostKeyChecking no" > ~/.ssh/config
           export ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key
 
-          # Discover Cluster B control plane IP from hypervisor
+          # Discover Cluster B control plane IP
+          # Try virsh first (DHCP), then fall back to known static IPs
           CP_IP=$(ssh -i ~/.ssh/ansible_key ${HYPERVISOR_USER}@${CLUSTER_B_HOST} \
             "sudo virsh domifaddr node-b-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
+          if [ -z "$CP_IP" ]; then
+            # Try known static IPs (192.168.56.20-25)
+            for ip in 192.168.56.20 192.168.56.21 192.168.56.22; do
+              if ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} -o ConnectTimeout=3 convocate@$ip hostname 2>/dev/null | grep -q node-b; then
+                CP_IP=$ip
+                break
+              fi
+            done
+          fi
           echo "Cluster B control plane IP: $CP_IP"
 
           if [ -z "$CP_IP" ]; then
