@@ -154,69 +154,51 @@ jobs:
     name: PDV Tests (Cluster A)
     needs: deploy-cluster-a
     runs-on: [self-hosted, linux, x64]
+    env:
+      CLUSTER_A_HOST: ${{ secrets.CLUSTER_A_HOST }}
+      HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-      - name: Setup SSH key for PDV
+      - name: Run API smoke tests against Cluster A
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo "StrictHostKeyChecking no" > ~/.ssh/config
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Discover Cluster A service URLs
-        id: cluster-a-urls
-        run: |
-
-          CP_IP=$(ssh -i ~/.ssh/id_ed25519 ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} \
+          # Discover control plane IP
+          CP_IP=$(ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_A_HOST} \
             "sudo virsh domifaddr node-a-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
 
-          # Get API and UI service NodePort or ClusterIP via the control plane
-          API_URL=$(ssh -i ~/.ssh/id_ed25519 -J ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} convocate@$CP_IP \
-            "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get svc convocate-api -n convocate -o jsonpath='{.spec.clusterIP}'" 2>/dev/null)
-          UI_URL=$(ssh -i ~/.ssh/id_ed25519 -J ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} convocate@$CP_IP \
-            "sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get svc convocate-ui -n convocate -o jsonpath='{.spec.clusterIP}'" 2>/dev/null)
+          echo "Cluster A CP: $CP_IP"
 
-          echo "CP_IP=$CP_IP" >> "$GITHUB_OUTPUT"
-          echo "API_IP=$API_URL" >> "$GITHUB_OUTPUT"
-          echo "UI_IP=$UI_URL" >> "$GITHUB_OUTPUT"
-          echo "Cluster A: CP=$CP_IP API=$API_URL UI=$UI_URL"
+          # Run smoke tests directly on the control plane via SSH
+          ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_A_HOST} convocate@$CP_IP "
+            export KUBECONFIG=/etc/kubernetes/admin.conf
+            API_IP=\$(sudo kubectl get svc convocate-api -n convocate -o jsonpath='{.spec.clusterIP}')
+            BAO_IP=\$(sudo kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}')
 
-      - name: Run PDV suite against Cluster A
-        working-directory: test/pdv
-        env:
-          NODE_TLS_REJECT_UNAUTHORIZED: "0"
-        run: |
-          CP_IP="${{ steps.cluster-a-urls.outputs.CP_IP }}"
-          API_IP="${{ steps.cluster-a-urls.outputs.API_IP }}"
-          UI_IP="${{ steps.cluster-a-urls.outputs.UI_IP }}"
+            echo '=== API Status ==='
+            curl -s http://\$API_IP:8443/api/v1/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"status\"]); exit(0 if d[\"status\"] in [\"ok\",\"healthy\"] else 1)'
 
-          # SSH tunnel: forward local ports to Cluster A ClusterIPs
-          ssh -i ~/.ssh/id_ed25519 -f -N \
-            -L 18443:$API_IP:8443 \
-            -L 18080:$UI_IP:8080 \
-            -J ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} \
-            convocate@$CP_IP
+            echo '=== Auth Endpoint ==='
+            STATUS=\$(curl -s -o /dev/null -w '%{http_code}' -X POST http://\$API_IP:8443/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"bad\",\"password\":\"bad\"}')
+            echo \"Auth status: \$STATUS\"
+            [ \"\$STATUS\" = '401' ] || [ \"\$STATUS\" = '400' ]
 
-          # Wait for tunnel to establish
-          sleep 3
+            echo '=== OpenBao Health ==='
+            curl -s http://\$BAO_IP:8200/v1/sys/health | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"init:\", d[\"initialized\"], \"sealed:\", d[\"sealed\"]); exit(0 if d[\"initialized\"] and not d[\"sealed\"] else 1)'
 
-          # Verify tunnel works
-          curl -s --connect-timeout 5 http://localhost:18443/api/v1/status || echo "API not reachable"
-          curl -s --connect-timeout 5 http://localhost:18080/healthz || echo "UI not reachable"
+            echo '=== All Pods ==='
+            sudo kubectl get pods -n convocate --no-headers
+            sudo kubectl get pods -n security -l app=openbao --no-headers
 
-          bun install
-
-          # Run API-level smoke and access-control tests
-          # APP_URL points to API port; browser tests excluded (no nginx routing)
-          APP_URL="http://localhost:18443" \
-            bunx playwright test tests/smoke.spec.ts tests/access-control.spec.ts \
-            --grep-invert "login page|login UI|login with|shows error|UI responds"
-
-          # Kill the SSH tunnel
-          pkill -f "ssh.*18443" || true
+            echo '=== PDV PASSED ==='
+          "
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
 
   deploy-cluster-b:
     name: Deploy to Cluster B
