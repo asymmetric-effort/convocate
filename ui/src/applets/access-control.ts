@@ -147,6 +147,7 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
   const [editUserEmail, setEditUserEmail] = useState("");
   const [editUserGroups, setEditUserGroups] = useState<string[]>([]);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; userId: string } | null>(null);
+  const [groupContextMenu, setGroupContextMenu] = useState<{ x: number; y: number; groupId: string } | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -321,25 +322,18 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
     h("div", { style: { backgroundColor: "#fff", borderRadius: "4px" } },
       h(DataGrid, {
         columns: [
-          { key: "name", header: "Name", width: 150 },
-          { key: "userCount", header: "Users", width: 80 },
-          { key: "roles", header: "Roles", width: 250 },
-          { key: "builtin", header: "Built-in", width: 80 },
-          { key: "actions", header: "", width: 160, render: (_: string, row: any) =>
-            row.builtin === "No" ? h("div", { style: { display: "flex", gap: "4px" } },
-              h(Button, {
-                variant: "secondary" as any,
-                onClick: () => {
-                  const g = groups.find((gr) => gr.id === row.id);
-                  if (g) openEditGroup(g);
-                },
-              }, "Edit"),
-              h(Button, {
-                variant: "danger" as any,
-                onClick: () => fetch(`/api/v1/ac/group/${row.id}`, { method: "DELETE", headers: authHeaders() }).then(loadAll),
-              }, "Delete"),
-            ) : null
-          },
+          { key: "name", header: "Name", width: 200, render: (v: string, row: any) => h("div", {
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: row.id }); },
+          }, v) },
+          { key: "userCount", header: "Users", width: 80, render: (v: string, row: any) => h("div", {
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: row.id }); },
+          }, v) },
+          { key: "roles", header: "Roles", width: 300, render: (v: string, row: any) => h("div", {
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: row.id }); },
+          }, v) },
+          { key: "builtin", header: "Built-in", width: 80, render: (v: string, row: any) => h("div", {
+            onContextMenu: (e: MouseEvent) => { e.preventDefault(); setGroupContextMenu({ x: e.clientX, y: e.clientY, groupId: row.id }); },
+          }, v) },
         ],
         data: groups.map((g) => ({ id: g.id, name: g.name, userCount: String(g.userCount), roles: g.roles.join(", "), builtin: g.builtin ? "Yes" : "No" })),
         striped: true,
@@ -370,7 +364,7 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
 
   const menuItemStyle = { padding: "6px 12px", cursor: "pointer", fontSize: "13px", color: "#e0e0e0", whiteSpace: "nowrap" as const };
 
-  return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "access-control", onClick: () => setContextMenu(null) },
+  return h("div", { style: { display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start", width: "100%", height: "100%", backgroundColor: "#1e1e1e", color: "#e0e0e0" }, "data-testid": "access-control", onClick: () => { setContextMenu(null); setGroupContextMenu(null); } },
     error ? h("div", { style: { padding: "4px 8px", backgroundColor: "#3d1c1c", color: "#ff8888", fontSize: "12px", flexShrink: 0 }, onClick: () => setError("") }, error) : null,
     h("div", { style: { flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-start" } },
       h(Tabs, { tabs: [
@@ -536,6 +530,42 @@ export function AccessControl({ principal }: { principal?: any } = {}) {
         : h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { handleEnrollMFA(contextMenu.userId); setContextMenu(null); } }, "Enroll MFA"),
       h("div", { style: { height: "1px", backgroundColor: "#555", margin: "4px 0" } }),
       h("div", { style: { ...menuItemStyle, color: "#ff6666" }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => { if (confirm("Are you sure you want to delete this user?")) deleteUser(contextMenu.userId).then(loadAll); setContextMenu(null); } }, "Delete User"),
+    ) : null,
+    // Group row context menu
+    groupContextMenu ? h("div", {
+      style: {
+        position: "fixed", left: groupContextMenu.x + "px", top: groupContextMenu.y + "px",
+        backgroundColor: "#2d2d2d", border: "1px solid #555", borderRadius: "4px",
+        padding: "4px 0", zIndex: 1000, minWidth: "160px",
+      },
+      onClick: (e: MouseEvent) => e.stopPropagation(),
+    },
+      (() => { const g = groups.find((gr) => gr.id === groupContextMenu.groupId); return g && g.builtin; })()
+        ? h("div", { style: { ...menuItemStyle, color: "#666", cursor: "default" } }, "Built-in group (read-only)")
+        : [
+          h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => {
+            const g = groups.find((gr) => gr.id === groupContextMenu.groupId);
+            if (g) {
+              const newName = prompt("Rename group:", g.name);
+              if (newName && newName.trim() && newName.trim() !== g.name) {
+                updateGroupName(g.id, newName.trim()).then(loadAll);
+              }
+            }
+            setGroupContextMenu(null);
+          } }, "Rename Group"),
+          h("div", { style: { ...menuItemStyle }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => {
+            const g = groups.find((gr) => gr.id === groupContextMenu.groupId);
+            if (g) openEditGroup(g);
+            setGroupContextMenu(null);
+          } }, "Edit Group Membership"),
+          h("div", { style: { height: "1px", backgroundColor: "#555", margin: "4px 0" } }),
+          h("div", { style: { ...menuItemStyle, color: "#ff6666" }, onMouseOver: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#3a3a3a"; }, onMouseOut: (e: MouseEvent) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }, onClick: () => {
+            if (confirm("Are you sure you want to delete this group?")) {
+              fetch(`/api/v1/ac/group/${groupContextMenu.groupId}`, { method: "DELETE", headers: authHeaders() }).then(loadAll);
+            }
+            setGroupContextMenu(null);
+          } }, "Delete Group"),
+        ]
     ) : null,
   );
 }
