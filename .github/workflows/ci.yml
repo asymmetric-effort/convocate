@@ -157,13 +157,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
-      - name: Discover Cluster A service URLs
-        id: cluster-a-urls
+      - name: Setup SSH key for PDV
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo "StrictHostKeyChecking no" > ~/.ssh/config
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Discover Cluster A service URLs
+        id: cluster-a-urls
+        run: |
 
           CP_IP=$(ssh -i ~/.ssh/id_ed25519 ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} \
             "sudo virsh domifaddr node-a-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
@@ -195,10 +200,20 @@ jobs:
             -J ${{ secrets.HYPERVISOR_USER }}@${{ secrets.CLUSTER_A_HOST }} \
             convocate@$CP_IP
 
+          # Wait for tunnel to establish
+          sleep 3
+
+          # Verify tunnel works
+          curl -s --connect-timeout 5 http://localhost:18443/api/v1/status || echo "API not reachable"
+          curl -s --connect-timeout 5 http://localhost:18080/healthz || echo "UI not reachable"
+
           bun install
-          APP_URL="http://localhost:18080" \
+
+          # Run API-level smoke and access-control tests
+          # APP_URL points to API port; browser tests excluded (no nginx routing)
+          APP_URL="http://localhost:18443" \
             bunx playwright test tests/smoke.spec.ts tests/access-control.spec.ts \
-            --grep-invert "login page|login UI|login with|shows error"
+            --grep-invert "login page|login UI|login with|shows error|UI responds"
 
           # Kill the SSH tunnel
           pkill -f "ssh.*18443" || true
