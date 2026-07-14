@@ -47,10 +47,13 @@
           HELM_ANNOT_NAME="meta.helm.sh/release-name=convocate"
           HELM_ANNOT_NS="meta.helm.sh/release-namespace={{ convocate_namespace }}"
 
+          # Wait for any namespaces stuck in Terminating state
           for ns in security convocate convocate-agents data-layer o11y; do
+            if kubectl get namespace $ns -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
+              echo "Waiting for namespace $ns to finish terminating..."
+              kubectl wait --for=delete namespace/$ns --timeout=120s 2>/dev/null || true
+            fi
             kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
-            kubectl label namespace $ns $HELM_LABELS --overwrite
-            kubectl annotate namespace $ns $HELM_ANNOT_NAME $HELM_ANNOT_NS --overwrite
           done
           kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder --dry-run=client -o yaml | kubectl apply -f -
@@ -69,39 +72,27 @@
           kubectl create secret tls grafana-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key --dry-run=client -o yaml | kubectl apply -f -
           rm -f /tmp/tls.key /tmp/tls.crt
 
-          # Remove any stale Helm release from the default namespace
-          helm uninstall convocate -n default 2>/dev/null || true
+          # Remove stale Helm release tracking from default namespace
+          # (don't use helm uninstall — it cascades and deletes managed resources)
+          kubectl delete secret -n default -l owner=helm,name=convocate --ignore-not-found 2>/dev/null || true
 
-          # Fix Helm ownership: delete resources with wrong release-namespace annotation
-          # so Helm can recreate them with the correct ownership metadata.
+          # Fix Helm ownership on ALL existing resources: overwrite annotations
+          # to match the target namespace so helm upgrade --install can adopt them.
           for ns in security convocate convocate-agents data-layer o11y; do
             for kind in secret configmap service serviceaccount deployment daemonset statefulset networkpolicy role rolebinding cronjob job pvc; do
               for name in $(kubectl get $kind -n $ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -v '^$'); do
-                CURRENT_NS=$(kubectl get $kind $name -n $ns -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-namespace}' 2>/dev/null)
-                if [ -n "$CURRENT_NS" ] && [ "$CURRENT_NS" != "{{ convocate_namespace }}" ]; then
-                  echo "Deleting $kind/$name in $ns (has release-namespace=$CURRENT_NS, need {{ convocate_namespace }})"
-                  kubectl delete $kind $name -n $ns --ignore-not-found
-                fi
+                kubectl label $kind "$name" -n $ns $HELM_LABELS --overwrite 2>/dev/null || true
+                kubectl annotate $kind "$name" -n $ns $HELM_ANNOT_NAME --overwrite 2>/dev/null || true
+                kubectl annotate $kind "$name" -n $ns $HELM_ANNOT_NS --overwrite 2>/dev/null || true
               done
             done
           done
           # Fix cluster-scoped resources
           for kind in clusterrole clusterrolebinding; do
             for name in $(kubectl get $kind --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -E "convocate|openbao|grafana|influxdb|prometheus|redis|minio|postgresql|fluentbit|ginger|node-metrics" | grep -v '^$'); do
-              CURRENT_NS=$(kubectl get $kind $name -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-namespace}' 2>/dev/null)
-              if [ -n "$CURRENT_NS" ] && [ "$CURRENT_NS" != "{{ convocate_namespace }}" ]; then
-                echo "Deleting $kind/$name (has release-namespace=$CURRENT_NS, need {{ convocate_namespace }})"
-                kubectl delete $kind $name --ignore-not-found
-              fi
-            done
-          done
-          # Label namespaces and secrets we just created
-          for ns in security convocate convocate-agents data-layer o11y; do
-            kubectl label namespace $ns $HELM_LABELS --overwrite
-            kubectl annotate namespace $ns $HELM_ANNOT_NAME $HELM_ANNOT_NS --overwrite
-            for name in $(kubectl get secret -n $ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -v '^$'); do
-              kubectl label secret $name -n $ns $HELM_LABELS --overwrite 2>/dev/null || true
-              kubectl annotate secret $name -n $ns $HELM_ANNOT_NAME $HELM_ANNOT_NS --overwrite 2>/dev/null || true
+              kubectl label $kind "$name" $HELM_LABELS --overwrite 2>/dev/null || true
+              kubectl annotate $kind "$name" $HELM_ANNOT_NAME --overwrite 2>/dev/null || true
+              kubectl annotate $kind "$name" $HELM_ANNOT_NS --overwrite 2>/dev/null || true
             done
           done
       changed_when: false
