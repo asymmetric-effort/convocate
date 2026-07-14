@@ -411,12 +411,11 @@
         cmd: kubectl rollout restart deployment grafana -n o11y
       when: bao_init_result is changed
 
-    - name: Restart API to pick up new token
+    - name: Restart API to pick up fresh ServiceAccount token
       ansible.builtin.command:
         cmd: >-
           kubectl rollout restart deployment/convocate-api
           -n {{ convocate_namespace }}
-      when: bao_init_result is changed
 
     - name: Wait for API rollout
       ansible.builtin.command:
