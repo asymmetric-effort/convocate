@@ -223,6 +223,65 @@ jobs:
             "
           fi
 
+          # Step 8: Fix nginx proxy tunnels on hypervisor
+          if [ "$AUTH_SEALED" = "True" ]; then
+            echo "=== Step 8: Fix proxy tunnels ==="
+            ssh -i ~/.ssh/ansible_key ${HYPERVISOR_USER}@${CLUSTER_B_HOST} "
+              echo '--- What is on ports 38200/38300? ---'
+              sudo ss -tlnp | grep -E '38200|38300' || echo 'Nothing listening'
+              sudo ps aux | grep -E 'ssh.*38200|ssh.*38300|kubectl.*port-forward' | grep -v grep || echo 'No tunnels found'
+
+              echo '--- Kill stale tunnels ---'
+              sudo pkill -f 'ssh.*38200' 2>/dev/null || true
+              sudo pkill -f 'ssh.*38300' 2>/dev/null || true
+              sudo pkill -f 'kubectl.*port-forward.*openbao' 2>/dev/null || true
+              sudo pkill -f 'kubectl.*port-forward.*grafana' 2>/dev/null || true
+              sleep 2
+
+              echo '--- Set up fresh tunnels via SSH to control plane ---'
+              # Get ClusterIPs from the control plane
+              BAO_CIP=\$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null convocate@$CP_IP 'sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get svc openbao -n security -o jsonpath=\"{.spec.clusterIP}\"' 2>/dev/null)
+              GRAFANA_CIP=\$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null convocate@$CP_IP 'sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get svc grafana -n o11y -o jsonpath=\"{.spec.clusterIP}\"' 2>/dev/null)
+              echo \"OpenBao ClusterIP: \$BAO_CIP  Grafana ClusterIP: \$GRAFANA_CIP\"
+
+              if [ -n \"\$BAO_CIP\" ]; then
+                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -f -N -L 38200:\$BAO_CIP:8200 convocate@$CP_IP 2>/dev/null && echo 'OpenBao tunnel started' || echo 'OpenBao tunnel failed'
+              fi
+              if [ -n \"\$GRAFANA_CIP\" ]; then
+                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -f -N -L 38300:\$GRAFANA_CIP:3000 convocate@$CP_IP 2>/dev/null && echo 'Grafana tunnel started' || echo 'Grafana tunnel failed'
+              fi
+
+              sleep 2
+              echo '--- Verify tunnels ---'
+              sudo ss -tlnp | grep -E '38200|38300'
+            "
+
+            # Re-check external services
+            echo "=== Final external check ==="
+            sleep 3
+            echo "Convocate: $(curl -sfk --max-time 5 https://app.convocate.asymmetric-effort.com/api/v1/status >/dev/null 2>&1 && echo OK || echo FAILED)"
+            echo "Grafana: $(curl -sfk --max-time 5 https://grafana.asymmetric-effort.com/api/health >/dev/null 2>&1 && echo OK || echo FAILED)"
+            AUTH_CODE2=$(curl -sk --max-time 5 -o /dev/null -w '%{http_code}' https://auth.asymmetric-effort.com/v1/sys/health)
+            echo "OpenBao: HTTP $AUTH_CODE2"
+          fi
+
+          # Step 9: Fix Grafana Pending pods
+          echo "=== Step 9: Fix Grafana ==="
+          ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
+            export KUBECONFIG=/etc/kubernetes/admin.conf
+            echo '--- Grafana pods ---'
+            sudo kubectl get pods -n o11y -l app=grafana -o wide --no-headers
+            echo '--- Grafana PVC ---'
+            sudo kubectl get pvc -n o11y --no-headers
+            echo '--- Grafana PV ---'
+            sudo kubectl get pv | grep grafana || echo 'No grafana PV'
+            echo '--- Grafana pod events ---'
+            GPOD=\$(sudo kubectl get pod -n o11y -l app=grafana --no-headers | grep Pending | head -1 | awk '{print \$1}')
+            if [ -n \"\$GPOD\" ]; then
+              sudo kubectl describe pod \$GPOD -n o11y | grep -A5 Events | tail -6
+            fi
+          "
+
           echo "=== Recovery Complete ==="
 
       - name: Cleanup
