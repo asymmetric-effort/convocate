@@ -202,6 +202,23 @@ jobs:
             -e "ssh_public_key='$SSH_PUBLIC_KEY'" \
             -e "vm_password_hash='$VM_PASSWORD_HASH'"
 
+          # Step 4b: Restart OpenBao so all pods pick up the real unseal key
+          echo "=== Restarting OpenBao for all pods to unseal ==="
+          ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
+            export KUBECONFIG=/etc/kubernetes/admin.conf
+            sudo kubectl rollout restart deployment openbao -n security
+            sudo kubectl rollout status deployment openbao -n security --timeout=120s
+            sleep 10
+            BAO_IP=\$(sudo kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}')
+            for i in \$(seq 1 6); do
+              HEALTH=\$(curl -s http://\$BAO_IP:8200/v1/sys/health 2>/dev/null)
+              SEALED=\$(echo \$HEALTH | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"sealed\",True))' 2>/dev/null)
+              echo \"Attempt \$i: sealed=\$SEALED\"
+              [ \"\$SEALED\" = 'False' ] && break
+              sleep 5
+            done
+          "
+
           # Step 5: Verify everything works
           echo "=== Final Verification ==="
           ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
