@@ -286,19 +286,55 @@ jobs:
             echo \"node-b-4 taints: \$TAINTED\"
 
             if echo \"\$TAINTED\" | grep -q disk-pressure; then
-              echo 'node-b-4 has disk pressure — cleaning up...'
-              # Clean up container images and dead containers on node-b-4
-              NODE4_IP=\$(sudo kubectl get node node-b-4 -o jsonpath='{.status.addresses[?(@.type==\"InternalIP\")].address}')
-              echo \"node-b-4 IP: \$NODE4_IP\"
-              # Can't SSH to worker nodes, so use a cleanup pod
+              echo 'node-b-4 has disk pressure — aggressive cleanup...'
+
+              # Run privileged pod with containerd socket to prune images
               sudo kubectl delete pod disk-cleanup -n kube-system --ignore-not-found --grace-period=0 --force 2>/dev/null || true
               sleep 2
-              sudo kubectl run disk-cleanup -n kube-system --restart=Never \
-                --image=busybox:latest \
-                --overrides='{\"spec\":{\"nodeSelector\":{\"kubernetes.io/hostname\":\"node-b-4\"},\"volumes\":[{\"name\":\"var-log\",\"hostPath\":{\"path\":\"/var/log\"}},{\"name\":\"tmp\",\"hostPath\":{\"path\":\"/tmp\"}}],\"containers\":[{\"name\":\"cleanup\",\"image\":\"busybox:latest\",\"command\":[\"sh\",\"-c\",\"find /var-log -name \\\"*.log\\\" -size +100M -exec truncate -s 0 {} \\\\; 2>/dev/null; rm -rf /tmp-host/*.tmp /tmp-host/containerd-* 2>/dev/null; df -h / && echo CLEANUP DONE\"],\"volumeMounts\":[{\"name\":\"var-log\",\"mountPath\":\"/var-log\"},{\"name\":\"tmp\",\"mountPath\":\"/tmp-host\"}]}]}}' \
-                --command -- sh -c 'find /var-log -name \"*.log\" -size +100M -exec truncate -s 0 {} \; 2>/dev/null; rm -rf /tmp-host/*.tmp /tmp-host/containerd-* 2>/dev/null; df -h / && echo CLEANUP DONE'
-              sudo kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/disk-cleanup -n kube-system --timeout=30s 2>/dev/null || true
+              cat <<'CLEANEOF' | sudo kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: disk-cleanup
+            namespace: kube-system
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: node-b-4
+            tolerations:
+              - operator: Exists
+            restartPolicy: Never
+            hostPID: true
+            containers:
+              - name: cleanup
+                image: busybox:latest
+                securityContext:
+                  privileged: true
+                command: [sh, -c]
+                args:
+                  - |
+                    echo "=== Before ==="
+                    df -h /host
+                    echo "=== Truncating logs ==="
+                    find /host/var/log -name "*.log" -size +10M -exec truncate -s 0 {} \; 2>/dev/null
+                    find /host/var/log -name "*.gz" -mtime +1 -delete 2>/dev/null
+                    echo "=== Cleaning containerd ==="
+                    chroot /host crictl rmi --prune 2>/dev/null || true
+                    echo "=== Cleaning journal ==="
+                    chroot /host journalctl --vacuum-size=50M 2>/dev/null || true
+                    echo "=== After ==="
+                    df -h /host
+                    echo "CLEANUP DONE"
+                volumeMounts:
+                  - name: host
+                    mountPath: /host
+            volumes:
+              - name: host
+                hostPath:
+                  path: /
+          CLEANEOF
+              sudo kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/disk-cleanup -n kube-system --timeout=60s 2>/dev/null || true
               echo \"Cleanup phase: \$(sudo kubectl get pod disk-cleanup -n kube-system -o jsonpath='{.status.phase}')\"
+              sudo kubectl logs disk-cleanup -n kube-system 2>/dev/null || true
               sudo kubectl delete pod disk-cleanup -n kube-system --ignore-not-found
 
               echo 'Waiting for disk-pressure taint to clear...'
