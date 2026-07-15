@@ -125,10 +125,19 @@ jobs:
             elif [ \"\$SEALED\" = 'True' ] || [ \"\$INITIALIZED\" = 'False' ] || [ \"\$UNSEAL_KEY\" = 'placeholder' ]; then
               echo 'OpenBao needs reinitializtion (sealed with lost key or not initialized)...'
 
-              # Wipe data and restart
+              # Wipe data on the node where OpenBao PV lives (not the control plane)
               sudo kubectl scale deployment openbao -n security --replicas=0
               sleep 5
-              sudo rm -rf /mnt/security/openbao/*
+              BAO_NODE=\$(sudo kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null || echo '')
+              echo \"OpenBao data node: \$BAO_NODE\"
+              if [ -n \"\$BAO_NODE\" ]; then
+                BAO_NODE_IP=\$(sudo kubectl get node \$BAO_NODE -o jsonpath='{.status.addresses[?(@.type==\"InternalIP\")].address}')
+                echo \"Wiping /mnt/security/openbao on \$BAO_NODE (\$BAO_NODE_IP)\"
+                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \$BAO_NODE_IP 'sudo rm -rf /mnt/security/openbao/*'
+              else
+                echo 'WARNING: Could not determine OpenBao node, wiping locally'
+                sudo rm -rf /mnt/security/openbao/*
+              fi
 
               # Delete and recreate placeholder secrets
               for ns in security convocate data-layer o11y; do
@@ -153,7 +162,13 @@ jobs:
                 echo 'Root token is invalid — need to reinitialize'
                 sudo kubectl scale deployment openbao -n security --replicas=0
                 sleep 5
-                sudo rm -rf /mnt/security/openbao/*
+                BAO_NODE=\$(sudo kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null || echo '')
+                if [ -n \"\$BAO_NODE\" ]; then
+                  BAO_NODE_IP=\$(sudo kubectl get node \$BAO_NODE -o jsonpath='{.status.addresses[?(@.type==\"InternalIP\")].address}')
+                  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \$BAO_NODE_IP 'sudo rm -rf /mnt/security/openbao/*'
+                else
+                  sudo rm -rf /mnt/security/openbao/*
+                fi
                 for ns in security convocate data-layer o11y; do
                   sudo kubectl delete secret openbao-root-token -n \$ns --ignore-not-found
                   sudo kubectl create secret generic openbao-root-token -n \$ns --from-literal=token=placeholder
