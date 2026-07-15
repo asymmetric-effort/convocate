@@ -270,20 +270,64 @@ jobs:
             echo "OpenBao: HTTP $AUTH_CODE2"
           fi
 
-          # Step 9: Fix Grafana Pending pods
+          # Step 9: Fix Grafana Pending pods (node-b-4 disk pressure)
           echo "=== Step 9: Fix Grafana ==="
           ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
             export KUBECONFIG=/etc/kubernetes/admin.conf
-            echo '--- Grafana pods ---'
-            sudo kubectl get pods -n o11y -l app=grafana -o wide --no-headers
-            echo '--- Grafana PVC ---'
-            sudo kubectl get pvc -n o11y --no-headers
-            echo '--- Grafana PV ---'
-            sudo kubectl get pv | grep grafana || echo 'No grafana PV'
+
             echo '--- Grafana pod events ---'
             GPOD=\$(sudo kubectl get pod -n o11y -l app=grafana --no-headers | grep Pending | head -1 | awk '{print \$1}')
             if [ -n \"\$GPOD\" ]; then
               sudo kubectl describe pod \$GPOD -n o11y | grep -A5 Events | tail -6
+            fi
+
+            echo '--- Check node-b-4 disk pressure ---'
+            TAINTED=\$(sudo kubectl get node node-b-4 -o jsonpath='{.spec.taints}' 2>/dev/null)
+            echo \"node-b-4 taints: \$TAINTED\"
+
+            if echo \"\$TAINTED\" | grep -q disk-pressure; then
+              echo 'node-b-4 has disk pressure — cleaning up...'
+              # Clean up container images and dead containers on node-b-4
+              NODE4_IP=\$(sudo kubectl get node node-b-4 -o jsonpath='{.status.addresses[?(@.type==\"InternalIP\")].address}')
+              echo \"node-b-4 IP: \$NODE4_IP\"
+              # Can't SSH to worker nodes, so use a cleanup pod
+              sudo kubectl delete pod disk-cleanup -n kube-system --ignore-not-found --grace-period=0 --force 2>/dev/null || true
+              sleep 2
+              sudo kubectl run disk-cleanup -n kube-system --restart=Never \
+                --image=busybox:latest \
+                --overrides='{\"spec\":{\"nodeSelector\":{\"kubernetes.io/hostname\":\"node-b-4\"},\"volumes\":[{\"name\":\"var-log\",\"hostPath\":{\"path\":\"/var/log\"}},{\"name\":\"tmp\",\"hostPath\":{\"path\":\"/tmp\"}}],\"containers\":[{\"name\":\"cleanup\",\"image\":\"busybox:latest\",\"command\":[\"sh\",\"-c\",\"find /var-log -name \\\"*.log\\\" -size +100M -exec truncate -s 0 {} \\\\; 2>/dev/null; rm -rf /tmp-host/*.tmp /tmp-host/containerd-* 2>/dev/null; df -h / && echo CLEANUP DONE\"],\"volumeMounts\":[{\"name\":\"var-log\",\"mountPath\":\"/var-log\"},{\"name\":\"tmp\",\"mountPath\":\"/tmp-host\"}]}]}}' \
+                --command -- sh -c 'find /var-log -name \"*.log\" -size +100M -exec truncate -s 0 {} \; 2>/dev/null; rm -rf /tmp-host/*.tmp /tmp-host/containerd-* 2>/dev/null; df -h / && echo CLEANUP DONE'
+              sudo kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/disk-cleanup -n kube-system --timeout=30s 2>/dev/null || true
+              echo \"Cleanup phase: \$(sudo kubectl get pod disk-cleanup -n kube-system -o jsonpath='{.status.phase}')\"
+              sudo kubectl delete pod disk-cleanup -n kube-system --ignore-not-found
+
+              echo 'Waiting for disk-pressure taint to clear...'
+              for i in \$(seq 1 12); do
+                TAINTS=\$(sudo kubectl get node node-b-4 -o jsonpath='{.spec.taints}' 2>/dev/null)
+                if ! echo \"\$TAINTS\" | grep -q disk-pressure; then
+                  echo 'Disk pressure cleared!'
+                  break
+                fi
+                echo \"Still tainted (attempt \$i/12)\"
+                sleep 10
+              done
+            fi
+
+            echo '--- Grafana pods after fix ---'
+            sudo kubectl get pods -n o11y -l app=grafana -o wide --no-headers
+          "
+
+          # Restart the Grafana port-forward since we killed it
+          echo "=== Restart Grafana port-forward ==="
+          ssh -i ~/.ssh/ansible_key ${HYPERVISOR_USER}@${CLUSTER_B_HOST} "
+            # Check if grafana port-forward is still running
+            if ! sudo ss -tlnp | grep -q 38300; then
+              echo 'Grafana port-forward dead — restarting...'
+              sudo -u sam-caldwell nohup kubectl --kubeconfig=/home/sam-caldwell/.kube/config port-forward --address 0.0.0.0 -n o11y svc/grafana 38300:3000 </dev/null >/dev/null 2>&1 &
+              sleep 3
+              sudo ss -tlnp | grep 38300 && echo 'Grafana port-forward restarted' || echo 'FAILED to restart'
+            else
+              echo 'Grafana port-forward already running'
             fi
           "
 
