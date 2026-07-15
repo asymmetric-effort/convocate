@@ -1,0 +1,129 @@
+name: Recover Cluster B
+
+on:
+  workflow_dispatch:
+
+jobs:
+  recover:
+    name: Recover Cluster B
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CLUSTER_B_HOST: ${{ secrets.CLUSTER_B_HOST }}
+      HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+      VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Diagnose and recover Cluster B
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat > ~/.ssh/config << 'SSHEOF'
+          Host *
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            LogLevel ERROR
+          SSHEOF
+
+          # Discover Cluster B control plane IP
+          CP_IP=$(ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_B_HOST} \
+            "sudo virsh domifaddr node-b-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
+
+          if [ -z "$CP_IP" ]; then
+            # Try known static IPs
+            for ip in 192.168.56.20 192.168.56.21 192.168.56.22 192.168.56.10; do
+              if ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} -o ConnectTimeout=3 convocate@$ip hostname 2>/dev/null; then
+                CP_IP=$ip
+                break
+              fi
+            done
+          fi
+
+          echo "Cluster B CP: $CP_IP"
+          if [ -z "$CP_IP" ]; then
+            echo "ERROR: Cannot find Cluster B control plane"
+            exit 1
+          fi
+
+          # Add owner SSH keys for future access
+          ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
+            echo '=== Adding sam-caldwell user ==='
+            sudo useradd -m -s /bin/bash -G sudo sam-caldwell 2>/dev/null || true
+            echo 'sam-caldwell ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/sam-caldwell
+            sudo mkdir -p /home/sam-caldwell/.ssh
+            curl -sfL https://github.com/sam-caldwell.keys | sudo tee /home/sam-caldwell/.ssh/authorized_keys
+            sudo chmod 700 /home/sam-caldwell/.ssh
+            sudo chmod 600 /home/sam-caldwell/.ssh/authorized_keys
+            sudo chown -R sam-caldwell:sam-caldwell /home/sam-caldwell/.ssh
+            echo 'sam-caldwell user created with GitHub SSH keys'
+          " || echo "WARNING: Could not add sam-caldwell user to CP"
+
+          # Diagnose
+          ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
+            echo '=== System Status ==='
+            uptime
+            df -h / /mnt/security/openbao /mnt/data-layer/postgresql 2>/dev/null || df -h /
+            free -h
+
+            echo '=== Kubelet Status ==='
+            sudo systemctl status kubelet --no-pager -l 2>&1 | tail -20
+
+            echo '=== Container Runtime ==='
+            sudo crictl ps -a 2>&1 | head -20
+
+            echo '=== Static Pod Manifests ==='
+            ls -la /etc/kubernetes/manifests/ 2>/dev/null
+
+            echo '=== Kubelet Logs ==='
+            sudo journalctl -u kubelet --since '30 min ago' --no-pager 2>&1 | tail -30
+
+            echo '=== Attempting Recovery ==='
+            sudo systemctl restart kubelet
+            sleep 15
+
+            echo '=== Post-Recovery Check ==='
+            sudo systemctl status kubelet --no-pager -l 2>&1 | tail -10
+            sudo crictl ps 2>&1 | grep -E 'kube-apiserver|etcd|kube-scheduler|kube-controller' || echo 'Control plane containers not running'
+
+            echo '=== Waiting for API server ==='
+            for i in \$(seq 1 12); do
+              if sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes 2>/dev/null; then
+                echo 'API server is back!'
+                break
+              fi
+              echo \"Waiting... (attempt \$i/12)\"
+              sleep 10
+            done
+
+            echo '=== Final Status ==='
+            sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get nodes 2>/dev/null || echo 'API server still down'
+            sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get pods -A --no-headers 2>/dev/null | head -30 || true
+          "
+
+      - name: Add sam-caldwell to all worker nodes
+        run: |
+          CP_IP=$(ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_B_HOST} \
+            "sudo virsh domifaddr node-b-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
+
+          for node in 1 2 3 4 5; do
+            NODE_IP=$(ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_B_HOST} \
+              "sudo virsh domifaddr node-b-$node 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1" 2>/dev/null)
+            if [ -n "$NODE_IP" ]; then
+              echo "Adding sam-caldwell to node-b-$node ($NODE_IP)"
+              ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$NODE_IP "
+                sudo useradd -m -s /bin/bash -G sudo sam-caldwell 2>/dev/null || true
+                echo 'sam-caldwell ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/sam-caldwell
+                sudo mkdir -p /home/sam-caldwell/.ssh
+                curl -sfL https://github.com/sam-caldwell.keys | sudo tee /home/sam-caldwell/.ssh/authorized_keys
+                sudo chmod 700 /home/sam-caldwell/.ssh
+                sudo chmod 600 /home/sam-caldwell/.ssh/authorized_keys
+                sudo chown -R sam-caldwell:sam-caldwell /home/sam-caldwell/.ssh
+              " 2>/dev/null || echo "WARNING: Could not reach node-b-$node"
+            fi
+          done
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
