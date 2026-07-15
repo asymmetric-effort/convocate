@@ -411,6 +411,20 @@
         cmd: kubectl rollout restart deployment grafana -n o11y
       when: bao_init_result is changed
 
+    # Ensure pdv-test user exists on every deploy (not just first init).
+    # The user creation above is gated on bao_init_result, so on subsequent
+    # deploys the pdv-test user may not exist. Read the root token from K8s
+    # and create/update the user unconditionally.
+    - name: Ensure pdv-test user exists for smoke tests
+      ansible.builtin.shell:
+        cmd: |
+          BAO_TOKEN=$(kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
+          curl -sf -d '{"password":"PdvTest-2026-Secure","policies":"admin-policy"}' \
+            -H "X-Vault-Token:$BAO_TOKEN" \
+            {{ bao_url }}/v1/auth/userpass/users/pdv-test
+      failed_when: false
+      no_log: true
+
     - name: Force-delete pods stuck in Terminating
       ansible.builtin.shell:
         cmd: |
