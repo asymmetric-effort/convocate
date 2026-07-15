@@ -179,12 +179,14 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           echo "StrictHostKeyChecking no" > ~/.ssh/config
+          ssh-keygen -R ${CLUSTER_A_HOST} 2>/dev/null || true
 
           # Discover control plane IP
           CP_IP=$(ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_A_HOST} \
             "sudo virsh domifaddr node-a-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
 
           echo "Cluster A CP: $CP_IP"
+          ssh-keygen -R $CP_IP 2>/dev/null || true
 
           # Run smoke tests directly on the control plane via SSH
           ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_A_HOST} convocate@$CP_IP "
