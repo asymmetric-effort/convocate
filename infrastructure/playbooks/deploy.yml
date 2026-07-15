@@ -189,7 +189,46 @@
         bao_sealed: "{{ (bao_health_raw.stdout | from_json).sealed | default(true) }}"
       when: bao_health_raw.stdout | length > 0
 
-    - name: Initialize OpenBao (first deploy only)
+    - name: Verify root token is valid
+      ansible.builtin.shell:
+        cmd: |
+          BAO_TOKEN=$(kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
+          if [ "$BAO_TOKEN" = "placeholder" ] || ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" {{ bao_url }}/v1/auth/token/lookup-self >/dev/null 2>&1; then
+            echo "invalid"
+          else
+            echo "valid"
+          fi
+      register: bao_token_check
+      changed_when: false
+      when: bao_initialized | default(false)
+
+    - name: Force OpenBao reinit (root token lost)
+      ansible.builtin.shell:
+        cmd: |
+          echo "Root token is invalid — forcing OpenBao reinit..."
+          kubectl delete pvc openbao-data -n security --ignore-not-found
+          kubectl delete pv openbao-pv --ignore-not-found
+          kubectl rollout restart deployment openbao -n security
+          kubectl wait --for=condition=Ready pod -l app=openbao -n security --timeout=120s
+      register: bao_reinit
+      when:
+        - bao_initialized | default(false)
+        - bao_token_check.stdout | default('') | trim == 'invalid'
+
+    - name: Re-check OpenBao health after reinit
+      ansible.builtin.shell:
+        cmd: >-
+          curl -s {{ bao_url }}/v1/sys/health 2>/dev/null || true
+      register: bao_health_raw
+      changed_when: false
+      when: bao_reinit is changed
+
+    - name: Update init status after reinit
+      ansible.builtin.set_fact:
+        bao_initialized: "{{ (bao_health_raw.stdout | from_json).initialized | default(false) }}"
+      when: bao_reinit is changed
+
+    - name: Initialize OpenBao
       ansible.builtin.shell:
         cmd: >-
           curl -s -d '{"secret_shares":1,"secret_threshold":1}'
