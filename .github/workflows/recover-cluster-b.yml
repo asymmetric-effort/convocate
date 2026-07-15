@@ -116,7 +116,7 @@ jobs:
             echo \"Initialized: \$INITIALIZED  Sealed: \$SEALED\"
 
             # Check if unseal key is real or placeholder
-            UNSEAL_KEY=\$(sudo kubectl get secret openbao-unseal-key -n security -o jsonpath='{.data.unseal-key}' 2>/dev/null | base64 -d)
+            UNSEAL_KEY=\$(sudo kubectl get secret openbao-unseal-key -n security -o jsonpath='{.data.key}' 2>/dev/null | base64 -d)
 
             if [ \"\$SEALED\" = 'True' ] && [ \"\$UNSEAL_KEY\" != 'placeholder' ] && [ -n \"\$UNSEAL_KEY\" ]; then
               echo 'OpenBao is sealed but we have the real unseal key — unsealing...'
@@ -158,7 +158,7 @@ jobs:
               for ns in security convocate data-layer o11y; do
                 sudo kubectl create secret generic openbao-root-token -n \$ns --from-literal=token=placeholder
               done
-              sudo kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder
+              sudo kubectl create secret generic openbao-unseal-key -n security --from-literal=key=placeholder
 
               # Scale back up
               sudo kubectl scale deployment openbao -n security --replicas=1
@@ -185,7 +185,7 @@ jobs:
                   sudo kubectl create secret generic openbao-root-token -n \$ns --from-literal=token=placeholder
                 done
                 sudo kubectl delete secret openbao-unseal-key -n security --ignore-not-found
-                sudo kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder
+                sudo kubectl create secret generic openbao-unseal-key -n security --from-literal=key=placeholder
                 sudo kubectl scale deployment openbao -n security --replicas=1
                 sudo kubectl wait --for=condition=Ready pod -l app=openbao -n security --timeout=120s
                 echo 'OpenBao reinitialized — ready for deploy.yml'

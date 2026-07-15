@@ -64,7 +64,7 @@
 
           # Only create placeholder secrets if they don't already exist.
           # Never overwrite — real values are set during OpenBao init.
-          kubectl get secret openbao-unseal-key -n security >/dev/null 2>&1 || kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder
+          kubectl get secret openbao-unseal-key -n security >/dev/null 2>&1 || kubectl create secret generic openbao-unseal-key -n security --from-literal=key=placeholder
           kubectl get secret openbao-root-token -n security >/dev/null 2>&1 || kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder
           kubectl get secret openbao-root-token -n convocate >/dev/null 2>&1 || kubectl create secret generic openbao-root-token -n convocate --from-literal=token=placeholder
           kubectl get secret openbao-root-token -n data-layer >/dev/null 2>&1 || kubectl create secret generic openbao-root-token -n data-layer --from-literal=token=placeholder
@@ -160,7 +160,7 @@
     - name: Unseal OpenBao if sealed with known key
       ansible.builtin.shell:
         cmd: |
-          UNSEAL_KEY=$(kubectl get secret openbao-unseal-key -n security -o jsonpath='{.data.unseal-key}' | base64 -d)
+          UNSEAL_KEY=$(kubectl get secret openbao-unseal-key -n security -o jsonpath='{.data.key}' | base64 -d)
           if [ "$UNSEAL_KEY" != "placeholder" ] && [ -n "$UNSEAL_KEY" ]; then
             echo "Unsealing with stored key..."
             curl -s -d "{\"key\":\"$UNSEAL_KEY\"}" {{ bao_url }}/v1/sys/unseal
@@ -199,7 +199,7 @@
       ansible.builtin.command:
         cmd: >-
           kubectl create secret generic openbao-unseal-key
-          -n security --from-literal=unseal-key={{ bao_unseal_key }}
+          -n security --from-literal=key={{ bao_unseal_key }}
           --dry-run=client -o yaml
       register: unseal_secret_yaml
       when: bao_init_result is changed
