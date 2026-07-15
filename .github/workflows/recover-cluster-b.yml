@@ -49,20 +49,13 @@ jobs:
           echo "Cluster B CP: $CP_IP"
           [ -n "$CP_IP" ] || { echo "ERROR: Cannot find Cluster B control plane"; exit 1; }
 
-          # Create host_vars with discovered IP
           mkdir -p inventory/host_vars
           echo "ansible_host: $CP_IP" > inventory/host_vars/node-b-0.yml
           echo "ansible_user: convocate" >> inventory/host_vars/node-b-0.yml
 
-          # Step 1: Ensure sam-caldwell user on all nodes
-          echo "=== Adding sam-caldwell user to all nodes ==="
+          # Step 1: Ensure sam-caldwell user on control plane
+          echo "=== Step 1: sam-caldwell user ==="
           ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
-            export KUBECONFIG=/etc/kubernetes/admin.conf
-            for node_name in \$(sudo kubectl get nodes -o name 2>/dev/null | sed 's|node/||'); do
-              echo \"Processing \$node_name...\"
-            done
-
-            # Add to this node (control plane)
             sudo useradd -m -s /bin/bash -G sudo sam-caldwell 2>/dev/null || true
             echo 'sam-caldwell ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/sam-caldwell >/dev/null
             sudo mkdir -p /home/sam-caldwell/.ssh
@@ -70,191 +63,168 @@ jobs:
             sudo chmod 700 /home/sam-caldwell/.ssh
             sudo chmod 600 /home/sam-caldwell/.ssh/authorized_keys
             sudo chown -R sam-caldwell:sam-caldwell /home/sam-caldwell/.ssh
-            echo 'sam-caldwell user ready on control plane'
+            echo 'done'
           "
 
-          # Step 2: Restart kubelet if API server is down
-          echo "=== Checking API server ==="
+          # Step 2: Check cluster health
+          echo "=== Step 2: Cluster health ==="
           ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
             export KUBECONFIG=/etc/kubernetes/admin.conf
             if ! sudo kubectl get nodes >/dev/null 2>&1; then
-              echo 'API server down — restarting kubelet...'
+              echo 'API server down — restarting kubelet'
               sudo systemctl restart kubelet
               sleep 20
             fi
-            echo 'Waiting for API server...'
-            for i in \$(seq 1 12); do
-              if sudo kubectl get nodes >/dev/null 2>&1; then
-                echo 'API server is up'
-                sudo kubectl get nodes
-                break
-              fi
-              echo \"Attempt \$i/12...\"
-              sleep 10
-            done
+            sudo kubectl get nodes
           "
 
-          # Step 3: Check OpenBao seal status and reinitialize if needed
-          echo "=== Checking OpenBao ==="
+          # Step 3: Fix OpenBao — check sealed status, reinit if needed
+          echo "=== Step 3: Fix OpenBao ==="
           ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
             export KUBECONFIG=/etc/kubernetes/admin.conf
+            BAO_IP=\$(sudo kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}')
+            HEALTH=\$(curl -s http://\$BAO_IP:8200/v1/sys/health)
+            echo \"Health: \$HEALTH\"
 
-            # Wait for OpenBao pod
-            sudo kubectl wait --for=condition=Ready pod -l app=openbao -n security --timeout=60s 2>/dev/null || true
-
-            BAO_IP=\$(sudo kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
-            if [ -z \"\$BAO_IP\" ]; then
-              echo 'OpenBao service not found'
-              exit 1
-            fi
-
-            HEALTH=\$(curl -s http://\$BAO_IP:8200/v1/sys/health 2>/dev/null || echo '{}')
-            echo \"OpenBao health: \$HEALTH\"
-
-            INITIALIZED=\$(echo \$HEALTH | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"initialized\",False))' 2>/dev/null || echo 'False')
             SEALED=\$(echo \$HEALTH | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"sealed\",True))' 2>/dev/null || echo 'True')
-            echo \"Initialized: \$INITIALIZED  Sealed: \$SEALED\"
+            INIT=\$(echo \$HEALTH | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"initialized\",False))' 2>/dev/null || echo 'False')
 
-            # Check if unseal key is real or placeholder
+            # Try unseal with stored key first
             UNSEAL_KEY=\$(sudo kubectl get secret openbao-unseal-key -n security -o jsonpath='{.data.key}' 2>/dev/null | base64 -d)
+            # Also try old key name
+            if [ -z \"\$UNSEAL_KEY\" ] || [ \"\$UNSEAL_KEY\" = 'placeholder' ]; then
+              UNSEAL_KEY=\$(sudo kubectl get secret openbao-unseal-key -n security -o jsonpath='{.data.unseal-key}' 2>/dev/null | base64 -d)
+            fi
+            echo \"Unseal key: \${UNSEAL_KEY:0:8}... (init=\$INIT sealed=\$SEALED)\"
 
             if [ \"\$SEALED\" = 'True' ] && [ \"\$UNSEAL_KEY\" != 'placeholder' ] && [ -n \"\$UNSEAL_KEY\" ]; then
-              echo 'OpenBao is sealed but we have the real unseal key — unsealing...'
-              curl -s -d \"{\\\"key\\\":\\\"\$UNSEAL_KEY\\\"}\" http://\$BAO_IP:8200/v1/sys/unseal
-              echo 'Unseal request sent'
-            elif [ \"\$SEALED\" = 'True' ] || [ \"\$INITIALIZED\" = 'False' ] || [ \"\$UNSEAL_KEY\" = 'placeholder' ]; then
-              echo 'OpenBao needs reinitializtion (sealed with lost key or not initialized)...'
+              echo 'Trying unseal with stored key...'
+              RESULT=\$(curl -s -d \"{\\\"key\\\":\\\"\$UNSEAL_KEY\\\"}\" http://\$BAO_IP:8200/v1/sys/unseal)
+              echo \"Unseal result: \$RESULT\"
+              NEW_SEALED=\$(echo \$RESULT | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"sealed\",True))' 2>/dev/null)
+              if [ \"\$NEW_SEALED\" = 'False' ]; then
+                echo 'Unsealed successfully!'
+                # Fix the secret key name for auto-unseal sidecar
+                sudo kubectl create secret generic openbao-unseal-key -n security \
+                  --from-literal=key=\$UNSEAL_KEY --dry-run=client -o yaml | sudo kubectl apply -f -
+                # Restart so auto-unseal sidecar picks up correct key
+                sudo kubectl rollout restart deployment openbao -n security
+                sudo kubectl rollout status deployment openbao -n security --timeout=120s
+                sleep 10
+                # Verify
+                HEALTH2=\$(curl -s http://\$BAO_IP:8200/v1/sys/health)
+                echo \"Post-restart health: \$HEALTH2\"
+              else
+                echo 'Unseal failed — need reinit'
+                UNSEAL_KEY=''
+              fi
+            fi
 
-              # Wipe data on the node where OpenBao PV lives (not the control plane)
+            if [ \"\$SEALED\" = 'True' ] && ([ -z \"\$UNSEAL_KEY\" ] || [ \"\$UNSEAL_KEY\" = 'placeholder' ]); then
+              echo 'Reinitializing OpenBao (key lost)...'
               sudo kubectl scale deployment openbao -n security --replicas=0
               sleep 5
-              BAO_NODE=\$(sudo kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null || echo '')
-              # Use a pod to wipe data on the correct node (can't SSH between nodes)
-              BAO_NODE=\$(sudo kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null || echo '')
-              echo \"OpenBao data node: \$BAO_NODE\"
+
+              # Wipe data on the correct node
+              BAO_NODE=\$(sudo kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null)
+              echo \"Wiping data on \$BAO_NODE\"
               sudo kubectl delete pod openbao-wipe -n security --ignore-not-found --grace-period=0 --force 2>/dev/null || true
               sleep 2
-              if [ -n \"\$BAO_NODE\" ]; then
-                echo \"Wiping /mnt/security/openbao on \$BAO_NODE via pod\"
-                sudo kubectl run openbao-wipe -n security --restart=Never \
-                  --image=busybox:latest \
-                  --overrides='{\"spec\":{\"nodeSelector\":{\"kubernetes.io/hostname\":\"'\$BAO_NODE'\"},\"volumes\":[{\"name\":\"data\",\"hostPath\":{\"path\":\"/mnt/security/openbao\"}}],\"containers\":[{\"name\":\"wipe\",\"image\":\"busybox:latest\",\"command\":[\"sh\",\"-c\",\"rm -rf /data/* && echo WIPED\"],\"volumeMounts\":[{\"name\":\"data\",\"mountPath\":\"/data\"}]}]}}' \
-                  --command -- sh -c 'rm -rf /data/* && echo WIPED'
-                sudo kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/openbao-wipe -n security --timeout=30s 2>/dev/null || \
-                  sudo kubectl wait --for=jsonpath='{.status.phase}'=Failed pod/openbao-wipe -n security --timeout=10s 2>/dev/null || true
-                WIPE_PHASE=\$(sudo kubectl get pod openbao-wipe -n security -o jsonpath='{.status.phase}' 2>/dev/null)
-                echo \"Wipe pod phase: \$WIPE_PHASE\"
-                sudo kubectl delete pod openbao-wipe -n security --ignore-not-found
-              else
-                echo 'WARNING: Could not determine OpenBao node, wiping locally'
-                sudo rm -rf /mnt/security/openbao/*
-              fi
+              sudo kubectl run openbao-wipe -n security --restart=Never \
+                --image=busybox:latest \
+                --overrides='{\"spec\":{\"nodeSelector\":{\"kubernetes.io/hostname\":\"'\$BAO_NODE'\"},\"volumes\":[{\"name\":\"data\",\"hostPath\":{\"path\":\"/mnt/security/openbao\"}}],\"containers\":[{\"name\":\"wipe\",\"image\":\"busybox:latest\",\"command\":[\"sh\",\"-c\",\"rm -rf /data/* && echo WIPED\"],\"volumeMounts\":[{\"name\":\"data\",\"mountPath\":\"/data\"}]}]}}' \
+                --command -- sh -c 'rm -rf /data/* && echo WIPED'
+              sudo kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/openbao-wipe -n security --timeout=30s 2>/dev/null || true
+              echo \"Wipe phase: \$(sudo kubectl get pod openbao-wipe -n security -o jsonpath='{.status.phase}')\"
+              sudo kubectl delete pod openbao-wipe -n security --ignore-not-found
 
-              # Delete and recreate placeholder secrets
+              # Delete and recreate secrets with correct key name
               for ns in security convocate data-layer o11y; do
                 sudo kubectl delete secret openbao-root-token -n \$ns --ignore-not-found
-              done
-              sudo kubectl delete secret openbao-unseal-key -n security --ignore-not-found
-              for ns in security convocate data-layer o11y; do
                 sudo kubectl create secret generic openbao-root-token -n \$ns --from-literal=token=placeholder
               done
+              sudo kubectl delete secret openbao-unseal-key -n security --ignore-not-found
               sudo kubectl create secret generic openbao-unseal-key -n security --from-literal=key=placeholder
 
-              # Scale back up
               sudo kubectl scale deployment openbao -n security --replicas=1
-              echo 'Waiting for OpenBao pod...'
               sudo kubectl wait --for=condition=Ready pod -l app=openbao -n security --timeout=120s
-
-              echo 'OpenBao is uninitialized and ready for deploy.yml to initialize it'
-            else
-              echo 'OpenBao is initialized and unsealed — checking root token...'
-              ROOT_TOKEN=\$(sudo kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' 2>/dev/null | base64 -d)
-              if [ \"\$ROOT_TOKEN\" = 'placeholder' ] || ! curl -sf -H \"X-Vault-Token:\$ROOT_TOKEN\" http://\$BAO_IP:8200/v1/auth/token/lookup-self >/dev/null 2>&1; then
-                echo 'Root token is invalid — need to reinitialize'
-                sudo kubectl scale deployment openbao -n security --replicas=0
-                sleep 5
-                BAO_NODE=\$(sudo kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null || echo '')
-                if [ -n \"\$BAO_NODE\" ]; then
-                  BAO_NODE_IP=\$(sudo kubectl get node \$BAO_NODE -o jsonpath='{.status.addresses[?(@.type==\"InternalIP\")].address}')
-                  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \$BAO_NODE_IP 'sudo rm -rf /mnt/security/openbao/*'
-                else
-                  sudo rm -rf /mnt/security/openbao/*
-                fi
-                for ns in security convocate data-layer o11y; do
-                  sudo kubectl delete secret openbao-root-token -n \$ns --ignore-not-found
-                  sudo kubectl create secret generic openbao-root-token -n \$ns --from-literal=token=placeholder
-                done
-                sudo kubectl delete secret openbao-unseal-key -n security --ignore-not-found
-                sudo kubectl create secret generic openbao-unseal-key -n security --from-literal=key=placeholder
-                sudo kubectl scale deployment openbao -n security --replicas=1
-                sudo kubectl wait --for=condition=Ready pod -l app=openbao -n security --timeout=120s
-                echo 'OpenBao reinitialized — ready for deploy.yml'
-              else
-                echo 'Root token is valid — OpenBao is healthy'
-              fi
+              echo 'OpenBao ready for initialization'
             fi
           "
 
-          # Step 4: Run deploy.yml to initialize OpenBao users/OIDC if needed
-          echo "=== Running deploy playbook ==="
+          # Step 4: Deploy (initializes OpenBao if needed, rolling upgrade for everything else)
+          echo "=== Step 4: Deploy ==="
           ansible-playbook playbooks/deploy.yml \
             -i inventory/cluster-b.yml \
             -e "ssh_public_key='$SSH_PUBLIC_KEY'" \
             -e "vm_password_hash='$VM_PASSWORD_HASH'"
 
-          # Step 4b: Restart OpenBao so all pods pick up the real unseal key
-          echo "=== Restarting OpenBao for all pods to unseal ==="
+          # Step 5: Restart OpenBao so all pods auto-unseal with correct key
+          echo "=== Step 5: Restart OpenBao ==="
           ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
             export KUBECONFIG=/etc/kubernetes/admin.conf
             sudo kubectl rollout restart deployment openbao -n security
             sudo kubectl rollout status deployment openbao -n security --timeout=120s
-            sleep 10
+            sleep 15
             BAO_IP=\$(sudo kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}')
-            for i in \$(seq 1 6); do
-              HEALTH=\$(curl -s http://\$BAO_IP:8200/v1/sys/health 2>/dev/null)
-              SEALED=\$(echo \$HEALTH | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"sealed\",True))' 2>/dev/null)
+            for i in \$(seq 1 12); do
+              SEALED=\$(curl -s http://\$BAO_IP:8200/v1/sys/health | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"sealed\",True))' 2>/dev/null)
               echo \"Attempt \$i: sealed=\$SEALED\"
               [ \"\$SEALED\" = 'False' ] && break
               sleep 5
             done
           "
 
-          # Step 5: Verify everything works
-          echo "=== Final Verification ==="
+          # Step 6: Restart API for fresh SA token (rolling, zero-downtime)
+          echo "=== Step 6: Restart API ==="
           ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
             export KUBECONFIG=/etc/kubernetes/admin.conf
-
-            echo '=== Nodes ==='
-            sudo kubectl get nodes
-
-            echo '=== All Pods ==='
-            sudo kubectl get pods -A --no-headers | grep -v Running | grep -v Completed || echo 'All pods healthy'
-
-            echo '=== OpenBao Health ==='
-            BAO_IP=\$(sudo kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}')
-            curl -s http://\$BAO_IP:8200/v1/sys/health | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"init:\", d[\"initialized\"], \"sealed:\", d[\"sealed\"])'
-
-            echo '=== Login Test ==='
-            TOKEN=\$(curl -s -X POST http://\$BAO_IP:8200/v1/auth/userpass/login/admin -d '{\"password\":\"Convocate-Admin-2026\"}' 2>&1 | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get(\"auth\",{}).get(\"client_token\",\"FAILED\"))' 2>/dev/null || echo 'FAILED')
-            if [ \"\$TOKEN\" != 'FAILED' ] && [ -n \"\$TOKEN\" ]; then
-              echo 'Admin login: OK'
-            else
-              echo 'Admin login: FAILED'
-              exit 1
-            fi
-
-            echo '=== Verify All Services (external) ==='
-            echo 'Checking app.convocate.asymmetric-effort.com...'
-            curl -sfk --connect-timeout 5 --max-time 10 https://app.convocate.asymmetric-effort.com/api/v1/status >/dev/null && echo 'Convocate: OK' || echo 'Convocate: FAILED'
-            echo 'Checking grafana.asymmetric-effort.com...'
-            curl -sfk --connect-timeout 5 --max-time 10 https://grafana.asymmetric-effort.com/api/health >/dev/null && echo 'Grafana: OK' || echo 'Grafana: FAILED'
-            echo 'Checking auth.asymmetric-effort.com...'
-            AUTH_CODE=\$(curl -sk --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' https://auth.asymmetric-effort.com/v1/sys/health)
-            [ \"\$AUTH_CODE\" = '200' ] && echo 'OpenBao: OK' || echo \"OpenBao: HTTP \$AUTH_CODE (200=ok, 503=sealed)\"
-
-            echo '=== Recovery Complete ==='
+            sudo kubectl rollout restart deployment convocate-api -n convocate
+            sudo kubectl rollout status deployment convocate-api -n convocate --timeout=120s
           "
 
-      - name: Cleanup SSH key
+          # Step 7: Verify ALL services
+          echo "=== Step 7: Verify ALL services ==="
+
+          # Internal checks
+          ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
+            export KUBECONFIG=/etc/kubernetes/admin.conf
+            BAO_IP=\$(sudo kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}')
+
+            echo '--- OpenBao internal ---'
+            curl -s http://\$BAO_IP:8200/v1/sys/health | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"init:\", d[\"initialized\"], \"sealed:\", d[\"sealed\"])'
+
+            echo '--- Login test ---'
+            TOKEN=\$(curl -s -X POST http://\$BAO_IP:8200/v1/auth/userpass/login/admin -d '{\"password\":\"Convocate-Admin-2026\"}' 2>&1 | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"auth\",{}).get(\"client_token\",\"FAILED\"))' 2>/dev/null || echo 'FAILED')
+            [ \"\$TOKEN\" != 'FAILED' ] && echo 'Admin login: OK' || { echo 'Admin login: FAILED'; exit 1; }
+
+            echo '--- Pods ---'
+            sudo kubectl get pods -A --no-headers | grep -v Running | grep -v Completed || echo 'All pods healthy'
+          "
+
+          # External checks
+          echo '--- External: Convocate ---'
+          curl -sfk --connect-timeout 5 --max-time 10 https://app.convocate.asymmetric-effort.com/api/v1/status && echo ' OK' || echo 'FAILED'
+
+          echo '--- External: Grafana ---'
+          curl -sfk --connect-timeout 5 --max-time 10 https://grafana.asymmetric-effort.com/api/health && echo ' OK' || echo 'FAILED'
+
+          echo '--- External: OpenBao ---'
+          AUTH_HEALTH=$(curl -sk --connect-timeout 5 --max-time 10 https://auth.asymmetric-effort.com/v1/sys/health 2>&1)
+          AUTH_SEALED=$(echo "$AUTH_HEALTH" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("sealed",True))' 2>/dev/null || echo 'True')
+          echo "OpenBao external: sealed=$AUTH_SEALED"
+          if [ "$AUTH_SEALED" = "True" ]; then
+            echo "WARNING: External OpenBao still sealed — checking nginx proxy config..."
+            ssh -i ~/.ssh/ansible_key ${HYPERVISOR_USER}@${CLUSTER_B_HOST} "
+              echo '--- nginx config for auth ---'
+              grep -A 20 'auth\.' /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* 2>/dev/null || echo 'No auth config found'
+              echo '--- nginx config for grafana ---'
+              grep -A 20 'grafana\.' /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* 2>/dev/null || echo 'No grafana config found'
+            "
+          fi
+
+          echo "=== Recovery Complete ==="
+
+      - name: Cleanup
         if: always()
         run: rm -f ~/.ssh/ansible_key ~/.ssh/id_ed25519
