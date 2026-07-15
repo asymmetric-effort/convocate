@@ -231,24 +231,29 @@ jobs:
               sudo ss -tlnp | grep -E '38200|38300' || echo 'Nothing listening'
               sudo ps aux | grep -E 'ssh.*38200|ssh.*38300|kubectl.*port-forward' | grep -v grep || echo 'No tunnels found'
 
-              echo '--- Kill stale tunnels ---'
-              sudo pkill -f 'ssh.*38200' 2>/dev/null || true
-              sudo pkill -f 'ssh.*38300' 2>/dev/null || true
-              sudo pkill -f 'kubectl.*port-forward.*openbao' 2>/dev/null || true
-              sudo pkill -f 'kubectl.*port-forward.*grafana' 2>/dev/null || true
+              echo '--- Kill stale port-forwards by PID ---'
+              # Kill specific kubectl port-forward processes (not pkill -f which kills our SSH)
+              for pid in \$(sudo ss -tlnp | grep -E '38200|38300' | grep -oP 'pid=\K[0-9]+'); do
+                echo \"Killing port-forward pid \$pid\"
+                sudo kill \$pid 2>/dev/null || true
+              done
               sleep 2
 
-              echo '--- Set up fresh tunnels via SSH to control plane ---'
-              # Get ClusterIPs from the control plane
-              BAO_CIP=\$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null convocate@$CP_IP 'sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get svc openbao -n security -o jsonpath=\"{.spec.clusterIP}\"' 2>/dev/null)
-              GRAFANA_CIP=\$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null convocate@$CP_IP 'sudo kubectl --kubeconfig=/etc/kubernetes/admin.conf get svc grafana -n o11y -o jsonpath=\"{.spec.clusterIP}\"' 2>/dev/null)
-              echo \"OpenBao ClusterIP: \$BAO_CIP  Grafana ClusterIP: \$GRAFANA_CIP\"
-
-              if [ -n \"\$BAO_CIP\" ]; then
-                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -f -N -L 38200:\$BAO_CIP:8200 convocate@$CP_IP 2>/dev/null && echo 'OpenBao tunnel started' || echo 'OpenBao tunnel failed'
-              fi
-              if [ -n \"\$GRAFANA_CIP\" ]; then
-                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -f -N -L 38300:\$GRAFANA_CIP:3000 convocate@$CP_IP 2>/dev/null && echo 'Grafana tunnel started' || echo 'Grafana tunnel failed'
+              echo '--- Restart port-forwards ---'
+              # Use the same mechanism as the original: kubectl port-forward from hypervisor
+              # Find the kubeconfig (sam-caldwell's or root's)
+              KUBE_CFG=''
+              for cfg in /home/sam-caldwell/.kube/config /root/.kube/config /etc/kubernetes/admin.conf; do
+                [ -f \$cfg ] && KUBE_CFG=\$cfg && break
+              done
+              echo \"Using kubeconfig: \$KUBE_CFG\"
+              if [ -n \"\$KUBE_CFG\" ]; then
+                nohup kubectl --kubeconfig=\$KUBE_CFG port-forward --address 0.0.0.0 -n security svc/openbao 38200:8200 </dev/null >/dev/null 2>&1 &
+                echo \"OpenBao port-forward started (pid \$!)\"
+                nohup kubectl --kubeconfig=\$KUBE_CFG port-forward --address 0.0.0.0 -n o11y svc/grafana 38300:3000 </dev/null >/dev/null 2>&1 &
+                echo \"Grafana port-forward started (pid \$!)\"
+              else
+                echo 'ERROR: No kubeconfig found'
               fi
 
               sleep 2
