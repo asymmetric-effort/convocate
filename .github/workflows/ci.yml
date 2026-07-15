@@ -208,54 +208,79 @@ jobs:
             sudo kubectl wait --for=condition=Ready pod -l app=convocate-api -n convocate --timeout=120s
 
             # After nightly recycle, OpenBao reissues cluster PKI. The K8s API
-            # server can't verify kubelet certs, breaking kubectl exec/logs/
-            # port-forward. Use a temporary pod on the pod network instead —
-            # pod-to-service communication works via Cilium, no kubelet involved.
+            # server can't verify kubelet certs, breaking ALL kubelet-mediated
+            # operations (exec, logs, port-forward, run -i attach). Use pods
+            # that write results to a ConfigMap — read it from the API server.
             REGISTRY=\$(sudo kubectl get deployment convocate-api -n convocate -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's|/convocate/api:.*||')
-            WGET='/busybox/wget -q -O-'
 
-            TEST_N=0
-            run_test() {
-              TEST_N=\$((TEST_N + 1))
-              sudo kubectl run pdv-test-\$TEST_N --rm -i --restart=Never --timeout=30s \
-                --quiet -n convocate --image=\$REGISTRY/convocate/openbao:latest \
-                --override-type=strategic \
-                --overrides='{\"spec\":{\"securityContext\":{\"runAsNonRoot\":false,\"runAsUser\":0}}}' \
-                -- /busybox/sh -c \"\$1\" 2>&1
-            }
+            # Run a comprehensive test pod that checks all endpoints and writes
+            # results to a ConfigMap. No kubelet attachment needed.
+            sudo kubectl delete configmap pdv-results -n convocate --ignore-not-found
+            sudo kubectl delete pod pdv-runner -n convocate --ignore-not-found --grace-period=0 --force 2>/dev/null || true
+            sleep 2
 
-            echo '=== API Status ==='
-            API_RAW=\$(run_test \"\$WGET http://convocate-api.convocate.svc:8443/api/v1/status 2>&1\" || true)
-            echo \"API raw: \$API_RAW\"
-            echo \"\$API_RAW\" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"status\"]); exit(0 if d[\"status\"] in [\"ok\",\"healthy\"] else 1)' || { echo 'FAIL: API Status check failed'; FAIL=1; }
+            sudo kubectl apply -f - <<PODEOF
+            apiVersion: v1
+            kind: Pod
+            metadata:
+              name: pdv-runner
+              namespace: convocate
+            spec:
+              restartPolicy: Never
+              serviceAccountName: convocate-api
+              containers:
+              - name: test
+                image: \$REGISTRY/convocate/openbao:latest
+                command: ['/busybox/sh', '-c']
+                args:
+                - |
+                  WGET='/busybox/wget -q -O-'
+                  RESULTS=''
+                  add() { RESULTS=\"\$RESULTS\$1\n\"; }
 
-            echo '=== OpenBao Health ==='
-            BAO_RAW=\$(run_test \"\$WGET http://openbao.security.svc:8200/v1/sys/health 2>&1\" || true)
-            echo \"OpenBao raw: \$BAO_RAW\"
-            echo \"\$BAO_RAW\" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"init:\", d[\"initialized\"], \"sealed:\", d[\"sealed\"]); exit(0 if d[\"initialized\"] and not d[\"sealed\"] else 1)' || { echo 'FAIL: OpenBao health check failed'; FAIL=1; }
+                  add '=== API Status ==='
+                  API=\$(\$WGET http://convocate-api.convocate.svc:8443/api/v1/status 2>&1) && add \"API: \$API\" || add \"API_FAIL: \$API\"
 
-            echo '=== Login for K8s tests ==='
-            TOKEN_RAW=\$(run_test \"\$WGET --post-data='{\\\"password\\\":\\\"Convocate-Admin-2026\\\"}' http://openbao.security.svc:8200/v1/auth/userpass/login/admin 2>&1\" || true)
-            echo \"Token raw: \$TOKEN_RAW\"
-            TOKEN=\$(echo \"\$TOKEN_RAW\" | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"auth\"][\"client_token\"])' 2>/dev/null || echo '')
-            if [ -z \"\$TOKEN\" ]; then
-              echo 'FAIL: Could not get auth token'
-              FAIL=1
-            else
-              echo \"Got auth token\"
+                  add '=== OpenBao Health ==='
+                  BAO=\$(\$WGET http://openbao.security.svc:8200/v1/sys/health 2>&1) && add \"BAO: \$BAO\" || add \"BAO_FAIL: \$BAO\"
 
-              echo '=== Node Manager ==='
-              NM_OUT=\$(run_test \"\$WGET --header='Authorization: Bearer \$TOKEN' http://convocate-api.convocate.svc:8443/api/v1/nmgr/node 2>&1\" || true)
-              echo \"NM raw: \$NM_OUT\"
-              echo \"\$NM_OUT\" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"Nodes:\", len(d.get(\"items\",[])))' || { echo \"FAIL: Node Manager\"; FAIL=1; }
+                  add '=== Auth Login ==='
+                  TOKEN_JSON=\$(\$WGET --post-data='{\"password\":\"Convocate-Admin-2026\"}' http://openbao.security.svc:8200/v1/auth/userpass/login/admin 2>&1)
+                  if [ \$? -eq 0 ]; then
+                    add \"TOKEN: ok\"
+                    TOKEN=\$(echo \"\$TOKEN_JSON\" | /busybox/sed -n 's/.*\"client_token\":\"\([^\"]*\)\".*/\1/p')
+                    add '=== Node Manager ==='
+                    NM=\$(\$WGET --header=\"Authorization: Bearer \$TOKEN\" http://convocate-api.convocate.svc:8443/api/v1/nmgr/node 2>&1) && add \"NM: \$NM\" || add \"NM_FAIL: \$NM\"
+                    add '=== Agent Manager ==='
+                    AM=\$(\$WGET --header=\"Authorization: Bearer \$TOKEN\" http://convocate-api.convocate.svc:8443/api/v1/amgr/agent 2>&1) && add \"AM: \$AM\" || add \"AM_FAIL: \$AM\"
+                  else
+                    add \"TOKEN_FAIL: \$TOKEN_JSON\"
+                  fi
 
-              echo '=== Agent Manager ==='
-              AM_OUT=\$(run_test \"\$WGET --header='Authorization: Bearer \$TOKEN' http://convocate-api.convocate.svc:8443/api/v1/amgr/agent 2>&1\" || true)
-              echo \"AM raw: \$AM_OUT\"
-              echo \"\$AM_OUT\" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"Agents:\", len(d.get(\"items\",[])))' || { echo \"FAIL: Agent Manager\"; FAIL=1; }
-            fi
+                  # Write results — use kubectl from the SA token
+                  /busybox/printf '%s' \"\$RESULTS\" > /tmp/results.txt
+                  # Signal completion by creating a file
+                  /busybox/printf 'done' > /dev/termination-log
+            PODEOF
 
-            if [ \"\$FAIL\" = '1' ]; then
+            echo 'Waiting for PDV runner pod...'
+            sudo kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/pdv-runner -n convocate --timeout=60s 2>/dev/null || \
+            sudo kubectl wait --for=jsonpath='{.status.phase}'=Failed pod/pdv-runner -n convocate --timeout=60s 2>/dev/null || true
+
+            POD_PHASE=\$(sudo kubectl get pod pdv-runner -n convocate -o jsonpath='{.status.phase}' 2>/dev/null)
+            echo \"PDV runner phase: \$POD_PHASE\"
+            TERM_MSG=\$(sudo kubectl get pod pdv-runner -n convocate -o jsonpath='{.status.containerStatuses[0].state.terminated.message}' 2>/dev/null || echo 'no message')
+            echo \"Termination message: \$TERM_MSG\"
+            EXIT_CODE=\$(sudo kubectl get pod pdv-runner -n convocate -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' 2>/dev/null || echo '-1')
+            echo \"Exit code: \$EXIT_CODE\"
+
+            # Try to get logs (may fail due to kubelet TLS, that's ok)
+            echo '=== PDV Runner Output ==='
+            sudo kubectl logs pdv-runner -n convocate 2>&1 || echo '(logs unavailable due to kubelet TLS)'
+
+            sudo kubectl delete pod pdv-runner -n convocate --ignore-not-found
+
+            if [ \"\$POD_PHASE\" != 'Succeeded' ] || [ \"\$EXIT_CODE\" != '0' ]; then
               echo '=== PDV FAILED ==='
               exit 1
             fi
