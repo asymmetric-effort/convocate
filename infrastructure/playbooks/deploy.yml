@@ -414,13 +414,23 @@
       when: bao_init_result is changed
 
     # Ensure pdv-test user exists on every deploy (not just first init).
-    # The user creation above is gated on bao_init_result, so on subsequent
-    # deploys the pdv-test user may not exist. Read the root token from K8s
-    # and create/update the user unconditionally.
+    # Try root token first; if it's "placeholder" (overwritten by a past bug),
+    # fall back to logging in as admin to get a valid token.
     - name: Ensure pdv-test user exists for smoke tests
       ansible.builtin.shell:
         cmd: |
           BAO_TOKEN=$(kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
+          # Test if the token works
+          if ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" {{ bao_url }}/v1/auth/token/lookup-self >/dev/null 2>&1; then
+            echo "Root token invalid, logging in as admin..."
+            BAO_TOKEN=$(curl -sf -d '{"password":"{{ openbao_admin_password }}"}' \
+              {{ bao_url }}/v1/auth/userpass/login/admin | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["client_token"])')
+            # Also fix the K8s secret with the working token
+            for ns in security convocate data-layer o11y; do
+              kubectl create secret generic openbao-root-token -n $ns \
+                --from-literal=token=$BAO_TOKEN --dry-run=client -o yaml | kubectl apply -f -
+            done
+          fi
           curl -sf -d '{"password":"PdvTest-2026-Secure","policies":"admin-policy"}' \
             -H "X-Vault-Token:$BAO_TOKEN" \
             {{ bao_url }}/v1/auth/userpass/users/pdv-test
