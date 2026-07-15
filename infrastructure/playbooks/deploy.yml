@@ -82,6 +82,16 @@
           kubectl get secret prometheus-tls -n o11y >/dev/null 2>&1 || kubectl create secret tls prometheus-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key
           kubectl get secret grafana-tls -n o11y >/dev/null 2>&1 || kubectl create secret tls grafana-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key
           rm -f /tmp/tls.key /tmp/tls.crt
+
+          # Label ALL resources for Helm ownership so helm can adopt them
+          PATCH='{"metadata":{"labels":{"app.kubernetes.io/managed-by":"Helm"},"annotations":{"meta.helm.sh/release-name":"convocate","meta.helm.sh/release-namespace":"{{ convocate_namespace }}"}}}'
+          for ns in security convocate convocate-agents data-layer o11y; do
+            for kind in secret configmap service serviceaccount; do
+              kubectl get $kind -n $ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -v '^$' | while read name; do
+                kubectl patch $kind "$name" -n $ns --type merge -p "$PATCH" 2>/dev/null || true
+              done
+            done
+          done
       changed_when: false
 
     - name: Deploy Convocate via Helm
