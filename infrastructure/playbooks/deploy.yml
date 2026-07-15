@@ -206,9 +206,36 @@
       ansible.builtin.shell:
         cmd: |
           echo "Root token is invalid — forcing OpenBao reinit..."
-          kubectl delete pvc openbao-data -n security --ignore-not-found
-          kubectl delete pv openbao-pv --ignore-not-found
-          kubectl rollout restart deployment openbao -n security
+          # Scale down OpenBao, wipe data on the hostPath, scale back up.
+          # Don't delete the PVC/PV — the pod needs them to start.
+          kubectl scale deployment openbao -n security --replicas=0
+          sleep 5
+          # Clear data on the node where OpenBao runs
+          OPENBAO_NODE=$(kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null || echo '')
+          if [ -n "$OPENBAO_NODE" ]; then
+            # Run a cleanup pod on the correct node
+            kubectl run openbao-wipe -n security --restart=Never --image={{ registry_host }}:{{ registry_port | default('5000') }}/convocate/openbao:latest \
+              --overrides='{"spec":{"nodeSelector":{"kubernetes.io/hostname":"'"$OPENBAO_NODE"'"},"containers":[{"name":"wipe","image":"'"{{ registry_host }}:{{ registry_port | default('5000') }}"'/convocate/openbao:latest","command":["/busybox/sh","-c","rm -rf /openbao/data/*"],"volumeMounts":[{"name":"data","mountPath":"/openbao/data"}]}],"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"openbao-data"}}]}}' \
+              --command -- /busybox/sh -c 'rm -rf /openbao/data/*' 2>/dev/null || true
+            kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/openbao-wipe -n security --timeout=30s 2>/dev/null || true
+            kubectl delete pod openbao-wipe -n security --ignore-not-found
+          else
+            echo "WARNING: Could not determine OpenBao node — skipping data wipe"
+          fi
+          # Delete placeholder secrets so they get recreated properly
+          kubectl delete secret openbao-root-token -n security --ignore-not-found
+          kubectl delete secret openbao-root-token -n {{ convocate_namespace }} --ignore-not-found
+          kubectl delete secret openbao-root-token -n data-layer --ignore-not-found
+          kubectl delete secret openbao-root-token -n o11y --ignore-not-found
+          kubectl delete secret openbao-unseal-key -n security --ignore-not-found
+          # Recreate placeholder secrets (the init steps will overwrite with real values)
+          kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder
+          kubectl create secret generic openbao-root-token -n {{ convocate_namespace }} --from-literal=token=placeholder
+          kubectl create secret generic openbao-root-token -n data-layer --from-literal=token=placeholder
+          kubectl create secret generic openbao-root-token -n o11y --from-literal=token=placeholder
+          kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder
+          # Scale back up
+          kubectl scale deployment openbao -n security --replicas=1
           kubectl wait --for=condition=Ready pod -l app=openbao -n security --timeout=120s
       register: bao_reinit
       when:
@@ -225,7 +252,7 @@
 
     - name: Update init status after reinit
       ansible.builtin.set_fact:
-        bao_initialized: "{{ (bao_health_raw.stdout | from_json).initialized | default(false) }}"
+        bao_initialized: false
       when: bao_reinit is changed
 
     - name: Initialize OpenBao
