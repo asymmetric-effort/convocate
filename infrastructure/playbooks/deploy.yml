@@ -1,4 +1,18 @@
 ---
+# Zero-downtime deployment playbook.
+#
+# This playbook performs a rolling Helm upgrade. It MUST NOT contain any
+# destructive operations (PVC deletion, pod force-deletion, scale-to-zero,
+# secret reinit, data wipes). Destructive operations belong in recycle.yml.
+#
+# Flow:
+#   1. Ensure prerequisites (Helm, hostPath dirs)
+#   2. Copy chart + create namespaces/secrets if missing
+#   3. Helm upgrade --install (rolling update)
+#   4. Wait for rollout
+#   5. If OpenBao is uninitialized (first deploy only): init + create users/OIDC
+#   6. Wait for API rollout
+
 - name: Deploy Convocate application
   hosts: control_plane_primary
   gather_facts: true
@@ -40,31 +54,16 @@
         mode: "0644"
         directory_mode: "0755"
 
-    - name: Create placeholder secrets for initial boot
+    - name: Ensure namespaces and placeholder secrets exist
       ansible.builtin.shell:
         cmd: |
-          HELM_LABELS="app.kubernetes.io/managed-by=Helm"
-          HELM_ANNOT_NAME="meta.helm.sh/release-name=convocate"
-          HELM_ANNOT_NS="meta.helm.sh/release-namespace={{ convocate_namespace }}"
-
-          # Handle namespaces stuck in Terminating state (remove finalizers to unblock)
+          # Create namespaces if they don't exist
           for ns in security convocate convocate-agents data-layer o11y; do
-            if kubectl get namespace $ns -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
-              echo "Namespace $ns stuck in Terminating — removing finalizers..."
-              kubectl get namespace $ns -o json | python3 -c '
-          import sys, json
-          ns = json.load(sys.stdin)
-          ns["spec"]["finalizers"] = []
-          json.dump(ns, sys.stdout)' | kubectl replace --raw "/api/v1/namespaces/$ns/finalize" -f - 2>/dev/null || true
-              kubectl wait --for=delete namespace/$ns --timeout=60s 2>/dev/null || true
-            fi
             kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
-            kubectl label namespace $ns $HELM_LABELS --overwrite 2>/dev/null || true
-            kubectl annotate namespace $ns $HELM_ANNOT_NAME --overwrite 2>/dev/null || true
-            kubectl annotate namespace $ns $HELM_ANNOT_NS --overwrite 2>/dev/null || true
           done
+
           # Only create placeholder secrets if they don't already exist.
-          # kubectl apply would overwrite real tokens with placeholders.
+          # Never overwrite — real values are set during OpenBao init.
           kubectl get secret openbao-unseal-key -n security >/dev/null 2>&1 || kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder
           kubectl get secret openbao-root-token -n security >/dev/null 2>&1 || kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder
           kubectl get secret openbao-root-token -n convocate >/dev/null 2>&1 || kubectl create secret generic openbao-root-token -n convocate --from-literal=token=placeholder
@@ -77,49 +76,18 @@
           kubectl get secret grafana-credentials -n o11y >/dev/null 2>&1 || kubectl create secret generic grafana-credentials -n o11y --from-literal=GF_SECURITY_ADMIN_PASSWORD=placeholder --from-literal=INFLUXDB_TOKEN=placeholder --from-literal=OPENBAO_OIDC_CLIENT_ID=placeholder --from-literal=OPENBAO_OIDC_CLIENT_SECRET=placeholder
           kubectl get secret influxdb-credentials -n o11y >/dev/null 2>&1 || kubectl create secret generic influxdb-credentials -n o11y --from-literal=DOCKER_INFLUXDB_INIT_USERNAME=admin --from-literal=DOCKER_INFLUXDB_INIT_PASSWORD=convocate-influx --from-literal=DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=convocate-influx-token --from-literal=DOCKER_INFLUXDB_INIT_ORG=convocate --from-literal=DOCKER_INFLUXDB_INIT_BUCKET=logs
           openssl req -x509 -newkey rsa:2048 -keyout /tmp/tls.key -out /tmp/tls.crt -days 365 -nodes -subj "/CN=convocate-internal" 2>/dev/null
-          kubectl create secret tls influxdb-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret tls prometheus-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret tls grafana-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key --dry-run=client -o yaml | kubectl apply -f -
+          kubectl get secret influxdb-tls -n o11y >/dev/null 2>&1 || kubectl create secret tls influxdb-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key
+          kubectl get secret prometheus-tls -n o11y >/dev/null 2>&1 || kubectl create secret tls prometheus-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key
+          kubectl get secret grafana-tls -n o11y >/dev/null 2>&1 || kubectl create secret tls grafana-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key
           rm -f /tmp/tls.key /tmp/tls.crt
-
-          # Remove stale Helm release tracking from default namespace
-          # (don't use helm uninstall — it cascades and deletes managed resources)
-          kubectl delete secret -n default -l owner=helm,name=convocate --ignore-not-found 2>/dev/null || true
-
-          # Clear stale claimRefs on Released PVs so new PVCs can bind
-          for pv in $(kubectl get pv --no-headers -o custom-columns=NAME:.metadata.name,STATUS:.status.phase 2>/dev/null | grep Released | awk '{print $1}' | grep -E "openbao|postgresql|redis|minio|influxdb|prometheus|grafana"); do
-            echo "Clearing stale claimRef on PV $pv"
-            kubectl patch pv "$pv" --type merge -p '{"spec":{"claimRef":null}}' 2>/dev/null || true
-          done
-
-          # Fix Helm ownership on ALL existing resources (single patch per resource)
-          PATCH='{"metadata":{"labels":{"app.kubernetes.io/managed-by":"Helm"},"annotations":{"meta.helm.sh/release-name":"convocate","meta.helm.sh/release-namespace":"{{ convocate_namespace }}"}}}'
-          for ns in security convocate convocate-agents data-layer o11y; do
-            for kind in secret configmap service serviceaccount deployment daemonset statefulset networkpolicy role rolebinding cronjob job pvc; do
-              kubectl get $kind -n $ns --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -v '^$' | while read name; do
-                kubectl patch $kind "$name" -n $ns --type merge -p "$PATCH" 2>/dev/null || true
-              done
-            done
-          done
-          # Fix cluster-scoped resources
-          for kind in clusterrole clusterrolebinding; do
-            kubectl get $kind --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null | tr -d ' ' | grep -E "convocate|openbao|grafana|influxdb|prometheus|redis|minio|postgresql|fluentbit|ginger|node-metrics" | grep -v '^$' | while read name; do
-              kubectl patch $kind "$name" --type merge -p "$PATCH" 2>/dev/null || true
-            done
-          done
       changed_when: false
-
-    - name: Add Helm repos if needed
-      ansible.builtin.command:
-        cmd: "helm repo update"
-      changed_when: false
-      failed_when: false
 
     - name: Deploy Convocate via Helm
       ansible.builtin.command:
         cmd: >-
           helm upgrade --install convocate {{ convocate_chart_path }}
           --namespace {{ convocate_namespace }}
+          --create-namespace
           --set cluster.name={{ cluster_name }}
           --set cluster.domain={{ dns_domain }}
           --set global.registry={{ registry_host }}:{{ registry_port | default('5000') }}
@@ -134,26 +102,26 @@
           --set grafana.nodeAffinity=node-{{ cluster_name }}-4
           --timeout 10m0s
 
-    - name: Wait briefly for Helm resources to be created
+    - name: Wait for API rollout
       ansible.builtin.command:
         cmd: >-
           kubectl rollout status deployment/convocate-api
-          -n {{ convocate_namespace }} --timeout=60s
-      changed_when: false
-      failed_when: false
-
-    - name: List application pods
-      ansible.builtin.command:
-        cmd: "kubectl get pods -n {{ convocate_namespace }} --no-headers"
-      register: app_pods
+          -n {{ convocate_namespace }} --timeout=120s
       changed_when: false
       failed_when: false
 
     - name: Print deployment status
+      ansible.builtin.shell:
+        cmd: kubectl get pods -n {{ convocate_namespace }} --no-headers
+      register: app_pods
+      changed_when: false
+      failed_when: false
+
+    - name: Show pods
       ansible.builtin.debug:
         msg: "{{ app_pods.stdout_lines | default(['no pods yet']) }}"
 
-    # --- OpenBao post-deploy initialization ---
+    # --- OpenBao post-deploy initialization (first deploy only) ---
 
     - name: Wait for OpenBao pod to be running
       ansible.builtin.command:
@@ -189,73 +157,7 @@
         bao_sealed: "{{ (bao_health_raw.stdout | from_json).sealed | default(true) }}"
       when: bao_health_raw.stdout | length > 0
 
-    - name: Verify root token is valid
-      ansible.builtin.shell:
-        cmd: |
-          BAO_TOKEN=$(kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
-          if [ "$BAO_TOKEN" = "placeholder" ] || ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" {{ bao_url }}/v1/auth/token/lookup-self >/dev/null 2>&1; then
-            echo "invalid"
-          else
-            echo "valid"
-          fi
-      register: bao_token_check
-      changed_when: false
-      when: bao_initialized | default(false)
-
-    - name: Force OpenBao reinit (root token lost)
-      ansible.builtin.shell:
-        cmd: |
-          echo "Root token is invalid — forcing OpenBao reinit..."
-          # Scale down OpenBao, wipe data on the hostPath, scale back up.
-          # Don't delete the PVC/PV — the pod needs them to start.
-          kubectl scale deployment openbao -n security --replicas=0
-          sleep 5
-          # Clear data on the node where OpenBao runs
-          OPENBAO_NODE=$(kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null || echo '')
-          if [ -n "$OPENBAO_NODE" ]; then
-            # Run a cleanup pod on the correct node
-            kubectl run openbao-wipe -n security --restart=Never --image={{ registry_host }}:{{ registry_port | default('5000') }}/convocate/openbao:latest \
-              --overrides='{"spec":{"nodeSelector":{"kubernetes.io/hostname":"'"$OPENBAO_NODE"'"},"containers":[{"name":"wipe","image":"'"{{ registry_host }}:{{ registry_port | default('5000') }}"'/convocate/openbao:latest","command":["/busybox/sh","-c","rm -rf /openbao/data/*"],"volumeMounts":[{"name":"data","mountPath":"/openbao/data"}]}],"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"openbao-data"}}]}}' \
-              --command -- /busybox/sh -c 'rm -rf /openbao/data/*' 2>/dev/null || true
-            kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/openbao-wipe -n security --timeout=30s 2>/dev/null || true
-            kubectl delete pod openbao-wipe -n security --ignore-not-found
-          else
-            echo "WARNING: Could not determine OpenBao node — skipping data wipe"
-          fi
-          # Delete placeholder secrets so they get recreated properly
-          kubectl delete secret openbao-root-token -n security --ignore-not-found
-          kubectl delete secret openbao-root-token -n {{ convocate_namespace }} --ignore-not-found
-          kubectl delete secret openbao-root-token -n data-layer --ignore-not-found
-          kubectl delete secret openbao-root-token -n o11y --ignore-not-found
-          kubectl delete secret openbao-unseal-key -n security --ignore-not-found
-          # Recreate placeholder secrets (the init steps will overwrite with real values)
-          kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder
-          kubectl create secret generic openbao-root-token -n {{ convocate_namespace }} --from-literal=token=placeholder
-          kubectl create secret generic openbao-root-token -n data-layer --from-literal=token=placeholder
-          kubectl create secret generic openbao-root-token -n o11y --from-literal=token=placeholder
-          kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder
-          # Scale back up
-          kubectl scale deployment openbao -n security --replicas=1
-          kubectl wait --for=condition=Ready pod -l app=openbao -n security --timeout=120s
-      register: bao_reinit
-      when:
-        - bao_initialized | default(false)
-        - bao_token_check.stdout | default('') | trim == 'invalid'
-
-    - name: Re-check OpenBao health after reinit
-      ansible.builtin.shell:
-        cmd: >-
-          curl -s {{ bao_url }}/v1/sys/health 2>/dev/null || true
-      register: bao_health_raw
-      changed_when: false
-      when: bao_reinit is changed
-
-    - name: Update init status after reinit
-      ansible.builtin.set_fact:
-        bao_initialized: false
-      when: bao_reinit is changed
-
-    - name: Initialize OpenBao
+    - name: Initialize OpenBao (first deploy only)
       ansible.builtin.shell:
         cmd: >-
           curl -s -d '{"secret_shares":1,"secret_threshold":1}'
@@ -479,53 +381,7 @@
         cmd: kubectl rollout restart deployment grafana -n o11y
       when: bao_init_result is changed
 
-    # Ensure pdv-test user exists on every deploy (not just first init).
-    # Try root token first; if it's "placeholder" (overwritten by a past bug),
-    # fall back to logging in as admin to get a valid token.
-    - name: Ensure pdv-test user exists for smoke tests
-      ansible.builtin.shell:
-        cmd: |
-          BAO_TOKEN=$(kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
-          # Test if the token works
-          if ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" {{ bao_url }}/v1/auth/token/lookup-self >/dev/null 2>&1; then
-            echo "Root token invalid, logging in as admin..."
-            BAO_TOKEN=$(curl -sf -d '{"password":"{{ openbao_admin_password }}"}' \
-              {{ bao_url }}/v1/auth/userpass/login/admin | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["client_token"])')
-            # Also fix the K8s secret with the working token
-            for ns in security convocate data-layer o11y; do
-              kubectl create secret generic openbao-root-token -n $ns \
-                --from-literal=token=$BAO_TOKEN --dry-run=client -o yaml | kubectl apply -f -
-            done
-          fi
-          curl -sf -d '{"password":"PdvTest-2026-Secure","policies":"admin-policy"}' \
-            -H "X-Vault-Token:$BAO_TOKEN" \
-            {{ bao_url }}/v1/auth/userpass/users/pdv-test
-      failed_when: false
-      no_log: true
-
-    - name: Force-delete pods stuck in Terminating
-      ansible.builtin.shell:
-        cmd: |
-          for ns in {{ convocate_namespace }} convocate-agents security data-layer o11y; do
-            for pod in $(kubectl get pods -n $ns --field-selector=status.phase=Running -o jsonpath='{.items[?(@.metadata.deletionTimestamp)].metadata.name}' 2>/dev/null); do
-              echo "Force-deleting stuck pod $pod in $ns"
-              kubectl delete pod $pod -n $ns --grace-period=0 --force 2>/dev/null || true
-            done
-            # Also catch pods reported as Terminating
-            for pod in $(kubectl get pods -n $ns --no-headers 2>/dev/null | grep Terminating | awk '{print $1}'); do
-              echo "Force-deleting Terminating pod $pod in $ns"
-              kubectl delete pod $pod -n $ns --grace-period=0 --force 2>/dev/null || true
-            done
-          done
-      changed_when: false
-
-    - name: Restart API to pick up fresh ServiceAccount token
-      ansible.builtin.command:
-        cmd: >-
-          kubectl rollout restart deployment/convocate-api
-          -n {{ convocate_namespace }}
-
-    - name: Wait for API rollout
+    - name: Wait for API rollout complete
       ansible.builtin.command:
         cmd: >-
           kubectl rollout status deployment/convocate-api
