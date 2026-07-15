@@ -157,6 +157,21 @@
         bao_sealed: "{{ (bao_health_raw.stdout | from_json).sealed | default(true) }}"
       when: bao_health_raw.stdout | length > 0
 
+    - name: Unseal OpenBao if sealed with known key
+      ansible.builtin.shell:
+        cmd: |
+          UNSEAL_KEY=$(kubectl get secret openbao-unseal-key -n security -o jsonpath='{.data.unseal-key}' | base64 -d)
+          if [ "$UNSEAL_KEY" != "placeholder" ] && [ -n "$UNSEAL_KEY" ]; then
+            echo "Unsealing with stored key..."
+            curl -s -d "{\"key\":\"$UNSEAL_KEY\"}" {{ bao_url }}/v1/sys/unseal
+          else
+            echo "No valid unseal key available"
+          fi
+      when:
+        - bao_initialized | default(false)
+        - bao_sealed | default(false)
+      no_log: true
+
     - name: Initialize OpenBao (first deploy only)
       ansible.builtin.shell:
         cmd: >-

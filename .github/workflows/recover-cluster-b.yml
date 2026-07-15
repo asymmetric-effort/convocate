@@ -226,6 +226,15 @@ jobs:
               exit 1
             fi
 
+            echo '=== Verify All Services (external) ==='
+            echo 'Checking app.convocate.asymmetric-effort.com...'
+            curl -sfk --connect-timeout 5 --max-time 10 https://app.convocate.asymmetric-effort.com/api/v1/status >/dev/null && echo 'Convocate: OK' || echo 'Convocate: FAILED'
+            echo 'Checking grafana.asymmetric-effort.com...'
+            curl -sfk --connect-timeout 5 --max-time 10 https://grafana.asymmetric-effort.com/api/health >/dev/null && echo 'Grafana: OK' || echo 'Grafana: FAILED'
+            echo 'Checking auth.asymmetric-effort.com...'
+            AUTH_CODE=\$(curl -sk --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' https://auth.asymmetric-effort.com/v1/sys/health)
+            [ \"\$AUTH_CODE\" = '200' ] && echo 'OpenBao: OK' || echo \"OpenBao: HTTP \$AUTH_CODE (200=ok, 503=sealed)\"
+
             echo '=== Recovery Complete ==='
           "
 
