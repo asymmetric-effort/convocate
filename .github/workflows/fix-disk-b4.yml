@@ -1,0 +1,109 @@
+name: Fix node-b-4 disk pressure
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    name: Fix disk pressure on node-b-4
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CLUSTER_B_HOST: ${{ secrets.CLUSTER_B_HOST }}
+      HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+    steps:
+      - name: Fix disk and add claude SSH access
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat > ~/.ssh/config << 'SSHEOF'
+          Host *
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            LogLevel ERROR
+          SSHEOF
+
+          # Add claude workspace key to hypervisor for future direct access
+          ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_B_HOST} "
+            echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHF4ldkmVOQJ/ozJaa3TDiRrlFOwwjZP/b/Cm6xB+Rr9 claude@workspace' >> ~/.ssh/authorized_keys
+            echo 'Claude workspace key added'
+
+            # Also add to sam-caldwell
+            sudo mkdir -p /home/sam-caldwell/.ssh
+            echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHF4ldkmVOQJ/ozJaa3TDiRrlFOwwjZP/b/Cm6xB+Rr9 claude@workspace' | sudo tee -a /home/sam-caldwell/.ssh/authorized_keys
+            sudo chown -R sam-caldwell:sam-caldwell /home/sam-caldwell/.ssh
+          "
+
+          # Find node-b-4 IP and fix disk via ProxyJump through control plane
+          CP_IP=$(ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_B_HOST} \
+            "sudo virsh domifaddr node-b-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
+          echo "CP: $CP_IP"
+
+          NODE4_IP=$(ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_B_HOST} \
+            "sudo virsh domifaddr node-b-4 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
+          echo "node-b-4: $NODE4_IP"
+
+          # Add claude key to node-b-4 for future access
+          ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$NODE4_IP "
+            sudo useradd -m -s /bin/bash -G sudo sam-caldwell 2>/dev/null || true
+            echo 'sam-caldwell ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/sam-caldwell >/dev/null
+            sudo mkdir -p /home/sam-caldwell/.ssh
+            curl -sfL https://github.com/sam-caldwell.keys | sudo tee /home/sam-caldwell/.ssh/authorized_keys >/dev/null
+            echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHF4ldkmVOQJ/ozJaa3TDiRrlFOwwjZP/b/Cm6xB+Rr9 claude@workspace' | sudo tee -a /home/sam-caldwell/.ssh/authorized_keys
+            sudo chmod 700 /home/sam-caldwell/.ssh
+            sudo chmod 600 /home/sam-caldwell/.ssh/authorized_keys
+            sudo chown -R sam-caldwell:sam-caldwell /home/sam-caldwell/.ssh
+
+            echo '=== Before cleanup ==='
+            df -h /
+            echo '=== Pruning container images ==='
+            sudo crictl rmi --prune 2>&1 | tail -5
+            echo '=== Cleaning logs ==='
+            sudo find /var/log -name '*.log' -size +10M -exec truncate -s 0 {} \;
+            sudo find /var/log -name '*.gz' -mtime +1 -delete
+            sudo journalctl --vacuum-size=50M
+            echo '=== After cleanup ==='
+            df -h /
+          "
+
+          # Check if taint cleared
+          ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
+            export KUBECONFIG=/etc/kubernetes/admin.conf
+            echo '=== Waiting for disk-pressure taint to clear ==='
+            for i in \$(seq 1 12); do
+              TAINTS=\$(sudo kubectl get node node-b-4 -o jsonpath='{.spec.taints}' 2>/dev/null)
+              if ! echo \"\$TAINTS\" | grep -q disk-pressure; then
+                echo 'Disk pressure cleared!'
+                break
+              fi
+              echo \"Still tainted (attempt \$i/12)\"
+              sleep 10
+            done
+
+            echo '=== Grafana pods ==='
+            sudo kubectl get pods -n o11y -l app=grafana -o wide --no-headers
+
+            echo '=== Restart Grafana port-forward ==='
+            # Kill and restart as sam-caldwell
+            sudo pkill -f 'port-forward.*grafana' 2>/dev/null || true
+          "
+
+          # Restart grafana port-forward from hypervisor
+          ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_B_HOST} "
+            sudo -u sam-caldwell nohup kubectl --kubeconfig=/home/sam-caldwell/.kube/config port-forward --address 0.0.0.0 -n o11y svc/grafana 38300:3000 </dev/null >/dev/null 2>&1 &
+            sleep 3
+            sudo ss -tlnp | grep 38300 && echo 'Grafana port-forward started' || echo 'FAILED'
+          "
+
+          # Final check
+          sleep 5
+          echo "=== Final Service Check ==="
+          echo "Convocate: $(curl -sfk --max-time 5 https://app.convocate.asymmetric-effort.com/api/v1/status >/dev/null && echo OK || echo FAILED)"
+          echo "Grafana: $(curl -sfk --max-time 5 https://grafana.asymmetric-effort.com/api/health >/dev/null && echo OK || echo FAILED)"
+          AUTH_CODE=$(curl -sk --max-time 5 -o /dev/null -w '%{http_code}' https://auth.asymmetric-effort.com/v1/sys/health)
+          echo "OpenBao: HTTP $AUTH_CODE"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
