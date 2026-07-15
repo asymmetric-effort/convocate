@@ -129,11 +129,22 @@ jobs:
               sudo kubectl scale deployment openbao -n security --replicas=0
               sleep 5
               BAO_NODE=\$(sudo kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null || echo '')
+              # Use a pod to wipe data on the correct node (can't SSH between nodes)
+              BAO_NODE=\$(sudo kubectl get pv openbao-pv -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}' 2>/dev/null || echo '')
               echo \"OpenBao data node: \$BAO_NODE\"
+              sudo kubectl delete pod openbao-wipe -n security --ignore-not-found --grace-period=0 --force 2>/dev/null || true
+              sleep 2
               if [ -n \"\$BAO_NODE\" ]; then
-                BAO_NODE_IP=\$(sudo kubectl get node \$BAO_NODE -o jsonpath='{.status.addresses[?(@.type==\"InternalIP\")].address}')
-                echo \"Wiping /mnt/security/openbao on \$BAO_NODE (\$BAO_NODE_IP)\"
-                ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \$BAO_NODE_IP 'sudo rm -rf /mnt/security/openbao/*'
+                echo \"Wiping /mnt/security/openbao on \$BAO_NODE via pod\"
+                sudo kubectl run openbao-wipe -n security --restart=Never \
+                  --image=busybox:latest \
+                  --overrides='{\"spec\":{\"nodeSelector\":{\"kubernetes.io/hostname\":\"'\$BAO_NODE'\"},\"volumes\":[{\"name\":\"data\",\"hostPath\":{\"path\":\"/mnt/security/openbao\"}}],\"containers\":[{\"name\":\"wipe\",\"image\":\"busybox:latest\",\"command\":[\"sh\",\"-c\",\"rm -rf /data/* && echo WIPED\"],\"volumeMounts\":[{\"name\":\"data\",\"mountPath\":\"/data\"}]}]}}' \
+                  --command -- sh -c 'rm -rf /data/* && echo WIPED'
+                sudo kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/openbao-wipe -n security --timeout=30s 2>/dev/null || \
+                  sudo kubectl wait --for=jsonpath='{.status.phase}'=Failed pod/openbao-wipe -n security --timeout=10s 2>/dev/null || true
+                WIPE_PHASE=\$(sudo kubectl get pod openbao-wipe -n security -o jsonpath='{.status.phase}' 2>/dev/null)
+                echo \"Wipe pod phase: \$WIPE_PHASE\"
+                sudo kubectl delete pod openbao-wipe -n security --ignore-not-found
               else
                 echo 'WARNING: Could not determine OpenBao node, wiping locally'
                 sudo rm -rf /mnt/security/openbao/*
