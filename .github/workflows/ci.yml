@@ -175,19 +175,19 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run API smoke tests against Cluster A
         run: |
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          echo -e "Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null" > ~/.ssh/config
 
           # Discover control plane IP
-          CP_IP=$(ssh -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_A_HOST} \
+          CP_IP=$(ssh $SSH_OPTS -i ~/.ssh/id_ed25519 ${HYPERVISOR_USER}@${CLUSTER_A_HOST} \
             "sudo virsh domifaddr node-a-0 2>/dev/null | grep -oP '192\.\d+\.\d+\.\d+' | head -1")
 
           echo "Cluster A CP: $CP_IP"
 
           # Run smoke tests directly on the control plane via SSH
-          ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_A_HOST} convocate@$CP_IP "
+          ssh $SSH_OPTS -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_A_HOST} convocate@$CP_IP "
             set -e
             export KUBECONFIG=/etc/kubernetes/admin.conf
             API_IP=\$(sudo kubectl get svc convocate-api -n convocate -o jsonpath='{.spec.clusterIP}')
