@@ -207,8 +207,8 @@ jobs:
             echo '=== Waiting for API pod readiness ==='
             sudo kubectl wait --for=condition=Ready pod -l app=convocate-api -n convocate --timeout=120s
 
-            # Get a running API pod for exec-based tests
-            API_POD=\$(sudo kubectl get pod -n convocate -l app=convocate-api --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+            # Get a running (non-Terminating) API pod for exec-based tests
+            API_POD=\$(sudo kubectl get pod -n convocate -l app=convocate-api --no-headers | grep Running | grep -v Terminating | head -1 | awk '{print \$1}')
             echo \"Using API pod: \$API_POD\"
 
             echo '=== API Status (via kubectl exec) ==='
