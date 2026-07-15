@@ -57,9 +57,11 @@
     - name: Ensure namespaces and placeholder secrets exist
       ansible.builtin.shell:
         cmd: |
-          # Create namespaces if they don't exist
+          # Create namespaces with Helm ownership labels so helm can adopt them
           for ns in security convocate convocate-agents data-layer o11y; do
             kubectl create namespace $ns --dry-run=client -o yaml | kubectl apply -f -
+            kubectl label namespace $ns app.kubernetes.io/managed-by=Helm --overwrite 2>/dev/null || true
+            kubectl annotate namespace $ns meta.helm.sh/release-name=convocate meta.helm.sh/release-namespace={{ convocate_namespace }} --overwrite 2>/dev/null || true
           done
 
           # Only create placeholder secrets if they don't already exist.
