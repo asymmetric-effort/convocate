@@ -203,6 +203,13 @@ jobs:
               sleep 5
             done
 
+            echo '=== API Pod Status ==='
+            sudo kubectl get pods -n convocate -l app=convocate-api --no-headers
+            echo '=== API Pod Logs (last 50 lines) ==='
+            sudo kubectl logs -n convocate -l app=convocate-api --tail=50 2>&1 || true
+            echo '=== API Pod Previous Logs (if crashed) ==='
+            sudo kubectl logs -n convocate -l app=convocate-api --previous --tail=30 2>&1 || true
+
             echo '=== API Status ==='
             curl -sf http://\$API_IP:8443/api/v1/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"status\"]); exit(0 if d[\"status\"] in [\"ok\",\"healthy\"] else 1)'
 
