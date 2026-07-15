@@ -207,33 +207,48 @@ jobs:
             echo '=== Waiting for API pod readiness ==='
             sudo kubectl wait --for=condition=Ready pod -l app=convocate-api -n convocate --timeout=120s
 
-            # Get a running (non-Terminating) API pod for exec-based tests
+            # Port-forward the API pod to localhost (bypasses Cilium routing,
+            # works with distroless containers that have no shell/wget/curl)
             API_POD=\$(sudo kubectl get pod -n convocate -l app=convocate-api --no-headers | grep Running | grep -v Terminating | head -1 | awk '{print \$1}')
             echo \"Using API pod: \$API_POD\"
+            sudo kubectl port-forward pod/\$API_POD -n convocate 18443:8443 &
+            PF_PID=\$!
+            sleep 2
 
-            echo '=== API Status (via kubectl exec) ==='
-            sudo kubectl exec \$API_POD -n convocate -- wget -q -O- http://localhost:8443/api/v1/status 2>&1 | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"status\"]); exit(0 if d[\"status\"] in [\"ok\",\"healthy\"] else 1)'
+            # Port-forward OpenBao
+            BAO_POD=\$(sudo kubectl get pod -n security -l app=openbao --no-headers | grep Running | grep -v Terminating | head -1 | awk '{print \$1}')
+            sudo kubectl port-forward pod/\$BAO_POD -n security 18200:8200 &
+            PF_BAO_PID=\$!
+            sleep 2
+
+            CURL='curl -sf --connect-timeout 5 --max-time 10'
+
+            echo '=== API Status (via port-forward) ==='
+            \$CURL http://localhost:18443/api/v1/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"status\"]); exit(0 if d[\"status\"] in [\"ok\",\"healthy\"] else 1)'
 
             echo '=== OpenBao Health ==='
-            BAO_POD=\$(sudo kubectl get pod -n security -l app=openbao -o jsonpath='{.items[0].metadata.name}')
-            sudo kubectl exec \$BAO_POD -n security -c openbao -- wget -q -O- http://localhost:8200/v1/sys/health 2>&1 | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"init:\", d[\"initialized\"], \"sealed:\", d[\"sealed\"]); exit(0 if d[\"initialized\"] and not d[\"sealed\"] else 1)'
+            \$CURL http://localhost:18200/v1/sys/health | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"init:\", d[\"initialized\"], \"sealed:\", d[\"sealed\"]); exit(0 if d[\"initialized\"] and not d[\"sealed\"] else 1)'
 
             echo '=== Auth Endpoint ==='
-            AUTH_RESULT=\$(sudo kubectl exec \$API_POD -n convocate -- wget -q -O- --post-data='{\"username\":\"bad\",\"password\":\"bad\"}' --header='Content-Type: application/json' http://localhost:8443/api/v1/auth/login 2>&1 || true)
-            echo \"Auth response: \$AUTH_RESULT\"
+            STATUS=\$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' -X POST http://localhost:18443/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"bad\",\"password\":\"bad\"}')
+            echo \"Auth status: \$STATUS\"
+            [ \"\$STATUS\" = '401' ] || [ \"\$STATUS\" = '400' ]
 
             echo '=== Authenticated K8s Endpoints ==='
-            BAO_IP=\$(sudo kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}')
-            TOKEN=\$(sudo kubectl exec \$API_POD -n convocate -- wget -q -O- --post-data='{\"password\":\"Convocate-Admin-2026\"}' http://\$BAO_IP:8200/v1/auth/userpass/login/admin 2>&1 | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"auth\"][\"client_token\"])')
+            TOKEN=\$(curl -s --connect-timeout 5 --max-time 10 -X POST http://localhost:18200/v1/auth/userpass/login/admin -d '{\"password\":\"Convocate-Admin-2026\"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"auth\"][\"client_token\"])')
             echo \"Got auth token\"
 
             echo '=== Node Manager ==='
-            NM_RESULT=\$(sudo kubectl exec \$API_POD -n convocate -- wget -q -O- --header=\"Authorization: Bearer \$TOKEN\" http://localhost:8443/api/v1/nmgr/node 2>&1)
-            echo \"\$NM_RESULT\" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"Nodes:\", len(d.get(\"items\",[])))' || { echo \"FAIL: Node Manager error: \$NM_RESULT\"; exit 1; }
+            NM_STATUS=\$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' http://localhost:18443/api/v1/nmgr/node -H \"Authorization: Bearer \$TOKEN\")
+            echo \"Node Manager status: \$NM_STATUS\"
+            [ \"\$NM_STATUS\" = '200' ] || { echo \"FAIL: Node Manager returned \$NM_STATUS\"; kill \$PF_PID \$PF_BAO_PID 2>/dev/null; exit 1; }
 
             echo '=== Agent Manager ==='
-            AM_RESULT=\$(sudo kubectl exec \$API_POD -n convocate -- wget -q -O- --header=\"Authorization: Bearer \$TOKEN\" http://localhost:8443/api/v1/amgr/agent 2>&1)
-            echo \"\$AM_RESULT\" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(\"Agents:\", len(d.get(\"items\",[])))' || { echo \"FAIL: Agent Manager error: \$AM_RESULT\"; exit 1; }
+            AM_STATUS=\$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' http://localhost:18443/api/v1/amgr/agent -H \"Authorization: Bearer \$TOKEN\")
+            echo \"Agent Manager status: \$AM_STATUS\"
+            [ \"\$AM_STATUS\" = '200' ] || { echo \"FAIL: Agent Manager returned \$AM_STATUS\"; kill \$PF_PID \$PF_BAO_PID 2>/dev/null; exit 1; }
+
+            kill \$PF_PID \$PF_BAO_PID 2>/dev/null || true
 
             echo '=== PDV PASSED ==='
           "
