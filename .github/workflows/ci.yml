@@ -11,13 +11,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  ci:
-    name: Lint, Test, Scan, Build
+  lint-test:
+    name: Lint & Test
     runs-on: [self-hosted, linux, x64]
-    permissions:
-      security-events: write
-    env:
-      REGISTRY: 192.168.3.90:5000
     steps:
       - uses: actions/checkout@v7
         with:
@@ -27,11 +23,9 @@ jobs:
           go-version: "1.26"
       - uses: oven-sh/setup-bun@v2
 
-      # --- Lint ---
       - name: Lint
         run: make lint
 
-      # --- Test ---
       - name: Test API
         working-directory: api
         run: |
@@ -56,7 +50,16 @@ jobs:
           bun install
           bun test
 
-      # --- Scan ---
+  scan:
+    name: Scan for Secrets
+    runs-on: [self-hosted, linux, x64]
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Scan for secrets
         run: leakdetector --skip-history --format sarif --report results.sarif --exit-code 0
 
@@ -66,7 +69,17 @@ jobs:
         with:
           sarif_file: results.sarif
 
-      # --- Build & Push ---
+  build:
+    name: Build & Push
+    needs: [lint-test, scan]
+    runs-on: [self-hosted, linux, x64]
+    env:
+      REGISTRY: 192.168.3.90:5000
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
       - name: Set IMAGE_TAG
         id: set-tag
         run: |
@@ -100,7 +113,7 @@ jobs:
 
   deploy-cluster-a:
     name: Deploy to Cluster A
-    needs: ci
+    needs: build
     runs-on: [self-hosted, linux, x64]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     env:
@@ -175,12 +188,23 @@ jobs:
 
           # Run smoke tests directly on the control plane via SSH
           ssh -i ~/.ssh/id_ed25519 -J ${HYPERVISOR_USER}@${CLUSTER_A_HOST} convocate@$CP_IP "
+            set -e
             export KUBECONFIG=/etc/kubernetes/admin.conf
             API_IP=\$(sudo kubectl get svc convocate-api -n convocate -o jsonpath='{.spec.clusterIP}')
             BAO_IP=\$(sudo kubectl get svc openbao -n security -o jsonpath='{.spec.clusterIP}')
 
+            echo '=== Waiting for API readiness ==='
+            for i in \$(seq 1 30); do
+              if curl -sf http://\$API_IP:8443/api/v1/status >/dev/null 2>&1; then
+                echo \"API ready after \${i} attempts\"
+                break
+              fi
+              echo \"Waiting for API... (attempt \$i/30)\"
+              sleep 5
+            done
+
             echo '=== API Status ==='
-            curl -s http://\$API_IP:8443/api/v1/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"status\"]); exit(0 if d[\"status\"] in [\"ok\",\"healthy\"] else 1)'
+            curl -sf http://\$API_IP:8443/api/v1/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"status\"]); exit(0 if d[\"status\"] in [\"ok\",\"healthy\"] else 1)'
 
             echo '=== Auth Endpoint ==='
             STATUS=\$(curl -s -o /dev/null -w '%{http_code}' -X POST http://\$API_IP:8443/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"bad\",\"password\":\"bad\"}')
