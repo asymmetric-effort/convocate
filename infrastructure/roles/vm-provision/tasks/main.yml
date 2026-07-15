@@ -87,9 +87,14 @@
       --run-command 'echo "{{ vm_user }} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/{{ vm_user }}'
       --run-command 'mkdir -p /home/{{ vm_user }}/.ssh && chmod 700 /home/{{ vm_user }}/.ssh'
       --run-command 'echo "{{ ssh_public_key }}" > /home/{{ vm_user }}/.ssh/authorized_keys'
-      --run-command 'curl -sfL https://github.com/sam-caldwell.keys >> /home/{{ vm_user }}/.ssh/authorized_keys || true'
       --run-command 'chmod 600 /home/{{ vm_user }}/.ssh/authorized_keys'
       --run-command 'chown -R $(id -u {{ vm_user }}):$(id -g {{ vm_user }}) /home/{{ vm_user }}/.ssh'
+      --run-command 'useradd -m -s /bin/bash -G sudo sam-caldwell || true'
+      --run-command 'echo "sam-caldwell ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/sam-caldwell'
+      --run-command 'mkdir -p /home/sam-caldwell/.ssh && chmod 700 /home/sam-caldwell/.ssh'
+      --run-command 'curl -sfL https://github.com/sam-caldwell.keys > /home/sam-caldwell/.ssh/authorized_keys || true'
+      --run-command 'chmod 600 /home/sam-caldwell/.ssh/authorized_keys'
+      --run-command 'chown -R $(id -u sam-caldwell):$(id -g sam-caldwell) /home/sam-caldwell/.ssh'
       --run-command 'sed -i "s/^#*PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config'
       --hostname {{ item }}
   loop: "{{ vm_nodes }}"
@@ -128,11 +133,17 @@
           passwd: {{ vm_password_hash | default('!') }}
           ssh_authorized_keys:
             - {{ ssh_public_key | default('ssh-ed25519 PLACEHOLDER') }}
+        - name: sam-caldwell
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          shell: /bin/bash
+          lock_passwd: true
+          ssh_import_id:
+            - gh:sam-caldwell
       package_update: false
       package_upgrade: false
       runcmd:
         - apt-get update -qq && apt-get install -y -qq qemu-guest-agent && systemctl enable --now qemu-guest-agent || true
-        - curl -sfL https://github.com/sam-caldwell.keys >> /home/{{ vm_user }}/.ssh/authorized_keys || true
+        - mkdir -p /home/sam-caldwell/.ssh && curl -sfL https://github.com/sam-caldwell.keys > /home/sam-caldwell/.ssh/authorized_keys && chmod 600 /home/sam-caldwell/.ssh/authorized_keys && chown -R sam-caldwell:sam-caldwell /home/sam-caldwell/.ssh || true
     dest: "{{ vm_pool_path }}/{{ item }}-user-data"
     mode: "0644"
   loop: "{{ vm_nodes }}"
