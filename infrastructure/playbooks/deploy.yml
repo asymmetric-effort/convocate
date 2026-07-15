@@ -63,17 +63,19 @@
             kubectl annotate namespace $ns $HELM_ANNOT_NAME --overwrite 2>/dev/null || true
             kubectl annotate namespace $ns $HELM_ANNOT_NS --overwrite 2>/dev/null || true
           done
-          kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic openbao-root-token -n convocate --from-literal=token=placeholder --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic openbao-root-token -n data-layer --from-literal=token=placeholder --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic openbao-root-token -n o11y --from-literal=token=placeholder --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic fluentbit-credentials -n o11y --from-literal=HTTP_TOKEN=placeholder --from-literal=influxdb-token=placeholder --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic minio-credentials -n data-layer --from-literal=root-user=minioadmin --from-literal=root-password=minioadmin123 --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic postgresql-credentials -n convocate --from-literal=DATABASE_URL=postgres://postgres:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic postgresql-credentials -n data-layer --from-literal=POSTGRES_PASSWORD=convocate --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic grafana-credentials -n o11y --from-literal=GF_SECURITY_ADMIN_PASSWORD=placeholder --from-literal=INFLUXDB_TOKEN=placeholder --from-literal=OPENBAO_OIDC_CLIENT_ID=placeholder --from-literal=OPENBAO_OIDC_CLIENT_SECRET=placeholder --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic influxdb-credentials -n o11y --from-literal=DOCKER_INFLUXDB_INIT_USERNAME=admin --from-literal=DOCKER_INFLUXDB_INIT_PASSWORD=convocate-influx --from-literal=DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=convocate-influx-token --from-literal=DOCKER_INFLUXDB_INIT_ORG=convocate --from-literal=DOCKER_INFLUXDB_INIT_BUCKET=logs --dry-run=client -o yaml | kubectl apply -f -
+          # Only create placeholder secrets if they don't already exist.
+          # kubectl apply would overwrite real tokens with placeholders.
+          kubectl get secret openbao-unseal-key -n security >/dev/null 2>&1 || kubectl create secret generic openbao-unseal-key -n security --from-literal=unseal-key=placeholder
+          kubectl get secret openbao-root-token -n security >/dev/null 2>&1 || kubectl create secret generic openbao-root-token -n security --from-literal=token=placeholder
+          kubectl get secret openbao-root-token -n convocate >/dev/null 2>&1 || kubectl create secret generic openbao-root-token -n convocate --from-literal=token=placeholder
+          kubectl get secret openbao-root-token -n data-layer >/dev/null 2>&1 || kubectl create secret generic openbao-root-token -n data-layer --from-literal=token=placeholder
+          kubectl get secret openbao-root-token -n o11y >/dev/null 2>&1 || kubectl create secret generic openbao-root-token -n o11y --from-literal=token=placeholder
+          kubectl get secret fluentbit-credentials -n o11y >/dev/null 2>&1 || kubectl create secret generic fluentbit-credentials -n o11y --from-literal=HTTP_TOKEN=placeholder --from-literal=influxdb-token=placeholder
+          kubectl get secret minio-credentials -n data-layer >/dev/null 2>&1 || kubectl create secret generic minio-credentials -n data-layer --from-literal=root-user=minioadmin --from-literal=root-password=minioadmin123
+          kubectl get secret postgresql-credentials -n convocate >/dev/null 2>&1 || kubectl create secret generic postgresql-credentials -n convocate --from-literal=DATABASE_URL=postgres://postgres:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable
+          kubectl get secret postgresql-credentials -n data-layer >/dev/null 2>&1 || kubectl create secret generic postgresql-credentials -n data-layer --from-literal=POSTGRES_PASSWORD=convocate
+          kubectl get secret grafana-credentials -n o11y >/dev/null 2>&1 || kubectl create secret generic grafana-credentials -n o11y --from-literal=GF_SECURITY_ADMIN_PASSWORD=placeholder --from-literal=INFLUXDB_TOKEN=placeholder --from-literal=OPENBAO_OIDC_CLIENT_ID=placeholder --from-literal=OPENBAO_OIDC_CLIENT_SECRET=placeholder
+          kubectl get secret influxdb-credentials -n o11y >/dev/null 2>&1 || kubectl create secret generic influxdb-credentials -n o11y --from-literal=DOCKER_INFLUXDB_INIT_USERNAME=admin --from-literal=DOCKER_INFLUXDB_INIT_PASSWORD=convocate-influx --from-literal=DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=convocate-influx-token --from-literal=DOCKER_INFLUXDB_INIT_ORG=convocate --from-literal=DOCKER_INFLUXDB_INIT_BUCKET=logs
           openssl req -x509 -newkey rsa:2048 -keyout /tmp/tls.key -out /tmp/tls.crt -days 365 -nodes -subj "/CN=convocate-internal" 2>/dev/null
           kubectl create secret tls influxdb-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key --dry-run=client -o yaml | kubectl apply -f -
           kubectl create secret tls prometheus-tls -n o11y --cert=/tmp/tls.crt --key=/tmp/tls.key --dry-run=client -o yaml | kubectl apply -f -
