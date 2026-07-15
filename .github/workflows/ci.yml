@@ -64,7 +64,7 @@ jobs:
         run: leakdetector --skip-history --format sarif --report results.sarif --exit-code 0
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: results.sarif
