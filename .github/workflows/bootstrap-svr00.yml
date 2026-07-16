@@ -17,9 +17,15 @@ jobs:
         env:
           CLOUDFLARE_TUNNEL_SECRET: ${{ secrets.CLOUDFLARE_TUNNEL_SECRET }}
           CLOUDFLARE_TUNNEL_ID: ${{ secrets.CLOUDFLARE_TUNNEL_ID }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
           ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_ROLES_PATH=infrastructure/bootstrap/roles \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/bootstrap/playbooks/bootstrap-svr00.yml \
             -i infrastructure/bootstrap/inventory/svr00.yml
+          rm -f ~/.ssh/ansible_key
