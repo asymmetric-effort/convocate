@@ -449,14 +449,21 @@
           BAO_TOKEN="{{ bao_stored_token.stdout }}"
           BAO="{{ bao_url }}"
 
-          # Skip if token is placeholder or invalid
-          if [ "$BAO_TOKEN" = "placeholder" ]; then
-            echo "SKIP: root token is placeholder"
-            exit 0
-          fi
-          if ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/auth/token/lookup-self >/dev/null 2>&1; then
-            echo "SKIP: root token is invalid"
-            exit 0
+          # Validate token — fall back to admin login if invalid
+          if [ "$BAO_TOKEN" = "placeholder" ] || ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/auth/token/lookup-self >/dev/null 2>&1; then
+            echo "Root token invalid — trying admin login..."
+            BAO_TOKEN=$(curl -sf -d '{"password":"{{ openbao_admin_password }}"}' \
+              $BAO/v1/auth/userpass/login/admin 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("auth",{}).get("client_token",""))' 2>/dev/null)
+            if [ -z "$BAO_TOKEN" ]; then
+              echo "SKIP: cannot authenticate to OpenBao"
+              exit 0
+            fi
+            # Restore the K8s secret with the working token
+            for ns in security convocate data-layer o11y; do
+              kubectl create secret generic openbao-root-token -n $ns \
+                --from-literal=token=$BAO_TOKEN --dry-run=client -o yaml | kubectl apply -f -
+            done
+            echo "Root token restored from admin login"
           fi
 
           # Get userpass accessor
