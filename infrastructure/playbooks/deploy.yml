@@ -394,6 +394,21 @@
         cmd: kubectl rollout restart deployment grafana -n o11y
       when: bao_init_result is changed
 
+    # --- Ensure root token from CI/CD is applied to K8s secrets ---
+
+    - name: Ensure OpenBao root token is set
+      ansible.builtin.shell:
+        cmd: |
+          TOKEN="{{ openbao_root_token_override | default('') }}"
+          if [ -n "$TOKEN" ]; then
+            for ns in security convocate data-layer o11y; do
+              kubectl create secret generic openbao-root-token -n $ns \
+                --from-literal=token=$TOKEN --dry-run=client -o yaml | kubectl apply -f -
+            done
+          fi
+      when: openbao_root_token_override is defined and openbao_root_token_override != ''
+      no_log: true
+
     # --- Update entity display names on every deploy (idempotent) ---
     # Log in as each user to ensure their entity exists, then update metadata.
     # No manual entity creation, no aliases — OpenBao handles it.

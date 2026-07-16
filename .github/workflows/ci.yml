@@ -126,6 +126,7 @@ jobs:
       DNS_DOMAIN: ${{ secrets.DNS_DOMAIN }}
       SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
       VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
+      OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_A_OPENBAO_ROOT_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - name: Install Ansible collections
@@ -159,7 +160,8 @@ jobs:
           ansible-playbook playbooks/deploy.yml \
             -i inventory/cluster-a.yml \
             -e "ssh_public_key='$SSH_PUBLIC_KEY'" \
-            -e "vm_password_hash='$VM_PASSWORD_HASH'"
+            -e "vm_password_hash='$VM_PASSWORD_HASH'" \
+            -e "openbao_root_token_override=$OPENBAO_ROOT_TOKEN"
       - name: Cleanup SSH key
         if: always()
         run: rm -f ~/.ssh/ansible_key ~/.ssh/id_ed25519
@@ -277,6 +279,7 @@ jobs:
       DNS_DOMAIN: ${{ secrets.DNS_DOMAIN }}
       SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
       VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
+      OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_B_OPENBAO_ROOT_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - name: Install Ansible collections
@@ -320,7 +323,8 @@ jobs:
           ansible-playbook playbooks/deploy.yml \
             -i inventory/cluster-b.yml \
             -e "ssh_public_key='$SSH_PUBLIC_KEY'" \
-            -e "vm_password_hash='$VM_PASSWORD_HASH'"
+            -e "vm_password_hash='$VM_PASSWORD_HASH'" \
+            -e "openbao_root_token_override=$OPENBAO_ROOT_TOKEN"
 
           # Verify root token is not placeholder
           echo "=== Verify OpenBao root token ==="
