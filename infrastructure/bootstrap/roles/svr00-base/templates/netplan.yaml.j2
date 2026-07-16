@@ -1,7 +1,7 @@
 {% set physical_ifaces = ansible_interfaces | reject('match', '^lo$') | reject('match', '^docker') | reject('match', '^vir') | reject('match', '^br-') | reject('match', '^veth') | sort | list %}
 # svr00 network configuration
 # 192.168.3.160-169 are reserved for core services
-# Source-based routing ensures replies go out the correct interface
+# All IPs on a single interface to avoid multi-NIC routing issues
 network:
   version: 2
   renderer: networkd
@@ -17,86 +17,19 @@ network:
         - 192.168.3.165/24  # core: reserved
         - 192.168.3.166/24  # core: reserved
         - 192.168.3.167/24  # core: reserved
-      routes:
-        - to: default
-          via: 192.168.3.1
-        - to: 192.168.3.0/24
-          via: 192.168.3.1
-          table: 100
-      routing-policy:
-        - from: 192.168.3.159
-          table: 100
-        - from: 192.168.3.160
-          table: 100
-        - from: 192.168.3.161
-          table: 100
-        - from: 192.168.3.162
-          table: 100
-        - from: 192.168.3.163
-          table: 100
-        - from: 192.168.3.164
-          table: 100
-        - from: 192.168.3.165
-          table: 100
-        - from: 192.168.3.166
-          table: 100
-        - from: 192.168.3.167
-          table: 100
-      nameservers:
-        addresses:
-          - 1.1.1.1
-          - 8.8.8.8
-{% if physical_ifaces | length > 1 %}
-    {{ physical_ifaces[1] }}:
-      addresses:
         - 192.168.3.170/24
         - 192.168.3.171/24
         - 192.168.3.172/24
-      routes:
-        - to: 192.168.3.0/24
-          via: 192.168.3.1
-          table: 101
-      routing-policy:
-        - from: 192.168.3.170
-          table: 101
-        - from: 192.168.3.171
-          table: 101
-        - from: 192.168.3.172
-          table: 101
-{% endif %}
-{% if physical_ifaces | length > 2 %}
-    {{ physical_ifaces[2] }}:
-      addresses:
         - 192.168.3.180/24
         - 192.168.3.181/24
         - 192.168.3.182/24
-      routes:
-        - to: 192.168.3.0/24
-          via: 192.168.3.1
-          table: 102
-      routing-policy:
-        - from: 192.168.3.180
-          table: 102
-        - from: 192.168.3.181
-          table: 102
-        - from: 192.168.3.182
-          table: 102
-{% endif %}
-{% if physical_ifaces | length > 3 %}
-    {{ physical_ifaces[3] }}:
-      addresses:
         - 192.168.3.190/24
         - 192.168.3.191/24
         - 192.168.3.192/24
       routes:
-        - to: 192.168.3.0/24
+        - to: default
           via: 192.168.3.1
-          table: 103
-      routing-policy:
-        - from: 192.168.3.190
-          table: 103
-        - from: 192.168.3.191
-          table: 103
-        - from: 192.168.3.192
-          table: 103
-{% endif %}
+      nameservers:
+        addresses:
+          - 1.1.1.1
+          - 8.8.8.8
