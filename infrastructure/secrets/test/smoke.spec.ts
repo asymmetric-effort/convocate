@@ -1,50 +1,26 @@
 import { test, expect } from "@playwright/test";
 
 const OPENBAO_URL: string = process.env.OPENBAO_URL ?? "http://192.168.3.161:8200";
-const ROOT_TOKEN: string = process.env.OPENBAO_ROOT_TOKEN ?? "";
+const PDV_USER = "pdv-test";
+const PDV_PASS = "PdvTest-2026-Secure";
 
 interface HealthResponse {
   initialized: boolean;
   sealed: boolean;
-  standby: boolean;
   version: string;
 }
 
-interface AuthMethodsResponse {
-  [key: string]: {
-    type: string;
-    description: string;
-    accessor: string;
-  };
-}
-
-interface PoliciesListResponse {
-  data: {
+interface AuthLoginResponse {
+  auth: {
+    client_token: string;
     policies: string[];
-    keys: string[];
   };
 }
 
-interface TokenLookupResponse {
-  data: {
-    accessor: string;
-    creation_time: number;
-    display_name: string;
-    id: string;
-    policies: string[];
-    ttl: number;
-  };
-}
+let pdvToken: string = "";
 
-function headers(token: string): Record<string, string> {
-  return {
-    "X-Vault-Token": token,
-    "Content-Type": "application/json",
-  };
-}
-
-test.describe("OpenBao Smoke — secrets-b read-only verification", () => {
-  test("health check — GET /v1/sys/health", async () => {
+test.describe.serial("OpenBao Smoke — secrets-b read-only verification", () => {
+  test("health check — initialized and unsealed", async () => {
     const resp = await fetch(`${OPENBAO_URL}/v1/sys/health`);
     expect(resp.status).toBe(200);
 
@@ -53,41 +29,47 @@ test.describe("OpenBao Smoke — secrets-b read-only verification", () => {
     expect(body.sealed).toBe(false);
   });
 
-  test("list auth methods — GET /v1/sys/auth", async () => {
-    const resp = await fetch(`${OPENBAO_URL}/v1/sys/auth`, {
-      headers: headers(ROOT_TOKEN),
+  test("login as pdv-test succeeds", async () => {
+    const resp = await fetch(`${OPENBAO_URL}/v1/auth/userpass/login/${PDV_USER}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: PDV_PASS }),
     });
     expect(resp.status).toBe(200);
 
-    const body: AuthMethodsResponse = await resp.json();
-    const authTypes: string[] = Object.values(body)
-      .filter((v): v is { type: string; description: string; accessor: string } =>
-        typeof v === "object" && v !== null && "type" in v
-      )
-      .map((v) => v.type);
-    expect(authTypes).toContain("userpass");
+    const body: AuthLoginResponse = await resp.json();
+    expect(body.auth.client_token).toBeTruthy();
+    expect(body.auth.policies).toContain("pdv-test-policy");
+    pdvToken = body.auth.client_token;
   });
 
-  test("list policies — GET /v1/sys/policies/acl", async () => {
-    const resp = await fetch(`${OPENBAO_URL}/v1/sys/policies/acl`, {
-      method: "GET",
-      headers: headers(ROOT_TOKEN),
-    });
-    expect(resp.status).toBe(200);
-
-    const body: PoliciesListResponse = await resp.json();
-    const policies: string[] = body.data?.policies ?? body.data?.keys ?? [];
-    expect(policies).toContain("admin-policy");
-  });
-
-  test("token self lookup — GET /v1/auth/token/lookup-self", async () => {
+  test("token self-lookup succeeds", async () => {
     const resp = await fetch(`${OPENBAO_URL}/v1/auth/token/lookup-self`, {
-      headers: headers(ROOT_TOKEN),
+      headers: { "X-Vault-Token": pdvToken },
+    });
+    expect(resp.status).toBe(200);
+  });
+
+  test("pdv-test namespace is accessible", async () => {
+    // Write a canary, read it, delete it — proves the namespace works
+    // This is non-destructive to production data (pdv-test namespace only)
+    const resp = await fetch(`${OPENBAO_URL}/v1/secret/data/pdv-test/smoke-canary`, {
+      method: "POST",
+      headers: { "X-Vault-Token": pdvToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { smoke: "ok" } }),
     });
     expect(resp.status).toBe(200);
 
-    const body: TokenLookupResponse = await resp.json();
-    expect(body.data).toBeTruthy();
-    expect(body.data.policies).toContain("root");
+    // Read it back
+    const readResp = await fetch(`${OPENBAO_URL}/v1/secret/data/pdv-test/smoke-canary`, {
+      headers: { "X-Vault-Token": pdvToken },
+    });
+    expect(readResp.status).toBe(200);
+
+    // Clean up
+    await fetch(`${OPENBAO_URL}/v1/secret/data/pdv-test/smoke-canary`, {
+      method: "DELETE",
+      headers: { "X-Vault-Token": pdvToken },
+    });
   });
 });

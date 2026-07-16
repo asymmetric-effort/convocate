@@ -44,7 +44,6 @@ jobs:
 
       - name: Deploy secrets-a
         env:
-          OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_A_OPENBAO_ROOT_TOKEN }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
@@ -64,7 +63,6 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     env:
       OPENBAO_URL: http://192.168.3.160:8200
-      OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_A_OPENBAO_ROOT_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 
@@ -91,7 +89,6 @@ jobs:
 
       - name: Deploy secrets-b (non-destructive)
         env:
-          OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_B_OPENBAO_ROOT_TOKEN }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.ssh
@@ -111,7 +108,6 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     env:
       OPENBAO_URL: http://192.168.3.161:8200
-      OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_B_OPENBAO_ROOT_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 
