@@ -19,5 +19,6 @@ jobs:
           CLOUDFLARE_TUNNEL_ID: ${{ secrets.CLOUDFLARE_TUNNEL_ID }}
         run: |
           ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_ROLES_PATH=infrastructure/bootstrap/roles \
           ansible-playbook infrastructure/bootstrap/playbooks/bootstrap-svr00.yml \
             -i infrastructure/bootstrap/inventory/svr00.yml

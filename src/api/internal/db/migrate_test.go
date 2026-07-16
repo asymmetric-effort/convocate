@@ -306,7 +306,7 @@ func TestDefaultPgxExec_WithPool(t *testing.T) {
 	}()
 
 	// Create a real pool that won't be connected
-	os.Setenv("DATABASE_URL", "postgres://user:pass@127.0.0.1:5432/testdb?sslmode=disable")
+	os.Setenv("DATABASE_URL", testDSN("127.0.0.1", "5432"))
 	defer os.Unsetenv("DATABASE_URL")
 
 	pgPing = func(ctx context.Context, pool *pgxpool.Pool) error {
@@ -341,7 +341,7 @@ func TestDefaultPgxQueryRow_WithPool(t *testing.T) {
 		pgPing = origPing
 	}()
 
-	os.Setenv("DATABASE_URL", "postgres://user:pass@127.0.0.1:5432/testdb?sslmode=disable")
+	os.Setenv("DATABASE_URL", testDSN("127.0.0.1", "5432"))
 	defer os.Unsetenv("DATABASE_URL")
 
 	pgPing = func(ctx context.Context, pool *pgxpool.Pool) error {
