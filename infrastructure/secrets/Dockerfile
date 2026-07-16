@@ -22,8 +22,8 @@ RUN ARCH=$(uname -m) && \
     chmod +x bao && \
     mv bao /usr/local/bin/bao
 
-# Create default config and data directories
-RUN mkdir -p /opt/openbao/config /opt/openbao/data /opt/openbao/audit
+# Create default config, data, audit, and TLS directories
+RUN mkdir -p /opt/openbao/config /opt/openbao/data /opt/openbao/audit /opt/openbao/tls
 
 # Runtime stage
 FROM gcr.io/distroless/cc-debian13:debug
@@ -32,6 +32,7 @@ COPY --from=build /usr/local/bin/bao /usr/local/bin/bao
 COPY --from=build --chown=65534:65534 /opt/openbao/config/ /openbao/config/
 COPY --from=build --chown=65534:65534 /opt/openbao/data/ /openbao/data/
 COPY --from=build --chown=65534:65534 /opt/openbao/audit/ /openbao/audit/
+COPY --from=build --chown=65534:65534 /opt/openbao/tls/ /openbao/tls/
 
 EXPOSE 8200
 

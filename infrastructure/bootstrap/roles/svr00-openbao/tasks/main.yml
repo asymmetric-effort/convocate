@@ -1,0 +1,356 @@
+---
+# Bootstrap OpenBao secrets infrastructure on svr00
+# Creates directories, starts instances on HTTP, initializes,
+# enables PKI, issues TLS certs, restarts with TLS.
+
+- name: Create OpenBao directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - /opt/openbao
+    - /opt/openbao/config
+    - /var/openbao/secrets-a
+    - /var/openbao/secrets-b
+    - /var/openbao/tls/secrets-a
+    - /var/openbao/tls/secrets-b
+
+- name: Set data and TLS directory ownership for distroless (nobody:nobody)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "65534"
+    group: "65534"
+  loop:
+    - /var/openbao/secrets-a
+    - /var/openbao/secrets-b
+    - /var/openbao/tls/secrets-a
+    - /var/openbao/tls/secrets-b
+
+- name: Copy OpenBao configs
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0644"
+    owner: root
+    group: root
+  loop:
+    - src: "{{ playbook_dir }}/../../secrets/docker-compose.yml"
+      dest: /opt/openbao/docker-compose.yml
+    - src: "{{ playbook_dir }}/../../secrets/config/openbao-config.hcl"
+      dest: /opt/openbao/config/openbao-config-http.hcl
+    - src: "{{ playbook_dir }}/../../secrets/config/openbao-config-secrets-a.hcl"
+      dest: /opt/openbao/config/openbao-config-secrets-a.hcl
+    - src: "{{ playbook_dir }}/../../secrets/config/openbao-config-secrets-b.hcl"
+      dest: /opt/openbao/config/openbao-config-secrets-b.hcl
+
+- name: Pull OpenBao image
+  ansible.builtin.command:
+    cmd: docker pull 192.168.3.90:5000/convocate/openbao:latest
+  changed_when: true
+
+# =========================================================================
+# secrets-a — test instance
+# =========================================================================
+
+- name: Check if secrets-a has TLS certs
+  ansible.builtin.stat:
+    path: /var/openbao/tls/secrets-a/cert.pem
+  register: secrets_a_cert
+
+- name: Bootstrap secrets-a (HTTP → init → PKI → TLS)
+  when: not secrets_a_cert.stat.exists
+  block:
+    - name: Remove existing secrets-a container
+      ansible.builtin.shell:
+        cmd: |
+          docker compose -f /opt/openbao/docker-compose.yml rm -f secrets-a 2>/dev/null || true
+          docker stop secrets-a-bootstrap 2>/dev/null || true
+          docker rm secrets-a-bootstrap 2>/dev/null || true
+
+    - name: Start secrets-a on HTTP for bootstrap
+      ansible.builtin.shell:
+        cmd: |
+          docker run -d --name secrets-a-bootstrap \
+            --cap-add IPC_LOCK \
+            -p 192.168.3.160:8200:8200 \
+            -v /var/openbao/secrets-a:/openbao/data \
+            -v /opt/openbao/config/openbao-config-http.hcl:/openbao/config/config.hcl:ro \
+            -e BAO_API_ADDR=http://192.168.3.160:8200 \
+            -e BAO_CLUSTER_ADDR=http://192.168.3.160:8201 \
+            192.168.3.90:5000/convocate/openbao:latest \
+            server -config=/openbao/config/config.hcl
+
+    - name: Wait for secrets-a HTTP to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' http://192.168.3.160:8200/v1/sys/health 2>/dev/null)
+            [ -n "$STATUS" ] && [ "$STATUS" != "000" ] && break
+            sleep 2
+          done
+      changed_when: false
+
+    - name: Initialize secrets-a, enable auth + KV + PKI, issue TLS cert
+      ansible.builtin.shell:
+        cmd: |
+          BAO=http://192.168.3.160:8200
+
+          HEALTH=$(curl -sf $BAO/v1/sys/health 2>/dev/null || echo '{}')
+          INIT=$(echo "$HEALTH" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("initialized",False))' 2>/dev/null)
+          if [ "$INIT" != "False" ]; then
+            echo "secrets-a already initialized — skipping"
+            exit 0
+          fi
+
+          RESULT=$(curl -sf -d '{"secret_shares":1,"secret_threshold":1}' $BAO/v1/sys/init)
+          UNSEAL_KEY=$(echo "$RESULT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["keys"][0])')
+          ROOT=$(echo "$RESULT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["root_token"])')
+          curl -sf -d "{\"key\":\"$UNSEAL_KEY\"}" $BAO/v1/sys/unseal
+
+          # Enable userpass + KV v2
+          curl -sf -d '{"type":"userpass"}' -H "X-Vault-Token:$ROOT" $BAO/v1/sys/auth/userpass
+          curl -sf -d '{"type":"kv","options":{"version":"2"}}' -H "X-Vault-Token:$ROOT" $BAO/v1/sys/mounts/secret
+
+          # Create pdv-test policy (CRUD on pdv-test/ namespace only)
+          curl -sf -X PUT \
+            -d '{"policy":"path \"secret/data/pdv-test/*\" { capabilities = [\"create\",\"read\",\"update\",\"delete\",\"list\"] }\npath \"secret/metadata/pdv-test/*\" { capabilities = [\"list\",\"read\",\"delete\"] }\npath \"auth/token/lookup-self\" { capabilities = [\"read\"] }"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/sys/policies/acl/pdv-test-policy
+
+          # Create pdv-test user
+          curl -sf -d '{"password":"PdvTest-2026-Secure","policies":"pdv-test-policy"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/auth/userpass/users/pdv-test
+
+          # Enable PKI engine
+          curl -sf -d '{"type":"pki"}' -H "X-Vault-Token:$ROOT" $BAO/v1/sys/mounts/pki
+          curl -sf -d '{"max_lease_ttl":"87600h"}' -H "X-Vault-Token:$ROOT" $BAO/v1/sys/mounts/pki/tune
+
+          # Generate root CA (ECDSA P-256, 10 year TTL)
+          curl -sf \
+            -d '{"common_name":"Convocate Secrets-A Root CA","ttl":"87600h","key_type":"ec","key_bits":256}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/pki/root/generate/internal
+
+          # Create server cert role
+          curl -sf \
+            -d '{"allowed_domains":"asymmetric-effort.com,192.168.3.160","allow_subdomains":true,"allow_ip_sans":true,"max_ttl":"8760h","key_type":"ec","key_bits":256}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/pki/roles/server
+
+          # Issue TLS cert for dev.auth.asymmetric-effort.com
+          CERT_RESP=$(curl -sf \
+            -d '{"common_name":"dev.auth.asymmetric-effort.com","alt_names":"dev.auth.asymmetric-effort.com","ip_sans":"192.168.3.160","ttl":"8760h"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/pki/issue/server)
+
+          # Write cert chain and key to TLS directory
+          echo "$CERT_RESP" | python3 -c '
+          import sys, json
+          data = json.load(sys.stdin)["data"]
+          cert = data["certificate"]
+          if "ca_chain" in data and data["ca_chain"]:
+              cert += "\n" + "\n".join(data["ca_chain"])
+          elif "issuing_ca" in data:
+              cert += "\n" + data["issuing_ca"]
+          print(cert)
+          ' > /var/openbao/tls/secrets-a/cert.pem
+
+          echo "$CERT_RESP" | python3 -c '
+          import sys, json
+          print(json.load(sys.stdin)["data"]["private_key"])
+          ' > /var/openbao/tls/secrets-a/key.pem
+
+          chown 65534:65534 /var/openbao/tls/secrets-a/cert.pem /var/openbao/tls/secrets-a/key.pem
+          chmod 0400 /var/openbao/tls/secrets-a/key.pem
+          chmod 0444 /var/openbao/tls/secrets-a/cert.pem
+
+          # Store unseal key for post-TLS-restart unseal
+          echo "$UNSEAL_KEY" > /var/openbao/tls/secrets-a/.unseal-key
+          chmod 0400 /var/openbao/tls/secrets-a/.unseal-key
+
+          echo "secrets-a initialized with PKI and TLS cert"
+      changed_when: false
+
+    - name: Stop secrets-a HTTP bootstrap container
+      ansible.builtin.shell:
+        cmd: |
+          docker stop secrets-a-bootstrap 2>/dev/null || true
+          docker rm secrets-a-bootstrap 2>/dev/null || true
+
+    - name: Start secrets-a with TLS
+      ansible.builtin.command:
+        cmd: docker compose -f /opt/openbao/docker-compose.yml up -d --force-recreate secrets-a
+      changed_when: true
+
+    - name: Wait for secrets-a TLS to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' -k https://192.168.3.160:8200/v1/sys/health 2>/dev/null)
+            [ -n "$STATUS" ] && [ "$STATUS" != "000" ] && break
+            sleep 2
+          done
+      changed_when: false
+
+    - name: Unseal secrets-a after TLS restart
+      ansible.builtin.shell:
+        cmd: |
+          UNSEAL_KEY=$(cat /var/openbao/tls/secrets-a/.unseal-key 2>/dev/null)
+          if [ -n "$UNSEAL_KEY" ]; then
+            curl -sf -k -d "{\"key\":\"$UNSEAL_KEY\"}" https://192.168.3.160:8200/v1/sys/unseal
+            rm -f /var/openbao/tls/secrets-a/.unseal-key
+            echo "secrets-a unsealed"
+          fi
+      changed_when: false
+
+# =========================================================================
+# secrets-b — production instance
+# =========================================================================
+
+- name: Check if secrets-b has TLS certs
+  ansible.builtin.stat:
+    path: /var/openbao/tls/secrets-b/cert.pem
+  register: secrets_b_cert
+
+- name: Bootstrap secrets-b (HTTP → init → PKI → TLS)
+  when: not secrets_b_cert.stat.exists
+  block:
+    - name: Remove existing secrets-b container
+      ansible.builtin.shell:
+        cmd: |
+          docker compose -f /opt/openbao/docker-compose.yml rm -f secrets-b 2>/dev/null || true
+          docker stop secrets-b-bootstrap 2>/dev/null || true
+          docker rm secrets-b-bootstrap 2>/dev/null || true
+
+    - name: Start secrets-b on HTTP for bootstrap
+      ansible.builtin.shell:
+        cmd: |
+          docker run -d --name secrets-b-bootstrap \
+            --cap-add IPC_LOCK \
+            -p 192.168.3.161:8200:8200 \
+            -v /var/openbao/secrets-b:/openbao/data \
+            -v /opt/openbao/config/openbao-config-http.hcl:/openbao/config/config.hcl:ro \
+            -e BAO_API_ADDR=http://192.168.3.161:8200 \
+            -e BAO_CLUSTER_ADDR=http://192.168.3.161:8201 \
+            192.168.3.90:5000/convocate/openbao:latest \
+            server -config=/openbao/config/config.hcl
+
+    - name: Wait for secrets-b HTTP to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' http://192.168.3.161:8200/v1/sys/health 2>/dev/null)
+            [ -n "$STATUS" ] && [ "$STATUS" != "000" ] && break
+            sleep 2
+          done
+      changed_when: false
+
+    - name: Initialize secrets-b, enable auth + KV + PKI, issue TLS cert
+      ansible.builtin.shell:
+        cmd: |
+          BAO=http://192.168.3.161:8200
+
+          HEALTH=$(curl -sf $BAO/v1/sys/health 2>/dev/null || echo '{}')
+          INIT=$(echo "$HEALTH" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("initialized",False))' 2>/dev/null)
+          if [ "$INIT" != "False" ]; then
+            echo "secrets-b already initialized — skipping"
+            exit 0
+          fi
+
+          RESULT=$(curl -sf -d '{"secret_shares":1,"secret_threshold":1}' $BAO/v1/sys/init)
+          UNSEAL_KEY=$(echo "$RESULT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["keys"][0])')
+          ROOT=$(echo "$RESULT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["root_token"])')
+          curl -sf -d "{\"key\":\"$UNSEAL_KEY\"}" $BAO/v1/sys/unseal
+
+          # Enable userpass + KV v2
+          curl -sf -d '{"type":"userpass"}' -H "X-Vault-Token:$ROOT" $BAO/v1/sys/auth/userpass
+          curl -sf -d '{"type":"kv","options":{"version":"2"}}' -H "X-Vault-Token:$ROOT" $BAO/v1/sys/mounts/secret
+
+          # Create pdv-test policy
+          curl -sf -X PUT \
+            -d '{"policy":"path \"secret/data/pdv-test/*\" { capabilities = [\"create\",\"read\",\"update\",\"delete\",\"list\"] }\npath \"secret/metadata/pdv-test/*\" { capabilities = [\"list\",\"read\",\"delete\"] }\npath \"auth/token/lookup-self\" { capabilities = [\"read\"] }"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/sys/policies/acl/pdv-test-policy
+
+          # Create pdv-test user
+          curl -sf -d '{"password":"PdvTest-2026-Secure","policies":"pdv-test-policy"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/auth/userpass/users/pdv-test
+
+          # Enable PKI engine
+          curl -sf -d '{"type":"pki"}' -H "X-Vault-Token:$ROOT" $BAO/v1/sys/mounts/pki
+          curl -sf -d '{"max_lease_ttl":"87600h"}' -H "X-Vault-Token:$ROOT" $BAO/v1/sys/mounts/pki/tune
+
+          # Generate root CA (ECDSA P-256, 10 year TTL)
+          curl -sf \
+            -d '{"common_name":"Convocate Secrets-B Root CA","ttl":"87600h","key_type":"ec","key_bits":256}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/pki/root/generate/internal
+
+          # Create server cert role
+          curl -sf \
+            -d '{"allowed_domains":"asymmetric-effort.com,192.168.3.161","allow_subdomains":true,"allow_ip_sans":true,"max_ttl":"8760h","key_type":"ec","key_bits":256}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/pki/roles/server
+
+          # Issue TLS cert for auth.asymmetric-effort.com
+          CERT_RESP=$(curl -sf \
+            -d '{"common_name":"auth.asymmetric-effort.com","alt_names":"auth.asymmetric-effort.com","ip_sans":"192.168.3.161","ttl":"8760h"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/pki/issue/server)
+
+          # Write cert chain and key to TLS directory
+          echo "$CERT_RESP" | python3 -c '
+          import sys, json
+          data = json.load(sys.stdin)["data"]
+          cert = data["certificate"]
+          if "ca_chain" in data and data["ca_chain"]:
+              cert += "\n" + "\n".join(data["ca_chain"])
+          elif "issuing_ca" in data:
+              cert += "\n" + data["issuing_ca"]
+          print(cert)
+          ' > /var/openbao/tls/secrets-b/cert.pem
+
+          echo "$CERT_RESP" | python3 -c '
+          import sys, json
+          print(json.load(sys.stdin)["data"]["private_key"])
+          ' > /var/openbao/tls/secrets-b/key.pem
+
+          chown 65534:65534 /var/openbao/tls/secrets-b/cert.pem /var/openbao/tls/secrets-b/key.pem
+          chmod 0400 /var/openbao/tls/secrets-b/key.pem
+          chmod 0444 /var/openbao/tls/secrets-b/cert.pem
+
+          # Store unseal key for post-TLS-restart unseal
+          echo "$UNSEAL_KEY" > /var/openbao/tls/secrets-b/.unseal-key
+          chmod 0400 /var/openbao/tls/secrets-b/.unseal-key
+
+          echo "secrets-b initialized with PKI and TLS cert"
+      changed_when: false
+
+    - name: Stop secrets-b HTTP bootstrap container
+      ansible.builtin.shell:
+        cmd: |
+          docker stop secrets-b-bootstrap 2>/dev/null || true
+          docker rm secrets-b-bootstrap 2>/dev/null || true
+
+    - name: Start secrets-b with TLS
+      ansible.builtin.command:
+        cmd: docker compose -f /opt/openbao/docker-compose.yml up -d --force-recreate secrets-b
+      changed_when: true
+
+    - name: Wait for secrets-b TLS to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' -k https://192.168.3.161:8200/v1/sys/health 2>/dev/null)
+            [ -n "$STATUS" ] && [ "$STATUS" != "000" ] && break
+            sleep 2
+          done
+      changed_when: false
+
+    - name: Unseal secrets-b after TLS restart
+      ansible.builtin.shell:
+        cmd: |
+          UNSEAL_KEY=$(cat /var/openbao/tls/secrets-b/.unseal-key 2>/dev/null)
+          if [ -n "$UNSEAL_KEY" ]; then
+            curl -sf -k -d "{\"key\":\"$UNSEAL_KEY\"}" https://192.168.3.161:8200/v1/sys/unseal
+            rm -f /var/openbao/tls/secrets-b/.unseal-key
+            echo "secrets-b unsealed"
+          fi
+      changed_when: false

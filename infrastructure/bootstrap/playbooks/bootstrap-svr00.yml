@@ -29,3 +29,10 @@
     cloudflare_tunnel_secret: "{{ lookup('env', 'CLOUDFLARE_TUNNEL_SECRET') }}"
   roles:
     - svr00-cloudflared
+
+- name: Bootstrap svr00 — OpenBao secrets infrastructure
+  hosts: svr00
+  become: true
+  gather_facts: false
+  roles:
+    - svr00-openbao
