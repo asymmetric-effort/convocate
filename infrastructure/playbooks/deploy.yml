@@ -418,9 +418,10 @@
         cmd: |
           BAO_TOKEN=$(kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
           BAO="{{ bao_url }}"
-          echo "Token length: ${#BAO_TOKEN}"
+          TOKEN_LEN=$(printf '%s' "$BAO_TOKEN" | wc -c)
+          echo "Token length: $TOKEN_LEN"
           if [ "$BAO_TOKEN" = "placeholder" ] || [ "$BAO_TOKEN" = "PLACEHOLDER" ] || ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/auth/token/lookup-self >/dev/null 2>&1; then
-            echo "SKIP: token invalid (value starts with: ${BAO_TOKEN:0:5})"
+            echo "SKIP: token invalid"
             exit 0
           fi
           echo "Token valid, updating entities..."
