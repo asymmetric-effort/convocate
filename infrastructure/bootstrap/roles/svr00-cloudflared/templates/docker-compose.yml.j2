@@ -3,7 +3,9 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
     restart: unless-stopped
-    command: tunnel run
+    command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: "{{ cloudflare_tunnel_token }}"
     network_mode: host
+    cap_add:
+      - NET_ADMIN

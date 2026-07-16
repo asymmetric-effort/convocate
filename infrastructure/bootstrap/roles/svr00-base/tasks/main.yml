@@ -60,6 +60,14 @@
   notify: Apply netplan
   changed_when: false
 
+- name: Enable IP forwarding (required for cloudflared private network routing)
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+
 - name: Configure UFW — default deny incoming
   community.general.ufw:
     direction: incoming
@@ -83,6 +91,20 @@
     port: "443"
     proto: tcp
     from_ip: 192.168.3.0/24
+
+- name: Allow OpenBao (8200) from local subnet
+  community.general.ufw:
+    rule: allow
+    port: "8200"
+    proto: tcp
+    from_ip: 192.168.3.0/24
+
+- name: Allow UFW forwarding for cloudflared private network
+  ansible.builtin.lineinfile:
+    path: /etc/default/ufw
+    regexp: '^DEFAULT_FORWARD_POLICY='
+    line: 'DEFAULT_FORWARD_POLICY="ACCEPT"'
+  notify: Reload UFW
 
 - name: Enable UFW
   community.general.ufw:
