@@ -240,6 +240,19 @@ jobs:
             echo '=== OpenBao Health ==='
             pdv_test pdv-bao /busybox/wget -q -O /dev/null http://openbao.security.svc:8200/v1/sys/health
 
+            echo '=== OpenBao Root Token ==='
+            BAO_TOKEN=\$(sudo kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
+            if [ \"\$BAO_TOKEN\" = \"placeholder\" ] || [ \"\$BAO_TOKEN\" = \"PLACEHOLDER\" ] || [ -z \"\$BAO_TOKEN\" ]; then
+              echo 'FAIL: openbao-root-token is placeholder or empty'
+              exit 1
+            fi
+            if ! curl -sf -H \"X-Vault-Token:\$BAO_TOKEN\" http://openbao.security.svc:8200/v1/auth/token/lookup-self >/dev/null 2>&1; then
+              # Can't reach ClusterIP from CP — use test pod
+              pdv_test pdv-token-check /busybox/sh -c \"/busybox/wget -q -O- --header='X-Vault-Token: \$BAO_TOKEN' http://openbao.security.svc:8200/v1/auth/token/lookup-self >/dev/null\"
+            else
+              echo 'PASS: root token is valid'
+            fi
+
             echo '=== All Pods ==='
             sudo kubectl get pods -n convocate --no-headers
             sudo kubectl get pods -n security -l app=openbao --no-headers

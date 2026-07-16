@@ -96,6 +96,18 @@ test.describe("Smoke: OpenBao Authentication", () => {
     token = data.accessToken;
   });
 
+  test("Login returns valid principal with display name", async () => {
+    expect(token, "Login must succeed first").toBeTruthy();
+    const res = await fetch(`${BASE}/api/v1/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.name).toBe("PDV Test");
+    expect(data.username).toBe("pdv-test");
+    expect(data.email).toBe("pdv@asymmetric-effort.com");
+  });
+
   test("Authenticated API call succeeds", async () => {
     expect(token, "Login must succeed first").toBeTruthy();
     const res = await fetch(`${BASE}/api/v1/nmgr/node`, {
