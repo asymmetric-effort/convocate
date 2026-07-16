@@ -13,18 +13,35 @@ jobs:
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r infrastructure/requirements.yml
 
-      - name: Validate secrets
+      - name: Validate and build credentials
         env:
           CLOUDFLARE_TUNNEL_SECRET: ${{ secrets.CLOUDFLARE_TUNNEL_SECRET }}
           CLOUDFLARE_TUNNEL_ID: ${{ secrets.CLOUDFLARE_TUNNEL_ID }}
+          CLOUDFLARE_TUNNEL_ACCOUNT_TAG: ${{ secrets.CLOUDFLARE_TUNNEL_ACCOUNT_TAG }}
         run: |
-          echo "$CLOUDFLARE_TUNNEL_SECRET" | python3 -c "import sys,json; json.load(sys.stdin)" || { echo "FAIL: CLOUDFLARE_TUNNEL_SECRET is not valid JSON"; exit 1; }
+          [ -n "$CLOUDFLARE_TUNNEL_SECRET" ] || { echo "FAIL: CLOUDFLARE_TUNNEL_SECRET is empty"; exit 1; }
           [ -n "$CLOUDFLARE_TUNNEL_ID" ] || { echo "FAIL: CLOUDFLARE_TUNNEL_ID is empty"; exit 1; }
-          echo "Secrets validated"
+          [ -n "$CLOUDFLARE_TUNNEL_ACCOUNT_TAG" ] || { echo "FAIL: CLOUDFLARE_TUNNEL_ACCOUNT_TAG is empty"; exit 1; }
+
+          # Build credentials JSON from individual secrets
+          python3 -c "
+          import json, os
+          creds = {
+              'AccountTag': os.environ['CLOUDFLARE_TUNNEL_ACCOUNT_TAG'],
+              'TunnelSecret': os.environ['CLOUDFLARE_TUNNEL_SECRET'],
+              'TunnelID': os.environ['CLOUDFLARE_TUNNEL_ID']
+          }
+          with open('/tmp/cloudflared-credentials.json', 'w') as f:
+              json.dump(creds, f)
+          print('Credentials file built')
+          "
+
+          # Validate the result
+          python3 -c "import json; json.load(open('/tmp/cloudflared-credentials.json'))"
+          echo "Credentials validated"
 
       - name: Run bootstrap
         env:
-          CLOUDFLARE_TUNNEL_SECRET: ${{ secrets.CLOUDFLARE_TUNNEL_SECRET }}
           CLOUDFLARE_TUNNEL_ID: ${{ secrets.CLOUDFLARE_TUNNEL_ID }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
@@ -32,9 +49,6 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
           chmod 600 ~/.ssh/ansible_key
           ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
-
-          # Write credentials file locally, copy via Ansible to avoid Jinja mangling
-          echo "$CLOUDFLARE_TUNNEL_SECRET" > /tmp/cloudflared-credentials.json
 
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_ROLES_PATH=infrastructure/bootstrap/roles \
