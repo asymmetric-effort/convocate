@@ -45,10 +45,18 @@ jobs:
       - name: Deploy secrets-a
         env:
           OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_A_OPENBAO_ROOT_TOKEN }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/secrets/playbooks/deploy.yml \
             -i infrastructure/bootstrap/inventory/svr00.yml \
             -e "deploy_target=secrets-a"
+          rm -f ~/.ssh/ansible_key
 
   pdv-secrets-a:
     name: PDV Tests (secrets-a)
@@ -84,10 +92,18 @@ jobs:
       - name: Deploy secrets-b (non-destructive)
         env:
           OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_B_OPENBAO_ROOT_TOKEN }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/secrets/playbooks/deploy.yml \
             -i infrastructure/bootstrap/inventory/svr00.yml \
             -e "deploy_target=secrets-b"
+          rm -f ~/.ssh/ansible_key
 
   smoke-secrets-b:
     name: Smoke Tests (secrets-b)
