@@ -21,7 +21,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV CGO_ENABLED=0
 
 WORKDIR /build
-COPY metrics/ .
+COPY o11y/metrics/ .
 RUN go build -o /node-metrics .
 
 # Runtime: static distroless (no libc needed for a pure-Go binary)

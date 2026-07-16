@@ -163,7 +163,7 @@ if [[ -d "${UI_DIR}" ]] && command -v bun &>/dev/null; then
 
   rm -f "${tmpfile}"
 else
-  echo "  Skipping: bun not available or ui/ not found."
+  echo "  Skipping: bun not available or src/ui/ not found."
 fi
 
 # ── Output collected metrics ─────────────────────────────

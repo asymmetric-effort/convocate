@@ -22,7 +22,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV CGO_ENABLED=0
 
 WORKDIR /build
-COPY api/ .
+COPY src/api/ .
 RUN go build -o /convocate-api .
 
 # Runtime stage — needs openssh-client and sshpass for node provisioning

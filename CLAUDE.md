@@ -31,19 +31,29 @@ PostgreSQL only when relational queries are truly necessary.
 ## Project Layout
 
 ```
-api/         — Go API server (module: github.com/asymmetric-effort/convocate)
-ui/          — Bun + SpecifyJS SPA
-docker/      — Dockerfiles (ui, api, redis, pg, openbao)
-build/       — build artifacts (gitignored)
-img/         — icon assets
+src/api/          — Go API server (module: github.com/asymmetric-effort/convocate)
+src/agent/        — Go agent
+src/ui/           — Bun + SpecifyJS SPA
+  src/ui/img/     — icon assets
+infrastructure/
+  charts/         — Helm charts
+  deploy/         — deployment scripts
+  docker/         — Dockerfiles (ui, api, redis, pg, openbao, etc.)
+  k8s/            — K8s manifests
+  inventory/      — Ansible inventory
+  playbooks/      — Ansible playbooks
+  roles/          — Ansible roles
+o11y/metrics/     — Go metrics service
+test/pdv/         — PDV tests
+build/            — build artifacts (gitignored)
 ```
 
 ## Build & Run
 
 ```bash
 # Local development (no containers needed)
-cd ui && bun install && bun run dev    # UI on :8080
-cd api && go run ./...                 # API on :8443
+cd src/ui && bun install && bun run dev    # UI on :8080
+cd src/api && go run ./...                 # API on :8443
 
 # Docker Compose (full stack)
 docker compose up --build

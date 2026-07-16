@@ -38,26 +38,26 @@ jobs:
       - uses: oven-sh/setup-bun@v2
 
       - name: Test API
-        working-directory: api
+        working-directory: src/api
         run: |
           go test -coverprofile=coverage.out ./... -v
           go tool cover -func=coverage.out | grep "^total:" | awk '{gsub(/%/,"",$3); if($3+0 < 80) {print "FAIL: "$3"% < 80%"; exit 1} else {print "PASS: "$3"%"}}'
 
       - name: Test Metrics
-        working-directory: metrics
+        working-directory: o11y/metrics
         run: |
           go test -coverprofile=coverage.out ./... -v
           go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
 
       - name: Test Agent
-        working-directory: agent
+        working-directory: src/agent
         run: |
           go test -count=1 -coverprofile=coverage.out ./... -v
           go tool cover -func=coverage.out | grep -v "100.0%"
           go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
 
       - name: Test UI
-        working-directory: ui
+        working-directory: src/ui
         run: |
           bun install
           bun test
@@ -103,7 +103,7 @@ jobs:
         run: |
           build_push() {
             local dockerfile=$1 name=$2
-            docker build -f docker/${dockerfile}.Dockerfile \
+            docker build -f infrastructure/docker/${dockerfile}.Dockerfile \
               -t $REGISTRY/convocate/$name:$IMAGE_TAG \
               -t $REGISTRY/convocate/$name:latest .
             docker push $REGISTRY/convocate/$name:$IMAGE_TAG

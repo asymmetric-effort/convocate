@@ -40,7 +40,7 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION} && \
 
 # Compile Go wrapper binary
 WORKDIR /build
-COPY agent/ .
+COPY src/agent/ .
 RUN go build -ldflags "-X main.version=${CLAUDE_VERSION}-wrapper" \
     -o /convocate-agent-wrapper .
 

@@ -22,11 +22,11 @@ echo "5. Leakdetector configured..."
 [ -f ".leakdetector.yml" ] && echo "  ✅ .leakdetector.yml" || echo "  ❌ MISSING"
 
 echo "6. No hardcoded secrets..."
-count=$(grep -rn "convocate-influx\|convocate-dev-secret\|convocate-grafana" k8s/ --include="*.yaml" 2>/dev/null | wc -l)
+count=$(grep -rn "convocate-influx\|convocate-dev-secret\|convocate-grafana" infrastructure/k8s/ --include="*.yaml" 2>/dev/null | wc -l)
 [ "$count" -eq 0 ] && echo "  ✅ Clean" || echo "  ❌ $count secrets found"
 
 echo "7. No mock auth..."
-count=$(grep -rn "ALLOW_MOCK_AUTH" k8s/ api/ --include="*.yaml" --include="*.go" 2>/dev/null | grep -v "_test.go" | wc -l)
+count=$(grep -rn "ALLOW_MOCK_AUTH" infrastructure/k8s/ src/api/ --include="*.yaml" --include="*.go" 2>/dev/null | grep -v "_test.go" | wc -l)
 [ "$count" -eq 0 ] && echo "  ✅ Clean" || echo "  ❌ $count references found"
 
 echo ""

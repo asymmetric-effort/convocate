@@ -2,7 +2,7 @@ services:
   redis:
     build:
       context: .
-      dockerfile: docker/redis.Dockerfile
+      dockerfile: infrastructure/docker/redis.Dockerfile
     ports:
       - "6379:6379"
     healthcheck:
@@ -14,7 +14,7 @@ services:
   postgresql:
     build:
       context: .
-      dockerfile: docker/pg.Dockerfile
+      dockerfile: infrastructure/docker/pg.Dockerfile
     ports:
       - "5432:5432"
     volumes:
@@ -28,7 +28,7 @@ services:
   openbao:
     build:
       context: .
-      dockerfile: docker/openbao.Dockerfile
+      dockerfile: infrastructure/docker/openbao.Dockerfile
     ports:
       - "8200:8200"
     volumes:

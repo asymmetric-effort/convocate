@@ -27,13 +27,13 @@ clean:
 
 # ── lint ───────────────────────────────────────────────
 lint:
-	cd api && gofmt -l . && go vet ./...
+	cd src/api && gofmt -l . && go vet ./...
 
 # ── test ───────────────────────────────────────────────
 test:
-	cd api && go test ./...
-	cd metrics && go test ./...
-	cd agent && go test ./...
+	cd src/api && go test ./...
+	cd o11y/metrics && go test ./...
+	cd src/agent && go test ./...
 
 # ── test-metrics ──────────────────────────────────────────
 test-metrics:
@@ -43,86 +43,86 @@ test-metrics:
 build: $(addprefix build-,$(IMAGES))
 
 build-openbao:
-	docker build -f docker/openbao.Dockerfile \
+	docker build -f infrastructure/docker/openbao.Dockerfile \
 		-t $(REGISTRY)/convocate/openbao:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/openbao:latest \
 		-t $(REGISTRY)/convocate/openbao:$(SEMVER) .
 
 build-redis:
-	docker build -f docker/redis.Dockerfile \
+	docker build -f infrastructure/docker/redis.Dockerfile \
 		-t $(REGISTRY)/convocate/redis:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/redis:latest \
 		-t $(REGISTRY)/convocate/redis:$(SEMVER) .
 
 build-postgresql:
-	docker build -f docker/pg.Dockerfile \
+	docker build -f infrastructure/docker/pg.Dockerfile \
 		-t $(REGISTRY)/convocate/postgresql:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/postgresql:latest \
 		-t $(REGISTRY)/convocate/postgresql:$(SEMVER) .
 
 build-minio:
-	docker build -f docker/minio.Dockerfile \
+	docker build -f infrastructure/docker/minio.Dockerfile \
 		-t $(REGISTRY)/convocate/minio:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/minio:latest \
 		-t $(REGISTRY)/convocate/minio:$(SEMVER) .
 
 build-influxdb:
-	docker build -f docker/influxdb.Dockerfile \
+	docker build -f infrastructure/docker/influxdb.Dockerfile \
 		-t $(REGISTRY)/convocate/influxdb:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/influxdb:latest \
 		-t $(REGISTRY)/convocate/influxdb:$(SEMVER) .
 
 build-prometheus:
-	docker build -f docker/prometheus.Dockerfile \
+	docker build -f infrastructure/docker/prometheus.Dockerfile \
 		-t $(REGISTRY)/convocate/prometheus:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/prometheus:latest \
 		-t $(REGISTRY)/convocate/prometheus:$(SEMVER) .
 
 build-grafana:
-	docker build -f docker/grafana.Dockerfile \
+	docker build -f infrastructure/docker/grafana.Dockerfile \
 		-t $(REGISTRY)/convocate/grafana:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/grafana:latest \
 		-t $(REGISTRY)/convocate/grafana:$(SEMVER) .
 
 build-fluentbit:
-	docker build -f docker/fluentbit.Dockerfile \
+	docker build -f infrastructure/docker/fluentbit.Dockerfile \
 		-t $(REGISTRY)/convocate/fluentbit:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/fluentbit:latest \
 		-t $(REGISTRY)/convocate/fluentbit:$(SEMVER) .
 
 build-api:
-	docker build -f docker/api.Dockerfile \
+	docker build -f infrastructure/docker/api.Dockerfile \
 		-t $(REGISTRY)/convocate/api:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/api:latest \
 		-t $(REGISTRY)/convocate/api:$(SEMVER) .
 
 build-ui:
-	docker build -f docker/ui.Dockerfile \
+	docker build -f infrastructure/docker/ui.Dockerfile \
 		-t $(REGISTRY)/convocate/ui:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/ui:latest \
 		-t $(REGISTRY)/convocate/ui:$(SEMVER) .
 
 build-pdv:
-	docker build -f docker/pdv.Dockerfile \
+	docker build -f infrastructure/docker/pdv.Dockerfile \
 		-t $(REGISTRY)/convocate/pdv:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/pdv:latest \
 		-t $(REGISTRY)/convocate/pdv:$(SEMVER) .
 
 build-metrics:
-	docker build -f docker/metrics.Dockerfile \
+	docker build -f infrastructure/docker/metrics.Dockerfile \
 		-t $(REGISTRY)/convocate/metrics:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/metrics:latest \
 		-t $(REGISTRY)/convocate/metrics:$(SEMVER) .
 
 build-agent:
-	docker build -f docker/agent.Dockerfile \
+	docker build -f infrastructure/docker/agent.Dockerfile \
 		-t $(REGISTRY)/convocate/agent:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/agent:latest \
 		-t $(REGISTRY)/convocate/agent:$(SEMVER) .
 
 # ── cover ──────────────────────────────────────────────
 cover:
-	cd api && go test -coverprofile=build/coverage.out ./... && \
+	cd src/api && go test -coverprofile=build/coverage.out ./... && \
 	go tool cover -func=build/coverage.out | tail -1 | awk '{ \
 		gsub(/%/, "", $$3); \
 		if ($$3+0 < 98) { print "FAIL: coverage " $$3 "% < 98%"; exit 1 } \
@@ -164,52 +164,52 @@ deploy: build push k8s-apply k8s-verify
 	@echo "Deploy complete."
 
 k8s-apply:
-	kubectl apply -f k8s/namespace.yaml
-	kubectl apply -f k8s/storage.yaml
-	kubectl apply -f k8s/network-policies.yaml
+	kubectl apply -f infrastructure/k8s/namespace.yaml
+	kubectl apply -f infrastructure/k8s/storage.yaml
+	kubectl apply -f infrastructure/k8s/network-policies.yaml
 	# Security namespace
-	kubectl apply -f k8s/openbao/
+	kubectl apply -f infrastructure/k8s/openbao/
 	kubectl rollout status deployment/openbao -n security --timeout=120s
 	# Data layer namespace
-	kubectl apply -f k8s/redis/
-	kubectl apply -f k8s/postgresql/
-	kubectl apply -f k8s/minio/
+	kubectl apply -f infrastructure/k8s/redis/
+	kubectl apply -f infrastructure/k8s/postgresql/
+	kubectl apply -f infrastructure/k8s/minio/
 	kubectl rollout status deployment/redis -n data-layer --timeout=120s
 	kubectl rollout status deployment/postgresql -n data-layer --timeout=120s
 	kubectl rollout status deployment/minio -n data-layer --timeout=120s
 	# Observability namespace
-	kubectl apply -f k8s/influxdb/
-	kubectl apply -f k8s/prometheus/
-	kubectl apply -f k8s/ginger/
-	kubectl apply -f k8s/grafana/
+	kubectl apply -f infrastructure/k8s/influxdb/
+	kubectl apply -f infrastructure/k8s/prometheus/
+	kubectl apply -f infrastructure/k8s/ginger/
+	kubectl apply -f infrastructure/k8s/grafana/
 	kubectl rollout status deployment/influxdb -n o11y --timeout=120s
 	kubectl rollout status deployment/prometheus -n o11y --timeout=120s
 	kubectl rollout status deployment/ginger -n o11y --timeout=120s
 	kubectl rollout status deployment/grafana -n o11y --timeout=120s
-	kubectl apply -f k8s/fluentbit/
+	kubectl apply -f infrastructure/k8s/fluentbit/
 	kubectl rollout status daemonset/fluent-bit -n o11y --timeout=120s
-	kubectl apply -f k8s/metrics/
+	kubectl apply -f infrastructure/k8s/metrics/
 	kubectl rollout status daemonset/node-metrics -n o11y --timeout=120s
 	# Application namespace
-	kubectl apply -f k8s/agent/
-	kubectl apply -f k8s/api/
-	kubectl apply -f k8s/ui/
+	kubectl apply -f infrastructure/k8s/agent/
+	kubectl apply -f infrastructure/k8s/api/
+	kubectl apply -f infrastructure/k8s/ui/
 	kubectl rollout status deployment/convocate-api -n $(NAMESPACE) --timeout=120s
 	kubectl rollout status deployment/convocate-ui -n $(NAMESPACE) --timeout=120s
 	# Synthetic monitoring
-	kubectl apply -f k8s/pdv/synthetic-cronjob.yaml
+	kubectl apply -f infrastructure/k8s/pdv/synthetic-cronjob.yaml
 
 k8s-verify:
 	-kubectl delete job verify-openbao -n security 2>/dev/null
 	-kubectl delete job verify-redis verify-postgresql verify-minio -n data-layer 2>/dev/null
 	-kubectl delete job verify-influxdb -n o11y 2>/dev/null
 	-kubectl delete job verify-pdv -n $(NAMESPACE) 2>/dev/null
-	kubectl apply -f k8s/openbao/verify-job.yaml
-	kubectl apply -f k8s/redis/verify-job.yaml
-	kubectl apply -f k8s/postgresql/verify-job.yaml
-	kubectl apply -f k8s/minio/verify-job.yaml
-	kubectl apply -f k8s/influxdb/verify-job.yaml
-	kubectl apply -f k8s/pdv/verify-job.yaml
+	kubectl apply -f infrastructure/k8s/openbao/verify-job.yaml
+	kubectl apply -f infrastructure/k8s/redis/verify-job.yaml
+	kubectl apply -f infrastructure/k8s/postgresql/verify-job.yaml
+	kubectl apply -f infrastructure/k8s/minio/verify-job.yaml
+	kubectl apply -f infrastructure/k8s/influxdb/verify-job.yaml
+	kubectl apply -f infrastructure/k8s/pdv/verify-job.yaml
 	kubectl wait --for=condition=complete -n security job/verify-openbao --timeout=180s
 	kubectl wait --for=condition=complete -n data-layer job/verify-redis job/verify-postgresql job/verify-minio --timeout=180s
 	kubectl wait --for=condition=complete -n o11y job/verify-influxdb --timeout=180s

@@ -15,10 +15,10 @@ RUN apt-get update && \
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
 
 WORKDIR /build
-COPY ui/package.json ui/bun.lock* ./
+COPY src/ui/package.json src/ui/bun.lock* ./
 RUN bun install
-COPY ui/src/ src/
-COPY ui/public/ public/
+COPY src/ui/src/ src/
+COPY src/ui/public/ public/
 RUN bun build src/app.ts --outdir public --minify --target=browser && \
     HASH=$(sha256sum public/app.js | cut -c1-8) && \
     mv public/app.js "public/app.${HASH}.js" && \
@@ -44,7 +44,7 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV CGO_ENABLED=0
 
 WORKDIR /build
-COPY ui/cmd/serve/ .
+COPY src/ui/cmd/serve/ .
 RUN go build -o /convocate-ui .
 
 # Runtime stage
@@ -52,7 +52,7 @@ FROM gcr.io/distroless/cc-debian13:nonroot
 
 COPY --from=build /convocate-ui /usr/local/bin/convocate-ui
 COPY --from=bundle /build/public/ /app/public/
-COPY img/icons/ /app/public/img/icons/
+COPY src/ui/img/icons/ /app/public/img/icons/
 
 WORKDIR /app
 
