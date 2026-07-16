@@ -406,14 +406,26 @@
           if [ "$BAO_TOKEN" = "placeholder" ] || ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/auth/token/lookup-self >/dev/null 2>&1; then
             exit 0
           fi
+          VALID_IDS=""
           {% for u in [
             {"name": "admin", "pass": openbao_admin_password, "display": "Administrator", "email": "admin@asymmetric-effort.com"},
             {"name": "samcaldwell", "pass": openbao_samcaldwell_password, "display": "Sam Caldwell", "email": "sam@asymmetric-effort.com"},
             {"name": "pdv-test", "pass": "PdvTest-2026-Secure", "display": "PDV Test", "email": "pdv@asymmetric-effort.com"}
           ] %}
           ENTITY_ID=$(curl -sf -d '{"password":"{{ u.pass }}"}' $BAO/v1/auth/userpass/login/{{ u.name }} | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["entity_id"])' 2>/dev/null)
-          [ -n "$ENTITY_ID" ] && curl -sf -d '{"metadata":{"name":"{{ u.display }}","email":"{{ u.email }}"}}' -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/identity/entity/id/$ENTITY_ID >/dev/null 2>&1
+          if [ -n "$ENTITY_ID" ]; then
+            curl -sf -d '{"metadata":{"name":"{{ u.display }}","email":"{{ u.email }}"}}' -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/identity/entity/id/$ENTITY_ID >/dev/null 2>&1
+            VALID_IDS="$VALID_IDS $ENTITY_ID"
+          fi
           {% endfor %}
+
+          # Delete orphaned entities (manually created ones that aren't linked to logins)
+          ALL_IDS=$(curl -sf -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/identity/entity/id?list=true | python3 -c 'import sys,json; [print(k) for k in json.load(sys.stdin).get("data",{}).get("keys",[])]' 2>/dev/null)
+          for EID in $ALL_IDS; do
+            if ! echo "$VALID_IDS" | grep -q "$EID"; then
+              curl -sf -X DELETE -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/identity/entity/id/$EID >/dev/null 2>&1
+            fi
+          done
       changed_when: false
       failed_when: false
       no_log: true
