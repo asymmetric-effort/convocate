@@ -2,16 +2,37 @@ package auth
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"os"
 	"testing"
 	"time"
 )
 
-func TestSignAndVerifyJWT(t *testing.T) {
+// initJWTForTest generates a key, sets the env var, and calls InitJWT.
+func initJWTForTest(t *testing.T) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	derBytes, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	pemBlock := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: derBytes})
+	os.Setenv("JWT_EC_PRIVATE_KEY", string(pemBlock))
+	t.Cleanup(func() { os.Unsetenv("JWT_EC_PRIVATE_KEY") })
 	InitJWT()
+}
+
+func TestSignAndVerifyJWT(t *testing.T) {
+	initJWTForTest(t)
 
 	token, exp, err := SignJWT("usr-001", "testuser", "Test User", "test@example.com",
 		[]string{"admin"}, []string{"nmgr", "amgr"}, time.Hour)
@@ -47,7 +68,7 @@ func TestSignAndVerifyJWT(t *testing.T) {
 }
 
 func TestVerifyJWT_InvalidToken(t *testing.T) {
-	InitJWT()
+	initJWTForTest(t)
 
 	_, err := VerifyJWT("invalid.token.here")
 	if err == nil {
@@ -56,7 +77,7 @@ func TestVerifyJWT_InvalidToken(t *testing.T) {
 }
 
 func TestVerifyJWT_TamperedPayload(t *testing.T) {
-	InitJWT()
+	initJWTForTest(t)
 
 	token, _, err := SignJWT("usr-001", "admin", "Admin", "", []string{"admin"}, []string{}, time.Hour)
 	if err != nil {
@@ -87,7 +108,7 @@ func TestVerifyJWT_TamperedPayload(t *testing.T) {
 }
 
 func TestVerifyJWT_ExpiredToken(t *testing.T) {
-	InitJWT()
+	initJWTForTest(t)
 
 	token, _, err := SignJWT("usr-001", "admin", "Admin", "", []string{}, []string{}, -time.Hour)
 	if err != nil {
@@ -101,7 +122,7 @@ func TestVerifyJWT_ExpiredToken(t *testing.T) {
 }
 
 func TestES256Algorithm(t *testing.T) {
-	InitJWT()
+	initJWTForTest(t)
 
 	token, _, err := SignJWT("usr-001", "admin", "Admin", "", []string{}, []string{}, time.Hour)
 	if err != nil {
@@ -119,7 +140,7 @@ func TestES256Algorithm(t *testing.T) {
 }
 
 func TestVerifyJWT_ValidSigBadClaims(t *testing.T) {
-	InitJWT()
+	initJWTForTest(t)
 
 	// Create a token with valid signature but invalid JSON claims
 	// by directly signing a header + invalid-base64 claims
@@ -152,7 +173,7 @@ func TestVerifyJWT_ValidSigBadClaims(t *testing.T) {
 }
 
 func TestVerifyJWT_ValidSigBadBase64Claims(t *testing.T) {
-	InitJWT()
+	initJWTForTest(t)
 
 	// Create a token where claims part is not valid base64
 	// The signature is valid over the raw string including invalid base64

@@ -25,30 +25,17 @@ var (
 
 func InitJWT() {
 	keyPEM := os.Getenv("JWT_EC_PRIVATE_KEY")
-	if keyPEM != "" {
-		key, err := parseECPrivateKey([]byte(keyPEM))
-		if err != nil {
-			fmt.Printf("WARNING: failed to parse JWT_EC_PRIVATE_KEY: %v (generating ephemeral key)\n", err)
-			generateEphemeralKey()
-			return
-		}
-		signingKey = key
-		verifyKey = &key.PublicKey
+	if keyPEM == "" {
+		fmt.Println("WARNING: JWT_EC_PRIVATE_KEY not set — JWT signing/verification disabled")
 		return
 	}
-
-	// Generate ephemeral key for development
-	generateEphemeralKey()
-}
-
-func generateEphemeralKey() {
-	// ecdsa.GenerateKey cannot fail with a valid curve and rand.Reader;
-	// in Go 1.22+ it uses crypto/internal/fips which never returns error
-	// for P-256 key generation.
-	key, _ := ecdsa.GenerateKey(elliptic.P256(), randReader)
+	key, err := parseECPrivateKey([]byte(keyPEM))
+	if err != nil {
+		fmt.Printf("WARNING: failed to parse JWT_EC_PRIVATE_KEY: %v — JWT signing/verification disabled\n", err)
+		return
+	}
 	signingKey = key
 	verifyKey = &key.PublicKey
-	fmt.Println("JWT: using ephemeral ES256 key (set JWT_EC_PRIVATE_KEY for persistence)")
 }
 
 func parseECPrivateKey(pemData []byte) (*ecdsa.PrivateKey, error) {

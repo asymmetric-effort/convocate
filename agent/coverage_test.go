@@ -68,31 +68,33 @@ func TestVerifyToken_WithPublicKey_InvalidFormat(t *testing.T) {
 	}
 }
 
-func TestVerifyToken_WithPublicKey_InvalidBase64Claims(t *testing.T) {
+func TestVerifyToken_WithPublicKey_InvalidBase64Signature(t *testing.T) {
 	_, keyPath := generateTestECDSAKey(t)
 	a := NewAuth(keyPath, "")
 
-	// Valid 3-part format but invalid base64 in claims
-	_, err := a.VerifyToken("header.!!!invalid!!!.signature")
+	// Valid 3-part format but invalid base64 in signature
+	_, err := a.VerifyToken("header.claims.!!!invalid!!!")
 	if err == nil {
-		t.Error("expected error for invalid base64 claims")
+		t.Error("expected error for invalid signature encoding")
 	}
 }
 
-func TestVerifyToken_WithPublicKey_InvalidJSONClaims(t *testing.T) {
+func TestVerifyToken_WithPublicKey_InvalidSignature(t *testing.T) {
 	_, keyPath := generateTestECDSAKey(t)
 	a := NewAuth(keyPath, "")
 
-	// Valid base64 but invalid JSON
-	encoded := base64.RawURLEncoding.EncodeToString([]byte("not json"))
-	_, err := a.VerifyToken("header." + encoded + ".signature")
+	// Valid base64 claims with wrong signature (64 bytes of zeros)
+	claimsJSON, _ := json.Marshal(JWTClaims{Sub: "user", Roles: []string{"admin"}, Exp: time.Now().Add(time.Hour).Unix()})
+	claimsB64 := base64.RawURLEncoding.EncodeToString(claimsJSON)
+	fakeSig := base64.RawURLEncoding.EncodeToString(make([]byte, 64))
+	_, err := a.VerifyToken("header." + claimsB64 + "." + fakeSig)
 	if err == nil {
-		t.Error("expected error for invalid JSON claims")
+		t.Error("expected error for invalid signature")
 	}
 }
 
 func TestVerifyToken_WithPublicKey_ExpiredToken(t *testing.T) {
-	_, keyPath := generateTestECDSAKey(t)
+	privKey, keyPath := generateTestECDSAKey(t)
 	a := NewAuth(keyPath, "")
 
 	claims := JWTClaims{
@@ -100,9 +102,7 @@ func TestVerifyToken_WithPublicKey_ExpiredToken(t *testing.T) {
 		Roles: []string{"agent-view"},
 		Exp:   time.Now().Add(-time.Hour).Unix(), // expired
 	}
-	claimsJSON, _ := json.Marshal(claims)
-	encoded := base64.RawURLEncoding.EncodeToString(claimsJSON)
-	token := "header." + encoded + ".signature"
+	token := signTestJWT(t, privKey, claims)
 
 	_, err := a.VerifyToken(token)
 	if err == nil {
@@ -114,7 +114,7 @@ func TestVerifyToken_WithPublicKey_ExpiredToken(t *testing.T) {
 }
 
 func TestVerifyToken_WithPublicKey_ValidToken(t *testing.T) {
-	_, keyPath := generateTestECDSAKey(t)
+	privKey, keyPath := generateTestECDSAKey(t)
 	a := NewAuth(keyPath, "")
 
 	claims := JWTClaims{
@@ -123,9 +123,7 @@ func TestVerifyToken_WithPublicKey_ValidToken(t *testing.T) {
 		Roles: []string{"agent-view"},
 		Exp:   time.Now().Add(time.Hour).Unix(),
 	}
-	claimsJSON, _ := json.Marshal(claims)
-	encoded := base64.RawURLEncoding.EncodeToString(claimsJSON)
-	token := "header." + encoded + ".signature"
+	token := signTestJWT(t, privKey, claims)
 
 	got, err := a.VerifyToken(token)
 	if err != nil {
@@ -137,7 +135,7 @@ func TestVerifyToken_WithPublicKey_ValidToken(t *testing.T) {
 }
 
 func TestVerifyToken_WithPublicKey_NoExpiration(t *testing.T) {
-	_, keyPath := generateTestECDSAKey(t)
+	privKey, keyPath := generateTestECDSAKey(t)
 	a := NewAuth(keyPath, "")
 
 	claims := JWTClaims{
@@ -145,9 +143,7 @@ func TestVerifyToken_WithPublicKey_NoExpiration(t *testing.T) {
 		Roles: []string{"admin"},
 		Exp:   0, // no expiration
 	}
-	claimsJSON, _ := json.Marshal(claims)
-	encoded := base64.RawURLEncoding.EncodeToString(claimsJSON)
-	token := "h." + encoded + ".s"
+	token := signTestJWT(t, privKey, claims)
 
 	got, err := a.VerifyToken(token)
 	if err != nil {
@@ -201,25 +197,27 @@ func TestReloadSAToken_MissingFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAuth_RequireRole_TokenVerifyError(t *testing.T) {
-	_, keyPath := generateTestECDSAKey(t)
-	a := NewAuth(keyPath, "")
+	privKey, keyPath := generateTestECDSAKey(t)
+	dir := t.TempDir()
+	saPath := filepath.Join(dir, "sa-token")
+	os.WriteFile(saPath, []byte("test-sa"), 0644)
+	a := NewAuth(keyPath, saPath)
 
 	handler := a.RequireRole("agent-view", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Send an expired token
+	// Send an expired token (properly signed)
 	claims := JWTClaims{
 		Sub:   "user",
 		Roles: []string{"agent-view"},
 		Exp:   time.Now().Add(-time.Hour).Unix(),
 	}
-	claimsJSON, _ := json.Marshal(claims)
-	encoded := base64.RawURLEncoding.EncodeToString(claimsJSON)
-	token := "h." + encoded + ".s"
+	token := signTestJWT(t, privKey, claims)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-K8s-SA-Token", "test-sa")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
@@ -239,8 +237,8 @@ func TestStreamOutput_ChannelClose(t *testing.T) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -253,12 +251,7 @@ func TestStreamOutput_ChannelClose(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wsReq := "GET /stdout?token=mock-token HTTP/1.1\r\n" +
-		"Host: " + server.Listener.Addr().String() + "\r\n" +
-		"Upgrade: websocket\r\n" +
-		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
-		"Sec-WebSocket-Version: 13\r\n\r\n"
+	wsReq := ts.wsUpgradeReq("/stdout", server.Listener.Addr().String())
 	conn.Write([]byte(wsReq))
 
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -304,8 +297,8 @@ func TestStreamOutput_WriteError(t *testing.T) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -317,12 +310,7 @@ func TestStreamOutput_WriteError(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 
-	wsReq := "GET /stderr?token=mock-token HTTP/1.1\r\n" +
-		"Host: " + server.Listener.Addr().String() + "\r\n" +
-		"Upgrade: websocket\r\n" +
-		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
-		"Sec-WebSocket-Version: 13\r\n\r\n"
+	wsReq := ts.wsUpgradeReq("/stderr", server.Listener.Addr().String())
 	conn.Write([]byte(wsReq))
 
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -370,8 +358,8 @@ func TestStreamOutput_PingTimeout(t *testing.T) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	srv.pingInterval = 100 * time.Millisecond // Very short for testing
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
@@ -384,12 +372,7 @@ func TestStreamOutput_PingTimeout(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 
-	wsReq := "GET /stdout?token=mock-token HTTP/1.1\r\n" +
-		"Host: " + server.Listener.Addr().String() + "\r\n" +
-		"Upgrade: websocket\r\n" +
-		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
-		"Sec-WebSocket-Version: 13\r\n\r\n"
+	wsReq := ts.wsUpgradeReq("/stdout", server.Listener.Addr().String())
 	conn.Write([]byte(wsReq))
 
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -431,14 +414,14 @@ func (e *errorReader) Close() error { return nil }
 func TestHandleStdin_ReadError(t *testing.T) {
 	m := NewMetrics()
 	proc := &Process{metrics: m, done: make(chan struct{})}
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
 	req := httptest.NewRequest("POST", "/stdin", nil)
 	req.Body = &errorReader{}
-	req.Header.Set("Authorization", "Bearer mock-token")
+	ts.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -458,8 +441,8 @@ func TestHandleStdin_EmptyBody(t *testing.T) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -473,7 +456,7 @@ func TestHandleStdin_EmptyBody(t *testing.T) {
 	}()
 
 	req := httptest.NewRequest("POST", "/stdin", strings.NewReader(""))
-	req.Header.Set("Authorization", "Bearer mock-token")
+	ts.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -523,13 +506,13 @@ func TestHandleRestart_Success(t *testing.T) {
 		close(done)
 	}()
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
 	req := httptest.NewRequest("POST", "/control/restart", nil)
-	req.Header.Set("Authorization", "Bearer mock-token")
+	ts.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -561,13 +544,13 @@ func TestHandleSignal_ValidSignalRunningProcess(t *testing.T) {
 		done:    done,
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
 	req := httptest.NewRequest("POST", "/control/signal", strings.NewReader(`{"signal":"SIGUSR1"}`))
-	req.Header.Set("Authorization", "Bearer mock-token")
+	ts.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -590,8 +573,8 @@ func TestStreamOutput_WithData(t *testing.T) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -605,12 +588,7 @@ func TestStreamOutput_WithData(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wsReq := "GET /stdout?token=mock-token HTTP/1.1\r\n" +
-		"Host: " + server.Listener.Addr().String() + "\r\n" +
-		"Upgrade: websocket\r\n" +
-		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
-		"Sec-WebSocket-Version: 13\r\n\r\n"
+	wsReq := ts.wsUpgradeReq("/stdout", server.Listener.Addr().String())
 	conn.Write([]byte(wsReq))
 
 	// Read upgrade response
@@ -876,14 +854,15 @@ func TestUpgradeWS_HijackError(t *testing.T) {
 func TestUpgradeWS_NoHijacker(t *testing.T) {
 	m := NewMetrics()
 	proc := &Process{metrics: m, done: make(chan struct{})}
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
 	// Send a proper WebSocket request to httptest.ResponseRecorder
 	// which does NOT implement http.Hijacker
-	req := httptest.NewRequest("GET", "/stdout?token=mock-token", nil)
+	req := httptest.NewRequest("GET", "/stdout?"+ts.authWSQuery(), nil)
+	ts.addAuthHeaders(req)
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
@@ -983,13 +962,13 @@ func TestHandleSignal_ProcessSignalError(t *testing.T) {
 		done:    done,
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
 	req := httptest.NewRequest("POST", "/control/signal", strings.NewReader(`{"signal":"SIGTERM"}`))
-	req.Header.Set("Authorization", "Bearer mock-token")
+	ts.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -1037,13 +1016,13 @@ func TestHandleRestart_ProcessNotStartable(t *testing.T) {
 		flags:   nil,
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
 	req := httptest.NewRequest("POST", "/control/restart", nil)
-	req.Header.Set("Authorization", "Bearer mock-token")
+	ts.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -1154,14 +1133,14 @@ func TestHandleSignal_NilProcess_SIGKILL(t *testing.T) {
 	m := NewMetrics()
 	proc := &Process{metrics: m, done: make(chan struct{})}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
 	for _, sig := range []string{"KILL", "USR1", "USR2", "HUP", "INT"} {
 		req := httptest.NewRequest("POST", "/control/signal", strings.NewReader(`{"signal":"`+sig+`"}`))
-		req.Header.Set("Authorization", "Bearer mock-token")
+		ts.addAuthHeaders(req)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 

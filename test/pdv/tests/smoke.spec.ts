@@ -14,13 +14,9 @@ import { test, expect } from "@playwright/test";
 const BASE = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
 const GRAFANA_URL = process.env.GRAFANA_URL || "https://grafana.asymmetric-effort.com";
 
-function authHeaders() {
-  return { "Content-Type": "application/json", Authorization: "Bearer mock-token" };
-}
-
 test.describe("Smoke: API", () => {
   test("API status returns healthy", async () => {
-    const res = await fetch(`${BASE}/api/v1/status`, { headers: authHeaders() });
+    const res = await fetch(`${BASE}/api/v1/status`);
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(["ok", "healthy"]).toContain(data.status);
@@ -51,7 +47,7 @@ test.describe("Smoke: Auth", () => {
 test.describe("Smoke: OpenBao", () => {
   test("OpenBao is unsealed", async () => {
     // Verified through the API status endpoint which reports OpenBao health
-    const res = await fetch(`${BASE}/api/v1/status`, { headers: authHeaders() });
+    const res = await fetch(`${BASE}/api/v1/status`);
     expect(res.status).toBe(200);
     const data = await res.json();
     // The status endpoint includes component health; OpenBao sealed would
@@ -75,48 +71,34 @@ test.describe("Smoke: PostgreSQL", () => {
   test("PostgreSQL connected (via API status)", async () => {
     // The API status endpoint checks database connectivity.
     // If PostgreSQL is down, the API returns a non-200 or degraded status.
-    const res = await fetch(`${BASE}/api/v1/status`, { headers: authHeaders() });
+    const res = await fetch(`${BASE}/api/v1/status`);
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(["ok", "healthy"]).toContain(data.status);
   });
 });
 
-async function getPdvToken(): Promise<string | null> {
-  try {
+test.describe("Smoke: OpenBao Authentication", () => {
+  let token: string;
+
+  test("Login via OpenBao succeeds", async () => {
+    const password = process.env.PDV_TEST_PASSWORD;
+    expect(password, "PDV_TEST_PASSWORD env var must be set").toBeTruthy();
+
     const res = await fetch(`${BASE}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "pdv-test", password: "PdvTest-2026-Secure" }),
-    });
-    if (res.status !== 200) return null;
-    const data = await res.json();
-    return data.accessToken || null;
-  } catch {
-    return null;
-  }
-}
-
-test.describe("Smoke: K8s-dependent endpoints", () => {
-  let token: string | null;
-
-  test.beforeAll(async () => {
-    token = await getPdvToken();
-  });
-
-  test("Node Manager lists nodes", async () => {
-    test.skip(!token, "pdv-test user not available — skipping K8s endpoint test");
-    const res = await fetch(`${BASE}/api/v1/nmgr/node`, {
-      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ username: "pdv-test", password }),
     });
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.items).toBeDefined();
+    expect(data.accessToken).toBeTruthy();
+    token = data.accessToken;
   });
 
-  test("Agent Manager lists agents", async () => {
-    test.skip(!token, "pdv-test user not available — skipping K8s endpoint test");
-    const res = await fetch(`${BASE}/api/v1/amgr/agent`, {
+  test("Authenticated API call succeeds", async () => {
+    expect(token, "Login must succeed first").toBeTruthy();
+    const res = await fetch(`${BASE}/api/v1/nmgr/node`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);

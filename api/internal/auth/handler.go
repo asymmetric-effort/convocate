@@ -26,8 +26,6 @@ type session struct {
 func Register(mux *http.ServeMux) {
 	// Public (unauthenticated)
 	mux.HandleFunc("POST /api/v1/auth/login", handleLogin)
-	mux.HandleFunc("GET /api/v1/auth/oidc/github/start", handleOIDCStart)
-	mux.HandleFunc("GET /api/v1/auth/oidc/github/callback", handleOIDCCallback)
 
 	// Authenticated
 	mux.Handle("POST /api/v1/auth/refresh", middleware.Chain(
@@ -120,19 +118,6 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:    expiresAt.UTC().Format(time.RFC3339),
 		Principal:    *principal,
 	})
-}
-
-func handleOIDCStart(w http.ResponseWriter, _ *http.Request) {
-	http.Redirect(w, &http.Request{}, "https://github.com/login/oauth/authorize?client_id=mock", http.StatusFound)
-}
-
-func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
-	code := r.URL.Query().Get("code")
-	if code == "" {
-		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "missing code parameter")
-		return
-	}
-	httputil.WriteError(w, http.StatusNotImplemented, "not_implemented", "OIDC callback not yet implemented")
 }
 
 func handleRefresh(w http.ResponseWriter, r *http.Request) {

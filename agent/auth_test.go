@@ -1,11 +1,117 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 )
+
+// testAuthSetup holds test auth infrastructure for creating valid tokens.
+type testAuthSetup struct {
+	Auth     *Auth
+	SAToken  string
+	JWTToken string // a valid signed JWT with admin role
+}
+
+// newTestAuth creates a full Auth setup with a real ECDSA key and SA token.
+// Returns the Auth, SA token value, and a signed JWT token string.
+func newTestAuth(t *testing.T) testAuthSetup {
+	t.Helper()
+	dir := t.TempDir()
+
+	// Generate ECDSA P-256 key pair
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	// Write public key PEM
+	pubDER, err := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
+	keyPath := dir + "/pub.pem"
+	os.WriteFile(keyPath, pubPEM, 0644)
+
+	// Write SA token
+	saToken := "test-sa-token-" + dir
+	saPath := dir + "/sa-token"
+	os.WriteFile(saPath, []byte(saToken), 0644)
+
+	// Create Auth
+	a := NewAuth(keyPath, saPath)
+
+	// Sign a JWT
+	claims := JWTClaims{
+		Sub:   "test-user",
+		Name:  "Test User",
+		Roles: []string{"admin"},
+		Exp:   time.Now().Add(time.Hour).Unix(),
+		Iat:   time.Now().Unix(),
+	}
+	token := signTestJWT(t, privKey, claims)
+
+	return testAuthSetup{Auth: a, SAToken: saToken, JWTToken: token}
+}
+
+// signTestJWT signs a JWT using the given private key and claims.
+func signTestJWT(t *testing.T, key *ecdsa.PrivateKey, claims JWTClaims) string {
+	t.Helper()
+	headerJSON, _ := json.Marshal(map[string]string{"alg": "ES256", "typ": "JWT"})
+	claimsJSON, _ := json.Marshal(claims)
+
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+	claimsB64 := base64.RawURLEncoding.EncodeToString(claimsJSON)
+	signingInput := headerB64 + "." + claimsB64
+
+	hash := sha256.Sum256([]byte(signingInput))
+	r, s, err := ecdsa.Sign(rand.Reader, key, hash[:])
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	sig := make([]byte, 64)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	copy(sig[32-len(rBytes):32], rBytes)
+	copy(sig[64-len(sBytes):64], sBytes)
+
+	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
+	return signingInput + "." + sigB64
+}
+
+// addAuthHeaders adds valid SA token and JWT bearer headers to a request.
+func (ts testAuthSetup) addAuthHeaders(r *http.Request) {
+	r.Header.Set("X-K8s-SA-Token", ts.SAToken)
+	r.Header.Set("Authorization", "Bearer "+ts.JWTToken)
+}
+
+// authWSQuery returns query params for WebSocket connections with valid auth.
+func (ts testAuthSetup) authWSQuery() string {
+	return "token=" + ts.JWTToken
+}
+
+// wsUpgradeReq builds a raw WebSocket upgrade HTTP request with auth headers.
+func (ts testAuthSetup) wsUpgradeReq(path, host string) string {
+	return "GET " + path + "?" + ts.authWSQuery() + " HTTP/1.1\r\n" +
+		"Host: " + host + "\r\n" +
+		"X-K8s-SA-Token: " + ts.SAToken + "\r\n" +
+		"Upgrade: websocket\r\n" +
+		"Connection: Upgrade\r\n" +
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+		"Sec-WebSocket-Version: 13\r\n\r\n"
+}
 
 func TestNewAuth_NoKey(t *testing.T) {
 	a := NewAuth("", "")
@@ -24,17 +130,14 @@ func TestNewAuth_InvalidPath(t *testing.T) {
 	}
 }
 
-func TestAuth_VerifyToken_DevMode(t *testing.T) {
-	a := NewAuth("", "") // dev mode — no key
-	claims, err := a.VerifyToken("mock-token")
-	if err != nil {
-		t.Fatalf("VerifyToken in dev mode: %v", err)
+func TestAuth_VerifyToken_NoKey(t *testing.T) {
+	a := NewAuth("", "") // no key — should fail closed
+	_, err := a.VerifyToken("mock-token")
+	if err == nil {
+		t.Fatal("VerifyToken should fail when no public key is configured")
 	}
-	if claims.Sub != "mock" {
-		t.Errorf("Sub = %q, want %q", claims.Sub, "mock")
-	}
-	if !claims.HasRole("admin") {
-		t.Error("dev mode should grant admin role")
+	if err.Error() != "no public key configured" {
+		t.Errorf("error = %q, want %q", err.Error(), "no public key configured")
 	}
 }
 
@@ -61,12 +164,17 @@ func TestJWTClaims_HasRole(t *testing.T) {
 }
 
 func TestAuth_RequireRole_MissingToken(t *testing.T) {
-	a := NewAuth("", "")
+	// Need SA token configured for RequireRole to pass SA check
+	dir := t.TempDir()
+	tokenPath := dir + "/token"
+	os.WriteFile(tokenPath, []byte("sa-token"), 0644)
+	a := NewAuth("", tokenPath)
 	handler := a.RequireRole("agent-view", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	req := httptest.NewRequest("GET", "/metrics", nil)
+	req.Header.Set("X-K8s-SA-Token", "sa-token")
 	// No Authorization header
 	rec := httptest.NewRecorder()
 	handler(rec, req)
@@ -76,24 +184,24 @@ func TestAuth_RequireRole_MissingToken(t *testing.T) {
 	}
 }
 
-func TestAuth_RequireRole_ValidToken_DevMode(t *testing.T) {
-	a := NewAuth("", "") // dev mode
-	called := false
+func TestAuth_RequireRole_NoKey_FailsClosed(t *testing.T) {
+	// No public key configured — should reject even with a bearer token
+	dir := t.TempDir()
+	tokenPath := dir + "/token"
+	os.WriteFile(tokenPath, []byte("sa-token"), 0644)
+	a := NewAuth("", tokenPath)
 	handler := a.RequireRole("agent-view", func(w http.ResponseWriter, r *http.Request) {
-		called = true
 		w.WriteHeader(http.StatusOK)
 	})
 
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	req.Header.Set("Authorization", "Bearer mock-token")
+	req.Header.Set("X-K8s-SA-Token", "sa-token")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
-	if !called {
-		t.Error("handler should have been called")
-	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 
@@ -101,11 +209,11 @@ func TestAuth_RequireRole_ValidToken_DevMode(t *testing.T) {
 // K8s SA token tests
 // ---------------------------------------------------------------------------
 
-func TestAuth_VerifySAToken_Disabled(t *testing.T) {
+func TestAuth_VerifySAToken_NoToken_FailsClosed(t *testing.T) {
 	a := NewAuth("", "") // no SA token configured
 	req := httptest.NewRequest("GET", "/", nil)
-	if !a.VerifySAToken(req) {
-		t.Error("VerifySAToken should pass when SA auth is disabled")
+	if a.VerifySAToken(req) {
+		t.Error("VerifySAToken should deny when no SA token is configured")
 	}
 }
 
@@ -177,29 +285,25 @@ func TestAuth_RequireRole_SATokenRejection(t *testing.T) {
 	}
 }
 
-func TestAuth_RequireRole_BothTokensValid(t *testing.T) {
+func TestAuth_RequireRole_SATokenValid_NoKey_Rejected(t *testing.T) {
 	dir := t.TempDir()
 	tokenPath := dir + "/token"
 	os.WriteFile(tokenPath, []byte("correct-sa-token"), 0644)
 
 	a := NewAuth("", tokenPath)
-	called := false
 	handler := a.RequireRole("agent-view", func(w http.ResponseWriter, r *http.Request) {
-		called = true
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// SA token is valid but no public key for JWT — should be rejected
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	req.Header.Set("Authorization", "Bearer mock-token")
 	req.Header.Set("X-K8s-SA-Token", "correct-sa-token")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
-	if !called {
-		t.Error("handler should have been called with both tokens valid")
-	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d (no public key configured)", rec.Code, http.StatusUnauthorized)
 	}
 }
 

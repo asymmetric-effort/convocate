@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -441,8 +439,8 @@ func TestHandleReadyz_Running(t *testing.T) {
 		done:    done,
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -473,8 +471,8 @@ func TestHandleStdin_Success(t *testing.T) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -488,7 +486,7 @@ func TestHandleStdin_Success(t *testing.T) {
 	}()
 
 	req := httptest.NewRequest("POST", "/stdin", strings.NewReader("hello claude"))
-	req.Header.Set("Authorization", "Bearer mock-token")
+	ts.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -514,13 +512,13 @@ func TestHandleRestart_Error(t *testing.T) {
 		flags:   []string{"--nonexistent-flag"},
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
 	req := httptest.NewRequest("POST", "/control/restart", nil)
-	req.Header.Set("Authorization", "Bearer mock-token")
+	ts.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -539,13 +537,13 @@ func TestHandleSignal_Success(t *testing.T) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
 	req := httptest.NewRequest("POST", "/control/signal", strings.NewReader(`{"signal":"SIGTERM"}`))
-	req.Header.Set("Authorization", "Bearer mock-token")
+	ts.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -566,8 +564,8 @@ func TestStreamOutput_WebSocketUpgrade(t *testing.T) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -582,12 +580,7 @@ func TestStreamOutput_WebSocketUpgrade(t *testing.T) {
 	defer conn.Close()
 
 	// Send WebSocket upgrade request with auth
-	wsReq := "GET /stdout?token=mock-token HTTP/1.1\r\n" +
-		"Host: " + server.Listener.Addr().String() + "\r\n" +
-		"Upgrade: websocket\r\n" +
-		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
-		"Sec-WebSocket-Version: 13\r\n\r\n"
+	wsReq := ts.wsUpgradeReq("/stdout", server.Listener.Addr().String())
 	conn.Write([]byte(wsReq))
 
 	// Read the response
@@ -611,8 +604,8 @@ func TestStreamOutput_Stderr_WebSocket(t *testing.T) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -625,12 +618,7 @@ func TestStreamOutput_Stderr_WebSocket(t *testing.T) {
 	}
 	defer conn.Close()
 
-	wsReq := "GET /stderr?token=mock-token HTTP/1.1\r\n" +
-		"Host: " + server.Listener.Addr().String() + "\r\n" +
-		"Upgrade: websocket\r\n" +
-		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
-		"Sec-WebSocket-Version: 13\r\n\r\n"
+	wsReq := ts.wsUpgradeReq("/stderr", server.Listener.Addr().String())
 	conn.Write([]byte(wsReq))
 
 	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -649,8 +637,8 @@ func TestStreamOutput_Stderr_WebSocket(t *testing.T) {
 func TestUpgradeWS_MissingKey(t *testing.T) {
 	m := NewMetrics()
 	proc := &Process{metrics: m, done: make(chan struct{})}
-	auth := NewAuth("", "")
-	srv := NewServer(proc, m, auth, "v1", "v2", "pod", "node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "v1", "v2", "pod", "node")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 
@@ -663,9 +651,10 @@ func TestUpgradeWS_MissingKey(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Send upgrade without Sec-WebSocket-Key
-	wsReq := "GET /stdout?token=mock-token HTTP/1.1\r\n" +
+	// Send upgrade without Sec-WebSocket-Key (but with auth)
+	wsReq := "GET /stdout?" + ts.authWSQuery() + " HTTP/1.1\r\n" +
 		"Host: " + server.Listener.Addr().String() + "\r\n" +
+		"X-K8s-SA-Token: " + ts.SAToken + "\r\n" +
 		"Upgrade: websocket\r\n" +
 		"Connection: Upgrade\r\n" +
 		"Sec-WebSocket-Version: 13\r\n\r\n"
@@ -718,71 +707,14 @@ func TestVerifyToken_ValidPEMButNotECDSA(t *testing.T) {
 	}
 }
 
-func TestParseClaimsOnly_ValidJWT(t *testing.T) {
-	a := &Auth{} // dev mode
-
-	// Create a minimal JWT with valid base64 claims
-	claims := JWTClaims{
-		Sub:   "user-123",
-		Name:  "Test User",
-		Roles: []string{"agent-view"},
-		Exp:   time.Now().Add(time.Hour).Unix(),
+func TestVerifyToken_NoKey_FailsClosed(t *testing.T) {
+	a := &Auth{} // no public key
+	_, err := a.VerifyToken("any-token")
+	if err == nil {
+		t.Fatal("VerifyToken should fail when no public key is configured")
 	}
-	claimsJSON, _ := json.Marshal(claims)
-	encoded := base64.RawURLEncoding.EncodeToString(claimsJSON)
-	token := "header." + encoded + ".signature"
-
-	got, err := a.parseClaimsOnly(token)
-	if err != nil {
-		t.Fatalf("parseClaimsOnly: %v", err)
-	}
-	if got.Sub != "user-123" {
-		t.Errorf("Sub = %q, want %q", got.Sub, "user-123")
-	}
-	if got.Name != "Test User" {
-		t.Errorf("Name = %q, want %q", got.Name, "Test User")
-	}
-}
-
-func TestParseClaimsOnly_InvalidBase64(t *testing.T) {
-	a := &Auth{} // dev mode
-	// Invalid base64 in claims part
-	token := "header.!!!invalid!!!.signature"
-	got, err := a.parseClaimsOnly(token)
-	if err != nil {
-		t.Fatalf("parseClaimsOnly should not error in dev mode: %v", err)
-	}
-	// Should fall back to mock claims
-	if got.Sub != "mock" {
-		t.Errorf("Sub = %q, want mock fallback", got.Sub)
-	}
-}
-
-func TestParseClaimsOnly_InvalidJSON(t *testing.T) {
-	a := &Auth{}
-	// Valid base64 but invalid JSON
-	encoded := base64.RawURLEncoding.EncodeToString([]byte("not json"))
-	token := "header." + encoded + ".signature"
-	got, err := a.parseClaimsOnly(token)
-	if err != nil {
-		t.Fatalf("parseClaimsOnly should not error: %v", err)
-	}
-	if got.Sub != "mock" {
-		t.Errorf("Sub = %q, want mock fallback", got.Sub)
-	}
-}
-
-func TestParseClaimsOnly_SinglePart(t *testing.T) {
-	a := &Auth{}
-	got, err := a.parseClaimsOnly("single-part-token")
-	if err != nil {
-		t.Fatalf("parseClaimsOnly: %v", err)
-	}
-	if got.Sub != "mock" {
-		t.Errorf("Sub = %q, want mock", got.Sub)
-	}
-	if !got.HasRole("admin") {
-		t.Error("single part token should get admin role in dev mode")
+	if err.Error() != "no public key configured" {
+		t.Errorf("error = %q, want %q", err.Error(), "no public key configured")
 	}
 }
 
@@ -790,29 +722,21 @@ func TestParseClaimsOnly_SinglePart(t *testing.T) {
 // Auth — RequireRole with forbidden role
 // ---------------------------------------------------------------------------
 
-func TestAuth_RequireRole_Forbidden(t *testing.T) {
-	a := &Auth{} // dev mode
-
-	// Create a valid JWT with only "agent-view" role
-	claims := JWTClaims{
-		Sub:   "user",
-		Roles: []string{"agent-view"},
-	}
-	claimsJSON, _ := json.Marshal(claims)
-	encoded := base64.RawURLEncoding.EncodeToString(claimsJSON)
-	token := "h." + encoded + ".s"
+func TestAuth_RequireRole_NoSAToken_Rejected(t *testing.T) {
+	a := &Auth{} // no SA token, no public key — fail closed
 
 	handler := a.RequireRole("agent-update", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Authorization", "Bearer some-token")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	// Should be rejected at SA token check (no SA token configured = deny)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 

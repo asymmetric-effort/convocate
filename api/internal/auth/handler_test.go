@@ -16,6 +16,23 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/httputil"
 )
 
+// initJWTWithKey generates a key, sets the env var, and calls InitJWT.
+func initJWTWithKey(t *testing.T) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	derBytes, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	pemBlock := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: derBytes})
+	os.Setenv("JWT_EC_PRIVATE_KEY", string(pemBlock))
+	t.Cleanup(func() { os.Unsetenv("JWT_EC_PRIVATE_KEY") })
+	InitJWT()
+}
+
 func setupMockBao(t *testing.T) *httptest.Server {
 	t.Helper()
 	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -431,39 +448,6 @@ func TestHandleRefresh_InvalidToken(t *testing.T) {
 	}
 }
 
-func TestHandleOIDCCallback_MissingCode(t *testing.T) {
-	r := httptest.NewRequest("GET", "/api/v1/auth/oidc/github/callback", nil)
-	w := httptest.NewRecorder()
-
-	handleOIDCCallback(w, r)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
-	}
-}
-
-func TestHandleOIDCCallback_WithCode(t *testing.T) {
-	r := httptest.NewRequest("GET", "/api/v1/auth/oidc/github/callback?code=abc123", nil)
-	w := httptest.NewRecorder()
-
-	handleOIDCCallback(w, r)
-
-	if w.Code != http.StatusNotImplemented {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotImplemented)
-	}
-}
-
-func TestHandleOIDCStart(t *testing.T) {
-	r := httptest.NewRequest("GET", "/api/v1/auth/oidc/github/start", nil)
-	w := httptest.NewRecorder()
-
-	handleOIDCStart(w, r)
-
-	if w.Code != http.StatusFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusFound)
-	}
-}
-
 func TestHandleRefresh_EntityLookupFails(t *testing.T) {
 	// Token lookup succeeds but entity lookup fails, resulting in nil principal
 	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -547,18 +531,26 @@ func TestInitJWT_WithValidPEM(t *testing.T) {
 }
 
 func TestInitJWT_WithInvalidPEM(t *testing.T) {
+	origSigning, origVerify := signingKey, verifyKey
+	defer func() { signingKey, verifyKey = origSigning, origVerify }()
+
+	signingKey, verifyKey = nil, nil
 	os.Setenv("JWT_EC_PRIVATE_KEY", "not-a-valid-pem")
 	defer os.Unsetenv("JWT_EC_PRIVATE_KEY")
 
-	// Should not panic, should fall back to ephemeral key
+	// Should not panic; keys should remain nil (no ephemeral fallback)
 	InitJWT()
 
-	if signingKey == nil {
-		t.Fatal("signingKey is nil after InitJWT fallback")
+	if signingKey != nil {
+		t.Fatal("signingKey should be nil after InitJWT with invalid PEM")
 	}
 }
 
 func TestInitJWT_WithBadASN1PEM(t *testing.T) {
+	origSigning, origVerify := signingKey, verifyKey
+	defer func() { signingKey, verifyKey = origSigning, origVerify }()
+
+	signingKey, verifyKey = nil, nil
 	// Valid PEM block but invalid ASN1 content
 	pemBlock := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: []byte("not-asn1")})
 	os.Setenv("JWT_EC_PRIVATE_KEY", string(pemBlock))
@@ -566,8 +558,8 @@ func TestInitJWT_WithBadASN1PEM(t *testing.T) {
 
 	InitJWT()
 
-	if signingKey == nil {
-		t.Fatal("signingKey is nil after InitJWT with bad ASN1")
+	if signingKey != nil {
+		t.Fatal("signingKey should be nil after InitJWT with bad ASN1")
 	}
 }
 
@@ -601,7 +593,7 @@ func TestParseECPrivateKey_Valid(t *testing.T) {
 }
 
 func TestVerifyJWT_InvalidFormat_NoDots(t *testing.T) {
-	InitJWT()
+	initJWTWithKey(t)
 	_, err := VerifyJWT("nodots")
 	if err == nil {
 		t.Fatal("expected error for token without dots")
@@ -609,7 +601,7 @@ func TestVerifyJWT_InvalidFormat_NoDots(t *testing.T) {
 }
 
 func TestVerifyJWT_InvalidFormat_OneDot(t *testing.T) {
-	InitJWT()
+	initJWTWithKey(t)
 	_, err := VerifyJWT("one.dot")
 	if err == nil {
 		t.Fatal("expected error for token with only one dot")
@@ -617,7 +609,7 @@ func TestVerifyJWT_InvalidFormat_OneDot(t *testing.T) {
 }
 
 func TestVerifyJWT_BadSignatureEncoding(t *testing.T) {
-	InitJWT()
+	initJWTWithKey(t)
 	_, err := VerifyJWT("header.claims.!!!bad-base64!!!")
 	if err == nil {
 		t.Fatal("expected error for bad signature encoding")
@@ -625,7 +617,7 @@ func TestVerifyJWT_BadSignatureEncoding(t *testing.T) {
 }
 
 func TestVerifyJWT_WrongSignatureLength(t *testing.T) {
-	InitJWT()
+	initJWTWithKey(t)
 	// Valid base64 but wrong length (not 64 bytes)
 	shortSig := "AQID" // 3 bytes
 	_, err := VerifyJWT("header.claims." + shortSig)

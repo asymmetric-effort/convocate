@@ -10,8 +10,16 @@ import (
 	"time"
 )
 
+// testServerSetup holds the test server and auth infrastructure.
+type testServerSetup struct {
+	srv  *Server
+	mux  *http.ServeMux
+	auth testAuthSetup
+}
+
 // mockProcess creates a server with no real process (for handler tests)
-func setupTestServer() (*Server, *http.ServeMux) {
+func setupTestServer(t *testing.T) testServerSetup {
+	t.Helper()
 	m := NewMetrics()
 	m.StdinBytes.Add(42)
 	m.StdoutBytes.Add(100)
@@ -22,20 +30,20 @@ func setupTestServer() (*Server, *http.ServeMux) {
 		done:    make(chan struct{}),
 	}
 
-	auth := NewAuth("", "") // dev mode
-	srv := NewServer(proc, m, auth, "test-v1", "claude-v2", "test-pod", "test-node")
+	ts := newTestAuth(t)
+	srv := NewServer(proc, m, ts.Auth, "test-v1", "claude-v2", "test-pod", "test-node")
 
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
-	return srv, mux
+	return testServerSetup{srv: srv, mux: mux, auth: ts}
 }
 
 func TestHandleHealthz(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("GET", "/healthz", nil)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -49,11 +57,11 @@ func TestHandleHealthz(t *testing.T) {
 }
 
 func TestHandleReadyz_NotRunning(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("GET", "/readyz", nil)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	// Process has nil cmd → not running → 503
 	if rec.Code != http.StatusServiceUnavailable {
@@ -62,12 +70,12 @@ func TestHandleReadyz_NotRunning(t *testing.T) {
 }
 
 func TestHandleMetrics(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("GET", "/metrics", nil)
-	req.Header.Set("Authorization", "Bearer mock-token")
+	setup.auth.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -93,12 +101,12 @@ func TestHandleMetrics(t *testing.T) {
 }
 
 func TestHandleMetrics_NoAuth(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	// No Authorization header
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
@@ -106,11 +114,11 @@ func TestHandleMetrics_NoAuth(t *testing.T) {
 }
 
 func TestHandleStdin_NoAuth(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("POST", "/stdin", strings.NewReader("hello"))
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
@@ -118,12 +126,12 @@ func TestHandleStdin_NoAuth(t *testing.T) {
 }
 
 func TestHandleStdin_NoPipe(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("POST", "/stdin", strings.NewReader("hello"))
-	req.Header.Set("Authorization", "Bearer mock-token")
+	setup.auth.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	// Process has nil stdin pipe → 500
 	if rec.Code != http.StatusInternalServerError {
@@ -132,11 +140,11 @@ func TestHandleStdin_NoPipe(t *testing.T) {
 }
 
 func TestHandleRestart_NoAuth(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("POST", "/control/restart", nil)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
@@ -144,12 +152,12 @@ func TestHandleRestart_NoAuth(t *testing.T) {
 }
 
 func TestHandleSignal_InvalidBody(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("POST", "/control/signal", strings.NewReader("not json"))
-	req.Header.Set("Authorization", "Bearer mock-token")
+	setup.auth.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
@@ -157,12 +165,12 @@ func TestHandleSignal_InvalidBody(t *testing.T) {
 }
 
 func TestHandleSignal_UnknownSignal(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("POST", "/control/signal", strings.NewReader(`{"signal":"SIGFOO"}`))
-	req.Header.Set("Authorization", "Bearer mock-token")
+	setup.auth.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
@@ -194,12 +202,12 @@ func TestParseSignal(t *testing.T) {
 }
 
 func TestHandleStdout_NotWebSocket(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("GET", "/stdout", nil)
-	req.Header.Set("Authorization", "Bearer mock-token")
+	setup.auth.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	// Should return 426 Upgrade Required since it's not a WebSocket request
 	if rec.Code != http.StatusUpgradeRequired {
@@ -208,12 +216,12 @@ func TestHandleStdout_NotWebSocket(t *testing.T) {
 }
 
 func TestHandleStderr_NotWebSocket(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	req := httptest.NewRequest("GET", "/stderr", nil)
-	req.Header.Set("Authorization", "Bearer mock-token")
+	setup.auth.addAuthHeaders(req)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	setup.mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUpgradeRequired {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUpgradeRequired)
@@ -221,7 +229,7 @@ func TestHandleStderr_NotWebSocket(t *testing.T) {
 }
 
 func TestRouteRegistration(t *testing.T) {
-	_, mux := setupTestServer()
+	setup := setupTestServer(t)
 
 	// Test that all expected routes are registered by sending requests
 	routes := []struct {
@@ -243,9 +251,9 @@ func TestRouteRegistration(t *testing.T) {
 		if r.method == "POST" {
 			req.Body = io.NopCloser(strings.NewReader("{}"))
 		}
-		req.Header.Set("Authorization", "Bearer mock-token")
+		setup.auth.addAuthHeaders(req)
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req)
+		setup.mux.ServeHTTP(rec, req)
 
 		// Should not be 404 (route not found)
 		if rec.Code == http.StatusNotFound {

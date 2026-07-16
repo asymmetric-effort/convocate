@@ -6,16 +6,14 @@ import (
 	"testing"
 )
 
-func TestInternalAuth_NoKeyConfigured(t *testing.T) {
-	// metricsAPIKey is loaded at init from env; set it to empty for dev mode
+func TestInternalAuth_NoKeyConfigured_Denied(t *testing.T) {
+	// metricsAPIKey is loaded at init from env; set it to empty to test fail-closed
 	origKey := metricsAPIKey
 	metricsAPIKey = ""
 	defer func() { metricsAPIKey = origKey }()
 
-	var called bool
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
+		t.Error("handler should not be called when no key is configured")
 	})
 
 	handler := InternalAuth(inner)
@@ -23,11 +21,8 @@ func TestInternalAuth_NoKeyConfigured(t *testing.T) {
 	r := httptest.NewRequest("GET", "/metrics", nil)
 	handler.ServeHTTP(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if !called {
-		t.Error("handler was not called in dev mode")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
 	}
 }
 

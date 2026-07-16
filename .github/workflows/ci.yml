@@ -324,6 +324,7 @@ jobs:
           APP_URL: https://app.convocate.asymmetric-effort.com
           GRAFANA_URL: https://grafana.asymmetric-effort.com
           NODE_TLS_REJECT_UNAUTHORIZED: "0"
+          PDV_TEST_PASSWORD: "PdvTest-2026-Secure"
         run: |
           bun install
           bunx playwright test tests/smoke.spec.ts

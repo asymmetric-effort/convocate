@@ -8,6 +8,7 @@ package main
 
 import (
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base64"
@@ -15,6 +16,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"strings"
@@ -97,10 +99,10 @@ func (a *Auth) reloadSAToken() {
 }
 
 // VerifySAToken checks the X-K8s-SA-Token header against the expected value.
-// Returns true if SA auth is disabled (no token configured) or the token matches.
+// Returns false if no SA token is configured (fail closed).
 func (a *Auth) VerifySAToken(r *http.Request) bool {
 	if a.expectedSAToken == "" {
-		return true // SA auth disabled (dev mode)
+		return false // No SA token configured — deny all
 	}
 	token := r.Header.Get(k8sSATokenHeader)
 	if token == "" {
@@ -111,14 +113,29 @@ func (a *Auth) VerifySAToken(r *http.Request) bool {
 
 // VerifyToken validates a JWT string and returns the claims.
 func (a *Auth) VerifyToken(tokenStr string) (*JWTClaims, error) {
-	// If no public key loaded, accept all tokens (dev mode)
+	// If no public key loaded, fail closed — no verification possible.
 	if a.publicKey == nil {
-		return a.parseClaimsOnly(tokenStr)
+		return nil, errors.New("no public key configured")
 	}
 
 	parts := strings.Split(tokenStr, ".")
 	if len(parts) != 3 {
 		return nil, errors.New("invalid token format")
+	}
+
+	// Verify ECDSA signature before trusting claims.
+	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || len(sigBytes) != 64 {
+		return nil, errors.New("invalid signature encoding")
+	}
+
+	signingInput := parts[0] + "." + parts[1]
+	hash := sha256.Sum256([]byte(signingInput))
+
+	r := new(big.Int).SetBytes(sigBytes[:32])
+	s := new(big.Int).SetBytes(sigBytes[32:64])
+	if !ecdsa.Verify(a.publicKey, hash[:], r, s) {
+		return nil, errors.New("invalid signature")
 	}
 
 	// Decode claims
@@ -137,34 +154,6 @@ func (a *Auth) VerifyToken(tokenStr string) (*JWTClaims, error) {
 		return nil, errors.New("token expired")
 	}
 
-	// In production, verify the signature with the public key.
-	// For now, trust the claims if the key is loaded but skip
-	// full ECDSA verification (the API already verified the token).
-
-	return &claims, nil
-}
-
-// parseClaimsOnly decodes claims without signature verification (dev mode).
-func (a *Auth) parseClaimsOnly(tokenStr string) (*JWTClaims, error) {
-	parts := strings.Split(tokenStr, ".")
-	if len(parts) < 2 {
-		// Accept mock tokens in dev mode
-		return &JWTClaims{
-			Sub:   "mock",
-			Name:  "Mock User",
-			Roles: []string{"admin"},
-		}, nil
-	}
-
-	claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return &JWTClaims{Sub: "mock", Roles: []string{"admin"}}, nil
-	}
-
-	var claims JWTClaims
-	if err := json.Unmarshal(claimsJSON, &claims); err != nil {
-		return &JWTClaims{Sub: "mock", Roles: []string{"admin"}}, nil
-	}
 	return &claims, nil
 }
 

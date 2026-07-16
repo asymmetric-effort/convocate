@@ -27,7 +27,6 @@ api:
     OTEL_EXPORTER_OTLP_ENDPOINT: "http://ginger.o11y.svc:4318"
     OPENBAO_ADDR: "http://openbao.security.svc:8200"
     OPENBAO_MFA_METHOD_ID: "be724fc0-04d7-3597-40a4-18e284acdc3f"
-    ALLOW_MOCK_AUTH: "true"
 
 ui:
   enabled: true

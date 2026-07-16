@@ -51,8 +51,6 @@ spec:
                 secretKeyRef:
                   name: postgresql-credentials
                   key: DATABASE_URL
-            - name: ALLOW_MOCK_AUTH
-              value: {{ .Values.env.ALLOW_MOCK_AUTH | default "true" | quote }}
           ports:
             - containerPort: {{ .Values.port | default 8443 }}
               name: api

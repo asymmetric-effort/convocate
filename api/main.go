@@ -29,7 +29,6 @@ func main() {
 	shutdownTracer := tracing.Init(context.Background())
 	defer shutdownTracer(context.Background())
 
-	auth.InitJWT()
 	llm.Init()
 
 	if err := db.InitPostgres(); err != nil {

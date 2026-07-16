@@ -11,9 +11,7 @@ import { test, expect, Page } from "@playwright/test";
 const BASE = process.env.APP_URL || "https://app.convocate.asymmetric-effort.com";
 const AUTH_URL = process.env.AUTH_URL || "https://auth.asymmetric-effort.com";
 
-function authHeaders() {
-  return { "Content-Type": "application/json", Authorization: "Bearer mock-token" };
-}
+const PDV_TEST_PASSWORD = process.env.PDV_TEST_PASSWORD;
 
 // ---------------------------------------------------------------------------
 // API-level auth tests (no browser needed)
@@ -24,7 +22,7 @@ test.describe("Convocate OpenBao auth — API level", () => {
     const res = await fetch(`${BASE}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "pdv-test", password: "PdvTest-2026-Secure" }),
+      body: JSON.stringify({ username: "pdv-test", password: PDV_TEST_PASSWORD }),
     });
     expect(res.status).toBe(401);
     const data = await res.json();
@@ -56,7 +54,7 @@ test.describe("Convocate OpenBao auth — API level", () => {
     const res = await fetch(`${BASE}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: "pdv-test", password: "PdvTest-2026-Secure", mfaToken: "000000" }),
+      body: JSON.stringify({ username: "pdv-test", password: PDV_TEST_PASSWORD, mfaToken: "000000" }),
     });
     expect(res.status).toBe(401);
     const data = await res.json();
@@ -85,7 +83,7 @@ test.describe("Convocate OpenBao auth — pdv-test has no permissions", () => {
       const res = await fetch(`${AUTH_URL}/v1/auth/userpass/login/pdv-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: "PdvTest-2026-Secure" }),
+        body: JSON.stringify({ password: PDV_TEST_PASSWORD }),
       });
       // MFA is enforced, so we get the mfa_requirement response (no token)
       // but we can check the warnings to confirm auth succeeded
@@ -111,7 +109,7 @@ test.describe("Convocate OpenBao auth — pdv-test has no permissions", () => {
     // would have empty authorizedApplets. We verify the policy mapping instead.
     try {
       const res = await fetch(`${AUTH_URL}/v1/auth/userpass/users/pdv-test`, {
-        headers: { "X-Vault-Token": "mock-token" }, // won't work externally
+        headers: { "X-Vault-Token": process.env.OPENBAO_TOKEN || "" },
       });
       if (res.ok) {
         const data = await res.json();
@@ -119,11 +117,9 @@ test.describe("Convocate OpenBao auth — pdv-test has no permissions", () => {
         expect(policies).toEqual(["login-only"]);
       }
     } catch {
-      // Can't reach OpenBao from outside ZTNA — verify via API instead
-      // The mock-token auth still works for API calls
-      const statusRes = await fetch(`${BASE}/api/v1/status`, { headers: authHeaders() });
+      // Can't reach OpenBao from outside ZTNA — verify via API status instead
+      const statusRes = await fetch(`${BASE}/api/v1/status`);
       expect(statusRes.status).toBe(200);
-      // If we got here, mock auth works but real pdv-test auth would have no perms
     }
   });
 });
@@ -157,7 +153,7 @@ test.describe("Convocate login UI", () => {
     await page.goto(`${BASE}/`, { ignoreHTTPSErrors: true });
     await expect(page.locator("text=Convocate")).toBeVisible({ timeout: 10000 });
     await page.locator('input[placeholder="Username"]').fill("pdv-test");
-    await page.locator('input[placeholder="Password"]').fill("PdvTest-2026-Secure");
+    await page.locator('input[placeholder="Password"]').fill(PDV_TEST_PASSWORD || "");
     // Leave MFA Token empty
     await page.locator('button:has-text("Sign In")').click();
     // Should show MFA required error
