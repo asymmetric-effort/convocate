@@ -13,6 +13,15 @@ jobs:
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r infrastructure/requirements.yml
 
+      - name: Validate secrets
+        env:
+          CLOUDFLARE_TUNNEL_SECRET: ${{ secrets.CLOUDFLARE_TUNNEL_SECRET }}
+          CLOUDFLARE_TUNNEL_ID: ${{ secrets.CLOUDFLARE_TUNNEL_ID }}
+        run: |
+          echo "$CLOUDFLARE_TUNNEL_SECRET" | python3 -c "import sys,json; json.load(sys.stdin)" || { echo "FAIL: CLOUDFLARE_TUNNEL_SECRET is not valid JSON"; exit 1; }
+          [ -n "$CLOUDFLARE_TUNNEL_ID" ] || { echo "FAIL: CLOUDFLARE_TUNNEL_ID is empty"; exit 1; }
+          echo "Secrets validated"
+
       - name: Run bootstrap
         env:
           CLOUDFLARE_TUNNEL_SECRET: ${{ secrets.CLOUDFLARE_TUNNEL_SECRET }}
@@ -23,9 +32,14 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
           chmod 600 ~/.ssh/ansible_key
           ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+
+          # Write credentials file locally, copy via Ansible to avoid Jinja mangling
+          echo "$CLOUDFLARE_TUNNEL_SECRET" > /tmp/cloudflared-credentials.json
+
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_ROLES_PATH=infrastructure/bootstrap/roles \
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/bootstrap/playbooks/bootstrap-svr00.yml \
-            -i infrastructure/bootstrap/inventory/svr00.yml
-          rm -f ~/.ssh/ansible_key
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "cloudflared_credentials_file=/tmp/cloudflared-credentials.json"
+          rm -f ~/.ssh/ansible_key /tmp/cloudflared-credentials.json

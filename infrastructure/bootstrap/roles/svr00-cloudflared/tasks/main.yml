@@ -9,11 +9,12 @@
 
 - name: Deploy tunnel credentials
   ansible.builtin.copy:
-    content: "{{ cloudflare_tunnel_secret }}"
+    src: "{{ cloudflared_credentials_file }}"
     dest: /opt/cloudflared/credentials.json
     mode: "0644"
     owner: "65532"
     group: "65532"
+  notify: Restart cloudflared
 
 - name: Deploy cloudflared config
   ansible.builtin.template:
