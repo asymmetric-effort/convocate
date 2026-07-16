@@ -7,7 +7,7 @@ network:
   ethernets:
     {{ physical_ifaces[0] }}:
       addresses:
-        - 192.168.3.159/24
+        - 192.168.3.159/24  # svr00 ssh
         - 192.168.3.160/24  # core: secrets-a (openbao test)
         - 192.168.3.161/24  # core: secrets-b (openbao prod)
         - 192.168.3.162/24  # core: reserved
