@@ -18,6 +18,7 @@ jobs:
           CLOUDFLARE_TUNNEL_SECRET: ${{ secrets.CLOUDFLARE_TUNNEL_SECRET }}
           CLOUDFLARE_TUNNEL_ID: ${{ secrets.CLOUDFLARE_TUNNEL_ID }}
         run: |
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_ROLES_PATH=infrastructure/bootstrap/roles \
           ansible-playbook infrastructure/bootstrap/playbooks/bootstrap-svr00.yml \
