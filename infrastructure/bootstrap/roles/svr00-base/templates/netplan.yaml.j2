@@ -1,8 +1,9 @@
+{% set physical_ifaces = ansible_interfaces | reject('match', '^lo$') | reject('match', '^docker') | reject('match', '^vir') | reject('match', '^br-') | reject('match', '^veth') | sort | list %}
 network:
   version: 2
   renderer: networkd
   ethernets:
-    eth0:
+    {{ physical_ifaces[0] }}:
       addresses:
         - 192.168.3.159/24
         - 192.168.3.160/24
@@ -15,18 +16,24 @@ network:
         addresses:
           - 1.1.1.1
           - 8.8.8.8
-    eth1:
+{% if physical_ifaces | length > 1 %}
+    {{ physical_ifaces[1] }}:
       addresses:
         - 192.168.3.170/24
         - 192.168.3.171/24
         - 192.168.3.172/24
-    eth2:
+{% endif %}
+{% if physical_ifaces | length > 2 %}
+    {{ physical_ifaces[2] }}:
       addresses:
         - 192.168.3.180/24
         - 192.168.3.181/24
         - 192.168.3.182/24
-    eth3:
+{% endif %}
+{% if physical_ifaces | length > 3 %}
+    {{ physical_ifaces[3] }}:
       addresses:
         - 192.168.3.190/24
         - 192.168.3.191/24
         - 192.168.3.192/24
+{% endif %}

@@ -45,13 +45,19 @@
     group: root
   notify: Apply netplan
 
-- name: Remove default netplan configs that may conflict
-  ansible.builtin.shell:
-    cmd: |
-      for f in /etc/netplan/*.yaml /etc/netplan/*.yml; do
-        [ "$f" = "/etc/netplan/01-svr00.yaml" ] && continue
-        [ -e "$f" ] && rm -f "$f"
-      done
+- name: Find conflicting netplan configs
+  ansible.builtin.find:
+    paths: /etc/netplan
+    patterns: "*.yaml,*.yml"
+    excludes: "01-svr00.yaml"
+  register: netplan_conflicts
+
+- name: Remove conflicting netplan configs
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ netplan_conflicts.files }}"
+  notify: Apply netplan
   changed_when: false
 
 - name: Configure UFW — default deny incoming
