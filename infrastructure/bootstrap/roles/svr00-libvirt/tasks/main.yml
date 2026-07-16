@@ -1,0 +1,73 @@
+---
+- name: Install KVM and libvirt packages
+  ansible.builtin.apt:
+    name:
+      - qemu-kvm
+      - libvirt-daemon-system
+      - virtinst
+      - libguestfs-tools
+    state: present
+    update_cache: true
+
+- name: Create VM storage directory
+  ansible.builtin.file:
+    path: /var/vms
+    state: directory
+    mode: "0755"
+    owner: libvirt-qemu
+    group: libvirt-qemu
+
+- name: Add samcaldwell to libvirt and kvm groups
+  ansible.builtin.user:
+    name: samcaldwell
+    groups:
+      - libvirt
+      - kvm
+    append: true
+
+- name: Enable and start libvirtd
+  ansible.builtin.service:
+    name: libvirtd
+    enabled: true
+    state: started
+
+- name: Check if default storage pool exists
+  ansible.builtin.command:
+    cmd: virsh pool-info default
+  register: pool_check
+  failed_when: false
+  changed_when: false
+
+- name: Destroy existing default pool if it exists
+  ansible.builtin.command:
+    cmd: virsh pool-destroy default
+  when: pool_check.rc == 0
+  failed_when: false
+  changed_when: true
+
+- name: Undefine existing default pool if it exists
+  ansible.builtin.command:
+    cmd: virsh pool-undefine default
+  when: pool_check.rc == 0
+  failed_when: false
+  changed_when: true
+
+- name: Define default storage pool at /var/vms
+  ansible.builtin.command:
+    cmd: virsh pool-define-as default dir --target /var/vms
+  changed_when: true
+
+- name: Build the default storage pool
+  ansible.builtin.command:
+    cmd: virsh pool-build default
+  changed_when: true
+
+- name: Start the default storage pool
+  ansible.builtin.command:
+    cmd: virsh pool-start default
+  changed_when: true
+
+- name: Set default storage pool to autostart
+  ansible.builtin.command:
+    cmd: virsh pool-autostart default
+  changed_when: true

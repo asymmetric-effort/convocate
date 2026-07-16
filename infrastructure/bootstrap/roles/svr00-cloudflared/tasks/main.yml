@@ -1,0 +1,21 @@
+---
+- name: Create cloudflared directory
+  ansible.builtin.file:
+    path: /opt/cloudflared
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Deploy cloudflared docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: /opt/cloudflared/docker-compose.yml
+    mode: "0640"
+    owner: root
+    group: root
+
+- name: Start cloudflared via docker compose
+  ansible.builtin.command:
+    cmd: docker compose -f /opt/cloudflared/docker-compose.yml up -d
+  changed_when: true

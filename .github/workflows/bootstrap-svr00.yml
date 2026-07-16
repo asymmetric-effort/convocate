@@ -1,0 +1,22 @@
+name: Bootstrap svr00
+on:
+  push:
+    branches: [main]
+    paths: ['infrastructure/bootstrap/**']
+  workflow_dispatch:
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Run bootstrap
+        env:
+          CLOUDFLARE_TUNNEL_SECRET: ${{ secrets.CLOUDFLARE_TUNNEL_SECRET }}
+        run: |
+          ansible-playbook infrastructure/bootstrap/playbooks/bootstrap-svr00.yml \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "cloudflare_tunnel_token=$CLOUDFLARE_TUNNEL_SECRET"

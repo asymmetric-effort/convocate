@@ -1,0 +1,111 @@
+name: OpenBao
+on:
+  push:
+    branches: [main]
+    paths: ['infrastructure/secrets/**']
+  workflow_dispatch:
+jobs:
+  build:
+    name: Build OpenBao Image
+    runs-on: [self-hosted, linux, x64]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.sha_tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Generate image tags
+        id: meta
+        run: |
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          echo "sha_tag=sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Build OpenBao image
+        run: |
+          docker build \
+            -t 192.168.3.90:5000/convocate/openbao:latest \
+            -t 192.168.3.90:5000/convocate/openbao:${{ steps.meta.outputs.sha_tag }} \
+            -f infrastructure/secrets/Dockerfile \
+            infrastructure/secrets/
+
+      - name: Push OpenBao image
+        run: |
+          docker push 192.168.3.90:5000/convocate/openbao:latest
+          docker push 192.168.3.90:5000/convocate/openbao:${{ steps.meta.outputs.sha_tag }}
+
+  deploy-secrets-a:
+    name: Deploy to secrets-a
+    needs: build
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy secrets-a
+        env:
+          OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_A_OPENBAO_ROOT_TOKEN }}
+        run: |
+          ansible-playbook infrastructure/secrets/playbooks/deploy.yml \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=secrets-a"
+
+  pdv-secrets-a:
+    name: PDV Tests (secrets-a)
+    needs: deploy-secrets-a
+    runs-on: [self-hosted, linux, x64]
+    env:
+      OPENBAO_URL: http://192.168.3.160:8200
+      OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_A_OPENBAO_ROOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/secrets/test
+        run: bun install
+
+      - name: Run PDV tests against secrets-a
+        working-directory: infrastructure/secrets/test
+        run: bunx playwright test pdv.spec.ts
+
+  deploy-secrets-b:
+    name: Deploy to secrets-b (production)
+    needs: pdv-secrets-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy secrets-b (non-destructive)
+        env:
+          OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_B_OPENBAO_ROOT_TOKEN }}
+        run: |
+          ansible-playbook infrastructure/secrets/playbooks/deploy.yml \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=secrets-b"
+
+  smoke-secrets-b:
+    name: Smoke Tests (secrets-b)
+    needs: deploy-secrets-b
+    runs-on: [self-hosted, linux, x64]
+    env:
+      OPENBAO_URL: http://192.168.3.161:8200
+      OPENBAO_ROOT_TOKEN: ${{ secrets.CLUSTER_B_OPENBAO_ROOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/secrets/test
+        run: bun install
+
+      - name: Run smoke tests against secrets-b
+        working-directory: infrastructure/secrets/test
+        run: bunx playwright test smoke.spec.ts

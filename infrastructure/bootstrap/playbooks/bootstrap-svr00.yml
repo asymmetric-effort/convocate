@@ -1,0 +1,28 @@
+---
+- name: Bootstrap svr00 — base OS, network, firewall
+  hosts: svr00
+  become: true
+  gather_facts: true
+  roles:
+    - svr00-base
+
+- name: Bootstrap svr00 — Docker
+  hosts: svr00
+  become: true
+  gather_facts: true
+  roles:
+    - svr00-docker
+
+- name: Bootstrap svr00 — KVM/libvirt
+  hosts: svr00
+  become: true
+  gather_facts: true
+  roles:
+    - svr00-libvirt
+
+- name: Bootstrap svr00 — Cloudflared tunnel
+  hosts: svr00
+  become: true
+  gather_facts: true
+  roles:
+    - svr00-cloudflared

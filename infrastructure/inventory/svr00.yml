@@ -1,0 +1,6 @@
+---
+all:
+  hosts:
+    svr00:
+      ansible_host: 192.168.3.159
+      ansible_user: samcaldwell

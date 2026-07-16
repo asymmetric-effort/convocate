@@ -1,0 +1,83 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 0
+
+- name: Upgrade all packages
+  ansible.builtin.apt:
+    upgrade: dist
+    autoremove: true
+    autoclean: true
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - wget
+      - jq
+      - git
+      - python3
+      - python3-pip
+      - net-tools
+      - htop
+      - tmux
+      - gnupg
+      - lsb-release
+      - apt-transport-https
+      - software-properties-common
+      - ufw
+    state: present
+
+- name: Import SSH keys from GitHub for samcaldwell
+  ansible.builtin.authorized_key:
+    user: samcaldwell
+    key: https://github.com/sam-caldwell.keys
+    state: present
+
+- name: Deploy netplan configuration
+  ansible.builtin.template:
+    src: netplan.yaml.j2
+    dest: /etc/netplan/01-svr00.yaml
+    mode: "0600"
+    owner: root
+    group: root
+  notify: Apply netplan
+
+- name: Remove default netplan configs that may conflict
+  ansible.builtin.shell:
+    cmd: |
+      for f in /etc/netplan/*.yaml /etc/netplan/*.yml; do
+        [ "$f" = "/etc/netplan/01-svr00.yaml" ] && continue
+        [ -e "$f" ] && rm -f "$f"
+      done
+  changed_when: false
+
+- name: Configure UFW — default deny incoming
+  community.general.ufw:
+    direction: incoming
+    default: deny
+
+- name: Configure UFW — default allow outgoing
+  community.general.ufw:
+    direction: outgoing
+    default: allow
+
+- name: Allow SSH from local subnet
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    from_ip: 192.168.3.0/24
+
+- name: Allow HTTPS from local subnet
+  community.general.ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+    from_ip: 192.168.3.0/24
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
