@@ -56,9 +56,9 @@ type Auth struct {
 
 // NewAuth loads the JWT verification public key and K8s SA token.
 //
-//   - keyPath: path to JWT EC public key PEM file (empty = dev mode, all pass)
+//   - keyPath: path to JWT EC public key PEM file (required for token verification)
 //   - saTokenPath: path to the K8s projected SA token file the API sends
-//     (e.g. /var/run/secrets/convocate/api-token). If empty, SA auth is disabled.
+//     (e.g. /var/run/secrets/convocate/api-token). Required — empty fails closed.
 func NewAuth(keyPath, saTokenPath string) *Auth {
 	a := &Auth{saTokenPath: saTokenPath}
 

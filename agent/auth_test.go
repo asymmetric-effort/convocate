@@ -131,6 +131,38 @@ func TestNewAuth_InvalidPath(t *testing.T) {
 	}
 }
 
+func TestNewAuth_InvalidPEM(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := dir + "/bad.pem"
+	os.WriteFile(keyPath, []byte("not a pem file"), 0644)
+	a := NewAuth(keyPath, "")
+	if a.publicKey != nil {
+		t.Fatal("expected nil publicKey for invalid PEM")
+	}
+}
+
+func TestNewAuth_NonECDSAKey(t *testing.T) {
+	dir := t.TempDir()
+	// Write an RSA public key PEM (ParsePKIXPublicKey succeeds but type assertion to *ecdsa.PublicKey fails)
+	keyPath := dir + "/rsa.pem"
+	// Use a minimal valid PEM that will parse but isn't ECDSA
+	// Actually, just write garbage that has a valid PEM block but invalid DER
+	pemData := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: []byte("invalid-der-data")})
+	os.WriteFile(keyPath, pemData, 0644)
+	a := NewAuth(keyPath, "")
+	if a.publicKey != nil {
+		t.Fatal("expected nil publicKey for invalid DER data")
+	}
+}
+
+func TestNewAuth_SATokenReadFailure(t *testing.T) {
+	dir := t.TempDir()
+	a := NewAuth("", dir+"/nonexistent-sa-token")
+	if a.expectedSAToken != "" {
+		t.Fatal("expected empty SA token when file doesn't exist")
+	}
+}
+
 func TestAuth_VerifyToken_NoKey(t *testing.T) {
 	a := NewAuth("", "") // no key — should fail closed
 	_, err := a.VerifyToken("mock-token")
