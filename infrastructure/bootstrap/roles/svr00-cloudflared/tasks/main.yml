@@ -11,17 +11,17 @@
   ansible.builtin.copy:
     content: "{{ cloudflare_tunnel_secret }}"
     dest: /opt/cloudflared/credentials.json
-    mode: "0600"
-    owner: root
-    group: root
+    mode: "0644"
+    owner: "65532"
+    group: "65532"
 
 - name: Deploy cloudflared config
   ansible.builtin.template:
     src: config.yml.j2
     dest: /opt/cloudflared/config.yml
-    mode: "0640"
-    owner: root
-    group: root
+    mode: "0644"
+    owner: "65532"
+    group: "65532"
   notify: Restart cloudflared
 
 - name: Deploy cloudflared docker-compose.yml
