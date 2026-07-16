@@ -252,7 +252,7 @@ jobs:
 
   deploy-cluster-b:
     name: Deploy to Cluster B
-    needs: pdv-cluster-a
+    needs: [pdv-cluster-a, scan]
     runs-on: [self-hosted, linux, x64]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     env:
