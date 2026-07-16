@@ -16,7 +16,8 @@ jobs:
       - name: Run bootstrap
         env:
           CLOUDFLARE_TUNNEL_SECRET: ${{ secrets.CLOUDFLARE_TUNNEL_SECRET }}
+          CLOUDFLARE_TUNNEL_ID: ${{ secrets.CLOUDFLARE_TUNNEL_ID }}
         run: |
+          ANSIBLE_HOST_KEY_CHECKING=False \
           ansible-playbook infrastructure/bootstrap/playbooks/bootstrap-svr00.yml \
-            -i infrastructure/bootstrap/inventory/svr00.yml \
-            -e "cloudflare_tunnel_token=$CLOUDFLARE_TUNNEL_SECRET"
+            -i infrastructure/bootstrap/inventory/svr00.yml

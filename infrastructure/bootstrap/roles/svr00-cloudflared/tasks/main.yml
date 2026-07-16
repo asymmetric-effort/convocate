@@ -3,9 +3,26 @@
   ansible.builtin.file:
     path: /opt/cloudflared
     state: directory
-    mode: "0755"
+    mode: "0700"
     owner: root
     group: root
+
+- name: Deploy tunnel credentials
+  ansible.builtin.copy:
+    content: "{{ cloudflare_tunnel_secret }}"
+    dest: /opt/cloudflared/credentials.json
+    mode: "0600"
+    owner: root
+    group: root
+
+- name: Deploy cloudflared config
+  ansible.builtin.template:
+    src: config.yml.j2
+    dest: /opt/cloudflared/config.yml
+    mode: "0640"
+    owner: root
+    group: root
+  notify: Restart cloudflared
 
 - name: Deploy cloudflared docker-compose.yml
   ansible.builtin.template:
@@ -14,6 +31,7 @@
     mode: "0640"
     owner: root
     group: root
+  notify: Restart cloudflared
 
 - name: Start cloudflared via docker compose
   ansible.builtin.command:

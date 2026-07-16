@@ -24,5 +24,8 @@
   hosts: svr00
   become: true
   gather_facts: true
+  vars:
+    cloudflare_tunnel_id: "{{ lookup('env', 'CLOUDFLARE_TUNNEL_ID') }}"
+    cloudflare_tunnel_secret: "{{ lookup('env', 'CLOUDFLARE_TUNNEL_SECRET') }}"
   roles:
     - svr00-cloudflared
