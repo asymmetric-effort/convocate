@@ -19,6 +19,7 @@ import (
 // testAuthSetup holds test auth infrastructure for creating valid tokens.
 type testAuthSetup struct {
 	Auth     *Auth
+	PrivKey  *ecdsa.PrivateKey
 	SAToken  string
 	JWTToken string // a valid signed JWT with admin role
 }
@@ -62,7 +63,7 @@ func newTestAuth(t *testing.T) testAuthSetup {
 	}
 	token := signTestJWT(t, privKey, claims)
 
-	return testAuthSetup{Auth: a, SAToken: saToken, JWTToken: token}
+	return testAuthSetup{Auth: a, PrivKey: privKey, SAToken: saToken, JWTToken: token}
 }
 
 // signTestJWT signs a JWT using the given private key and claims.
@@ -138,6 +139,64 @@ func TestAuth_VerifyToken_NoKey(t *testing.T) {
 	}
 	if err.Error() != "no public key configured" {
 		t.Errorf("error = %q, want %q", err.Error(), "no public key configured")
+	}
+}
+
+func TestAuth_VerifyToken_InvalidFormat(t *testing.T) {
+	s := newTestAuth(t)
+	_, err := s.Auth.VerifyToken("not-a-jwt")
+	if err == nil || err.Error() != "invalid token format" {
+		t.Errorf("expected 'invalid token format', got %v", err)
+	}
+}
+
+func TestAuth_VerifyToken_InvalidSignatureEncoding(t *testing.T) {
+	s := newTestAuth(t)
+	// Valid header.claims but garbage signature
+	_, err := s.Auth.VerifyToken("eyJ0eXAiOiJKV1QifQ.eyJzdWIiOiJ0ZXN0In0.!!!invalid!!!")
+	if err == nil || err.Error() != "invalid signature encoding" {
+		t.Errorf("expected 'invalid signature encoding', got %v", err)
+	}
+}
+
+func TestAuth_VerifyToken_InvalidSignature(t *testing.T) {
+	s := newTestAuth(t)
+	// Use a valid format but wrong signature (64 zero bytes)
+	zerSig := base64.RawURLEncoding.EncodeToString(make([]byte, 64))
+	headerB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"JWT"}`))
+	claimsB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"test","exp":9999999999}`))
+	token := headerB64 + "." + claimsB64 + "." + zerSig
+	_, err := s.Auth.VerifyToken(token)
+	if err == nil || err.Error() != "invalid signature" {
+		t.Errorf("expected 'invalid signature', got %v", err)
+	}
+}
+
+func TestAuth_VerifyToken_ExpiredToken(t *testing.T) {
+	s := newTestAuth(t)
+	// Sign a token with expired claims
+	token := signTestJWT(t, s.PrivKey, JWTClaims{
+		Sub:   "test",
+		Roles: []string{"admin"},
+		Exp:   time.Now().Add(-1 * time.Hour).Unix(),
+	})
+	_, err := s.Auth.VerifyToken(token)
+	if err == nil || err.Error() != "token expired" {
+		t.Errorf("expected 'token expired', got %v", err)
+	}
+}
+
+func TestAuth_VerifyToken_ValidToken(t *testing.T) {
+	s := newTestAuth(t)
+	claims, err := s.Auth.VerifyToken(s.JWTToken)
+	if err != nil {
+		t.Fatalf("VerifyToken failed: %v", err)
+	}
+	if claims.Sub != "test-user" {
+		t.Errorf("Sub = %q, want %q", claims.Sub, "test-user")
+	}
+	if !claims.HasRole("admin") {
+		t.Error("expected admin role")
 	}
 }
 
