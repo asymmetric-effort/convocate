@@ -418,19 +418,27 @@
         cmd: |
           BAO_TOKEN=$(kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
           BAO="{{ bao_url }}"
-          if [ "$BAO_TOKEN" = "placeholder" ] || ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/auth/token/lookup-self >/dev/null 2>&1; then
+          echo "Token length: ${#BAO_TOKEN}"
+          if [ "$BAO_TOKEN" = "placeholder" ] || [ "$BAO_TOKEN" = "PLACEHOLDER" ] || ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/auth/token/lookup-self >/dev/null 2>&1; then
+            echo "SKIP: token invalid (value starts with: ${BAO_TOKEN:0:5})"
             exit 0
           fi
+          echo "Token valid, updating entities..."
           VALID_IDS=""
           {% for u in [
             {"name": "admin", "pass": openbao_admin_password, "display": "Administrator", "email": "admin@asymmetric-effort.com"},
             {"name": "samcaldwell", "pass": openbao_samcaldwell_password, "display": "Sam Caldwell", "email": "sam@asymmetric-effort.com"},
             {"name": "pdv-test", "pass": "PdvTest-2026-Secure", "display": "PDV Test", "email": "pdv@asymmetric-effort.com"}
           ] %}
-          ENTITY_ID=$(curl -sf -d '{"password":"{{ u.pass }}"}' $BAO/v1/auth/userpass/login/{{ u.name }} | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["entity_id"])' 2>/dev/null)
+          LOGIN_RESP=$(curl -sf -d '{"password":"{{ u.pass }}"}' $BAO/v1/auth/userpass/login/{{ u.name }} 2>&1)
+          ENTITY_ID=$(echo "$LOGIN_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["entity_id"])' 2>/dev/null)
+          echo "{{ u.name }}: entity=$ENTITY_ID"
           if [ -n "$ENTITY_ID" ]; then
-            curl -sf -d '{"metadata":{"name":"{{ u.display }}","email":"{{ u.email }}"}}' -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/identity/entity/id/$ENTITY_ID >/dev/null 2>&1
+            UPDATE_RESP=$(curl -sf -d '{"metadata":{"name":"{{ u.display }}","email":"{{ u.email }}"}}' -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/identity/entity/id/$ENTITY_ID 2>&1)
+            echo "{{ u.name }}: update result=$?"
             VALID_IDS="$VALID_IDS $ENTITY_ID"
+          else
+            echo "{{ u.name }}: login failed"
           fi
           {% endfor %}
 
