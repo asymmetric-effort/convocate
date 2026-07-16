@@ -32,19 +32,14 @@
       args:
         creates: /usr/local/bin/helm
 
-    - name: Create hostPath directories on this node
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: "0777"
-      loop:
-        - /mnt/data-layer/postgresql
-        - /mnt/data-layer/redis
-        - /mnt/data-layer/minio
-        - /mnt/security/openbao
-        - /mnt/o11y/influxdb
-        - /mnt/o11y/prometheus
-        - /mnt/o11y/grafana
+    - name: Create hostPath directories with correct ownership
+      ansible.builtin.shell:
+        cmd: |
+          for dir in /mnt/data-layer/postgresql /mnt/data-layer/redis /mnt/data-layer/minio /mnt/security/openbao /mnt/o11y/influxdb /mnt/o11y/prometheus /mnt/o11y/grafana; do
+            mkdir -p $dir
+            chown 65534:65534 $dir
+            chmod 0700 $dir
+          done
       failed_when: false
 
     - name: Copy Helm chart to target node
