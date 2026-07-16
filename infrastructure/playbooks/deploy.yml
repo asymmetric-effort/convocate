@@ -261,46 +261,6 @@
       when: bao_init_result is changed
       no_log: true
 
-    - name: Create admin identity entity
-      ansible.builtin.shell:
-        cmd: >-
-          curl -s
-          -d '{"name":"admin","metadata":{"name":"Administrator","email":"admin@asymmetric-effort.com"},"policies":["admin-policy"]}'
-          -H 'X-Vault-Token:{{ bao_root_token }}'
-          {{ bao_url }}/v1/identity/entity
-      register: admin_entity_result
-      when: bao_init_result is changed
-      no_log: true
-
-    - name: Parse admin entity ID
-      ansible.builtin.set_fact:
-        admin_entity_id: "{{ (admin_entity_result.stdout | from_json).data.id }}"
-      when: bao_init_result is changed
-
-    - name: Get userpass accessor
-      ansible.builtin.shell:
-        cmd: >-
-          curl -s -H 'X-Vault-Token:{{ bao_root_token }}'
-          {{ bao_url }}/v1/sys/auth
-      register: bao_auth_result
-      when: bao_init_result is changed
-      no_log: true
-
-    - name: Parse userpass accessor
-      ansible.builtin.set_fact:
-        bao_userpass_accessor: "{{ (bao_auth_result.stdout | from_json)['userpass/']['accessor'] }}"
-      when: bao_init_result is changed
-
-    - name: Create admin entity alias
-      ansible.builtin.shell:
-        cmd: >-
-          curl -s
-          -d '{"name":"admin","canonical_id":"{{ admin_entity_id }}","mount_accessor":"{{ bao_userpass_accessor }}"}'
-          -H 'X-Vault-Token:{{ bao_root_token }}'
-          {{ bao_url }}/v1/identity/entity-alias
-      when: bao_init_result is changed
-      no_log: true
-
     - name: Create login-only policy
       ansible.builtin.shell:
         cmd: >-
@@ -322,27 +282,31 @@
       when: bao_init_result is changed
       no_log: true
 
-    - name: Create identity entities for users
+    - name: Trigger entity creation by logging in each user
       ansible.builtin.shell:
         cmd: >-
-          curl -s -d '{"name":"{{ item.name }}","metadata":{"name":"{{ item.display }}","email":"{{ item.email }}"},"policies":["{{ item.policies }}"]}'
-          -H 'X-Vault-Token:{{ bao_root_token }}'
-          {{ bao_url }}/v1/identity/entity
+          curl -sf -d '{"password":"{{ item.pass }}"}'
+          {{ bao_url }}/v1/auth/userpass/login/{{ item.name }} >/dev/null 2>&1 || true
       loop:
-        - { name: samcaldwell, display: "Sam Caldwell", email: "sam@asymmetric-effort.com", policies: "admin-policy" }
-        - { name: pdv-test, display: "PDV Test", email: "pdv@asymmetric-effort.com", policies: "admin-policy" }
-      register: entity_results
+        - { name: admin, pass: "{{ openbao_admin_password }}" }
+        - { name: samcaldwell, pass: "{{ openbao_samcaldwell_password }}" }
+        - { name: pdv-test, pass: "PdvTest-2026-Secure" }
       when: bao_init_result is changed
       no_log: true
 
-    - name: Create entity aliases for users
+    - name: Set display names on auto-created entities
       ansible.builtin.shell:
-        cmd: >-
-          curl -s
-          -d '{"name":"{{ item.item.name }}","canonical_id":"{{ (item.stdout | from_json).data.id }}","mount_accessor":"{{ bao_userpass_accessor }}"}'
-          -H 'X-Vault-Token:{{ bao_root_token }}'
-          {{ bao_url }}/v1/identity/entity-alias
-      loop: "{{ entity_results.results }}"
+        cmd: |
+          ENTITY_ID=$(curl -sf -d '{"password":"{{ item.pass }}"}' \
+            {{ bao_url }}/v1/auth/userpass/login/{{ item.name }} | \
+            python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["entity_id"])')
+          curl -sf -d '{"metadata":{"name":"{{ item.display }}","email":"{{ item.email }}"}}' \
+            -H 'X-Vault-Token:{{ bao_root_token }}' \
+            {{ bao_url }}/v1/identity/entity/id/$ENTITY_ID
+      loop:
+        - { name: admin, pass: "{{ openbao_admin_password }}", display: "Administrator", email: "admin@asymmetric-effort.com" }
+        - { name: samcaldwell, pass: "{{ openbao_samcaldwell_password }}", display: "Sam Caldwell", email: "sam@asymmetric-effort.com" }
+        - { name: pdv-test, pass: "PdvTest-2026-Secure", display: "PDV Test", email: "pdv@asymmetric-effort.com" }
       when: bao_init_result is changed
       no_log: true
 
@@ -430,82 +394,26 @@
         cmd: kubectl rollout restart deployment grafana -n o11y
       when: bao_init_result is changed
 
-    # --- Ensure entity aliases on every deploy (idempotent) ---
-    # Entity aliases link userpass logins to identity entities with metadata.
-    # Without them, OpenBao auto-creates entities with no display name.
-    # This runs unconditionally so CI/CD deploys fix missing aliases
-    # without requiring a full rebuild.
+    # --- Update entity display names on every deploy (idempotent) ---
+    # Log in as each user to ensure their entity exists, then update metadata.
+    # No manual entity creation, no aliases — OpenBao handles it.
 
-    - name: Get OpenBao root token from K8s secret
-      ansible.builtin.shell:
-        cmd: kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d
-      register: bao_stored_token
-      changed_when: false
-      no_log: true
-
-    - name: Ensure entity aliases for all users
+    - name: Update user display names
       ansible.builtin.shell:
         cmd: |
-          BAO_TOKEN="{{ bao_stored_token.stdout }}"
+          BAO_TOKEN=$(kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
           BAO="{{ bao_url }}"
-
-          # Validate token — fall back to admin login if invalid
           if [ "$BAO_TOKEN" = "placeholder" ] || ! curl -sf -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/auth/token/lookup-self >/dev/null 2>&1; then
-            echo "Root token invalid — trying admin login..."
-            BAO_TOKEN=$(curl -sf -d '{"password":"{{ openbao_admin_password }}"}' \
-              $BAO/v1/auth/userpass/login/admin 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("auth",{}).get("client_token",""))' 2>/dev/null)
-            if [ -z "$BAO_TOKEN" ]; then
-              echo "SKIP: cannot authenticate to OpenBao"
-              exit 0
-            fi
-            # Restore the K8s secret with the working token
-            for ns in security convocate data-layer o11y; do
-              kubectl create secret generic openbao-root-token -n $ns \
-                --from-literal=token=$BAO_TOKEN --dry-run=client -o yaml | kubectl apply -f -
-            done
-            echo "Root token restored from admin login"
-          fi
-
-          # Get userpass accessor
-          ACCESSOR=$(curl -sf -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/sys/auth | python3 -c 'import sys,json; print(json.load(sys.stdin)["userpass/"]["accessor"])' 2>/dev/null)
-          if [ -z "$ACCESSOR" ]; then
-            echo "SKIP: userpass accessor not found"
             exit 0
           fi
-
-          # For each user: find or create entity with metadata, then ensure alias
-          for user_json in \
-            '{"name":"admin","display":"Administrator","email":"admin@asymmetric-effort.com","policies":"admin-policy"}' \
-            '{"name":"samcaldwell","display":"Sam Caldwell","email":"sam@asymmetric-effort.com","policies":"admin-policy"}' \
-            '{"name":"pdv-test","display":"PDV Test","email":"pdv@asymmetric-effort.com","policies":"admin-policy"}'; do
-
-            USERNAME=$(echo $user_json | python3 -c 'import sys,json; print(json.load(sys.stdin)["name"])')
-            DISPLAY=$(echo $user_json | python3 -c 'import sys,json; print(json.load(sys.stdin)["display"])')
-            EMAIL=$(echo $user_json | python3 -c 'import sys,json; print(json.load(sys.stdin)["email"])')
-            POLICIES=$(echo $user_json | python3 -c 'import sys,json; print(json.load(sys.stdin)["policies"])')
-
-            # Look up entity by alias (username + accessor)
-            ENTITY_ID=$(curl -sf -d "{\"name\":\"$USERNAME\",\"mount_accessor\":\"$ACCESSOR\"}" \
-              -H "X-Vault-Token:$BAO_TOKEN" \
-              $BAO/v1/identity/lookup/entity | python3 -c 'import sys,json; print(json.load(sys.stdin).get("data",{}).get("id",""))' 2>/dev/null)
-
-            if [ -n "$ENTITY_ID" ] && [ "$ENTITY_ID" != "None" ]; then
-              # Entity exists — update metadata
-              curl -sf -d "{\"metadata\":{\"name\":\"$DISPLAY\",\"email\":\"$EMAIL\"},\"policies\":[\"$POLICIES\"]}" \
-                -H "X-Vault-Token:$BAO_TOKEN" \
-                $BAO/v1/identity/entity/id/$ENTITY_ID >/dev/null 2>&1
-              echo "$USERNAME: updated entity $ENTITY_ID"
-            else
-              # Create entity + alias
-              ENTITY_ID=$(curl -sf -d "{\"name\":\"$USERNAME\",\"metadata\":{\"name\":\"$DISPLAY\",\"email\":\"$EMAIL\"},\"policies\":[\"$POLICIES\"]}" \
-                -H "X-Vault-Token:$BAO_TOKEN" \
-                $BAO/v1/identity/entity | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["id"])' 2>/dev/null)
-              curl -sf -d "{\"name\":\"$USERNAME\",\"canonical_id\":\"$ENTITY_ID\",\"mount_accessor\":\"$ACCESSOR\"}" \
-                -H "X-Vault-Token:$BAO_TOKEN" \
-                $BAO/v1/identity/entity-alias >/dev/null 2>&1
-              echo "$USERNAME: created entity $ENTITY_ID with alias"
-            fi
-          done
+          {% for u in [
+            {"name": "admin", "pass": openbao_admin_password, "display": "Administrator", "email": "admin@asymmetric-effort.com"},
+            {"name": "samcaldwell", "pass": openbao_samcaldwell_password, "display": "Sam Caldwell", "email": "sam@asymmetric-effort.com"},
+            {"name": "pdv-test", "pass": "PdvTest-2026-Secure", "display": "PDV Test", "email": "pdv@asymmetric-effort.com"}
+          ] %}
+          ENTITY_ID=$(curl -sf -d '{"password":"{{ u.pass }}"}' $BAO/v1/auth/userpass/login/{{ u.name }} | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["entity_id"])' 2>/dev/null)
+          [ -n "$ENTITY_ID" ] && curl -sf -d '{"metadata":{"name":"{{ u.display }}","email":"{{ u.email }}"}}' -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/identity/entity/id/$ENTITY_ID >/dev/null 2>&1
+          {% endfor %}
       changed_when: false
       failed_when: false
       no_log: true
