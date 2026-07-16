@@ -232,6 +232,73 @@ func TestAuth_VerifyToken_ValidToken(t *testing.T) {
 	}
 }
 
+func TestAuth_VerifyToken_InvalidClaimsBase64(t *testing.T) {
+	s := newTestAuth(t)
+	// Valid header and signature format, but garbage base64 in claims
+	headerB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"JWT"}`))
+	token := headerB64 + ".!!!invalid-base64!!!." + base64.RawURLEncoding.EncodeToString(make([]byte, 64))
+	_, err := s.Auth.VerifyToken(token)
+	if err == nil {
+		t.Fatal("expected error for invalid claims base64")
+	}
+}
+
+func TestAuth_VerifyToken_InvalidClaimsJSON(t *testing.T) {
+	s := newTestAuth(t)
+	// Valid signature over garbage claims JSON
+	headerB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"JWT"}`))
+	claimsB64 := base64.RawURLEncoding.EncodeToString([]byte(`not-json`))
+	signingInput := headerB64 + "." + claimsB64
+	hash := sha256.Sum256([]byte(signingInput))
+	r, ss, _ := ecdsa.Sign(rand.Reader, s.PrivKey, hash[:])
+	sig := make([]byte, 64)
+	rBytes := r.Bytes()
+	sBytes := ss.Bytes()
+	copy(sig[32-len(rBytes):32], rBytes)
+	copy(sig[64-len(sBytes):64], sBytes)
+	token := signingInput + "." + base64.RawURLEncoding.EncodeToString(sig)
+	_, err := s.Auth.VerifyToken(token)
+	if err == nil || err.Error() != "invalid token claims" {
+		t.Errorf("expected 'invalid token claims', got %v", err)
+	}
+}
+
+func TestAuth_RequireRole_InsufficientRole(t *testing.T) {
+	s := newTestAuth(t)
+	// Sign a token with only "viewer" role, require "admin"
+	token := signTestJWT(t, s.PrivKey, JWTClaims{
+		Sub:   "viewer-user",
+		Roles: []string{"viewer"},
+		Exp:   time.Now().Add(time.Hour).Unix(),
+	})
+	handler := s.Auth.RequireRole("admin", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set(k8sSATokenHeader, s.SAToken)
+	w := httptest.NewRecorder()
+	handler(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", w.Code)
+	}
+}
+
+func TestAuth_RequireRole_InvalidToken(t *testing.T) {
+	s := newTestAuth(t)
+	handler := s.Auth.RequireRole("admin", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("Authorization", "Bearer invalid-jwt-token")
+	req.Header.Set(k8sSATokenHeader, s.SAToken)
+	w := httptest.NewRecorder()
+	handler(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", w.Code)
+	}
+}
+
 func TestJWTClaims_HasRole(t *testing.T) {
 	tests := []struct {
 		roles []string
