@@ -268,8 +268,14 @@
           -d '{"name":"admin","metadata":{"name":"Administrator","email":"admin@asymmetric-effort.com"},"policies":["admin-policy"]}'
           -H 'X-Vault-Token:{{ bao_root_token }}'
           {{ bao_url }}/v1/identity/entity
+      register: admin_entity_result
       when: bao_init_result is changed
       no_log: true
+
+    - name: Parse admin entity ID
+      ansible.builtin.set_fact:
+        admin_entity_id: "{{ (admin_entity_result.stdout | from_json).data.id }}"
+      when: bao_init_result is changed
 
     - name: Get userpass accessor
       ansible.builtin.shell:
@@ -284,6 +290,16 @@
       ansible.builtin.set_fact:
         bao_userpass_accessor: "{{ (bao_auth_result.stdout | from_json)['userpass/']['accessor'] }}"
       when: bao_init_result is changed
+
+    - name: Create admin entity alias
+      ansible.builtin.shell:
+        cmd: >-
+          curl -s
+          -d '{"name":"admin","canonical_id":"{{ admin_entity_id }}","mount_accessor":"{{ bao_userpass_accessor }}"}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          {{ bao_url }}/v1/identity/entity-alias
+      when: bao_init_result is changed
+      no_log: true
 
     - name: Create login-only policy
       ansible.builtin.shell:
@@ -316,6 +332,17 @@
         - { name: samcaldwell, display: "Sam Caldwell", email: "sam@asymmetric-effort.com", policies: "admin-policy" }
         - { name: pdv-test, display: "PDV Test", email: "pdv@asymmetric-effort.com", policies: "admin-policy" }
       register: entity_results
+      when: bao_init_result is changed
+      no_log: true
+
+    - name: Create entity aliases for users
+      ansible.builtin.shell:
+        cmd: >-
+          curl -s
+          -d '{"name":"{{ item.item.name }}","canonical_id":"{{ (item.stdout | from_json).data.id }}","mount_accessor":"{{ bao_userpass_accessor }}"}'
+          -H 'X-Vault-Token:{{ bao_root_token }}'
+          {{ bao_url }}/v1/identity/entity-alias
+      loop: "{{ entity_results.results }}"
       when: bao_init_result is changed
       no_log: true
 
