@@ -98,34 +98,26 @@ test.describe.serial("OpenBao PDV — full CRUD as pdv-test user", () => {
     expect(body.data.data.value).toBe("pdv-test-updated");
   });
 
-  test("delete KV secret — DELETE /v1/secret/data/pdv-test/test-key", async () => {
-    const resp = await fetch(`${OPENBAO_URL}/v1/secret/data/pdv-test/test-key`, {
+  test("delete KV secret — DELETE data and metadata", async () => {
+    // Delete data (soft delete)
+    const dataResp = await fetch(`${OPENBAO_URL}/v1/secret/data/pdv-test/test-key`, {
       method: "DELETE",
       headers: headers(pdvToken),
     });
-    expect(resp.status).toBe(204);
+    expect(dataResp.status).toBe(204);
+
+    // Delete metadata (permanent cleanup)
+    const metaResp = await fetch(`${OPENBAO_URL}/v1/secret/metadata/pdv-test/test-key`, {
+      method: "DELETE",
+      headers: headers(pdvToken),
+    });
+    expect(metaResp.status).toBe(204);
   });
 
-  test("verify deleted — GET returns null data or 404", async () => {
+  test("verify deleted — GET returns 404", async () => {
     const resp = await fetch(`${OPENBAO_URL}/v1/secret/data/pdv-test/test-key`, {
       headers: headers(pdvToken),
     });
-    expect([200, 404]).toContain(resp.status);
-    if (resp.status === 200) {
-      const body: KvReadResponse = await resp.json();
-      expect(body.data.data).toBeNull();
-    }
-  });
-
-  test("list pdv-test namespace — verify clean", async () => {
-    const resp = await fetch(`${OPENBAO_URL}/v1/secret/metadata/pdv-test?list=true`, {
-      headers: headers(pdvToken),
-    });
-    // After cleanup, listing should return 404 (empty) or a list without test-key
-    if (resp.status === 200) {
-      const body = await resp.json();
-      const keys: string[] = body.data?.keys ?? [];
-      expect(keys).not.toContain("test-key");
-    }
+    expect(resp.status).toBe(404);
   });
 });
