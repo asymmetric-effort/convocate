@@ -41,7 +41,8 @@ jobs:
       - name: Test Agent
         working-directory: agent
         run: |
-          go test -coverprofile=coverage.out ./... -v
+          go test -count=1 -coverprofile=coverage.out ./... -v
+          go tool cover -func=coverage.out | grep -v "100.0%"
           go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
 
       - name: Test UI
