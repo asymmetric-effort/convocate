@@ -263,6 +263,22 @@ func TestAuth_VerifyToken_InvalidClaimsJSON(t *testing.T) {
 	}
 }
 
+func TestAuth_VerifyToken_NoExpiry(t *testing.T) {
+	s := newTestAuth(t)
+	token := signTestJWT(t, s.PrivKey, JWTClaims{
+		Sub:   "no-expiry-user",
+		Roles: []string{"viewer"},
+		Exp:   0, // no expiry
+	})
+	claims, err := s.Auth.VerifyToken(token)
+	if err != nil {
+		t.Fatalf("VerifyToken failed: %v", err)
+	}
+	if claims.Sub != "no-expiry-user" {
+		t.Errorf("Sub = %q, want %q", claims.Sub, "no-expiry-user")
+	}
+}
+
 func TestAuth_RequireRole_InsufficientRole(t *testing.T) {
 	s := newTestAuth(t)
 	// Sign a token with only "viewer" role, require "admin"
