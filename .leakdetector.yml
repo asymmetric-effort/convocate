@@ -1,6 +1,15 @@
 # Leakdetector configuration for Convocate
 # See: https://leakdetector.asymmetric-effort.com
 
+# Flag files that should never be committed
+dangerous_extensions:
+  - ".key"
+  - ".crt"
+  - ".pem"
+  - ".p12"
+  - ".pfx"
+  - ".jks"
+
 # Exclude paths from scanning entirely
 exclude_paths:
   - "infrastructure/"

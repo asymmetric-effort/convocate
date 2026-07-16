@@ -28,7 +28,7 @@ var pgPing = defaultPgPing
 func InitPostgres() error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://postgres@postgresql.data-layer.svc:5432/convocate?sslmode=disable"
+		return fmt.Errorf("DATABASE_URL environment variable is required")
 	}
 
 	cfg, err := pgxpool.ParseConfig(dsn)

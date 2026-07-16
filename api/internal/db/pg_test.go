@@ -10,20 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestInitPostgres_DefaultDSN(t *testing.T) {
+func TestInitPostgres_MissingDatabaseURL(t *testing.T) {
 	os.Unsetenv("DATABASE_URL")
-
-	// Use real constructor — will fail at connect because no PG is running.
-	origNew := pgNewWithConfig
-	origPing := pgPing
-	defer func() {
-		pgNewWithConfig = origNew
-		pgPing = origPing
-	}()
 
 	err := InitPostgres()
 	if err == nil {
-		t.Fatal("expected error when no PG is available")
+		t.Fatal("expected error when DATABASE_URL is not set")
+	}
+	if !strings.Contains(err.Error(), "DATABASE_URL environment variable is required") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

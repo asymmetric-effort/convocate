@@ -28,7 +28,7 @@ var redisPing = defaultRedisPing
 func InitRedis() error {
 	addr := os.Getenv("REDIS_URL")
 	if addr == "" {
-		addr = "redis.data-layer.svc:6379"
+		return fmt.Errorf("REDIS_URL environment variable is required")
 	}
 
 	Redis = redisNewClient(&redis.Options{

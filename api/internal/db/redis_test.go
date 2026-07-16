@@ -10,22 +10,15 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func TestInitRedis_DefaultAddr(t *testing.T) {
+func TestInitRedis_MissingRedisURL(t *testing.T) {
 	os.Unsetenv("REDIS_URL")
-
-	origNew := redisNewClient
-	origPing := redisPing
-	defer func() {
-		redisNewClient = origNew
-		redisPing = origPing
-	}()
 
 	err := InitRedis()
 	if err == nil {
-		t.Fatal("expected error when no Redis is available")
+		t.Fatal("expected error when REDIS_URL is not set")
 	}
-	if Redis == nil {
-		t.Fatal("Redis client should be created even if ping fails")
+	if !strings.Contains(err.Error(), "REDIS_URL environment variable is required") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

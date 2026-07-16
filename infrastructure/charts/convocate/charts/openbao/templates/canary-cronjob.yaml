@@ -31,7 +31,7 @@ spec:
 
                   # Authenticate via userpass and extract client_token
                   LOGIN_RESP=$(wget -q -O - \
-                    --post-data='{"password":"PdvTest-2026-Secure"}' \
+                    --post-data="{\"password\":\"${PDV_TEST_PASSWORD}\"}" \
                     "${BAO_ADDR}/v1/auth/userpass/login/pdv-test")
                   CLIENT_TOKEN=$(echo "${LOGIN_RESP}" | sed 's/.*"client_token":"//' | sed 's/".*//')
                   echo "Authenticated with userpass"
@@ -63,6 +63,11 @@ spec:
                     secretKeyRef:
                       name: openbao-root-token
                       key: token
+                - name: PDV_TEST_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: openbao-pdv-test-credentials
+                      key: password
               resources:
                 requests:
                   cpu: 10m

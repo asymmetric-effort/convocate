@@ -35,6 +35,11 @@ bun.lockb
 .DS_Store
 Thumbs.db
 
+# Secrets — keys, certs, PEM files must never be committed
+*.key
+*.crt
+*.pem
+
 # Environment
 .env
 .env.local
