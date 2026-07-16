@@ -234,12 +234,22 @@ func TestAuth_VerifyToken_ValidToken(t *testing.T) {
 
 func TestAuth_VerifyToken_InvalidClaimsBase64(t *testing.T) {
 	s := newTestAuth(t)
-	// Valid header and signature format, but garbage base64 in claims
+	// Sign a token where the claims portion is invalid base64.
+	// The signature must be valid over the exact signing input.
 	headerB64 := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"ES256","typ":"JWT"}`))
-	token := headerB64 + ".!!!invalid-base64!!!." + base64.RawURLEncoding.EncodeToString(make([]byte, 64))
+	badClaims := "!!!not-base64!!!"
+	signingInput := headerB64 + "." + badClaims
+	hash := sha256.Sum256([]byte(signingInput))
+	r, ss, _ := ecdsa.Sign(rand.Reader, s.PrivKey, hash[:])
+	sig := make([]byte, 64)
+	rBytes := r.Bytes()
+	sBytes := ss.Bytes()
+	copy(sig[32-len(rBytes):32], rBytes)
+	copy(sig[64-len(sBytes):64], sBytes)
+	token := signingInput + "." + base64.RawURLEncoding.EncodeToString(sig)
 	_, err := s.Auth.VerifyToken(token)
-	if err == nil {
-		t.Fatal("expected error for invalid claims base64")
+	if err == nil || err.Error() != "invalid token claims" {
+		t.Errorf("expected 'invalid token claims', got %v", err)
 	}
 }
 
