@@ -51,6 +51,11 @@ spec:
                 secretKeyRef:
                   name: postgresql-credentials
                   key: DATABASE_URL
+            - name: METRICS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-api-key
+                  key: METRICS_API_KEY
           ports:
             - containerPort: {{ .Values.port | default 8443 }}
               name: api

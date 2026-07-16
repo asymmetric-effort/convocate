@@ -31,7 +31,10 @@ spec:
             - name: API_URL
               value: "http://convocate-api.convocate.svc:8443"
             - name: METRICS_API_KEY
-              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-api-key
+                  key: METRICS_API_KEY
             - name: PROC_PREFIX
               value: "/host/proc"
             - name: ROOT_PREFIX
