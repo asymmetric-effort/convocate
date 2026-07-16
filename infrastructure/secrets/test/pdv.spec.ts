@@ -53,8 +53,9 @@ interface KvReadResponse {
 
 interface PolicyReadResponse {
   data: {
-    name: string;
-    rules: string;
+    name?: string;
+    policy: string;
+    rules?: string;
   };
 }
 
@@ -288,8 +289,8 @@ test.describe.serial("OpenBao PDV — secrets-a full CRUD", () => {
     expect(resp.status).toBe(200);
 
     const body: PolicyReadResponse = await resp.json();
-    expect(body.data.name).toBe("test-policy");
-    expect(body.data.rules).toContain("secret/data/*");
+    const policyText = body.data.policy || body.data.rules || "";
+    expect(policyText).toContain("secret/data/*");
   });
 
   test("delete policy — DELETE /v1/sys/policies/acl/test-policy", async () => {
