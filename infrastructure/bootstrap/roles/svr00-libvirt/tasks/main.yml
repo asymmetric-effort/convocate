@@ -31,6 +31,8 @@
     enabled: true
     state: started
 
+# --- Storage pool ---
+
 - name: Check if default storage pool exists
   ansible.builtin.command:
     cmd: virsh pool-info default
@@ -71,3 +73,112 @@
   ansible.builtin.command:
     cmd: virsh pool-autostart default
   changed_when: true
+
+# --- Remove default NAT network (virbr0 / 192.168.122.0/24) ---
+
+- name: Check if default network exists
+  ansible.builtin.command:
+    cmd: virsh net-info default
+  register: default_net_check
+  failed_when: false
+  changed_when: false
+
+- name: Destroy default network
+  ansible.builtin.command:
+    cmd: virsh net-destroy default
+  when: default_net_check.rc == 0
+  failed_when: false
+  changed_when: true
+
+- name: Undefine default network
+  ansible.builtin.command:
+    cmd: virsh net-undefine default
+  when: default_net_check.rc == 0
+  failed_when: false
+  changed_when: true
+
+# --- Cluster A network: 192.168.55.0/24 ---
+
+- name: Check if cluster-a network exists
+  ansible.builtin.command:
+    cmd: virsh net-info cluster-a
+  register: cluster_a_net_check
+  failed_when: false
+  changed_when: false
+
+- name: Define cluster-a network
+  ansible.builtin.shell:
+    cmd: |
+      cat > /tmp/cluster-a-net.xml << 'XML'
+      <network>
+        <name>cluster-a</name>
+        <forward mode="nat">
+          <nat>
+            <port start="1024" end="65535"/>
+          </nat>
+        </forward>
+        <bridge name="virbr-a" stp="on" delay="0"/>
+        <ip address="192.168.55.1" netmask="255.255.255.0">
+          <dhcp>
+            <range start="192.168.55.100" end="192.168.55.199"/>
+          </dhcp>
+        </ip>
+      </network>
+      XML
+      virsh net-define /tmp/cluster-a-net.xml
+      rm -f /tmp/cluster-a-net.xml
+  when: cluster_a_net_check.rc != 0
+
+- name: Start cluster-a network
+  ansible.builtin.command:
+    cmd: virsh net-start cluster-a
+  when: cluster_a_net_check.rc != 0
+  failed_when: false
+
+- name: Autostart cluster-a network
+  ansible.builtin.command:
+    cmd: virsh net-autostart cluster-a
+  changed_when: false
+
+# --- Cluster B network: 192.168.56.0/24 ---
+
+- name: Check if cluster-b network exists
+  ansible.builtin.command:
+    cmd: virsh net-info cluster-b
+  register: cluster_b_net_check
+  failed_when: false
+  changed_when: false
+
+- name: Define cluster-b network
+  ansible.builtin.shell:
+    cmd: |
+      cat > /tmp/cluster-b-net.xml << 'XML'
+      <network>
+        <name>cluster-b</name>
+        <forward mode="nat">
+          <nat>
+            <port start="1024" end="65535"/>
+          </nat>
+        </forward>
+        <bridge name="virbr-b" stp="on" delay="0"/>
+        <ip address="192.168.56.1" netmask="255.255.255.0">
+          <dhcp>
+            <range start="192.168.56.100" end="192.168.56.199"/>
+          </dhcp>
+        </ip>
+      </network>
+      XML
+      virsh net-define /tmp/cluster-b-net.xml
+      rm -f /tmp/cluster-b-net.xml
+  when: cluster_b_net_check.rc != 0
+
+- name: Start cluster-b network
+  ansible.builtin.command:
+    cmd: virsh net-start cluster-b
+  when: cluster_b_net_check.rc != 0
+  failed_when: false
+
+- name: Autostart cluster-b network
+  ansible.builtin.command:
+    cmd: virsh net-autostart cluster-b
+  changed_when: false
