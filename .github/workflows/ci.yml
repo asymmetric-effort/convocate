@@ -321,6 +321,18 @@ jobs:
             -i inventory/cluster-b.yml \
             -e "ssh_public_key='$SSH_PUBLIC_KEY'" \
             -e "vm_password_hash='$VM_PASSWORD_HASH'"
+
+          # Verify root token is not placeholder
+          echo "=== Verify OpenBao root token ==="
+          ssh -i ~/.ssh/ansible_key -J ${HYPERVISOR_USER}@${CLUSTER_B_HOST} convocate@$CP_IP "
+            export KUBECONFIG=/etc/kubernetes/admin.conf
+            BAO_TOKEN=\$(sudo kubectl get secret openbao-root-token -n security -o jsonpath='{.data.token}' | base64 -d)
+            if [ \"\$BAO_TOKEN\" = 'placeholder' ] || [ \"\$BAO_TOKEN\" = 'PLACEHOLDER' ] || [ -z \"\$BAO_TOKEN\" ]; then
+              echo 'FAIL: openbao-root-token is placeholder or empty'
+              exit 1
+            fi
+            echo 'PASS: root token is set'
+          "
       - name: Cleanup SSH key
         if: always()
         run: rm -f ~/.ssh/ansible_key ~/.ssh/id_ed25519
