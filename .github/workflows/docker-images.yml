@@ -67,22 +67,21 @@ jobs:
             IMAGE="${REGISTRY}/convocate/${NAME}"
             echo "=== Building ${NAME} ==="
 
-            # Always tag with commit sha
-            TAGS="-t ${IMAGE}:${SHA_TAG}"
+            # Always tag with commit sha and latest
+            TAGS="-t ${IMAGE}:${SHA_TAG} -t ${IMAGE}:latest"
 
-            # Tag with semver and :latest if this is a tagged build
+            # Also tag with semver if this is a tagged build
             if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
               TAGS="${TAGS} -t ${IMAGE}:${SEMVER_TAG}"
-              TAGS="${TAGS} -t ${IMAGE}:latest"
             fi
 
             docker build --no-cache ${TAGS} -f "$df" .
 
             echo "=== Pushing ${NAME} ==="
             docker push "${IMAGE}:${SHA_TAG}"
+            docker push "${IMAGE}:latest"
             if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
               docker push "${IMAGE}:${SEMVER_TAG}"
-              docker push "${IMAGE}:latest"
             fi
 
             echo "=== Done: ${NAME} ==="
