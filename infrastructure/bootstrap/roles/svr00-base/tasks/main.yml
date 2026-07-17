@@ -28,6 +28,8 @@
       - apt-transport-https
       - software-properties-common
       - ufw
+      - iputils-ping
+      - dnsutils
     state: present
 
 - name: Import SSH keys from GitHub for samcaldwell
