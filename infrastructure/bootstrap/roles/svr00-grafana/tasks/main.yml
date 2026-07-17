@@ -193,11 +193,11 @@
 
         # Create default OIDC scope
         curl -sf -k -X PUT \
-          -d '{"template":"{\"username\":{{identity.entity.name}},\"email\":{{identity.entity.metadata.email}}}"}' \
+          -d '{"template":"{\"username\":{{ '{{' }}identity.entity.name{{ '}}' }},\"email\":{{ '{{' }}identity.entity.metadata.email{{ '}}' }}}"}' \
           -H "$H" $BAO/v1/identity/oidc/scope/profile
 
         curl -sf -k -X PUT \
-          -d '{"template":"{\"email\":{{identity.entity.metadata.email}}}"}' \
+          -d '{"template":"{\"email\":{{ '{{' }}identity.entity.metadata.email{{ '}}' }}}"}' \
           -H "$H" $BAO/v1/identity/oidc/scope/email
 
         # Create the default OIDC provider
