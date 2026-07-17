@@ -65,12 +65,13 @@
 - name: Bootstrap secrets-a (HTTP → init → PKI → TLS)
   when: not secrets_a_cert.stat.exists
   block:
-    - name: Remove existing secrets-a container
+    - name: Stop and remove existing secrets-a containers
       ansible.builtin.shell:
         cmd: |
+          docker compose -f /opt/openbao/docker-compose.yml stop secrets-a 2>/dev/null || true
           docker compose -f /opt/openbao/docker-compose.yml rm -f secrets-a 2>/dev/null || true
-          docker stop secrets-a-bootstrap 2>/dev/null || true
-          docker rm secrets-a-bootstrap 2>/dev/null || true
+          docker stop secrets-a secrets-a-bootstrap 2>/dev/null || true
+          docker rm secrets-a secrets-a-bootstrap 2>/dev/null || true
 
     - name: Start secrets-a on HTTP for bootstrap
       ansible.builtin.shell:
@@ -216,12 +217,13 @@
 - name: Bootstrap secrets-b (HTTP → init → PKI → TLS)
   when: not secrets_b_cert.stat.exists
   block:
-    - name: Remove existing secrets-b container
+    - name: Stop and remove existing secrets-b containers
       ansible.builtin.shell:
         cmd: |
+          docker compose -f /opt/openbao/docker-compose.yml stop secrets-b 2>/dev/null || true
           docker compose -f /opt/openbao/docker-compose.yml rm -f secrets-b 2>/dev/null || true
-          docker stop secrets-b-bootstrap 2>/dev/null || true
-          docker rm secrets-b-bootstrap 2>/dev/null || true
+          docker stop secrets-b secrets-b-bootstrap 2>/dev/null || true
+          docker rm secrets-b secrets-b-bootstrap 2>/dev/null || true
 
     - name: Start secrets-b on HTTP for bootstrap
       ansible.builtin.shell:
