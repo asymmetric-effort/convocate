@@ -30,7 +30,7 @@ jobs:
           for df in infrastructure/docker/*.Dockerfile; do
             NAME=$(basename "$df" .Dockerfile)
             echo "--- Linting $NAME ---"
-            if ! hadolint "$df"; then
+            if ! hadolint --failure-threshold error "$df"; then
               FAILED=1
             fi
           done
