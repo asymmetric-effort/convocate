@@ -5,36 +5,8 @@ on:
     paths: ['infrastructure/secrets/**']
   workflow_dispatch:
 jobs:
-  build:
-    name: Build OpenBao Image
-    runs-on: [self-hosted, linux, x64]
-    outputs:
-      image_tag: ${{ steps.meta.outputs.sha_tag }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Generate image tags
-        id: meta
-        run: |
-          SHA_SHORT=$(git rev-parse --short HEAD)
-          echo "sha_tag=sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-
-      - name: Build OpenBao image
-        run: |
-          docker build \
-            -t 192.168.3.90:5000/convocate/openbao:latest \
-            -t 192.168.3.90:5000/convocate/openbao:${{ steps.meta.outputs.sha_tag }} \
-            -f infrastructure/secrets/Dockerfile \
-            infrastructure/secrets/
-
-      - name: Push OpenBao image
-        run: |
-          docker push 192.168.3.90:5000/convocate/openbao:latest
-          docker push 192.168.3.90:5000/convocate/openbao:${{ steps.meta.outputs.sha_tag }}
-
   deploy-secrets-a:
     name: Deploy to secrets-a
-    needs: build
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7

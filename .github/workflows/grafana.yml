@@ -2,29 +2,11 @@ name: Grafana
 on:
   push:
     branches: [main]
-    paths: ['infrastructure/grafana/**', 'infrastructure/docker/grafana.Dockerfile']
+    paths: ['infrastructure/grafana/**']
   workflow_dispatch:
 jobs:
-  build:
-    name: Build Grafana Image
-    runs-on: [self-hosted, linux, x64]
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Build Grafana image
-        run: |
-          docker build \
-            -t 192.168.3.90:5000/convocate/grafana:latest \
-            -f infrastructure/docker/grafana.Dockerfile \
-            infrastructure/docker/
-
-      - name: Push Grafana image
-        run: |
-          docker push 192.168.3.90:5000/convocate/grafana:latest
-
   deploy-grafana-a:
     name: Deploy to grafana-a
-    needs: build
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
