@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const GRAFANA_URL: string = process.env.GRAFANA_URL ?? "https://grafana-dev.asymmetric-effort.com";
+const GRAFANA_URL: string = process.env.GRAFANA_URL ?? "https://dev.grafana.asymmetric-effort.com";
 
 interface HealthResponse {
   commit: string;

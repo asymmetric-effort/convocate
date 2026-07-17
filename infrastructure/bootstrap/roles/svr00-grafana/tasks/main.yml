@@ -77,9 +77,9 @@
         exit 1
       fi
 
-      # Issue TLS cert for grafana-dev.asymmetric-effort.com
+      # Issue TLS cert for dev.grafana.asymmetric-effort.com
       curl -sf -k \
-        -d '{"common_name":"grafana-dev.asymmetric-effort.com","alt_names":"grafana-dev.asymmetric-effort.com","ip_sans":"192.168.3.162","ttl":"8760h"}' \
+        -d '{"common_name":"dev.grafana.asymmetric-effort.com","alt_names":"dev.grafana.asymmetric-effort.com","ip_sans":"192.168.3.162","ttl":"8760h"}' \
         -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server > /tmp/cert-resp-grafana-a.json
 
       if [ ! -s /tmp/cert-resp-grafana-a.json ]; then
@@ -219,7 +219,7 @@
 
       # Create OIDC client for grafana-a
       curl -sf -k -X PUT \
-        -d "{\"redirect_uris\":[\"https://grafana-dev.asymmetric-effort.com/login/generic_oauth\"],\"assignments\":[\"allow_all\"],\"key\":\"default\",\"id_token_ttl\":\"1h\",\"access_token_ttl\":\"1h\",\"client_type\":\"confidential\"}" \
+        -d "{\"redirect_uris\":[\"https://dev.grafana.asymmetric-effort.com/login/generic_oauth\"],\"assignments\":[\"allow_all\"],\"key\":\"default\",\"id_token_ttl\":\"1h\",\"access_token_ttl\":\"1h\",\"client_type\":\"confidential\"}" \
         -H "$H" $BAO/v1/identity/oidc/client/grafana-a
 
       # Create OIDC client for grafana-b
