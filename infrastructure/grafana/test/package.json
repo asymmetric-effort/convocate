@@ -1,0 +1,7 @@
+{
+  "name": "grafana-tests",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}

@@ -36,3 +36,10 @@
   gather_facts: false
   roles:
     - svr00-openbao
+
+- name: Bootstrap svr00 — Grafana monitoring
+  hosts: svr00
+  become: true
+  gather_facts: false
+  roles:
+    - svr00-grafana

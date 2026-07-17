@@ -1,0 +1,97 @@
+name: Grafana
+on:
+  push:
+    branches: [main]
+    paths: ['infrastructure/grafana/**']
+  workflow_dispatch:
+jobs:
+  deploy-grafana-a:
+    name: Deploy to grafana-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy grafana-a
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/grafana/playbooks/deploy.yml \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=grafana-a"
+          rm -f ~/.ssh/ansible_key
+
+  pdv-grafana-a:
+    name: PDV Tests (grafana-a)
+    needs: deploy-grafana-a
+    runs-on: [self-hosted, linux, x64]
+    env:
+      GRAFANA_URL: https://grafana-dev.asymmetric-effort.com
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/grafana/test
+        run: bun install
+
+      - name: Run PDV tests against grafana-a
+        working-directory: infrastructure/grafana/test
+        run: bunx playwright test pdv.spec.ts
+
+  deploy-grafana-b:
+    name: Deploy to grafana-b (production)
+    needs: pdv-grafana-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy grafana-b (non-destructive)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/grafana/playbooks/deploy.yml \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=grafana-b"
+          rm -f ~/.ssh/ansible_key
+
+  smoke-grafana-b:
+    name: Smoke Tests (grafana-b)
+    needs: deploy-grafana-b
+    runs-on: [self-hosted, linux, x64]
+    env:
+      GRAFANA_URL: https://grafana.asymmetric-effort.com
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/grafana/test
+        run: bun install
+
+      - name: Run smoke tests against grafana-b
+        working-directory: infrastructure/grafana/test
+        run: bunx playwright test smoke.spec.ts

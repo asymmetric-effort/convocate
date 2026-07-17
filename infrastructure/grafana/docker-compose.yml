@@ -1,0 +1,72 @@
+services:
+  grafana-a:
+    image: grafana/grafana-oss:11.6.0
+    container_name: grafana-a
+    restart: unless-stopped
+    ports:
+      - "192.168.3.162:3000:3000"
+    volumes:
+      - /var/grafana/a:/var/lib/grafana
+      - /var/grafana/tls/a:/etc/grafana/tls:ro
+    environment:
+      # Server / TLS
+      GF_SERVER_PROTOCOL: https
+      GF_SERVER_CERT_FILE: /etc/grafana/tls/cert.pem
+      GF_SERVER_CERT_KEY: /etc/grafana/tls/key.pem
+      GF_SERVER_HTTP_PORT: "3000"
+      GF_SERVER_DOMAIN: grafana-dev.asymmetric-effort.com
+      GF_SERVER_ROOT_URL: https://grafana-dev.asymmetric-effort.com
+
+      # OIDC authentication via secrets-b (OpenBao)
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana-a
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
+      GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "true"
+
+      # client_secret is read from file at runtime (mounted from secrets-b KV)
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /etc/grafana/tls/oidc-client-secret
+
+      # Logging
+      GF_LOG_MODE: console
+      GF_LOG_LEVEL: info
+
+  grafana-b:
+    image: grafana/grafana-oss:11.6.0
+    container_name: grafana-b
+    restart: unless-stopped
+    ports:
+      - "192.168.3.163:3000:3000"
+    volumes:
+      - /var/grafana/b:/var/lib/grafana
+      - /var/grafana/tls/b:/etc/grafana/tls:ro
+    environment:
+      # Server / TLS
+      GF_SERVER_PROTOCOL: https
+      GF_SERVER_CERT_FILE: /etc/grafana/tls/cert.pem
+      GF_SERVER_CERT_KEY: /etc/grafana/tls/key.pem
+      GF_SERVER_HTTP_PORT: "3000"
+      GF_SERVER_DOMAIN: grafana.asymmetric-effort.com
+      GF_SERVER_ROOT_URL: https://grafana.asymmetric-effort.com
+
+      # OIDC authentication via secrets-b (OpenBao)
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana-b
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
+      GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "true"
+
+      # client_secret is read from file at runtime (mounted from secrets-b KV)
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /etc/grafana/tls/oidc-client-secret
+
+      # Logging
+      GF_LOG_MODE: console
+      GF_LOG_LEVEL: info

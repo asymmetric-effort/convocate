@@ -63,7 +63,7 @@
   register: secrets_a_cert
 
 - name: Bootstrap secrets-a (HTTP → init → PKI → TLS)
-  when: not secrets_a_cert.stat.exists
+  when: not secrets_a_cert.stat.exists or secrets_a_cert.stat.size == 0
   block:
     - name: Stop and remove existing secrets-a containers
       ansible.builtin.shell:
@@ -72,6 +72,13 @@
           docker compose -f /opt/openbao/docker-compose.yml rm -f secrets-a 2>/dev/null || true
           docker stop secrets-a secrets-a-bootstrap 2>/dev/null || true
           docker rm secrets-a secrets-a-bootstrap 2>/dev/null || true
+
+    - name: Wipe secrets-a data (test instance — need fresh init for PKI)
+      ansible.builtin.shell:
+        cmd: |
+          rm -rf /var/openbao/secrets-a/*
+          rm -rf /var/openbao/tls/secrets-a/*
+          chown 65534:65534 /var/openbao/secrets-a /var/openbao/tls/secrets-a
 
     - name: Start secrets-a on HTTP for bootstrap
       ansible.builtin.shell:
@@ -145,6 +152,11 @@
             -d '{"common_name":"dev.auth.asymmetric-effort.com","alt_names":"dev.auth.asymmetric-effort.com","ip_sans":"192.168.3.160","ttl":"8760h"}' \
             -H "X-Vault-Token:$ROOT" $BAO/v1/pki/issue/server)
 
+          if [ -z "$CERT_RESP" ]; then
+            echo "ERROR: PKI cert issuance returned empty response"
+            exit 1
+          fi
+
           # Write cert chain and key to TLS directory
           echo "$CERT_RESP" | python3 -c '
           import sys, json
@@ -161,6 +173,13 @@
           import sys, json
           print(json.load(sys.stdin)["data"]["private_key"])
           ' > /var/openbao/tls/secrets-a/key.pem
+
+          # Verify certs are non-empty
+          if [ ! -s /var/openbao/tls/secrets-a/cert.pem ] || [ ! -s /var/openbao/tls/secrets-a/key.pem ]; then
+            echo "ERROR: TLS cert or key is empty after extraction"
+            rm -f /var/openbao/tls/secrets-a/cert.pem /var/openbao/tls/secrets-a/key.pem
+            exit 1
+          fi
 
           chown 65534:65534 /var/openbao/tls/secrets-a/cert.pem /var/openbao/tls/secrets-a/key.pem
           chmod 0400 /var/openbao/tls/secrets-a/key.pem
@@ -215,7 +234,7 @@
   register: secrets_b_cert
 
 - name: Bootstrap secrets-b (HTTP → init → PKI → TLS)
-  when: not secrets_b_cert.stat.exists
+  when: not secrets_b_cert.stat.exists or secrets_b_cert.stat.size == 0
   block:
     - name: Stop and remove existing secrets-b containers
       ansible.builtin.shell:
@@ -297,6 +316,11 @@
             -d '{"common_name":"auth.asymmetric-effort.com","alt_names":"auth.asymmetric-effort.com","ip_sans":"192.168.3.161","ttl":"8760h"}' \
             -H "X-Vault-Token:$ROOT" $BAO/v1/pki/issue/server)
 
+          if [ -z "$CERT_RESP" ]; then
+            echo "ERROR: PKI cert issuance returned empty response"
+            exit 1
+          fi
+
           # Write cert chain and key to TLS directory
           echo "$CERT_RESP" | python3 -c '
           import sys, json
@@ -313,6 +337,13 @@
           import sys, json
           print(json.load(sys.stdin)["data"]["private_key"])
           ' > /var/openbao/tls/secrets-b/key.pem
+
+          # Verify certs are non-empty
+          if [ ! -s /var/openbao/tls/secrets-b/cert.pem ] || [ ! -s /var/openbao/tls/secrets-b/key.pem ]; then
+            echo "ERROR: TLS cert or key is empty after extraction"
+            rm -f /var/openbao/tls/secrets-b/cert.pem /var/openbao/tls/secrets-b/key.pem
+            exit 1
+          fi
 
           chown 65534:65534 /var/openbao/tls/secrets-b/cert.pem /var/openbao/tls/secrets-b/key.pem
           chmod 0400 /var/openbao/tls/secrets-b/key.pem

@@ -1,0 +1,307 @@
+---
+# Bootstrap Grafana monitoring infrastructure on svr00
+# Creates directories, issues TLS certs from secrets-b PKI,
+# sets up OIDC clients in secrets-b, copies configs.
+
+- name: Create Grafana directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - /opt/grafana
+    - /var/grafana/a
+    - /var/grafana/b
+    - /var/grafana/tls/a
+    - /var/grafana/tls/b
+
+- name: Set data directory ownership for Grafana (472:0)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "472"
+    group: "0"
+  loop:
+    - /var/grafana/a
+    - /var/grafana/b
+
+- name: Set TLS directory ownership for Grafana (472:0)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "472"
+    group: "0"
+  loop:
+    - /var/grafana/tls/a
+    - /var/grafana/tls/b
+
+- name: Copy Grafana configs
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0644"
+    owner: root
+    group: root
+  loop:
+    - src: "{{ playbook_dir }}/../../grafana/docker-compose.yml"
+      dest: /opt/grafana/docker-compose.yml
+
+# =========================================================================
+# TLS certificates from secrets-b PKI
+# =========================================================================
+
+- name: Check if grafana-a has TLS certs
+  ansible.builtin.stat:
+    path: /var/grafana/tls/a/cert.pem
+  register: grafana_a_cert
+
+- name: Issue TLS cert for grafana-a from secrets-b PKI
+  when: not grafana_a_cert.stat.exists
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:8200
+
+      # Read the secrets-b unseal key if available (first-time bootstrap)
+      UNSEAL_KEY=$(cat /var/openbao/tls/secrets-b/.unseal-key 2>/dev/null || true)
+
+      # Get a token — either from bootstrap root token or existing admin
+      ROOT_TOKEN=$(cat /var/grafana/tls/.secrets-b-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "ERROR: No secrets-b token available for TLS cert issuance"
+        echo "Run the openbao bootstrap first, or place a token in /var/grafana/tls/.secrets-b-token"
+        exit 1
+      fi
+
+      # Issue TLS cert for grafana-dev.asymmetric-effort.com
+      CERT_RESP=$(curl -sf -k \
+        -d '{"common_name":"grafana-dev.asymmetric-effort.com","alt_names":"grafana-dev.asymmetric-effort.com","ip_sans":"192.168.3.162","ttl":"8760h"}' \
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server)
+
+      if [ -z "$CERT_RESP" ] || echo "$CERT_RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert "data" in d' 2>/dev/null; then
+        # Write cert chain and key
+        echo "$CERT_RESP" | python3 -c '
+        import sys, json
+        data = json.load(sys.stdin)["data"]
+        cert = data["certificate"]
+        if "ca_chain" in data and data["ca_chain"]:
+            cert += "\n" + "\n".join(data["ca_chain"])
+        elif "issuing_ca" in data:
+            cert += "\n" + data["issuing_ca"]
+        print(cert)
+        ' > /var/grafana/tls/a/cert.pem
+
+        echo "$CERT_RESP" | python3 -c '
+        import sys, json
+        print(json.load(sys.stdin)["data"]["private_key"])
+        ' > /var/grafana/tls/a/key.pem
+
+        chown 472:0 /var/grafana/tls/a/cert.pem /var/grafana/tls/a/key.pem
+        chmod 0400 /var/grafana/tls/a/key.pem
+        chmod 0444 /var/grafana/tls/a/cert.pem
+
+        echo "TLS cert issued for grafana-a"
+      else
+        echo "ERROR: Failed to issue TLS cert for grafana-a"
+        exit 1
+      fi
+  changed_when: false
+
+- name: Check if grafana-b has TLS certs
+  ansible.builtin.stat:
+    path: /var/grafana/tls/b/cert.pem
+  register: grafana_b_cert
+
+- name: Issue TLS cert for grafana-b from secrets-b PKI
+  when: not grafana_b_cert.stat.exists
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:8200
+
+      ROOT_TOKEN=$(cat /var/grafana/tls/.secrets-b-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "ERROR: No secrets-b token available for TLS cert issuance"
+        echo "Run the openbao bootstrap first, or place a token in /var/grafana/tls/.secrets-b-token"
+        exit 1
+      fi
+
+      # Issue TLS cert for grafana.asymmetric-effort.com
+      CERT_RESP=$(curl -sf -k \
+        -d '{"common_name":"grafana.asymmetric-effort.com","alt_names":"grafana.asymmetric-effort.com","ip_sans":"192.168.3.163","ttl":"8760h"}' \
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server)
+
+      if [ -z "$CERT_RESP" ] || echo "$CERT_RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert "data" in d' 2>/dev/null; then
+        echo "$CERT_RESP" | python3 -c '
+        import sys, json
+        data = json.load(sys.stdin)["data"]
+        cert = data["certificate"]
+        if "ca_chain" in data and data["ca_chain"]:
+            cert += "\n" + "\n".join(data["ca_chain"])
+        elif "issuing_ca" in data:
+            cert += "\n" + data["issuing_ca"]
+        print(cert)
+        ' > /var/grafana/tls/b/cert.pem
+
+        echo "$CERT_RESP" | python3 -c '
+        import sys, json
+        print(json.load(sys.stdin)["data"]["private_key"])
+        ' > /var/grafana/tls/b/key.pem
+
+        chown 472:0 /var/grafana/tls/b/cert.pem /var/grafana/tls/b/key.pem
+        chmod 0400 /var/grafana/tls/b/key.pem
+        chmod 0444 /var/grafana/tls/b/cert.pem
+
+        echo "TLS cert issued for grafana-b"
+      else
+        echo "ERROR: Failed to issue TLS cert for grafana-b"
+        exit 1
+      fi
+  changed_when: false
+
+# =========================================================================
+# OIDC client setup in secrets-b
+# =========================================================================
+
+- name: Set up OIDC identity provider and clients in secrets-b
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:8200
+
+      ROOT_TOKEN=$(cat /var/grafana/tls/.secrets-b-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "ERROR: No secrets-b token available for OIDC setup"
+        exit 1
+      fi
+
+      H="X-Vault-Token:$ROOT_TOKEN"
+
+      # Check if OIDC identity provider is already enabled
+      OIDC_CHECK=$(curl -sf -k -H "$H" $BAO/v1/identity/oidc/provider/default 2>/dev/null)
+      if [ -z "$OIDC_CHECK" ] || echo "$OIDC_CHECK" | grep -q '"errors"'; then
+        echo "Enabling OIDC identity provider on secrets-b..."
+
+        # Create a default OIDC key
+        curl -sf -k -X PUT \
+          -d '{"rotation_period":"24h","verification_ttl":"24h","algorithm":"RS256"}' \
+          -H "$H" $BAO/v1/identity/oidc/key/default
+
+        # Create default OIDC scope
+        curl -sf -k -X PUT \
+          -d '{"template":"{\"username\":{{identity.entity.name}},\"email\":{{identity.entity.metadata.email}}}"}' \
+          -H "$H" $BAO/v1/identity/oidc/scope/profile
+
+        curl -sf -k -X PUT \
+          -d '{"template":"{\"email\":{{identity.entity.metadata.email}}}"}' \
+          -H "$H" $BAO/v1/identity/oidc/scope/email
+
+        # Create the default OIDC provider
+        curl -sf -k -X PUT \
+          -d '{"issuer":"https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default","scopes_supported":["openid","profile","email"]}' \
+          -H "$H" $BAO/v1/identity/oidc/provider/default
+
+        echo "OIDC identity provider enabled"
+      else
+        echo "OIDC identity provider already enabled"
+      fi
+
+      # Generate client secrets
+      GRAFANA_A_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+      GRAFANA_B_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+
+      # Create OIDC client for grafana-a
+      curl -sf -k -X PUT \
+        -d "{\"redirect_uris\":[\"https://grafana-dev.asymmetric-effort.com/login/generic_oauth\"],\"assignments\":[\"allow_all\"],\"key\":\"default\",\"id_token_ttl\":\"1h\",\"access_token_ttl\":\"1h\",\"client_type\":\"confidential\"}" \
+        -H "$H" $BAO/v1/identity/oidc/client/grafana-a
+
+      # Create OIDC client for grafana-b
+      curl -sf -k -X PUT \
+        -d "{\"redirect_uris\":[\"https://grafana.asymmetric-effort.com/login/generic_oauth\"],\"assignments\":[\"allow_all\"],\"key\":\"default\",\"id_token_ttl\":\"1h\",\"access_token_ttl\":\"1h\",\"client_type\":\"confidential\"}" \
+        -H "$H" $BAO/v1/identity/oidc/client/grafana-b
+
+      # Read back the generated client_secrets from the OIDC clients
+      GRAFANA_A_CLIENT=$(curl -sf -k -H "$H" $BAO/v1/identity/oidc/client/grafana-a)
+      GRAFANA_A_SECRET=$(echo "$GRAFANA_A_CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_secret"])' 2>/dev/null)
+
+      GRAFANA_B_CLIENT=$(curl -sf -k -H "$H" $BAO/v1/identity/oidc/client/grafana-b)
+      GRAFANA_B_SECRET=$(echo "$GRAFANA_B_CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_secret"])' 2>/dev/null)
+
+      # Store client secrets in secrets-b KV
+      curl -sf -k -X PUT \
+        -d "{\"data\":{\"secret\":\"$GRAFANA_A_SECRET\"}}" \
+        -H "$H" $BAO/v1/secret/data/grafana/oidc-client-secret-a
+
+      curl -sf -k -X PUT \
+        -d "{\"data\":{\"secret\":\"$GRAFANA_B_SECRET\"}}" \
+        -H "$H" $BAO/v1/secret/data/grafana/oidc-client-secret-b
+
+      # Write client secrets to TLS dirs for container mount
+      echo -n "$GRAFANA_A_SECRET" > /var/grafana/tls/a/oidc-client-secret
+      chown 472:0 /var/grafana/tls/a/oidc-client-secret
+      chmod 0400 /var/grafana/tls/a/oidc-client-secret
+
+      echo -n "$GRAFANA_B_SECRET" > /var/grafana/tls/b/oidc-client-secret
+      chown 472:0 /var/grafana/tls/b/oidc-client-secret
+      chmod 0400 /var/grafana/tls/b/oidc-client-secret
+
+      # Create a grafana-read policy for fetching OIDC secrets at deploy time
+      curl -sf -k -X PUT \
+        -d '{"policy":"path \"secret/data/grafana/*\" { capabilities = [\"read\"] }"}' \
+        -H "$H" $BAO/v1/sys/policies/acl/grafana-read-policy
+
+      # Create a grafana service user for deploy-time secret reads
+      curl -sf -k -X PUT \
+        -d '{"password":"","policies":"grafana-read-policy"}' \
+        -H "$H" $BAO/v1/auth/userpass/users/grafana-svc 2>/dev/null || true
+
+      # Generate a token for the grafana service and store it
+      SVC_TOKEN=$(curl -sf -k \
+        -d '{"policies":["grafana-read-policy"],"ttl":"8760h","renewable":true}' \
+        -H "$H" $BAO/v1/auth/token/create \
+        | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["client_token"])' 2>/dev/null)
+
+      if [ -n "$SVC_TOKEN" ]; then
+        echo -n "$SVC_TOKEN" > /var/grafana/tls/a/.vault-token
+        echo -n "$SVC_TOKEN" > /var/grafana/tls/b/.vault-token
+        chmod 0400 /var/grafana/tls/a/.vault-token /var/grafana/tls/b/.vault-token
+      fi
+
+      # Create entity + alias for samcaldwell in the identity store
+      # Check if entity exists
+      ENTITY_CHECK=$(curl -sf -k -H "$H" $BAO/v1/identity/entity/name/samcaldwell 2>/dev/null)
+      if echo "$ENTITY_CHECK" | grep -q '"errors"'; then
+        curl -sf -k -X PUT \
+          -d '{"name":"samcaldwell","metadata":{"email":"sam@asymmetric-effort.com"}}' \
+          -H "$H" $BAO/v1/identity/entity/name/samcaldwell
+        echo "Created identity entity for samcaldwell"
+      else
+        echo "Identity entity samcaldwell already exists"
+      fi
+
+      # Clean up the bootstrap token
+      rm -f /var/grafana/tls/.secrets-b-token
+
+      echo "OIDC clients configured for grafana-a and grafana-b"
+  changed_when: false
+
+# =========================================================================
+# Create allow_all assignment if not exists
+# =========================================================================
+
+- name: Ensure allow_all assignment exists in secrets-b
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:8200
+      ROOT_TOKEN=$(cat /var/grafana/tls/a/.vault-token 2>/dev/null || true)
+      if [ -n "$ROOT_TOKEN" ]; then
+        curl -sf -k -X PUT \
+          -d '{"group_ids":[],"entity_ids":[]}' \
+          -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/identity/oidc/assignment/allow_all 2>/dev/null || true
+      fi
+  changed_when: false
+  failed_when: false
