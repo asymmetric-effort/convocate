@@ -9,6 +9,12 @@ services:
       - /var/grafana/a:/var/lib/grafana
       - /var/grafana/tls/a:/etc/grafana/tls:ro
     environment:
+      # Paths
+      GF_PATHS_DATA: /var/lib/grafana
+      GF_PATHS_LOGS: /var/log/grafana
+      GF_PATHS_PLUGINS: /var/lib/grafana/plugins
+      GF_PATHS_PROVISIONING: /var/lib/grafana/provisioning
+
       # Server / TLS
       GF_SERVER_PROTOCOL: https
       GF_SERVER_CERT_FILE: /etc/grafana/tls/cert.pem
@@ -45,6 +51,12 @@ services:
       - /var/grafana/b:/var/lib/grafana
       - /var/grafana/tls/b:/etc/grafana/tls:ro
     environment:
+      # Paths
+      GF_PATHS_DATA: /var/lib/grafana
+      GF_PATHS_LOGS: /var/log/grafana
+      GF_PATHS_PLUGINS: /var/lib/grafana/plugins
+      GF_PATHS_PROVISIONING: /var/lib/grafana/provisioning
+
       # Server / TLS
       GF_SERVER_PROTOCOL: https
       GF_SERVER_CERT_FILE: /etc/grafana/tls/cert.pem
