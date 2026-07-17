@@ -135,58 +135,38 @@
     - 192.168.3.162
     - 192.168.3.163
 
-- name: Redirect tcp/443 → 8200 on OpenBao IPs (DNAT)
-  ansible.builtin.iptables:
-    table: nat
-    chain: PREROUTING
-    protocol: tcp
-    destination: "{{ item }}"
-    destination_port: "443"
-    jump: REDIRECT
-    to_ports: "8200"
-    comment: "Redirect HTTPS to OpenBao {{ item }}"
+- name: Redirect tcp/443 → 8200 on OpenBao IPs (DNAT, before DOCKER chain)
+  ansible.builtin.shell:
+    cmd: |
+      iptables -t nat -C PREROUTING -p tcp -d {{ item }} --dport 443 -j REDIRECT --to-ports 8200 2>/dev/null || \
+      iptables -t nat -I PREROUTING 1 -p tcp -d {{ item }} --dport 443 -j REDIRECT --to-ports 8200 -m comment --comment "Redirect HTTPS to OpenBao {{ item }}"
   loop:
     - 192.168.3.160
     - 192.168.3.161
 
 - name: Redirect tcp/443 → 8200 on OpenBao IPs (OUTPUT for local access)
-  ansible.builtin.iptables:
-    table: nat
-    chain: OUTPUT
-    protocol: tcp
-    destination: "{{ item }}"
-    destination_port: "443"
-    jump: REDIRECT
-    to_ports: "8200"
-    comment: "Redirect local HTTPS to OpenBao {{ item }}"
+  ansible.builtin.shell:
+    cmd: |
+      iptables -t nat -C OUTPUT -p tcp -d {{ item }} --dport 443 -j REDIRECT --to-ports 8200 2>/dev/null || \
+      iptables -t nat -I OUTPUT 1 -p tcp -d {{ item }} --dport 443 -j REDIRECT --to-ports 8200 -m comment --comment "Redirect local HTTPS to OpenBao {{ item }}"
   loop:
     - 192.168.3.160
     - 192.168.3.161
 
-- name: Redirect tcp/443 → 3000 on Grafana IPs (DNAT)
-  ansible.builtin.iptables:
-    table: nat
-    chain: PREROUTING
-    protocol: tcp
-    destination: "{{ item }}"
-    destination_port: "443"
-    jump: REDIRECT
-    to_ports: "3000"
-    comment: "Redirect HTTPS to Grafana {{ item }}"
+- name: Redirect tcp/443 → 3000 on Grafana IPs (DNAT, before DOCKER chain)
+  ansible.builtin.shell:
+    cmd: |
+      iptables -t nat -C PREROUTING -p tcp -d {{ item }} --dport 443 -j REDIRECT --to-ports 3000 2>/dev/null || \
+      iptables -t nat -I PREROUTING 1 -p tcp -d {{ item }} --dport 443 -j REDIRECT --to-ports 3000 -m comment --comment "Redirect HTTPS to Grafana {{ item }}"
   loop:
     - 192.168.3.162
     - 192.168.3.163
 
 - name: Redirect tcp/443 → 3000 on Grafana IPs (OUTPUT for local access)
-  ansible.builtin.iptables:
-    table: nat
-    chain: OUTPUT
-    protocol: tcp
-    destination: "{{ item }}"
-    destination_port: "443"
-    jump: REDIRECT
-    to_ports: "3000"
-    comment: "Redirect local HTTPS to Grafana {{ item }}"
+  ansible.builtin.shell:
+    cmd: |
+      iptables -t nat -C OUTPUT -p tcp -d {{ item }} --dport 443 -j REDIRECT --to-ports 3000 2>/dev/null || \
+      iptables -t nat -I OUTPUT 1 -p tcp -d {{ item }} --dport 443 -j REDIRECT --to-ports 3000 -m comment --comment "Redirect local HTTPS to Grafana {{ item }}"
   loop:
     - 192.168.3.162
     - 192.168.3.163

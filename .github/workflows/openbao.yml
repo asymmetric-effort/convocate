@@ -62,7 +62,7 @@ jobs:
     needs: deploy-secrets-a
     runs-on: [self-hosted, linux, x64]
     env:
-      OPENBAO_URL: https://dev.auth.asymmetric-effort.com
+      OPENBAO_URL: https://192.168.3.160:8200
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
     steps:
       - uses: actions/checkout@v7
@@ -108,7 +108,7 @@ jobs:
     needs: deploy-secrets-b
     runs-on: [self-hosted, linux, x64]
     env:
-      OPENBAO_URL: https://auth.asymmetric-effort.com
+      OPENBAO_URL: https://192.168.3.161:8200
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
     steps:
       - uses: actions/checkout@v7

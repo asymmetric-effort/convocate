@@ -4,25 +4,25 @@ credentials-file: /etc/cloudflared/credentials.json
 ingress:
   # OpenBao test (secrets-a)
   - hostname: dev.auth.asymmetric-effort.com
-    service: https://192.168.3.160:443
+    service: https://192.168.3.160:8200
     originRequest:
       noTLSVerify: true
 
   # OpenBao production (secrets-b)
   - hostname: auth.asymmetric-effort.com
-    service: https://192.168.3.161:443
+    service: https://192.168.3.161:8200
     originRequest:
       noTLSVerify: true
 
   # Grafana pre-production (grafana-a)
   - hostname: grafana-dev.asymmetric-effort.com
-    service: https://192.168.3.162:443
+    service: https://192.168.3.162:3000
     originRequest:
       noTLSVerify: true
 
   # Grafana production (grafana-b)
   - hostname: grafana.asymmetric-effort.com
-    service: https://192.168.3.163:443
+    service: https://192.168.3.163:3000
     originRequest:
       noTLSVerify: true
 
