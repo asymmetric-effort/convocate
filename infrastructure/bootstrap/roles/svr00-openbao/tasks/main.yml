@@ -243,7 +243,6 @@
           UNSEAL_KEY=$(cat /var/openbao/tls/secrets-a/.unseal-key 2>/dev/null)
           if [ -n "$UNSEAL_KEY" ]; then
             curl -sf -k -d "{\"key\":\"$UNSEAL_KEY\"}" https://192.168.3.160:8200/v1/sys/unseal
-            rm -f /var/openbao/tls/secrets-a/.unseal-key
             echo "secrets-a unsealed"
           fi
       changed_when: false
@@ -445,7 +444,6 @@
           UNSEAL_KEY=$(cat /var/openbao/tls/secrets-b/.unseal-key 2>/dev/null)
           if [ -n "$UNSEAL_KEY" ]; then
             curl -sf -k -d "{\"key\":\"$UNSEAL_KEY\"}" https://192.168.3.161:8200/v1/sys/unseal
-            rm -f /var/openbao/tls/secrets-b/.unseal-key
             echo "secrets-b unsealed"
           fi
       changed_when: false
