@@ -76,7 +76,7 @@ jobs:
               TAGS="${TAGS} -t ${IMAGE}:latest"
             fi
 
-            docker build ${TAGS} -f "$df" .
+            docker build --no-cache ${TAGS} -f "$df" .
 
             echo "=== Pushing ${NAME} ==="
             docker push "${IMAGE}:${SHA_TAG}"
