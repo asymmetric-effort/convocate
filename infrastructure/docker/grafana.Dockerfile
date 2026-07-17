@@ -31,8 +31,9 @@ RUN mkdir -p /opt/libs && \
 RUN mkdir -p /opt/fontconfig && \
     cp -r /etc/fonts /opt/fontconfig/
 
-# Create data directories
-RUN mkdir -p /opt/grafana-data /opt/grafana-log
+# Create data directories and default config
+RUN mkdir -p /opt/grafana-data /opt/grafana-log /opt/grafana-config && \
+    cp /opt/grafana/conf/defaults.ini /opt/grafana-config/grafana.ini
 
 # Runtime stage
 FROM gcr.io/distroless/cc-debian13:debug
@@ -42,6 +43,7 @@ COPY --from=build /opt/libs/ /usr/lib/x86_64-linux-gnu/
 COPY --from=build /opt/fontconfig/fonts /etc/fonts
 COPY --from=build --chown=65534:65534 /opt/grafana-data /var/lib/grafana
 COPY --from=build --chown=65534:65534 /opt/grafana-log /var/log/grafana
+COPY --from=build /opt/grafana-config/grafana.ini /etc/grafana/grafana.ini
 
 EXPOSE 3000
 
