@@ -76,6 +76,12 @@
           chown 65534:0 /var/grafana/a
       when: deploy_target == "all" or deploy_target == "grafana-a"
 
+    - name: Fix TLS file ownership for grafana-a (65534 = distroless nobody)
+      ansible.builtin.shell:
+        cmd: |
+          chown -R 65534:0 /var/grafana/tls/a/ /var/grafana/a/
+      when: deploy_target == "all" or deploy_target == "grafana-a"
+
     - name: Deploy grafana-a (recreate)
       ansible.builtin.command:
         cmd: docker compose -f {{ grafana_dir }}/docker-compose.yml up -d --force-recreate grafana-a
@@ -96,6 +102,12 @@
     # =========================================================================
     # grafana-b — production (non-destructive)
     # =========================================================================
+
+    - name: Fix TLS file ownership for grafana-b (65534 = distroless nobody)
+      ansible.builtin.shell:
+        cmd: |
+          chown -R 65534:0 /var/grafana/tls/b/ /var/grafana/b/
+      when: deploy_target == "all" or deploy_target == "grafana-b"
 
     - name: Deploy grafana-b (pull new image, restart)
       ansible.builtin.shell:
