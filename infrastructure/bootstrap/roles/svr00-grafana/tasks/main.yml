@@ -78,37 +78,38 @@
       fi
 
       # Issue TLS cert for grafana-dev.asymmetric-effort.com
-      CERT_RESP=$(curl -sf -k \
+      curl -sf -k \
         -d '{"common_name":"grafana-dev.asymmetric-effort.com","alt_names":"grafana-dev.asymmetric-effort.com","ip_sans":"192.168.3.162","ttl":"8760h"}' \
-        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server)
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server > /tmp/cert-resp-grafana-a.json
 
-      if [ -z "$CERT_RESP" ] || echo "$CERT_RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert "data" in d' 2>/dev/null; then
-        # Write cert chain and key
-        echo "$CERT_RESP" | python3 -c '
-        import sys, json
-        data = json.load(sys.stdin)["data"]
-        cert = data["certificate"]
-        if "ca_chain" in data and data["ca_chain"]:
-            cert += "\n" + "\n".join(data["ca_chain"])
-        elif "issuing_ca" in data:
-            cert += "\n" + data["issuing_ca"]
-        print(cert)
-        ' > /var/grafana/tls/a/cert.pem
-
-        echo "$CERT_RESP" | python3 -c '
-        import sys, json
-        print(json.load(sys.stdin)["data"]["private_key"])
-        ' > /var/grafana/tls/a/key.pem
-
-        chown 472:0 /var/grafana/tls/a/cert.pem /var/grafana/tls/a/key.pem
-        chmod 0400 /var/grafana/tls/a/key.pem
-        chmod 0444 /var/grafana/tls/a/cert.pem
-
-        echo "TLS cert issued for grafana-a"
-      else
+      if [ ! -s /tmp/cert-resp-grafana-a.json ]; then
         echo "ERROR: Failed to issue TLS cert for grafana-a"
         exit 1
       fi
+
+      python3 -c '
+      import json
+      data = json.load(open("/tmp/cert-resp-grafana-a.json"))["data"]
+      cert = data["certificate"]
+      if "ca_chain" in data and data["ca_chain"]:
+          cert += "\n" + "\n".join(data["ca_chain"])
+      elif "issuing_ca" in data:
+          cert += "\n" + data["issuing_ca"]
+      print(cert)
+      ' > /var/grafana/tls/a/cert.pem
+
+      python3 -c '
+      import json
+      print(json.load(open("/tmp/cert-resp-grafana-a.json"))["data"]["private_key"])
+      ' > /var/grafana/tls/a/key.pem
+
+      rm -f /tmp/cert-resp-grafana-a.json
+
+      chown 472:0 /var/grafana/tls/a/cert.pem /var/grafana/tls/a/key.pem
+      chmod 0400 /var/grafana/tls/a/key.pem
+      chmod 0444 /var/grafana/tls/a/cert.pem
+
+      echo "TLS cert issued for grafana-a"
   changed_when: false
 
 - name: Check if grafana-b has TLS certs
@@ -131,36 +132,38 @@
       fi
 
       # Issue TLS cert for grafana.asymmetric-effort.com
-      CERT_RESP=$(curl -sf -k \
+      curl -sf -k \
         -d '{"common_name":"grafana.asymmetric-effort.com","alt_names":"grafana.asymmetric-effort.com","ip_sans":"192.168.3.163","ttl":"8760h"}' \
-        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server)
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server > /tmp/cert-resp-grafana-b.json
 
-      if [ -z "$CERT_RESP" ] || echo "$CERT_RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert "data" in d' 2>/dev/null; then
-        echo "$CERT_RESP" | python3 -c '
-        import sys, json
-        data = json.load(sys.stdin)["data"]
-        cert = data["certificate"]
-        if "ca_chain" in data and data["ca_chain"]:
-            cert += "\n" + "\n".join(data["ca_chain"])
-        elif "issuing_ca" in data:
-            cert += "\n" + data["issuing_ca"]
-        print(cert)
-        ' > /var/grafana/tls/b/cert.pem
-
-        echo "$CERT_RESP" | python3 -c '
-        import sys, json
-        print(json.load(sys.stdin)["data"]["private_key"])
-        ' > /var/grafana/tls/b/key.pem
-
-        chown 472:0 /var/grafana/tls/b/cert.pem /var/grafana/tls/b/key.pem
-        chmod 0400 /var/grafana/tls/b/key.pem
-        chmod 0444 /var/grafana/tls/b/cert.pem
-
-        echo "TLS cert issued for grafana-b"
-      else
+      if [ ! -s /tmp/cert-resp-grafana-b.json ]; then
         echo "ERROR: Failed to issue TLS cert for grafana-b"
         exit 1
       fi
+
+      python3 -c '
+      import json
+      data = json.load(open("/tmp/cert-resp-grafana-b.json"))["data"]
+      cert = data["certificate"]
+      if "ca_chain" in data and data["ca_chain"]:
+          cert += "\n" + "\n".join(data["ca_chain"])
+      elif "issuing_ca" in data:
+          cert += "\n" + data["issuing_ca"]
+      print(cert)
+      ' > /var/grafana/tls/b/cert.pem
+
+      python3 -c '
+      import json
+      print(json.load(open("/tmp/cert-resp-grafana-b.json"))["data"]["private_key"])
+      ' > /var/grafana/tls/b/key.pem
+
+      rm -f /tmp/cert-resp-grafana-b.json
+
+      chown 472:0 /var/grafana/tls/b/cert.pem /var/grafana/tls/b/key.pem
+      chmod 0400 /var/grafana/tls/b/key.pem
+      chmod 0444 /var/grafana/tls/b/cert.pem
+
+      echo "TLS cert issued for grafana-b"
   changed_when: false
 
 # =========================================================================
