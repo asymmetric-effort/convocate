@@ -17,9 +17,11 @@ jobs:
       - name: Install hadolint
         run: |
           if ! command -v hadolint &>/dev/null; then
-            curl -fsSL -o /usr/local/bin/hadolint \
+            mkdir -p "$HOME/.local/bin"
+            curl -fsSL -o "$HOME/.local/bin/hadolint" \
               https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
-            chmod +x /usr/local/bin/hadolint
+            chmod +x "$HOME/.local/bin/hadolint"
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           fi
 
       - name: Lint all Dockerfiles
