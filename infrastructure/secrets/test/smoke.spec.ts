@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const OPENBAO_URL: string = process.env.OPENBAO_URL ?? "https://192.168.3.161:8200";
+const OPENBAO_URL: string = process.env.OPENBAO_URL ?? "https://auth.asymmetric-effort.com";
 const PDV_USER = "pdv-test";
 const PDV_PASS = "PdvTest-2026-Secure";
 
