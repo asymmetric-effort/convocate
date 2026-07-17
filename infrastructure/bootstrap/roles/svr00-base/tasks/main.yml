@@ -60,14 +60,6 @@
   notify: Apply netplan
   changed_when: false
 
-- name: Flush IPs from unused interfaces
-  ansible.builtin.shell:
-    cmd: |
-      for iface in $(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | grep -v docker | grep -v vir | grep -v br- | grep -v veth | sort | tail -n +2); do
-        ip addr flush dev $iface 2>/dev/null || true
-      done
-  changed_when: false
-
 - name: Enable IP forwarding (required for cloudflared private network routing)
   ansible.posix.sysctl:
     name: net.ipv4.ip_forward

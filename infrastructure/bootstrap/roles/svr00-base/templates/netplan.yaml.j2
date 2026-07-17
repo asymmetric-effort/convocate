@@ -1,12 +1,12 @@
-{% set physical_ifaces = ansible_interfaces | reject('match', '^lo$') | reject('match', '^docker') | reject('match', '^vir') | reject('match', '^br-') | reject('match', '^veth') | sort | list %}
 # svr00 network configuration
+# Physical NIC: enp4s0f0 (hardcoded — do not autodetect)
 # 192.168.3.160-169 are reserved for core services
 # All IPs on a single interface to avoid multi-NIC routing issues
 network:
   version: 2
   renderer: networkd
   ethernets:
-    {{ physical_ifaces[0] }}:
+    enp4s0f0:
       addresses:
         - 192.168.3.159/24  # svr00 ssh
         - 192.168.3.160/24  # core: secrets-a (openbao test)
