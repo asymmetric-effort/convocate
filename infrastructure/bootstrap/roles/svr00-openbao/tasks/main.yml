@@ -142,9 +142,9 @@
             -d '{"common_name":"Convocate Secrets-A Root CA","ttl":"87600h","key_type":"ec","key_bits":256}' \
             -H "X-Vault-Token:$ROOT" $BAO/v1/pki/root/generate/internal
 
-          # Create server cert role
+          # Create server cert role (all asymmetric-effort.com subdomains + LAN IPs)
           curl -sf \
-            -d '{"allowed_domains":"asymmetric-effort.com,192.168.3.160","allow_subdomains":true,"allow_ip_sans":true,"max_ttl":"8760h","key_type":"ec","key_bits":256}' \
+            -d '{"allowed_domains":"asymmetric-effort.com","allow_subdomains":true,"allow_bare_domains":true,"allow_ip_sans":true,"allowed_other_sans":"","max_ttl":"8760h","key_type":"ec","key_bits":256}' \
             -H "X-Vault-Token:$ROOT" $BAO/v1/pki/roles/server
 
           # Issue TLS cert for dev.auth.asymmetric-effort.com
@@ -185,11 +185,33 @@
           chmod 0400 /var/openbao/tls/secrets-a/key.pem
           chmod 0444 /var/openbao/tls/secrets-a/cert.pem
 
+          # --- Enable OIDC Identity Provider ---
+          # Create default key for OIDC tokens
+          curl -sf -X PUT \
+            -d '{"rotation_period":"24h","verification_ttl":"24h","allowed_client_ids":["*"],"algorithm":"ES256"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/key/default
+
+          # Create default OIDC scope (openid is implicit)
+          curl -sf -X PUT \
+            -d '{"template":"{\"username\":{{identity.entity.name}},\"email\":{{identity.entity.metadata.email}}}"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/scope/profile
+
+          curl -sf -X PUT \
+            -d '{"template":"{\"email\":{{identity.entity.metadata.email}}}"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/scope/email
+
+          # Create default OIDC provider
+          curl -sf -X PUT \
+            -d '{"issuer":"https://dev.auth.asymmetric-effort.com","scopes_supported":["profile","email"]}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/provider/default
+
+          echo "secrets-a OIDC provider configured"
+
           # Store unseal key for post-TLS-restart unseal
           echo "$UNSEAL_KEY" > /var/openbao/tls/secrets-a/.unseal-key
           chmod 0400 /var/openbao/tls/secrets-a/.unseal-key
 
-          echo "secrets-a initialized with PKI and TLS cert"
+          echo "secrets-a initialized with KV, PKI, OIDC and TLS cert"
       changed_when: false
 
     - name: Stop secrets-a HTTP bootstrap container
@@ -306,9 +328,9 @@
             -d '{"common_name":"Convocate Secrets-B Root CA","ttl":"87600h","key_type":"ec","key_bits":256}' \
             -H "X-Vault-Token:$ROOT" $BAO/v1/pki/root/generate/internal
 
-          # Create server cert role
+          # Create server cert role (all asymmetric-effort.com subdomains + LAN IPs)
           curl -sf \
-            -d '{"allowed_domains":"asymmetric-effort.com,192.168.3.161","allow_subdomains":true,"allow_ip_sans":true,"max_ttl":"8760h","key_type":"ec","key_bits":256}' \
+            -d '{"allowed_domains":"asymmetric-effort.com","allow_subdomains":true,"allow_bare_domains":true,"allow_ip_sans":true,"allowed_other_sans":"","max_ttl":"8760h","key_type":"ec","key_bits":256}' \
             -H "X-Vault-Token:$ROOT" $BAO/v1/pki/roles/server
 
           # Issue TLS cert for auth.asymmetric-effort.com
@@ -349,11 +371,38 @@
           chmod 0400 /var/openbao/tls/secrets-b/key.pem
           chmod 0444 /var/openbao/tls/secrets-b/cert.pem
 
+          # --- Enable OIDC Identity Provider ---
+          # Create default key for OIDC tokens
+          curl -sf -X PUT \
+            -d '{"rotation_period":"24h","verification_ttl":"24h","allowed_client_ids":["*"],"algorithm":"ES256"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/key/default
+
+          # Create OIDC scopes
+          curl -sf -X PUT \
+            -d '{"template":"{\"username\":{{identity.entity.name}},\"email\":{{identity.entity.metadata.email}}}"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/scope/profile
+
+          curl -sf -X PUT \
+            -d '{"template":"{\"email\":{{identity.entity.metadata.email}}}"}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/scope/email
+
+          # Create default OIDC provider
+          curl -sf -X PUT \
+            -d '{"issuer":"https://auth.asymmetric-effort.com","scopes_supported":["profile","email"]}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/provider/default
+
+          # Create samcaldwell identity entity
+          curl -sf -X PUT \
+            -d '{"name":"samcaldwell","metadata":{"email":"sam@asymmetric-effort.com"}}' \
+            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/entity/name/samcaldwell
+
+          echo "secrets-b OIDC provider configured"
+
           # Store unseal key for post-TLS-restart unseal
           echo "$UNSEAL_KEY" > /var/openbao/tls/secrets-b/.unseal-key
           chmod 0400 /var/openbao/tls/secrets-b/.unseal-key
 
-          echo "secrets-b initialized with PKI and TLS cert"
+          echo "secrets-b initialized with KV, PKI, OIDC and TLS cert"
       changed_when: false
 
     - name: Stop secrets-b HTTP bootstrap container
