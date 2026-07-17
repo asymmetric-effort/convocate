@@ -406,6 +406,12 @@
           echo "$UNSEAL_KEY" > /var/openbao/tls/secrets-b/.unseal-key
           chmod 0400 /var/openbao/tls/secrets-b/.unseal-key
 
+          # Store root token for downstream bootstrap roles (grafana, etc.)
+          # This is cleaned up after bootstrap completes
+          mkdir -p /var/grafana/tls
+          echo "$ROOT" > /var/grafana/tls/.secrets-b-token
+          chmod 0400 /var/grafana/tls/.secrets-b-token
+
           echo "secrets-b initialized with KV, PKI, OIDC and TLS cert"
       changed_when: false
 
