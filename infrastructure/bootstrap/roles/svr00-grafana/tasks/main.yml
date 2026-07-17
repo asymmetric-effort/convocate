@@ -17,23 +17,23 @@
     - /var/grafana/tls/a
     - /var/grafana/tls/b
 
-- name: Set data directory ownership for Grafana (472:0)
+- name: Set data directory ownership for Grafana (65534:0)
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     mode: "0755"
-    owner: "472"
+    owner: "65534"
     group: "0"
   loop:
     - /var/grafana/a
     - /var/grafana/b
 
-- name: Set TLS directory ownership for Grafana (472:0)
+- name: Set TLS directory ownership for Grafana (65534:0)
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     mode: "0755"
-    owner: "472"
+    owner: "65534"
     group: "0"
   loop:
     - /var/grafana/tls/a
@@ -105,7 +105,7 @@
 
       rm -f /tmp/cert-resp-grafana-a.json
 
-      chown 472:0 /var/grafana/tls/a/cert.pem /var/grafana/tls/a/key.pem
+      chown 65534:0 /var/grafana/tls/a/cert.pem /var/grafana/tls/a/key.pem
       chmod 0400 /var/grafana/tls/a/key.pem
       chmod 0444 /var/grafana/tls/a/cert.pem
 
@@ -159,7 +159,7 @@
 
       rm -f /tmp/cert-resp-grafana-b.json
 
-      chown 472:0 /var/grafana/tls/b/cert.pem /var/grafana/tls/b/key.pem
+      chown 65534:0 /var/grafana/tls/b/cert.pem /var/grafana/tls/b/key.pem
       chmod 0400 /var/grafana/tls/b/key.pem
       chmod 0444 /var/grafana/tls/b/cert.pem
 
@@ -245,11 +245,11 @@
 
       # Write client secrets to TLS dirs for container mount
       echo -n "$GRAFANA_A_SECRET" > /var/grafana/tls/a/oidc-client-secret
-      chown 472:0 /var/grafana/tls/a/oidc-client-secret
+      chown 65534:0 /var/grafana/tls/a/oidc-client-secret
       chmod 0400 /var/grafana/tls/a/oidc-client-secret
 
       echo -n "$GRAFANA_B_SECRET" > /var/grafana/tls/b/oidc-client-secret
-      chown 472:0 /var/grafana/tls/b/oidc-client-secret
+      chown 65534:0 /var/grafana/tls/b/oidc-client-secret
       chmod 0400 /var/grafana/tls/b/oidc-client-secret
 
       # Create a grafana-read policy for fetching OIDC secrets at deploy time

@@ -19,7 +19,7 @@
 
     - name: Pull latest Grafana image
       ansible.builtin.command:
-        cmd: docker pull grafana/grafana-oss:11.6.0
+        cmd: docker pull 192.168.3.90:5000/convocate/grafana:latest
       changed_when: true
 
     # =========================================================================
@@ -35,7 +35,7 @@
             | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["data"]["secret"])' 2>/dev/null)
           if [ -n "$SECRET" ]; then
             echo -n "$SECRET" > /var/grafana/tls/a/oidc-client-secret
-            chown 472:0 /var/grafana/tls/a/oidc-client-secret
+            chown 65534:0 /var/grafana/tls/a/oidc-client-secret
             chmod 0400 /var/grafana/tls/a/oidc-client-secret
           fi
       changed_when: false
@@ -51,7 +51,7 @@
             | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["data"]["secret"])' 2>/dev/null)
           if [ -n "$SECRET" ]; then
             echo -n "$SECRET" > /var/grafana/tls/b/oidc-client-secret
-            chown 472:0 /var/grafana/tls/b/oidc-client-secret
+            chown 65534:0 /var/grafana/tls/b/oidc-client-secret
             chmod 0400 /var/grafana/tls/b/oidc-client-secret
           fi
       changed_when: false
@@ -73,7 +73,7 @@
       ansible.builtin.shell:
         cmd: |
           rm -rf /var/grafana/a/*
-          chown 472:0 /var/grafana/a
+          chown 65534:0 /var/grafana/a
       when: deploy_target == "all" or deploy_target == "grafana-a"
 
     - name: Deploy grafana-a (recreate)

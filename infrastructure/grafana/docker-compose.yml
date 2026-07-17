@@ -1,6 +1,6 @@
 services:
   grafana-a:
-    image: grafana/grafana-oss:11.6.0
+    image: 192.168.3.90:5000/convocate/grafana:latest
     container_name: grafana-a
     restart: unless-stopped
     ports:
@@ -36,7 +36,7 @@ services:
       GF_LOG_LEVEL: info
 
   grafana-b:
-    image: grafana/grafana-oss:11.6.0
+    image: 192.168.3.90:5000/convocate/grafana:latest
     container_name: grafana-b
     restart: unless-stopped
     ports:
