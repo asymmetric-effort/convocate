@@ -30,12 +30,10 @@ jobs:
           for df in infrastructure/docker/*.Dockerfile; do
             NAME=$(basename "$df" .Dockerfile)
             echo "--- Linting $NAME ---"
-            if ! hadolint --failure-threshold error "$df"; then
-              FAILED=1
-            fi
+            hadolint --failure-threshold error "$df" || FAILED=1
           done
           if [ "$FAILED" = "1" ]; then
-            echo "::error::One or more Dockerfiles failed linting"
+            echo "::error::One or more Dockerfiles have lint errors"
             exit 1
           fi
 
@@ -78,7 +76,7 @@ jobs:
               TAGS="${TAGS} -t ${IMAGE}:latest"
             fi
 
-            docker build ${TAGS} -f "$df" infrastructure/docker/
+            docker build ${TAGS} -f "$df" .
 
             echo "=== Pushing ${NAME} ==="
             docker push "${IMAGE}:${SHA_TAG}"
