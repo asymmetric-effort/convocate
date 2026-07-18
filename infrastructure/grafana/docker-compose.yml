@@ -8,12 +8,13 @@ services:
     volumes:
       - /var/grafana/a:/var/lib/grafana
       - /var/grafana/tls/a:/etc/grafana/tls:ro
+      - /opt/grafana/provisioning:/etc/grafana/provisioning:ro
     environment:
       # Paths
       GF_PATHS_DATA: /var/lib/grafana
       GF_PATHS_LOGS: /var/log/grafana
       GF_PATHS_PLUGINS: /var/lib/grafana/plugins
-      GF_PATHS_PROVISIONING: /var/lib/grafana/provisioning
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
 
       # Server / TLS
       GF_SERVER_PROTOCOL: https
@@ -38,6 +39,13 @@ services:
       # client_secret is read from file at runtime (mounted from secrets-b KV)
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /etc/grafana/tls/oidc-client-secret
 
+      # Admin password from OpenBao (read from file)
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /etc/grafana/tls/admin-password
+
+      # Disable login form — OIDC only
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+
       # Logging
       GF_LOG_MODE: console
       GF_LOG_LEVEL: info
@@ -51,12 +59,13 @@ services:
     volumes:
       - /var/grafana/b:/var/lib/grafana
       - /var/grafana/tls/b:/etc/grafana/tls:ro
+      - /opt/grafana/provisioning:/etc/grafana/provisioning:ro
     environment:
       # Paths
       GF_PATHS_DATA: /var/lib/grafana
       GF_PATHS_LOGS: /var/log/grafana
       GF_PATHS_PLUGINS: /var/lib/grafana/plugins
-      GF_PATHS_PROVISIONING: /var/lib/grafana/provisioning
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
 
       # Server / TLS
       GF_SERVER_PROTOCOL: https
@@ -80,6 +89,13 @@ services:
 
       # client_secret is read from file at runtime (mounted from secrets-b KV)
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /etc/grafana/tls/oidc-client-secret
+
+      # Admin password from OpenBao (read from file)
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /etc/grafana/tls/admin-password
+
+      # Disable login form — OIDC only
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
 
       # Logging
       GF_LOG_MODE: console

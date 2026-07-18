@@ -252,6 +252,22 @@
       chown 65534:0 /var/grafana/tls/b/oidc-client-secret
       chmod 0400 /var/grafana/tls/b/oidc-client-secret
 
+      # Generate admin password and store in OpenBao + mount dirs
+      ADMIN_PASS=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+      curl -sf -k -X PUT \
+        -d "{\"data\":{\"password\":\"$ADMIN_PASS\"}}" \
+        -H "$H" $BAO/v1/secret/data/grafana/admin-password
+
+      echo -n "$ADMIN_PASS" > /var/grafana/tls/a/admin-password
+      chown 65534:0 /var/grafana/tls/a/admin-password
+      chmod 0400 /var/grafana/tls/a/admin-password
+
+      echo -n "$ADMIN_PASS" > /var/grafana/tls/b/admin-password
+      chown 65534:0 /var/grafana/tls/b/admin-password
+      chmod 0400 /var/grafana/tls/b/admin-password
+
+      echo "Admin password generated and stored in OpenBao"
+
       # Create a grafana-read policy for fetching OIDC secrets at deploy time
       curl -sf -k -X PUT \
         -d '{"policy":"path \"secret/data/grafana/*\" { capabilities = [\"read\"] }"}' \

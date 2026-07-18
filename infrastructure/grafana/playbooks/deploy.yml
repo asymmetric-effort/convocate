@@ -17,6 +17,15 @@
         owner: root
         group: root
 
+    - name: Copy provisioning directory to svr00
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../provisioning/"
+        dest: "{{ grafana_dir }}/provisioning/"
+        mode: "0644"
+        owner: root
+        group: root
+        directory_mode: "0755"
+
     - name: Pull latest Grafana image
       ansible.builtin.command:
         cmd: docker pull 192.168.3.90:5000/convocate/grafana:latest
