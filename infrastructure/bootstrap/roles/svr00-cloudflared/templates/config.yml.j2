@@ -4,13 +4,13 @@ credentials-file: /etc/cloudflared/credentials.json
 ingress:
   # OpenBao test (secrets-a)
   - hostname: dev.auth.asymmetric-effort.com
-    service: https://192.168.3.160:8200
+    service: https://192.168.3.160:443
     originRequest:
       noTLSVerify: true
 
   # OpenBao production (secrets-b)
   - hostname: auth.asymmetric-effort.com
-    service: https://192.168.3.161:8200
+    service: https://192.168.3.161:443
     originRequest:
       noTLSVerify: true
 

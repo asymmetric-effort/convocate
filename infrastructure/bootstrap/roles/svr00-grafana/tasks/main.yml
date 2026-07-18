@@ -63,7 +63,7 @@
   when: not grafana_a_cert.stat.exists
   ansible.builtin.shell:
     cmd: |
-      BAO=https://192.168.3.161:8200
+      BAO=https://192.168.3.161:443
 
       # Read the secrets-b unseal key if available (first-time bootstrap)
       UNSEAL_KEY=$(cat /var/openbao/tls/secrets-b/.unseal-key 2>/dev/null || true)
@@ -121,7 +121,7 @@
   when: not grafana_b_cert.stat.exists
   ansible.builtin.shell:
     cmd: |
-      BAO=https://192.168.3.161:8200
+      BAO=https://192.168.3.161:443
 
       ROOT_TOKEN=$(cat /var/grafana/tls/.secrets-b-token 2>/dev/null || true)
 
@@ -173,7 +173,7 @@
 - name: Set up OIDC identity provider and clients in secrets-b
   ansible.builtin.shell:
     cmd: |
-      BAO=https://192.168.3.161:8200
+      BAO=https://192.168.3.161:443
 
       ROOT_TOKEN=$(cat /var/grafana/tls/.secrets-b-token 2>/dev/null || true)
 
@@ -315,7 +315,7 @@
 - name: Ensure allow_all assignment exists in secrets-b
   ansible.builtin.shell:
     cmd: |
-      BAO=https://192.168.3.161:8200
+      BAO=https://192.168.3.161:443
       ROOT_TOKEN=$(cat /var/grafana/tls/a/.vault-token 2>/dev/null || true)
       if [ -n "$ROOT_TOKEN" ]; then
         curl -sf -k -X PUT \

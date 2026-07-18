@@ -231,7 +231,7 @@
       ansible.builtin.shell:
         cmd: |
           for i in $(seq 1 30); do
-            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' -k https://192.168.3.160:8200/v1/sys/health 2>/dev/null)
+            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' -k https://192.168.3.160:443/v1/sys/health 2>/dev/null)
             [ -n "$STATUS" ] && [ "$STATUS" != "000" ] && break
             sleep 2
           done
@@ -242,7 +242,7 @@
         cmd: |
           UNSEAL_KEY=$(cat /var/openbao/tls/secrets-a/.unseal-key 2>/dev/null)
           if [ -n "$UNSEAL_KEY" ]; then
-            curl -sf -k -d "{\"key\":\"$UNSEAL_KEY\"}" https://192.168.3.160:8200/v1/sys/unseal
+            curl -sf -k -d "{\"key\":\"$UNSEAL_KEY\"}" https://192.168.3.160:443/v1/sys/unseal
             echo "secrets-a unsealed"
           fi
       changed_when: false
@@ -432,7 +432,7 @@
       ansible.builtin.shell:
         cmd: |
           for i in $(seq 1 30); do
-            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' -k https://192.168.3.161:8200/v1/sys/health 2>/dev/null)
+            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' -k https://192.168.3.161:443/v1/sys/health 2>/dev/null)
             [ -n "$STATUS" ] && [ "$STATUS" != "000" ] && break
             sleep 2
           done
@@ -443,7 +443,7 @@
         cmd: |
           UNSEAL_KEY=$(cat /var/openbao/tls/secrets-b/.unseal-key 2>/dev/null)
           if [ -n "$UNSEAL_KEY" ]; then
-            curl -sf -k -d "{\"key\":\"$UNSEAL_KEY\"}" https://192.168.3.161:8200/v1/sys/unseal
+            curl -sf -k -d "{\"key\":\"$UNSEAL_KEY\"}" https://192.168.3.161:443/v1/sys/unseal
             echo "secrets-b unsealed"
           fi
       changed_when: false
@@ -461,7 +461,7 @@
   when: not secrets_b_token.stat.exists or secrets_b_token.stat.size == 0
   ansible.builtin.shell:
     cmd: |
-      BAO=https://192.168.3.161:8200
+      BAO=https://192.168.3.161:443
 
       # Login as pdv-test to get a token
       LOGIN_RESP=$(curl -sf -k -d '{"password":"PdvTest-2026-Secure"}' $BAO/v1/auth/userpass/login/pdv-test)

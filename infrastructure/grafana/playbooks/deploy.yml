@@ -40,7 +40,7 @@
         cmd: |
           SECRET=$(curl -sf -k \
             -H "X-Vault-Token:$(cat /var/grafana/tls/a/.vault-token 2>/dev/null)" \
-            https://192.168.3.161:8200/v1/secret/data/grafana/oidc-client-secret-a \
+            https://192.168.3.161:443/v1/secret/data/grafana/oidc-client-secret-a \
             | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["data"]["secret"])' 2>/dev/null)
           if [ -n "$SECRET" ]; then
             echo -n "$SECRET" > /var/grafana/tls/a/oidc-client-secret
@@ -56,7 +56,7 @@
         cmd: |
           SECRET=$(curl -sf -k \
             -H "X-Vault-Token:$(cat /var/grafana/tls/b/.vault-token 2>/dev/null)" \
-            https://192.168.3.161:8200/v1/secret/data/grafana/oidc-client-secret-b \
+            https://192.168.3.161:443/v1/secret/data/grafana/oidc-client-secret-b \
             | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["data"]["secret"])' 2>/dev/null)
           if [ -n "$SECRET" ]; then
             echo -n "$SECRET" > /var/grafana/tls/b/oidc-client-secret

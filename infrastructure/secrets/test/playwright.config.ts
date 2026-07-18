@@ -8,6 +8,6 @@ export default defineConfig({
   workers: 1,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: process.env.OPENBAO_URL ?? "http://192.168.3.160:8200",
+    baseURL: process.env.OPENBAO_URL ?? "http://192.168.3.160:443",
   },
 });
