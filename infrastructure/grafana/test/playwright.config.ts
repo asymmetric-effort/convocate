@@ -8,6 +8,6 @@ export default defineConfig({
   workers: 1,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: process.env.GRAFANA_URL ?? "https://192.168.3.162:3000",
+    baseURL: process.env.GRAFANA_URL ?? "https://192.168.3.162:443",
   },
 });
