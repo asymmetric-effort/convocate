@@ -70,11 +70,11 @@
     cmd: |
       BAO=https://192.168.3.161:443
 
-      ROOT_TOKEN=$(cat /var/prometheus/tls/.secrets-b-token 2>/dev/null || true)
+      ROOT_TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || true)
 
       if [ -z "$ROOT_TOKEN" ]; then
         echo "ERROR: No secrets-b token available for TLS cert issuance"
-        echo "Run the openbao bootstrap first, or place a token in /var/prometheus/tls/.secrets-b-token"
+        echo "Run the openbao bootstrap first"
         exit 1
       fi
 
@@ -124,11 +124,11 @@
     cmd: |
       BAO=https://192.168.3.161:443
 
-      ROOT_TOKEN=$(cat /var/prometheus/tls/.secrets-b-token 2>/dev/null || true)
+      ROOT_TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || true)
 
       if [ -z "$ROOT_TOKEN" ]; then
         echo "ERROR: No secrets-b token available for TLS cert issuance"
-        echo "Run the openbao bootstrap first, or place a token in /var/prometheus/tls/.secrets-b-token"
+        echo "Run the openbao bootstrap first"
         exit 1
       fi
 
@@ -176,7 +176,7 @@
     cmd: |
       BAO=https://192.168.3.161:443
 
-      ROOT_TOKEN=$(cat /var/prometheus/tls/.secrets-b-token 2>/dev/null || true)
+      ROOT_TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || true)
 
       if [ -z "$ROOT_TOKEN" ]; then
         echo "SKIP: No secrets-b token available for metrics token"
@@ -215,7 +215,7 @@
       fi
 
       # Clean up the bootstrap token
-      rm -f /var/prometheus/tls/.secrets-b-token
+      # Root token persists at /var/openbao/tls/secrets-b/.root-token
 
       echo "Prometheus OpenBao integration configured"
   changed_when: false
