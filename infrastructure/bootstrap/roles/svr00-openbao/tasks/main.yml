@@ -195,7 +195,7 @@
 
           # Create default OIDC scope (openid is implicit)
           curl -sf -X PUT \
-            -d '{"template":"{\"username\":{{ '{{' }}identity.entity.name{{ '}}' }},\"email\":{{ '{{' }}identity.entity.metadata.email{{ '}}' }}}"}' \
+            -d '{"template":"{\"username\":{{ '{{' }}identity.entity.name{{ '}}' }}}"}' \
             -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/scope/profile
 
           curl -sf -X PUT \
@@ -398,7 +398,7 @@
 
           # Create OIDC scopes
           curl -sf -X PUT \
-            -d '{"template":"{\"username\":{{ '{{' }}identity.entity.name{{ '}}' }},\"email\":{{ '{{' }}identity.entity.metadata.email{{ '}}' }}}"}' \
+            -d '{"template":"{\"username\":{{ '{{' }}identity.entity.name{{ '}}' }}}"}' \
             -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/scope/profile
 
           curl -sf -X PUT \
