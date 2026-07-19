@@ -4,10 +4,15 @@ on:
     branches: [main]
     paths: ['infrastructure/docker/**']
     tags: ['v*']
+  workflow_run:
+    workflows: ['Fetch Dependencies']
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 jobs:
   verify-deps:
     name: Verify deps release exists
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       deps_tag: ${{ steps.deps.outputs.deps_tag }}
