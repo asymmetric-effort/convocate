@@ -31,7 +31,7 @@ services:
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
       GF_AUTH_GENERIC_OAUTH_CLIENT_ID__FILE: /etc/grafana/tls/oidc-client-id
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/authorize
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
       GF_AUTH_GENERIC_OAUTH_API_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
       GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "true"
@@ -82,7 +82,7 @@ services:
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
       GF_AUTH_GENERIC_OAUTH_CLIENT_ID__FILE: /etc/grafana/tls/oidc-client-id
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/authorize
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
       GF_AUTH_GENERIC_OAUTH_API_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
       GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "true"
