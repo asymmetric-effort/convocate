@@ -1,0 +1,99 @@
+name: Prometheus
+on:
+  push:
+    branches: [main]
+    paths: ['infrastructure/prometheus/**']
+  workflow_dispatch:
+jobs:
+  deploy-prometheus-a:
+    name: Deploy to prometheus-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy prometheus-a
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/prometheus/playbooks/deploy.yml \
+            -e "ghcr_token=${{ secrets.GITHUB_TOKEN }}" -e "ghcr_user=${{ github.actor }}" \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=prometheus-a"
+          rm -f ~/.ssh/ansible_key
+
+  pdv-prometheus-a:
+    name: PDV Tests (prometheus-a)
+    needs: deploy-prometheus-a
+    runs-on: [self-hosted, linux, x64]
+    env:
+      PROMETHEUS_URL: https://192.168.3.164:443
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/prometheus/test
+        run: bun install
+
+      - name: Run PDV tests against prometheus-a
+        working-directory: infrastructure/prometheus/test
+        run: bunx playwright test pdv.spec.ts
+
+  deploy-prometheus-b:
+    name: Deploy to prometheus-b (production)
+    needs: pdv-prometheus-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy prometheus-b (non-destructive)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/prometheus/playbooks/deploy.yml \
+            -e "ghcr_token=${{ secrets.GITHUB_TOKEN }}" -e "ghcr_user=${{ github.actor }}" \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=prometheus-b"
+          rm -f ~/.ssh/ansible_key
+
+  smoke-prometheus-b:
+    name: Smoke Tests (prometheus-b)
+    needs: deploy-prometheus-b
+    runs-on: [self-hosted, linux, x64]
+    env:
+      PROMETHEUS_URL: https://192.168.3.165:443
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/prometheus/test
+        run: bun install
+
+      - name: Run smoke tests against prometheus-b
+        working-directory: infrastructure/prometheus/test
+        run: bunx playwright test smoke.spec.ts

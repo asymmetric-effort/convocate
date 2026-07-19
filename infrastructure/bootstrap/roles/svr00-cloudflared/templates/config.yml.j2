@@ -26,6 +26,18 @@ ingress:
     originRequest:
       noTLSVerify: true
 
+  # Prometheus pre-production (prometheus-a)
+  - hostname: dev.prometheus.asymmetric-effort.com
+    service: https://192.168.3.164:443
+    originRequest:
+      noTLSVerify: true
+
+  # Prometheus production (prometheus-b)
+  - hostname: prometheus.asymmetric-effort.com
+    service: https://192.168.3.165:443
+    originRequest:
+      noTLSVerify: true
+
   # SSH access to svr00
   - hostname: ssh.asymmetric-effort.com
     service: ssh://192.168.3.159:22

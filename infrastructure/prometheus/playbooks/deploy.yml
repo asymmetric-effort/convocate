@@ -1,0 +1,165 @@
+---
+# Deploy Prometheus — application-level only. Pulls from GHCR.
+# Assumes bootstrap has already run (directories, TLS certs).
+- name: Deploy Prometheus monitoring infrastructure
+  hosts: svr00
+  become: true
+  gather_facts: false
+  vars:
+    prometheus_dir: /opt/prometheus
+    deploy_target: "all"
+  tasks:
+    - name: Copy docker-compose.yml to svr00
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../docker-compose.yml"
+        dest: "{{ prometheus_dir }}/docker-compose.yml"
+        mode: "0644"
+        owner: root
+        group: root
+
+    - name: Copy prometheus.yml config to svr00
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../prometheus.yml"
+        dest: "{{ prometheus_dir }}/prometheus.yml"
+        mode: "0644"
+        owner: root
+        group: root
+
+    - name: Copy web-config-a.yml to svr00
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../web-config-a.yml"
+        dest: "{{ prometheus_dir }}/web-config-a.yml"
+        mode: "0644"
+        owner: root
+        group: root
+
+    - name: Copy web-config-b.yml to svr00
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../web-config-b.yml"
+        dest: "{{ prometheus_dir }}/web-config-b.yml"
+        mode: "0644"
+        owner: root
+        group: root
+
+    - name: Login to GHCR
+      ansible.builtin.shell:
+        cmd: echo "{{ ghcr_token }}" | docker login ghcr.io -u "{{ ghcr_user }}" --password-stdin
+      changed_when: false
+      no_log: true
+
+    - name: Pull latest Prometheus image
+      ansible.builtin.command:
+        cmd: docker pull ghcr.io/asymmetric-effort/convocate/prometheus:latest
+      changed_when: true
+
+    # =========================================================================
+    # Fetch OpenBao metrics token from secrets-b
+    # =========================================================================
+
+    - name: Fetch OpenBao metrics token for Prometheus scraping
+      ansible.builtin.shell:
+        cmd: |
+          BAO=https://192.168.3.161:443
+          TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || cat /var/prometheus/tls/a/.vault-token 2>/dev/null)
+          [ -z "$TOKEN" ] && exit 0
+
+          # Create a prometheus-metrics policy for reading metrics
+          curl -sf -k -X PUT \
+            -d '{"policy":"path \"sys/metrics\" { capabilities = [\"read\"] }"}' \
+            -H "X-Vault-Token:$TOKEN" $BAO/v1/sys/policies/acl/prometheus-metrics-policy
+
+          # Create a long-lived token for Prometheus to scrape OpenBao metrics
+          METRICS_TOKEN=$(curl -sf -k \
+            -d '{"policies":["prometheus-metrics-policy"],"ttl":"8760h","renewable":true}' \
+            -H "X-Vault-Token:$TOKEN" $BAO/v1/auth/token/create \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["client_token"])' 2>/dev/null)
+
+          if [ -n "$METRICS_TOKEN" ]; then
+            echo -n "$METRICS_TOKEN" > /opt/prometheus/openbao-token
+            chmod 0400 /opt/prometheus/openbao-token
+            echo "OpenBao metrics token written"
+          fi
+      changed_when: false
+      failed_when: false
+
+    # =========================================================================
+    # prometheus-a — pre-production (wiped each deploy)
+    # =========================================================================
+
+    - name: Stop prometheus-a before wipe
+      ansible.builtin.command:
+        cmd: docker compose -f {{ prometheus_dir }}/docker-compose.yml stop prometheus-a
+      changed_when: true
+      failed_when: false
+      when: deploy_target == "all" or deploy_target == "prometheus-a"
+
+    - name: Wipe prometheus-a data (pre-production — full reset each deploy)
+      ansible.builtin.shell:
+        cmd: |
+          rm -rf /var/prometheus/a/*
+          chown 65534:0 /var/prometheus/a
+      when: deploy_target == "all" or deploy_target == "prometheus-a"
+
+    - name: Fix TLS file ownership for prometheus-a (65534 = distroless nobody)
+      ansible.builtin.shell:
+        cmd: |
+          chown -R 65534:0 /var/prometheus/tls/a/ /var/prometheus/a/
+      when: deploy_target == "all" or deploy_target == "prometheus-a"
+
+    - name: Deploy prometheus-a (recreate)
+      ansible.builtin.command:
+        cmd: docker compose -f {{ prometheus_dir }}/docker-compose.yml up -d --force-recreate prometheus-a
+      changed_when: true
+      when: deploy_target == "all" or deploy_target == "prometheus-a"
+
+    - name: Wait for prometheus-a to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' -k https://192.168.3.164:443/-/healthy 2>/dev/null)
+            [ "$STATUS" = "200" ] && break
+            sleep 2
+          done
+      changed_when: false
+      when: deploy_target == "all" or deploy_target == "prometheus-a"
+
+    # =========================================================================
+    # prometheus-b — production (non-destructive)
+    # =========================================================================
+
+    - name: Fix TLS file ownership for prometheus-b (65534 = distroless nobody)
+      ansible.builtin.shell:
+        cmd: |
+          chown -R 65534:0 /var/prometheus/tls/b/ /var/prometheus/b/
+      when: deploy_target == "all" or deploy_target == "prometheus-b"
+
+    - name: Deploy prometheus-b (pull new image, restart)
+      ansible.builtin.shell:
+        cmd: |
+          docker compose -f {{ prometheus_dir }}/docker-compose.yml pull prometheus-b
+          docker compose -f {{ prometheus_dir }}/docker-compose.yml up -d prometheus-b
+      changed_when: true
+      when: deploy_target == "all" or deploy_target == "prometheus-b"
+
+    - name: Wait for prometheus-b to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf -o /dev/null -w '%{http_code}' -k https://192.168.3.165:443/-/healthy 2>/dev/null)
+            [ "$STATUS" = "200" ] && break
+            sleep 2
+          done
+      changed_when: false
+      when: deploy_target == "all" or deploy_target == "prometheus-b"
+
+    - name: Verify prometheus-b is healthy
+      ansible.builtin.shell:
+        cmd: |
+          STATUS=$(curl -sf -o /dev/null -w '%{http_code}' -k https://192.168.3.165:443/-/healthy 2>/dev/null)
+          if [ "$STATUS" != "200" ]; then
+            echo "ERROR: prometheus-b health check failed — HTTP $STATUS"
+            exit 1
+          fi
+          echo "prometheus-b is running and healthy"
+      changed_when: false
+      when: deploy_target == "all" or deploy_target == "prometheus-b"

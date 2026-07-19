@@ -3,7 +3,7 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: https://prometheus.asymmetric-effort.com
+    url: https://192.168.3.165:443
     isDefault: true
     editable: true
     jsonData:

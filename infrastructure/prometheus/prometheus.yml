@@ -1,0 +1,91 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # svr00 system stats (node_exporter)
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["192.168.3.159:9100"]
+        labels:
+          instance: svr00
+
+  # cloudflared tunnel metrics
+  - job_name: cloudflared
+    static_configs:
+      - targets: ["192.168.3.159:20241"]
+        labels:
+          instance: svr00
+    metrics_path: /metrics
+
+  # OpenBao secrets-a (pre-production)
+  - job_name: openbao-secrets-a
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    metrics_path: /v1/sys/metrics
+    params:
+      format: ["prometheus"]
+    bearer_token_file: /etc/prometheus/openbao-token
+    static_configs:
+      - targets: ["192.168.3.160:443"]
+        labels:
+          instance: secrets-a
+
+  # OpenBao secrets-b (production)
+  - job_name: openbao-secrets-b
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    metrics_path: /v1/sys/metrics
+    params:
+      format: ["prometheus"]
+    bearer_token_file: /etc/prometheus/openbao-token
+    static_configs:
+      - targets: ["192.168.3.161:443"]
+        labels:
+          instance: secrets-b
+
+  # Grafana pre-production (grafana-a)
+  - job_name: grafana-a
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["192.168.3.162:443"]
+        labels:
+          instance: grafana-a
+
+  # Grafana production (grafana-b)
+  - job_name: grafana-b
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["192.168.3.163:443"]
+        labels:
+          instance: grafana-b
+
+  # Prometheus pre-production (self-monitoring)
+  - job_name: prometheus-a
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["192.168.3.164:443"]
+        labels:
+          instance: prometheus-a
+
+  # Prometheus production (self-monitoring)
+  - job_name: prometheus-b
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["192.168.3.165:443"]
+        labels:
+          instance: prometheus-b

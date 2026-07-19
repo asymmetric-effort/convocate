@@ -44,3 +44,17 @@
   gather_facts: false
   roles:
     - svr00-grafana
+
+- name: Bootstrap svr00 — Node Exporter
+  hosts: svr00
+  become: true
+  gather_facts: false
+  roles:
+    - svr00-node-exporter
+
+- name: Bootstrap svr00 — Prometheus monitoring
+  hosts: svr00
+  become: true
+  gather_facts: false
+  roles:
+    - svr00-prometheus

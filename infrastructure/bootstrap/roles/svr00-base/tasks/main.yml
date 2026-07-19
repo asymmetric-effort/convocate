@@ -124,6 +124,25 @@
     - 192.168.3.162
     - 192.168.3.163
 
+- name: Allow HTTPS on Prometheus IPs (443) from local subnet
+  community.general.ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+    from_ip: 192.168.3.0/24
+    to_ip: "{{ item }}"
+  loop:
+    - 192.168.3.164
+    - 192.168.3.165
+
+- name: Allow node_exporter (9100) from local subnet
+  community.general.ufw:
+    rule: allow
+    port: "9100"
+    proto: tcp
+    from_ip: 192.168.3.0/24
+    to_ip: 192.168.3.159
+
 - name: Allow Grafana (3000) from local subnet
   community.general.ufw:
     rule: allow

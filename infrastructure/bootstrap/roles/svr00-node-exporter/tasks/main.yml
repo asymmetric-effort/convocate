@@ -1,0 +1,78 @@
+---
+# Bootstrap node_exporter on svr00
+# Installs node_exporter as a systemd service for system metrics collection.
+
+- name: Check if node_exporter binary exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/node_exporter
+  register: node_exporter_bin
+
+- name: Download node_exporter
+  when: not node_exporter_bin.stat.exists
+  ansible.builtin.shell:
+    cmd: |
+      VERSION="1.9.1"
+      cd /tmp
+      curl -sLO "https://github.com/prometheus/node_exporter/releases/download/v${VERSION}/node_exporter-${VERSION}.linux-amd64.tar.gz"
+      tar xzf "node_exporter-${VERSION}.linux-amd64.tar.gz"
+      cp "node_exporter-${VERSION}.linux-amd64/node_exporter" /usr/local/bin/node_exporter
+      chmod 0755 /usr/local/bin/node_exporter
+      rm -rf "node_exporter-${VERSION}.linux-amd64" "node_exporter-${VERSION}.linux-amd64.tar.gz"
+      echo "node_exporter ${VERSION} installed"
+  changed_when: true
+
+- name: Create node_exporter system user
+  ansible.builtin.user:
+    name: node_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create node_exporter systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/node_exporter.service
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      [Unit]
+      Description=Prometheus Node Exporter
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      User=node_exporter
+      Group=node_exporter
+      Type=simple
+      ExecStart=/usr/local/bin/node_exporter \
+        --web.listen-address=192.168.3.159:9100
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable and start node_exporter
+  ansible.builtin.systemd:
+    name: node_exporter
+    enabled: true
+    state: started
+
+- name: Verify node_exporter is responding
+  ansible.builtin.shell:
+    cmd: |
+      for i in $(seq 1 10); do
+        STATUS=$(curl -sf -o /dev/null -w '%{http_code}' http://192.168.3.159:9100/metrics 2>/dev/null)
+        [ "$STATUS" = "200" ] && break
+        sleep 1
+      done
+      if [ "$STATUS" != "200" ]; then
+        echo "ERROR: node_exporter not responding on 192.168.3.159:9100"
+        exit 1
+      fi
+      echo "node_exporter is running and healthy"
+  changed_when: false

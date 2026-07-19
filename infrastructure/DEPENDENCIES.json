@@ -34,6 +34,14 @@
       "sha256": ""
     },
     {
+      "name": "node_exporter",
+      "version": "1.9.1",
+      "type": "tarball",
+      "url": "https://github.com/prometheus/node_exporter/releases/download/v1.9.1/node_exporter-1.9.1.linux-amd64.tar.gz",
+      "filename": "node_exporter-1.9.1-linux-amd64.tar.gz",
+      "sha256": ""
+    },
+    {
       "name": "influxdb",
       "version": "2.7.11",
       "type": "tarball",

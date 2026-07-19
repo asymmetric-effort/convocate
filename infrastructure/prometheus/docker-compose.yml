@@ -1,0 +1,42 @@
+services:
+  prometheus-a:
+    image: ghcr.io/asymmetric-effort/convocate/prometheus:latest
+    container_name: prometheus-a
+    restart: unless-stopped
+    network_mode: host
+    user: "0:0"
+    volumes:
+      - /var/prometheus/a:/prometheus
+      - /var/prometheus/tls/a:/etc/prometheus/tls:ro
+      - /opt/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/prometheus/web-config-a.yml:/etc/prometheus/web-config.yml:ro
+      - /opt/prometheus/openbao-token:/etc/prometheus/openbao-token:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.listen-address=192.168.3.164:443"
+      - "--web.external-url=https://dev.prometheus.asymmetric-effort.com"
+      - "--web.enable-lifecycle"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.config.file=/etc/prometheus/web-config.yml"
+
+  prometheus-b:
+    image: ghcr.io/asymmetric-effort/convocate/prometheus:latest
+    container_name: prometheus-b
+    restart: unless-stopped
+    network_mode: host
+    user: "0:0"
+    volumes:
+      - /var/prometheus/b:/prometheus
+      - /var/prometheus/tls/b:/etc/prometheus/tls:ro
+      - /opt/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/prometheus/web-config-b.yml:/etc/prometheus/web-config.yml:ro
+      - /opt/prometheus/openbao-token:/etc/prometheus/openbao-token:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.listen-address=192.168.3.165:443"
+      - "--web.external-url=https://prometheus.asymmetric-effort.com"
+      - "--web.enable-lifecycle"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.config.file=/etc/prometheus/web-config.yml"

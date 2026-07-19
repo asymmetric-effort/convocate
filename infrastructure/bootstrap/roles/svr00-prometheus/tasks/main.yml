@@ -1,0 +1,222 @@
+---
+# Bootstrap Prometheus monitoring infrastructure on svr00
+# Creates directories, issues TLS certs from secrets-b PKI, copies configs.
+
+- name: Create Prometheus directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - /opt/prometheus
+    - /var/prometheus/a
+    - /var/prometheus/b
+    - /var/prometheus/tls/a
+    - /var/prometheus/tls/b
+
+- name: Set data directory ownership for Prometheus (65534:0)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "65534"
+    group: "0"
+  loop:
+    - /var/prometheus/a
+    - /var/prometheus/b
+
+- name: Set TLS directory ownership for Prometheus (65534:0)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "65534"
+    group: "0"
+  loop:
+    - /var/prometheus/tls/a
+    - /var/prometheus/tls/b
+
+- name: Copy Prometheus configs
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    mode: "0644"
+    owner: root
+    group: root
+  loop:
+    - src: "{{ playbook_dir }}/../../prometheus/docker-compose.yml"
+      dest: /opt/prometheus/docker-compose.yml
+    - src: "{{ playbook_dir }}/../../prometheus/prometheus.yml"
+      dest: /opt/prometheus/prometheus.yml
+    - src: "{{ playbook_dir }}/../../prometheus/web-config-a.yml"
+      dest: /opt/prometheus/web-config-a.yml
+    - src: "{{ playbook_dir }}/../../prometheus/web-config-b.yml"
+      dest: /opt/prometheus/web-config-b.yml
+
+# =========================================================================
+# TLS certificates from secrets-b PKI
+# =========================================================================
+
+- name: Check if prometheus-a has TLS certs
+  ansible.builtin.stat:
+    path: /var/prometheus/tls/a/cert.pem
+  register: prometheus_a_cert
+
+- name: Issue TLS cert for prometheus-a from secrets-b PKI
+  when: not prometheus_a_cert.stat.exists
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:443
+
+      ROOT_TOKEN=$(cat /var/prometheus/tls/.secrets-b-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "ERROR: No secrets-b token available for TLS cert issuance"
+        echo "Run the openbao bootstrap first, or place a token in /var/prometheus/tls/.secrets-b-token"
+        exit 1
+      fi
+
+      # Issue TLS cert for dev.prometheus.asymmetric-effort.com
+      curl -sf -k \
+        -d '{"common_name":"dev.prometheus.asymmetric-effort.com","alt_names":"dev.prometheus.asymmetric-effort.com","ip_sans":"192.168.3.164","ttl":"8760h"}' \
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server > /tmp/cert-resp-prometheus-a.json
+
+      if [ ! -s /tmp/cert-resp-prometheus-a.json ]; then
+        echo "ERROR: Failed to issue TLS cert for prometheus-a"
+        exit 1
+      fi
+
+      python3 -c '
+      import json
+      data = json.load(open("/tmp/cert-resp-prometheus-a.json"))["data"]
+      cert = data["certificate"]
+      if "ca_chain" in data and data["ca_chain"]:
+          cert += "\n" + "\n".join(data["ca_chain"])
+      elif "issuing_ca" in data:
+          cert += "\n" + data["issuing_ca"]
+      print(cert)
+      ' > /var/prometheus/tls/a/cert.pem
+
+      python3 -c '
+      import json
+      print(json.load(open("/tmp/cert-resp-prometheus-a.json"))["data"]["private_key"])
+      ' > /var/prometheus/tls/a/key.pem
+
+      rm -f /tmp/cert-resp-prometheus-a.json
+
+      chown 65534:0 /var/prometheus/tls/a/cert.pem /var/prometheus/tls/a/key.pem
+      chmod 0400 /var/prometheus/tls/a/key.pem
+      chmod 0444 /var/prometheus/tls/a/cert.pem
+
+      echo "TLS cert issued for prometheus-a"
+  changed_when: false
+
+- name: Check if prometheus-b has TLS certs
+  ansible.builtin.stat:
+    path: /var/prometheus/tls/b/cert.pem
+  register: prometheus_b_cert
+
+- name: Issue TLS cert for prometheus-b from secrets-b PKI
+  when: not prometheus_b_cert.stat.exists
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:443
+
+      ROOT_TOKEN=$(cat /var/prometheus/tls/.secrets-b-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "ERROR: No secrets-b token available for TLS cert issuance"
+        echo "Run the openbao bootstrap first, or place a token in /var/prometheus/tls/.secrets-b-token"
+        exit 1
+      fi
+
+      # Issue TLS cert for prometheus.asymmetric-effort.com
+      curl -sf -k \
+        -d '{"common_name":"prometheus.asymmetric-effort.com","alt_names":"prometheus.asymmetric-effort.com","ip_sans":"192.168.3.165","ttl":"8760h"}' \
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server > /tmp/cert-resp-prometheus-b.json
+
+      if [ ! -s /tmp/cert-resp-prometheus-b.json ]; then
+        echo "ERROR: Failed to issue TLS cert for prometheus-b"
+        exit 1
+      fi
+
+      python3 -c '
+      import json
+      data = json.load(open("/tmp/cert-resp-prometheus-b.json"))["data"]
+      cert = data["certificate"]
+      if "ca_chain" in data and data["ca_chain"]:
+          cert += "\n" + "\n".join(data["ca_chain"])
+      elif "issuing_ca" in data:
+          cert += "\n" + data["issuing_ca"]
+      print(cert)
+      ' > /var/prometheus/tls/b/cert.pem
+
+      python3 -c '
+      import json
+      print(json.load(open("/tmp/cert-resp-prometheus-b.json"))["data"]["private_key"])
+      ' > /var/prometheus/tls/b/key.pem
+
+      rm -f /tmp/cert-resp-prometheus-b.json
+
+      chown 65534:0 /var/prometheus/tls/b/cert.pem /var/prometheus/tls/b/key.pem
+      chmod 0400 /var/prometheus/tls/b/key.pem
+      chmod 0444 /var/prometheus/tls/b/cert.pem
+
+      echo "TLS cert issued for prometheus-b"
+  changed_when: false
+
+# =========================================================================
+# Create OpenBao metrics token for Prometheus scraping
+# =========================================================================
+
+- name: Create OpenBao metrics token for Prometheus
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:443
+
+      ROOT_TOKEN=$(cat /var/prometheus/tls/.secrets-b-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "SKIP: No secrets-b token available for metrics token"
+        exit 0
+      fi
+
+      H="X-Vault-Token:$ROOT_TOKEN"
+
+      # Create a prometheus-metrics policy for reading metrics
+      curl -sf -k -X PUT \
+        -d '{"policy":"path \"sys/metrics\" { capabilities = [\"read\"] }"}' \
+        -H "$H" $BAO/v1/sys/policies/acl/prometheus-metrics-policy
+
+      # Create a long-lived token for Prometheus to scrape OpenBao metrics
+      METRICS_TOKEN=$(curl -sf -k \
+        -d '{"policies":["prometheus-metrics-policy"],"ttl":"8760h","renewable":true}' \
+        -H "$H" $BAO/v1/auth/token/create \
+        | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["client_token"])' 2>/dev/null)
+
+      if [ -n "$METRICS_TOKEN" ]; then
+        echo -n "$METRICS_TOKEN" > /opt/prometheus/openbao-token
+        chmod 0400 /opt/prometheus/openbao-token
+        echo "OpenBao metrics token created and stored"
+      fi
+
+      # Store a vault token for deploy-time operations
+      SVC_TOKEN=$(curl -sf -k \
+        -d '{"policies":["prometheus-metrics-policy"],"ttl":"8760h","renewable":true}' \
+        -H "$H" $BAO/v1/auth/token/create \
+        | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["client_token"])' 2>/dev/null)
+
+      if [ -n "$SVC_TOKEN" ]; then
+        echo -n "$SVC_TOKEN" > /var/prometheus/tls/a/.vault-token
+        echo -n "$SVC_TOKEN" > /var/prometheus/tls/b/.vault-token
+        chmod 0400 /var/prometheus/tls/a/.vault-token /var/prometheus/tls/b/.vault-token
+      fi
+
+      # Clean up the bootstrap token
+      rm -f /var/prometheus/tls/.secrets-b-token
+
+      echo "Prometheus OpenBao integration configured"
+  changed_when: false
+  failed_when: false
