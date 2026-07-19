@@ -44,6 +44,20 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Read OIDC client credentials for test
+        id: oidc
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          CLIENT_ID=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/ansible_key samcaldwell@192.168.3.159 'sudo cat /opt/grafana/.env.grafana-a 2>/dev/null | grep CLIENT_ID | cut -d= -f2')
+          CLIENT_SECRET=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/ansible_key samcaldwell@192.168.3.159 'sudo cat /opt/grafana/.env.grafana-a 2>/dev/null | grep CLIENT_SECRET | cut -d= -f2')
+          echo "OIDC_CLIENT_ID_A=$CLIENT_ID" >> "$GITHUB_ENV"
+          echo "OIDC_CLIENT_SECRET_A=$CLIENT_SECRET" >> "$GITHUB_ENV"
+          rm -f ~/.ssh/ansible_key
+
       - name: Install test dependencies
         working-directory: infrastructure/grafana/test
         run: bun install
