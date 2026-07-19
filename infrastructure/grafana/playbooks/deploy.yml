@@ -84,48 +84,42 @@
     # Fetch OIDC client secrets from secrets-b before starting containers
     # =========================================================================
 
-    - name: Fetch OIDC client_id and client_secret for grafana-a
+    - name: Fetch OIDC credentials from secrets-b and write env/files
       ansible.builtin.shell:
         cmd: |
           BAO=https://192.168.3.161:443
           TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || cat /var/grafana/tls/a/.vault-token 2>/dev/null)
           [ -z "$TOKEN" ] && exit 0
 
-          # Get client_id and client_secret from the OIDC client object
-          CLIENT=$(curl -sf -k -H "X-Vault-Token:$TOKEN" $BAO/v1/identity/oidc/client/grafana-a 2>/dev/null)
-          if [ -n "$CLIENT" ]; then
-            CLIENT_ID=$(echo "$CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_id"])' 2>/dev/null)
-            CLIENT_SECRET=$(echo "$CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_secret"])' 2>/dev/null)
+          # Fetch grafana-a OIDC client
+          CLIENT_A=$(curl -sf -k -H "X-Vault-Token:$TOKEN" $BAO/v1/identity/oidc/client/grafana-a 2>/dev/null)
+          if [ -n "$CLIENT_A" ]; then
+            CLIENT_ID_A=$(echo "$CLIENT_A" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_id"])' 2>/dev/null)
+            CLIENT_SECRET_A=$(echo "$CLIENT_A" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_secret"])' 2>/dev/null)
 
-            echo -n "$CLIENT_ID" > /var/grafana/tls/a/oidc-client-id
-            echo -n "$CLIENT_SECRET" > /var/grafana/tls/a/oidc-client-secret
-            chown 65534:0 /var/grafana/tls/a/oidc-client-id /var/grafana/tls/a/oidc-client-secret
-            chmod 0400 /var/grafana/tls/a/oidc-client-id /var/grafana/tls/a/oidc-client-secret
+            echo -n "$CLIENT_SECRET_A" > /var/grafana/tls/a/oidc-client-secret
+            chown 65534:0 /var/grafana/tls/a/oidc-client-secret
+            chmod 0400 /var/grafana/tls/a/oidc-client-secret
+
+            # Write .env for grafana-a (loaded by docker-compose env_file)
+            echo "GF_AUTH_GENERIC_OAUTH_CLIENT_ID=$CLIENT_ID_A" > /opt/grafana/.env.grafana-a
+          fi
+
+          # Fetch grafana-b OIDC client
+          CLIENT_B=$(curl -sf -k -H "X-Vault-Token:$TOKEN" $BAO/v1/identity/oidc/client/grafana-b 2>/dev/null)
+          if [ -n "$CLIENT_B" ]; then
+            CLIENT_ID_B=$(echo "$CLIENT_B" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_id"])' 2>/dev/null)
+            CLIENT_SECRET_B=$(echo "$CLIENT_B" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_secret"])' 2>/dev/null)
+
+            echo -n "$CLIENT_SECRET_B" > /var/grafana/tls/b/oidc-client-secret
+            chown 65534:0 /var/grafana/tls/b/oidc-client-secret
+            chmod 0400 /var/grafana/tls/b/oidc-client-secret
+
+            # Write .env for grafana-b (loaded by docker-compose env_file)
+            echo "GF_AUTH_GENERIC_OAUTH_CLIENT_ID=$CLIENT_ID_B" > /opt/grafana/.env.grafana-b
           fi
       changed_when: false
       failed_when: false
-      when: deploy_target == "all" or deploy_target == "grafana-a"
-
-    - name: Fetch OIDC client_id and client_secret for grafana-b
-      ansible.builtin.shell:
-        cmd: |
-          BAO=https://192.168.3.161:443
-          TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || cat /var/grafana/tls/b/.vault-token 2>/dev/null)
-          [ -z "$TOKEN" ] && exit 0
-
-          CLIENT=$(curl -sf -k -H "X-Vault-Token:$TOKEN" $BAO/v1/identity/oidc/client/grafana-b 2>/dev/null)
-          if [ -n "$CLIENT" ]; then
-            CLIENT_ID=$(echo "$CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_id"])' 2>/dev/null)
-            CLIENT_SECRET=$(echo "$CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_secret"])' 2>/dev/null)
-
-            echo -n "$CLIENT_ID" > /var/grafana/tls/b/oidc-client-id
-            echo -n "$CLIENT_SECRET" > /var/grafana/tls/b/oidc-client-secret
-            chown 65534:0 /var/grafana/tls/b/oidc-client-id /var/grafana/tls/b/oidc-client-secret
-            chmod 0400 /var/grafana/tls/b/oidc-client-id /var/grafana/tls/b/oidc-client-secret
-          fi
-      changed_when: false
-      failed_when: false
-      when: deploy_target == "all" or deploy_target == "grafana-b"
 
     # =========================================================================
     # grafana-a — pre-production (wiped each deploy)

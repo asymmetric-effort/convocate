@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     network_mode: host
     user: "0:0"
+    env_file:
+      - .env.grafana-a
     volumes:
       - /var/grafana/a:/var/lib/grafana
       - /var/grafana/tls/a:/etc/grafana/tls:ro
@@ -29,7 +31,7 @@ services:
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
-      GF_AUTH_GENERIC_OAUTH_CLIENT_ID__FILE: /etc/grafana/tls/oidc-client-id
+      # GF_AUTH_GENERIC_OAUTH_CLIENT_ID set via env_file from OpenBao
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
@@ -56,6 +58,8 @@ services:
     restart: unless-stopped
     network_mode: host
     user: "0:0"
+    env_file:
+      - .env.grafana-b
     volumes:
       - /var/grafana/b:/var/lib/grafana
       - /var/grafana/tls/b:/etc/grafana/tls:ro
@@ -80,7 +84,7 @@ services:
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
-      GF_AUTH_GENERIC_OAUTH_CLIENT_ID__FILE: /etc/grafana/tls/oidc-client-id
+      # GF_AUTH_GENERIC_OAUTH_CLIENT_ID set via env_file from OpenBao
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
