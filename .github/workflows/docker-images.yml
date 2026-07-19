@@ -43,10 +43,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+    outputs:
+      sha_tag: ${{ steps.tag.outputs.sha_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Generate sha tag
+        id: tag
+        run: echo "sha_tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -65,25 +71,12 @@ jobs:
       - name: Pull existing base for cache
         run: docker pull ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest 2>/dev/null || true
 
-      - name: Build and push ubuntu-base to GHCR
+      - name: Build and push ubuntu-base (sha tag only)
         run: |
-          GHCR=ghcr.io/asymmetric-effort/convocate
-          IMAGE="${GHCR}/ubuntu-base"
-          SHA_SHORT=$(git rev-parse --short HEAD)
-          SHA_TAG="sha-${SHA_SHORT}"
-          SEMVER_TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
-
-          TAGS="-t ${IMAGE}:${SHA_TAG} -t ${IMAGE}:latest"
-          if [ -n "$SEMVER_TAG" ]; then
-            TAGS="${TAGS} -t ${IMAGE}:${SEMVER_TAG}"
-          fi
-
-          docker build ${TAGS} -f infrastructure/docker/ubuntu-base.Dockerfile .
+          IMAGE=ghcr.io/asymmetric-effort/convocate/ubuntu-base
+          SHA_TAG="${{ steps.tag.outputs.sha_tag }}"
+          docker build -t "${IMAGE}:${SHA_TAG}" -f infrastructure/docker/ubuntu-base.Dockerfile .
           docker push "${IMAGE}:${SHA_TAG}"
-          docker push "${IMAGE}:latest"
-          if [ -n "$SEMVER_TAG" ]; then
-            docker push "${IMAGE}:${SEMVER_TAG}"
-          fi
 
   lint:
     name: Lint ${{ matrix.name }}
@@ -126,22 +119,89 @@ jobs:
       - name: Pull existing image for cache
         run: docker pull ghcr.io/asymmetric-effort/convocate/${{ matrix.name }}:latest 2>/dev/null || true
 
-      - name: Build and push ${{ matrix.name }} to GHCR
+      - name: Build and push ${{ matrix.name }} (sha tag only)
         run: |
-          GHCR=ghcr.io/asymmetric-effort/convocate
-          IMAGE="${GHCR}/${{ matrix.name }}"
+          IMAGE=ghcr.io/asymmetric-effort/convocate/${{ matrix.name }}
           SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
-          SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
-          IS_TAGGED="${{ needs.enumerate.outputs.is_tagged }}"
-
-          TAGS="-t ${IMAGE}:${SHA_TAG} -t ${IMAGE}:latest"
-          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
-            TAGS="${TAGS} -t ${IMAGE}:${SEMVER_TAG}"
-          fi
-
-          docker build ${TAGS} -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
+          docker build -t "${IMAGE}:${SHA_TAG}" -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
           docker push "${IMAGE}:${SHA_TAG}"
+
+  test-base:
+    name: Test ubuntu-base
+    needs: build-base
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Test ubuntu-base
+        run: |
+          chmod +x infrastructure/docker/tests/test-ubuntu-base.sh
+          infrastructure/docker/tests/test-ubuntu-base.sh "ghcr.io/asymmetric-effort/convocate/ubuntu-base:${{ needs.build-base.outputs.sha_tag }}"
+
+  test:
+    name: Test ${{ matrix.name }}
+    needs: [enumerate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    strategy:
+      matrix:
+        name: ${{ fromJson(needs.enumerate.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Test ${{ matrix.name }}
+        run: |
+          chmod +x infrastructure/docker/tests/test-${{ matrix.name }}.sh
+          infrastructure/docker/tests/test-${{ matrix.name }}.sh "ghcr.io/asymmetric-effort/convocate/${{ matrix.name }}:${{ needs.enumerate.outputs.sha_tag }}"
+
+  tag:
+    name: Tag all images
+    needs: [enumerate, build-base, build, test-base, test]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Promote ubuntu-base to latest
+        run: |
+          IMAGE=ghcr.io/asymmetric-effort/convocate/ubuntu-base
+          SHA_TAG="${{ needs.build-base.outputs.sha_tag }}"
+          docker pull "${IMAGE}:${SHA_TAG}"
+          docker tag "${IMAGE}:${SHA_TAG}" "${IMAGE}:latest"
           docker push "${IMAGE}:latest"
-          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
+          SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
+          if [ -n "$SEMVER_TAG" ]; then
+            docker tag "${IMAGE}:${SHA_TAG}" "${IMAGE}:${SEMVER_TAG}"
             docker push "${IMAGE}:${SEMVER_TAG}"
           fi
+
+      - name: Promote all images to latest
+        run: |
+          GHCR=ghcr.io/asymmetric-effort/convocate
+          SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
+          SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
+          IMAGES='${{ needs.enumerate.outputs.matrix }}'
+
+          for NAME in $(echo "$IMAGES" | jq -r '.[]'); do
+            IMAGE="${GHCR}/${NAME}"
+            docker pull "${IMAGE}:${SHA_TAG}"
+            docker tag "${IMAGE}:${SHA_TAG}" "${IMAGE}:latest"
+            docker push "${IMAGE}:latest"
+            if [ -n "$SEMVER_TAG" ]; then
+              docker tag "${IMAGE}:${SHA_TAG}" "${IMAGE}:${SEMVER_TAG}"
+              docker push "${IMAGE}:${SEMVER_TAG}"
+            fi
+            echo "Tagged ${NAME}:latest"
+          done
