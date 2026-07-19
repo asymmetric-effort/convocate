@@ -31,6 +31,8 @@ services:
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
+      GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP: "true"
       # GF_AUTH_GENERIC_OAUTH_CLIENT_ID set via env_file from OpenBao
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
@@ -87,6 +89,8 @@ services:
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
+      GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP: "true"
       # GF_AUTH_GENERIC_OAUTH_CLIENT_ID set via env_file from OpenBao
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
