@@ -40,12 +40,13 @@ jobs:
 
   build-base:
     name: Build ubuntu-base
-    needs: enumerate
     runs-on: ubuntu-latest
     permissions:
       packages: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -68,19 +69,19 @@ jobs:
         run: |
           GHCR=ghcr.io/asymmetric-effort/convocate
           IMAGE="${GHCR}/ubuntu-base"
-          SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
-          SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
-          IS_TAGGED="${{ needs.enumerate.outputs.is_tagged }}"
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          SHA_TAG="sha-${SHA_SHORT}"
+          SEMVER_TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
 
           TAGS="-t ${IMAGE}:${SHA_TAG} -t ${IMAGE}:latest"
-          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
+          if [ -n "$SEMVER_TAG" ]; then
             TAGS="${TAGS} -t ${IMAGE}:${SEMVER_TAG}"
           fi
 
           docker build ${TAGS} -f infrastructure/docker/ubuntu-base.Dockerfile .
           docker push "${IMAGE}:${SHA_TAG}"
           docker push "${IMAGE}:latest"
-          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
+          if [ -n "$SEMVER_TAG" ]; then
             docker push "${IMAGE}:${SEMVER_TAG}"
           fi
 
@@ -144,5 +145,3 @@ jobs:
           if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
             docker push "${IMAGE}:${SEMVER_TAG}"
           fi
-
-
