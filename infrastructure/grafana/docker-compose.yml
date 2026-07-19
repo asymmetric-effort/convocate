@@ -40,6 +40,8 @@ services:
       GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: username
       GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: username
       GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH: email
+      GF_AUTH_GENERIC_OAUTH_ID_TOKEN_ATTRIBUTE_NAME: id_token
+      GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
 
       # client_secret set via env_file from OpenBao (alongside client_id)
 
@@ -95,6 +97,8 @@ services:
       GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: username
       GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: username
       GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH: email
+      GF_AUTH_GENERIC_OAUTH_ID_TOKEN_ATTRIBUTE_NAME: id_token
+      GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
 
       # client_secret set via env_file from OpenBao (alongside client_id)
 
