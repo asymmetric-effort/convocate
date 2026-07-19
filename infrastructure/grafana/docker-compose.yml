@@ -38,8 +38,7 @@ services:
       GF_AUTH_GENERIC_OAUTH_API_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
       GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "true"
 
-      # client_id and client_secret read from files (populated from secrets-b at deploy)
-      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /etc/grafana/tls/oidc-client-secret
+      # client_secret set via env_file from OpenBao (alongside client_id)
 
       # Admin password from OpenBao (read from file)
       GF_SECURITY_ADMIN_USER: admin
@@ -91,8 +90,7 @@ services:
       GF_AUTH_GENERIC_OAUTH_API_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
       GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "true"
 
-      # client_id and client_secret read from files (populated from secrets-b at deploy)
-      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /etc/grafana/tls/oidc-client-secret
+      # client_secret set via env_file from OpenBao (alongside client_id)
 
       # Admin password from OpenBao (read from file)
       GF_SECURITY_ADMIN_USER: admin

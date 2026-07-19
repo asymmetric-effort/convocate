@@ -102,7 +102,8 @@
             chmod 0400 /var/grafana/tls/a/oidc-client-secret
 
             # Write .env for grafana-a (loaded by docker-compose env_file)
-            echo "GF_AUTH_GENERIC_OAUTH_CLIENT_ID=$CLIENT_ID_A" > /opt/grafana/.env.grafana-a
+            printf "GF_AUTH_GENERIC_OAUTH_CLIENT_ID=%s\nGF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=%s\n" "$CLIENT_ID_A" "$CLIENT_SECRET_A" > /opt/grafana/.env.grafana-a
+            chmod 0600 /opt/grafana/.env.grafana-a
           fi
 
           # Fetch grafana-b OIDC client
@@ -116,7 +117,8 @@
             chmod 0400 /var/grafana/tls/b/oidc-client-secret
 
             # Write .env for grafana-b (loaded by docker-compose env_file)
-            echo "GF_AUTH_GENERIC_OAUTH_CLIENT_ID=$CLIENT_ID_B" > /opt/grafana/.env.grafana-b
+            printf "GF_AUTH_GENERIC_OAUTH_CLIENT_ID=%s\nGF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=%s\n" "$CLIENT_ID_B" "$CLIENT_SECRET_B" > /opt/grafana/.env.grafana-b
+            chmod 0600 /opt/grafana/.env.grafana-b
           fi
       changed_when: false
       failed_when: false
