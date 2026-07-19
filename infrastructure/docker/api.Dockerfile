@@ -2,7 +2,7 @@
 # Build stage: ubuntu:24.04 with Go 1.26
 # Runtime stage: distroless
 
-FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
 ARG GO_VERSION=1.26.3
 

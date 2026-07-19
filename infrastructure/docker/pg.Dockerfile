@@ -6,7 +6,7 @@
 # /usr tree needed at runtime. This avoids glibc mismatch and dynamic
 # linker issues because we bring all libs from the same build.
 
-FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
 ARG PG_VERSION=17
 

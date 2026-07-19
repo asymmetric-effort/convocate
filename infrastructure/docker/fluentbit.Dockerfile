@@ -2,7 +2,7 @@
 # Fluent Bit has many shared library dependencies that make
 # distroless impractical — use ubuntu:24.04 as the runtime.
 
-FROM 192.168.3.90:5000/convocate/ubuntu-base:latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

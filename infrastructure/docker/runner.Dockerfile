@@ -1,7 +1,7 @@
 # GitHub Actions Self-Hosted Runner
 # Runtime: ubuntu:24.04 (needs full OS for Ansible, Docker, Playwright)
 
-FROM 192.168.3.90:5000/convocate/ubuntu-base:latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest
 
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive

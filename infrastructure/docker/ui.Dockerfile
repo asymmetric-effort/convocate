@@ -3,7 +3,7 @@
 # Stage 2: Go compiles the static file server
 # Runtime: distroless
 
-FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS bundle
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS bundle
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

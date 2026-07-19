@@ -1,7 +1,7 @@
 # Convocate Node Metrics — lightweight DaemonSet agent
 # Reads /proc and filesystem stats, pushes to the API every 3s.
 
-FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
 ARG GO_VERSION=1.26.3
 

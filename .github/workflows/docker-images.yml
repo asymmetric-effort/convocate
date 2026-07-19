@@ -8,7 +8,7 @@ on:
 jobs:
   enumerate:
     name: Enumerate Dockerfiles
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
       sha_tag: ${{ steps.meta.outputs.sha_tag }}
@@ -41,30 +41,33 @@ jobs:
   build-base:
     name: Build ubuntu-base
     needs: enumerate
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       - uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Install hadolint
         run: |
           if ! command -v hadolint &>/dev/null; then
-            mkdir -p "$HOME/.local/bin"
-            curl -fsSL -o "$HOME/.local/bin/hadolint" \
+            curl -fsSL -o /usr/local/bin/hadolint \
               https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
-            chmod +x "$HOME/.local/bin/hadolint"
-            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            chmod +x /usr/local/bin/hadolint
           fi
 
       - name: Lint ubuntu-base.Dockerfile
         run: hadolint --failure-threshold error infrastructure/docker/ubuntu-base.Dockerfile
 
       - name: Pull existing base for cache
-        run: docker pull 192.168.3.90:5000/convocate/ubuntu-base:latest 2>/dev/null || true
+        run: docker pull ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest 2>/dev/null || true
 
-      - name: Build and push ubuntu-base
+      - name: Build and push ubuntu-base to GHCR
         run: |
-          REGISTRY=192.168.3.90:5000
-          IMAGE="${REGISTRY}/convocate/ubuntu-base"
+          GHCR=ghcr.io/asymmetric-effort/convocate
+          IMAGE="${GHCR}/ubuntu-base"
           SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
           SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
           IS_TAGGED="${{ needs.enumerate.outputs.is_tagged }}"
@@ -84,7 +87,7 @@ jobs:
   lint:
     name: Lint ${{ matrix.name }}
     needs: enumerate
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         name: ${{ fromJson(needs.enumerate.outputs.matrix) }}
@@ -95,11 +98,9 @@ jobs:
       - name: Install hadolint
         run: |
           if ! command -v hadolint &>/dev/null; then
-            mkdir -p "$HOME/.local/bin"
-            curl -fsSL -o "$HOME/.local/bin/hadolint" \
+            curl -fsSL -o /usr/local/bin/hadolint \
               https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
-            chmod +x "$HOME/.local/bin/hadolint"
-            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            chmod +x /usr/local/bin/hadolint
           fi
 
       - name: Lint ${{ matrix.name }}.Dockerfile
@@ -108,7 +109,9 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     needs: [enumerate, lint, build-base]
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
     strategy:
       matrix:
         name: ${{ fromJson(needs.enumerate.outputs.matrix) }}
@@ -116,13 +119,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Pull existing image for cache
-        run: docker pull 192.168.3.90:5000/convocate/${{ matrix.name }}:latest 2>/dev/null || true
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Build and push ${{ matrix.name }}
+      - name: Pull existing image for cache
+        run: docker pull ghcr.io/asymmetric-effort/convocate/${{ matrix.name }}:latest 2>/dev/null || true
+
+      - name: Build and push ${{ matrix.name }} to GHCR
         run: |
-          REGISTRY=192.168.3.90:5000
-          IMAGE="${REGISTRY}/convocate/${{ matrix.name }}"
+          GHCR=ghcr.io/asymmetric-effort/convocate
+          IMAGE="${GHCR}/${{ matrix.name }}"
           SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
           SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
           IS_TAGGED="${{ needs.enumerate.outputs.is_tagged }}"
@@ -137,4 +143,62 @@ jobs:
           docker push "${IMAGE}:latest"
           if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
             docker push "${IMAGE}:${SEMVER_TAG}"
+          fi
+
+  mirror-to-registry:
+    name: Mirror ${{ matrix.name }} to local registry
+    needs: [enumerate, build]
+    runs-on: [self-hosted, linux, x64]
+    strategy:
+      matrix:
+        name: ${{ fromJson(needs.enumerate.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Pull from GHCR and push to local registry
+        run: |
+          GHCR=ghcr.io/asymmetric-effort/convocate
+          LOCAL=192.168.3.90:5000/convocate
+          SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
+          SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
+          IS_TAGGED="${{ needs.enumerate.outputs.is_tagged }}"
+
+          docker pull "${GHCR}/${{ matrix.name }}:${SHA_TAG}"
+          docker tag "${GHCR}/${{ matrix.name }}:${SHA_TAG}" "${LOCAL}/${{ matrix.name }}:${SHA_TAG}"
+          docker tag "${GHCR}/${{ matrix.name }}:${SHA_TAG}" "${LOCAL}/${{ matrix.name }}:latest"
+          docker push "${LOCAL}/${{ matrix.name }}:${SHA_TAG}"
+          docker push "${LOCAL}/${{ matrix.name }}:latest"
+
+          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
+            docker tag "${GHCR}/${{ matrix.name }}:${SHA_TAG}" "${LOCAL}/${{ matrix.name }}:${SEMVER_TAG}"
+            docker push "${LOCAL}/${{ matrix.name }}:${SEMVER_TAG}"
+          fi
+
+  mirror-base:
+    name: Mirror ubuntu-base to local registry
+    needs: [enumerate, build-base]
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Pull from GHCR and push to local registry
+        run: |
+          GHCR=ghcr.io/asymmetric-effort/convocate
+          LOCAL=192.168.3.90:5000/convocate
+          SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
+          SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
+          IS_TAGGED="${{ needs.enumerate.outputs.is_tagged }}"
+
+          docker pull "${GHCR}/ubuntu-base:${SHA_TAG}"
+          docker tag "${GHCR}/ubuntu-base:${SHA_TAG}" "${LOCAL}/ubuntu-base:${SHA_TAG}"
+          docker tag "${GHCR}/ubuntu-base:${SHA_TAG}" "${LOCAL}/ubuntu-base:latest"
+          docker push "${LOCAL}/ubuntu-base:${SHA_TAG}"
+          docker push "${LOCAL}/ubuntu-base:latest"
+
+          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
+            docker tag "${GHCR}/ubuntu-base:${SHA_TAG}" "${LOCAL}/ubuntu-base:${SEMVER_TAG}"
+            docker push "${LOCAL}/ubuntu-base:${SEMVER_TAG}"
           fi

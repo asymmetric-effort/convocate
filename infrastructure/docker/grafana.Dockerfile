@@ -2,7 +2,7 @@
 # Build stage: ubuntu:24.04 (download binary + gather shared libs)
 # Runtime stage: distroless
 
-FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
