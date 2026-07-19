@@ -50,4 +50,28 @@ test.describe.serial("Grafana PDV — grafana-a pre-production verification", ()
     const resp = await fetch(`${GRAFANA_URL}/api/dashboards/home`);
     expect(resp.status).toBe(401);
   });
+
+  test("OIDC login flow — pdv-test can authenticate to OpenBao OIDC provider", async () => {
+    // Verify pdv-test can log into OpenBao (the OIDC provider)
+    const BAO_URL = "https://192.168.3.161:443";
+    const loginResp = await fetch(`${BAO_URL}/v1/auth/userpass/login/pdv-test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "PdvTest-2026-Secure" }),
+    });
+    expect(loginResp.status).toBe(200);
+
+    const loginBody = await loginResp.json();
+    expect(loginBody.auth.client_token).toBeTruthy();
+
+    // Verify the token has an entity_id (required for OIDC)
+    const lookupResp = await fetch(`${BAO_URL}/v1/auth/token/lookup-self`, {
+      headers: { "X-Vault-Token": loginBody.auth.client_token },
+    });
+    expect(lookupResp.status).toBe(200);
+
+    const lookupBody = await lookupResp.json();
+    expect(lookupBody.data.entity_id).toBeTruthy();
+    expect(lookupBody.data.entity_id).not.toBe("");
+  });
 });

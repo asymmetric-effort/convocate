@@ -120,4 +120,28 @@ test.describe.serial("OpenBao PDV — full CRUD as pdv-test user", () => {
     });
     expect(resp.status).toBe(404);
   });
+
+  test("OIDC provider discovery — GET /.well-known/openid-configuration", async () => {
+    const resp = await fetch(
+      `${OPENBAO_URL}/v1/identity/oidc/provider/default/.well-known/openid-configuration`
+    );
+    expect(resp.status).toBe(200);
+
+    const body = await resp.json();
+    expect(body.issuer).toBeTruthy();
+    expect(body.authorization_endpoint).toBeTruthy();
+    expect(body.token_endpoint).toBeTruthy();
+    expect(body.userinfo_endpoint).toBeTruthy();
+  });
+
+  test("OIDC pdv-test has identity — token lookup shows entity_id", async () => {
+    const resp = await fetch(`${OPENBAO_URL}/v1/auth/token/lookup-self`, {
+      headers: headers(pdvToken),
+    });
+    expect(resp.status).toBe(200);
+
+    const body = await resp.json();
+    expect(body.data.entity_id).toBeTruthy();
+    expect(body.data.entity_id).not.toBe("");
+  });
 });
