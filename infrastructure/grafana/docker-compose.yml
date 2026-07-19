@@ -47,8 +47,9 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD__FILE: /etc/grafana/tls/admin-password
 
-      # Disable login form — OIDC only
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # Hide login form — OIDC only (auto-redirect to OpenBao)
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
 
       # Logging
       GF_LOG_MODE: console
@@ -102,8 +103,9 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD__FILE: /etc/grafana/tls/admin-password
 
-      # Disable login form — OIDC only
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # Hide login form — OIDC only (auto-redirect to OpenBao)
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
 
       # Logging
       GF_LOG_MODE: console
