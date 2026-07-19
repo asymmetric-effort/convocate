@@ -5,6 +5,7 @@
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
 ARG REGISTRY_VERSION=3.1.1
+ARG DEPS_URL
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -13,9 +14,7 @@ RUN apt-get update && \
 
 WORKDIR /build
 
-RUN ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') && \
-    curl -fsSL \
-        "https://github.com/distribution/distribution/releases/download/v${REGISTRY_VERSION}/registry_${REGISTRY_VERSION}_linux_${ARCH}.tar.gz" \
+RUN curl -fsSL "${DEPS_URL}/registry-3.1.1-linux-amd64.tar.gz" \
         -o registry.tar.gz && \
     tar -xzf registry.tar.gz && \
     chmod +x registry

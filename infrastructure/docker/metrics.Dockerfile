@@ -4,9 +4,9 @@
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
 ARG GO_VERSION=1.26.3
+ARG DEPS_URL
 
-RUN ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') && \
-    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+RUN curl -fsSL "${DEPS_URL}/go-1.26.4-linux-amd64.tar.gz" \
         -o go.tar.gz && \
     tar -C /usr/local -xzf go.tar.gz && \
     rm go.tar.gz

@@ -12,8 +12,9 @@ RUN groupadd -f docker && \
 
 # ── GitHub Actions Runner (changes on version bump) ────────────────────────
 ARG RUNNER_VERSION=2.335.1
+ARG DEPS_URL
 RUN mkdir -p /opt/runner && \
-    curl -fsSL "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" | \
+    curl -fsSL "${DEPS_URL}/actions-runner-2.335.1-linux-x64.tar.gz" | \
     tar -xz -C /opt/runner && \
     /opt/runner/bin/installdependencies.sh || true && \
     chown -R runner:runner /opt/runner

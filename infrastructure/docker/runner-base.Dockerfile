@@ -23,8 +23,14 @@ RUN curl -fsSL "${DEPS_URL}/helm-3.17.3-linux-amd64.tar.gz" | \
     chmod +x /usr/local/bin/helm
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-bun
+ARG DEPS_URL
 RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://bun.sh/install | bash
+RUN curl -fsSL "${DEPS_URL}/bun-1.2.19-linux-x64.zip" -o /tmp/bun.zip && \
+    unzip -q /tmp/bun.zip -d /tmp/bun-extracted && \
+    mkdir -p /root/.bun/bin && \
+    mv /tmp/bun-extracted/bun-linux-x64/bun /root/.bun/bin/bun && \
+    chmod +x /root/.bun/bin/bun && \
+    rm -rf /tmp/bun.zip /tmp/bun-extracted
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-leakdetector
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*

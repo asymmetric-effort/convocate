@@ -10,7 +10,12 @@ RUN apt-get update && \
         unzip && \
     rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
+ARG DEPS_URL
+RUN curl -fsSL "${DEPS_URL}/bun-1.2.19-linux-x64.zip" -o /tmp/bun.zip && \
+    unzip -q /tmp/bun.zip -d /tmp/bun-extracted && \
+    mv /tmp/bun-extracted/bun-linux-x64/bun /usr/local/bin/bun && \
+    chmod +x /usr/local/bin/bun && \
+    rm -rf /tmp/bun.zip /tmp/bun-extracted
 
 WORKDIR /build
 COPY src/ui/package.json src/ui/bun.lock* ./
@@ -25,6 +30,7 @@ RUN bun build src/app.ts --outdir public --minify --target=browser && \
 FROM ubuntu:24.04 AS build
 
 ARG GO_VERSION=1.26.3
+ARG DEPS_URL
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -32,8 +38,7 @@ RUN apt-get update && \
         curl && \
     rm -rf /var/lib/apt/lists/*
 
-RUN ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') && \
-    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+RUN curl -fsSL "${DEPS_URL}/go-1.26.4-linux-amd64.tar.gz" \
         -o go.tar.gz && \
     tar -C /usr/local -xzf go.tar.gz && \
     rm go.tar.gz
