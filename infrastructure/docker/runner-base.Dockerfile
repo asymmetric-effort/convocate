@@ -104,3 +104,16 @@ COPY --from=dl-bun /root/.bun /root/.bun
 COPY --from=dl-leakdetector /usr/local/bin/leakdetector /usr/local/bin/leakdetector
 
 ENV PATH="/usr/local/go/bin:/root/.bun/bin:${PATH}"
+
+# 7. GitHub Actions Runner (stable — version pinned)
+ARG RUNNER_VERSION=2.335.1
+RUN mkdir -p /opt/runner && \
+    curl -fsSL "${DEPS_URL}/actions-runner-2.335.1-linux-x64.tar.gz" | \
+    tar -xz -C /opt/runner && \
+    /opt/runner/bin/installdependencies.sh || true
+
+# 8. Runner user + docker group
+RUN groupadd -f docker && \
+    useradd -m -s /bin/bash runner && \
+    usermod -aG docker runner && \
+    chown -R runner:runner /opt/runner
