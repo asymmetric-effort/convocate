@@ -151,7 +151,26 @@ test.describe.serial("Grafana PDV — grafana-a pre-production verification", ()
       return;
     }
 
-    // Step 1: Login as pdv-test to OpenBao
+    // Step 1: Initiate OAuth flow from Grafana — get redirect with state
+    const initiateResp = await fetch(`${GRAFANA_URL}/login/generic_oauth`, {
+      redirect: "manual",
+    });
+    expect(initiateResp.status).toBe(302);
+
+    const authRedirect = initiateResp.headers.get("location") ?? "";
+    expect(authRedirect).toContain("authorize");
+
+    // Extract state and redirect_uri from Grafana's redirect
+    const authUrl = new URL(authRedirect);
+    const state = authUrl.searchParams.get("state") ?? "";
+    const redirectUri = authUrl.searchParams.get("redirect_uri") ?? "";
+    expect(state).toBeTruthy();
+    expect(redirectUri).toBeTruthy();
+
+    // Capture Grafana's cookies (oauth state stored in cookies)
+    const rawCookies = initiateResp.headers.get("set-cookie") ?? "";
+
+    // Step 2: Login as pdv-test to OpenBao
     const loginResp = await fetch(`${BAO_URL}/v1/auth/userpass/login/pdv-test`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -160,45 +179,50 @@ test.describe.serial("Grafana PDV — grafana-a pre-production verification", ()
     expect(loginResp.status).toBe(200);
     const vaultToken = (await loginResp.json()).auth.client_token;
 
-    // Step 2: Get auth code with redirect_uri matching Grafana's config
-    const redirectUri = `${GRAFANA_URL}/login/generic_oauth`;
+    // Step 3: Get authorization code using Grafana's exact params
     const authorizeUrl = new URL(`${BAO_URL}/v1/identity/oidc/provider/default/authorize`);
     authorizeUrl.searchParams.set("client_id", clientId);
     authorizeUrl.searchParams.set("redirect_uri", redirectUri);
     authorizeUrl.searchParams.set("response_type", "code");
-    authorizeUrl.searchParams.set("scope", "openid profile email");
-    authorizeUrl.searchParams.set("state", "pdv-grafana-login-test");
+    authorizeUrl.searchParams.set("scope", authUrl.searchParams.get("scope") ?? "openid profile email");
+    authorizeUrl.searchParams.set("state", state);
+
+    const codeNonce = authUrl.searchParams.get("nonce");
+    if (codeNonce) authorizeUrl.searchParams.set("nonce", codeNonce);
 
     const authResp = await fetch(authorizeUrl.toString(), {
       headers: { "X-Vault-Token": vaultToken },
     });
-    expect(authResp.status).toBe(200);
-    const code = (await authResp.json()).code;
-    expect(code).toBeTruthy();
 
-    // Step 3: Call Grafana's OAuth callback with the auth code
-    // This is exactly what the browser does after OpenBao redirects back
-    const callbackUrl = `${GRAFANA_URL}/login/generic_oauth?code=${code}&state=pdv-grafana-login-test`;
+    const authBody = await authResp.json();
+    if (authResp.status !== 200) {
+      console.error("Authorize failed:", JSON.stringify(authBody));
+    }
+    expect(authResp.status).toBe(200);
+    expect(authBody.code).toBeTruthy();
+
+    // Step 4: Call Grafana's callback with code + state + cookies
+    const callbackUrl = `${GRAFANA_URL}/login/generic_oauth?code=${authBody.code}&state=${state}`;
+    const cookieHeader = rawCookies.split(",").map(c => c.split(";")[0].trim()).join("; ");
+
     const callbackResp = await fetch(callbackUrl, {
       redirect: "manual",
+      headers: { "Cookie": cookieHeader },
     });
 
-    // Grafana should either:
-    // - 302 redirect to / (success — user created, session set)
-    // - 302 redirect to /login with error (failure)
     const location = callbackResp.headers.get("location") ?? "";
     const setCookie = callbackResp.headers.get("set-cookie") ?? "";
 
-    if (callbackResp.status === 302 && location.includes("/login")) {
-      // Login failed — get the error from Grafana logs
-      const logsHint = "Check: docker logs grafana-a | grep user.sync";
-      expect(location).not.toContain("/login");  // This will fail with useful message
+    // Log on failure
+    if (callbackResp.status !== 302 || location.includes("login")) {
+      console.error("Grafana login callback failed:");
+      console.error("  Status:", callbackResp.status);
+      console.error("  Location:", location);
+      console.error("  Response:", await callbackResp.text().catch(() => ""));
     }
 
     expect(callbackResp.status).toBe(302);
-    // Success redirect should go to / or /? not /login
     expect(location).not.toContain("login");
-    // Should set a session cookie
     expect(setCookie).toContain("grafana_session");
   });
 });
