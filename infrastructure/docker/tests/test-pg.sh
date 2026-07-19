@@ -10,11 +10,10 @@ trap cleanup EXIT
 
 echo "Testing pg image: $IMAGE"
 
-# Start PostgreSQL with a test password and writable volume
-# PG refuses to run initdb as root, so run as default user with tmpfs
+# Start PostgreSQL with writable data dir owned by postgres (uid 65534)
 docker run -d --name "$CONTAINER_NAME" \
     -p "${HOST_PORT}:5432" \
-    --tmpfs /var/lib/postgresql/data:rw \
+    --tmpfs /var/lib/postgresql/data:rw,uid=65534,gid=65534,mode=0700 \
     -e POSTGRES_PASSWORD=test \
     "$IMAGE"
 
