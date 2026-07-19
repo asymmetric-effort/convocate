@@ -10,9 +10,12 @@ trap cleanup EXIT
 
 echo "Testing influxdb image: $IMAGE"
 
-# Start InfluxDB
+# Start InfluxDB with writable data dir
 docker run -d --name "$CONTAINER_NAME" \
     -p "${HOST_PORT}:8086" \
+    --user 0:0 \
+    -e INFLUXD_BOLT_PATH=/tmp/influxdb/influxd.bolt \
+    -e INFLUXD_ENGINE_PATH=/tmp/influxdb/engine \
     "$IMAGE"
 
 # Wait for /health to return 200

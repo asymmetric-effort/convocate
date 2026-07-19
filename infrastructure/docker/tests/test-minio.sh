@@ -10,13 +10,14 @@ trap cleanup EXIT
 
 echo "Testing minio image: $IMAGE"
 
-# Start MinIO with required root credentials
+# Start MinIO with required root credentials, writable data dir
 docker run -d --name "$CONTAINER_NAME" \
     -p "${HOST_PORT}:9000" \
+    --user 0:0 \
     -e MINIO_ROOT_USER=minioadmin \
     -e MINIO_ROOT_PASSWORD=minioadmin123 \
     "$IMAGE" \
-    server /data
+    server /tmp/minio-data
 
 # Wait for /minio/health/live to return 200
 echo "  Waiting for MinIO health endpoint..."

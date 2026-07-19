@@ -10,10 +10,12 @@ trap cleanup EXIT
 
 echo "Testing pg image: $IMAGE"
 
-# Start PostgreSQL with a test password
+# Start PostgreSQL with a test password, writable data dir
 docker run -d --name "$CONTAINER_NAME" \
     -p "${HOST_PORT}:5432" \
+    --user 0:0 \
     -e POSTGRES_PASSWORD=test \
+    -e PGDATA=/tmp/pgdata \
     "$IMAGE"
 
 # Wait for PostgreSQL to accept connections

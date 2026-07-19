@@ -10,11 +10,14 @@ trap cleanup EXIT
 
 echo "Testing grafana image: $IMAGE"
 
-# Start Grafana with HTTP on port 3000, no TLS
+# Start Grafana with HTTP on port 3000, writable data dir, run as root
 docker run -d --name "$CONTAINER_NAME" \
     -p "${HOST_PORT}:3000" \
+    --user 0:0 \
     -e GF_SERVER_HTTP_PORT=3000 \
     -e GF_SERVER_PROTOCOL=http \
+    -e GF_PATHS_DATA=/tmp/grafana \
+    -e GF_PATHS_LOGS=/tmp/grafana-logs \
     "$IMAGE"
 
 # Wait for /api/health to return 200
