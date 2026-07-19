@@ -23,7 +23,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: "{{ .Values.global.registry }}/convocate/api:{{ .Values.global.imageTag }}"
+          image: "{{ .Values.global.registry }}/convocate/convocate-api:{{ .Values.global.imageTag }}"
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

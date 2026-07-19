@@ -22,7 +22,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ui
-          image: "{{ .Values.global.registry }}/convocate/ui:{{ .Values.global.imageTag }}"
+          image: "{{ .Values.global.registry }}/convocate/convocate-ui:{{ .Values.global.imageTag }}"
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

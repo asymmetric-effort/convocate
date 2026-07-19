@@ -22,7 +22,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ui
-          image: ghcr.io/asymmetric-effort/convocate/ui:latest
+          image: ghcr.io/asymmetric-effort/convocate/convocate-ui:latest
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

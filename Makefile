@@ -92,15 +92,15 @@ build-fluentbit:
 
 build-api:
 	docker build -f infrastructure/docker/api.Dockerfile \
-		-t $(REGISTRY)/convocate/api:$(IMAGE_TAG) \
-		-t $(REGISTRY)/convocate/api:latest \
-		-t $(REGISTRY)/convocate/api:$(SEMVER) .
+		-t $(REGISTRY)/convocate/convocate-api:$(IMAGE_TAG) \
+		-t $(REGISTRY)/convocate/convocate-api:latest \
+		-t $(REGISTRY)/convocate/convocate-api:$(SEMVER) .
 
 build-ui:
 	docker build -f infrastructure/docker/ui.Dockerfile \
-		-t $(REGISTRY)/convocate/ui:$(IMAGE_TAG) \
-		-t $(REGISTRY)/convocate/ui:latest \
-		-t $(REGISTRY)/convocate/ui:$(SEMVER) .
+		-t $(REGISTRY)/convocate/convocate-ui:$(IMAGE_TAG) \
+		-t $(REGISTRY)/convocate/convocate-ui:latest \
+		-t $(REGISTRY)/convocate/convocate-ui:$(SEMVER) .
 
 build-pdv:
 	docker build -f infrastructure/docker/pdv.Dockerfile \

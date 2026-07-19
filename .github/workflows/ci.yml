@@ -225,7 +225,7 @@ jobs:
             # server can't verify kubelet certs, breaking exec/logs/port-forward/
             # run -i. Use simple non-interactive pods: create, wait for completion
             # via API server (etcd), check exit code. No kubelet involved.
-            REGISTRY=\$(sudo kubectl get deployment convocate-api -n convocate -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's|/convocate/api:.*||')
+            REGISTRY=\$(sudo kubectl get deployment convocate-api -n convocate -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's|.*||')
             IMG=\"\$REGISTRY/convocate/openbao:latest\"
 
             pdv_test() {
