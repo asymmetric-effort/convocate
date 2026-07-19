@@ -2,7 +2,8 @@
 # Build stage: ubuntu:24.04 with Go
 # Runtime stage: distroless
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS build
 
 ARG GO_VERSION=1.26.3
 ARG DEPS_URL

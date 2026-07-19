@@ -3,7 +3,8 @@
 # Only adds: runner binary, Claude, user setup
 # Layer order: most stable → least stable for fast rebuilds
 
-FROM ghcr.io/asymmetric-effort/convocate/runner-base:latest
+ARG RUNNER_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/runner-base:${RUNNER_BASE_TAG}
 
 # ── Runner user + docker group (stable) ─────────────────────────────────────
 RUN groupadd -f docker && \

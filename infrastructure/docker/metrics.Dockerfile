@@ -1,7 +1,8 @@
 # Convocate Node Metrics — lightweight DaemonSet agent
 # Reads /proc and filesystem stats, pushes to the API every 3s.
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS build
 
 ARG GO_VERSION=1.26.3
 ARG DEPS_URL

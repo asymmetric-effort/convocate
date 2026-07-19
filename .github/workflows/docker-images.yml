@@ -119,6 +119,7 @@ jobs:
           DEPS_TAG="${{ needs.verify-deps.outputs.deps_tag }}"
           docker build \
             --build-arg DEPS_URL=https://github.com/asymmetric-effort/convocate/releases/download/${DEPS_TAG} \
+            --build-arg UBUNTU_BASE_TAG=${SHA_TAG} \
             -t "${IMAGE}:${SHA_TAG}" \
             -f infrastructure/docker/runner-base.Dockerfile .
           docker push "${IMAGE}:${SHA_TAG}"
@@ -167,8 +168,11 @@ jobs:
           IMAGE=ghcr.io/asymmetric-effort/convocate/${{ matrix.name }}
           SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
           DEPS_TAG="${{ needs.verify-deps.outputs.deps_tag }}"
+          UBUNTU_BASE_SHA="${{ needs.build-ubuntu-base.outputs.sha_tag }}"
           docker build \
             --build-arg DEPS_URL=https://github.com/asymmetric-effort/convocate/releases/download/${DEPS_TAG} \
+            --build-arg UBUNTU_BASE_TAG=${UBUNTU_BASE_SHA} \
+            --build-arg RUNNER_BASE_TAG=${SHA_TAG} \
             -t "${IMAGE}:${SHA_TAG}" \
             -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
           docker push "${IMAGE}:${SHA_TAG}"

@@ -3,26 +3,30 @@
 
 # ── Parallel download stages (BuildKit builds these concurrently) ────────────
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-go
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS dl-go
 ARG GO_VERSION=1.26.4
 ARG DEPS_URL
 RUN curl -fsSL "${DEPS_URL}/go-1.26.4-linux-amd64.tar.gz" | \
     tar -xz -C /usr/local
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-kubectl
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS dl-kubectl
 ARG DEPS_URL
 RUN curl -fsSL "${DEPS_URL}/kubectl-1.31.4-linux-amd64" \
         -o /usr/local/bin/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-helm
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS dl-helm
 ARG DEPS_URL
 RUN curl -fsSL "${DEPS_URL}/helm-3.17.3-linux-amd64.tar.gz" | \
     tar -xz -C /tmp && \
     mv /tmp/linux-amd64/helm /usr/local/bin/helm && \
     chmod +x /usr/local/bin/helm
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-bun
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS dl-bun
 ARG DEPS_URL
 RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL "${DEPS_URL}/bun-1.2.19-linux-x64.zip" -o /tmp/bun.zip && \
@@ -32,7 +36,8 @@ RUN curl -fsSL "${DEPS_URL}/bun-1.2.19-linux-x64.zip" -o /tmp/bun.zip && \
     chmod +x /root/.bun/bin/bun && \
     rm -rf /tmp/bun.zip /tmp/bun-extracted
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-leakdetector
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS dl-leakdetector
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 COPY --from=dl-go /usr/local/go /usr/local/go
 ENV PATH="/usr/local/go/bin:${PATH}"
@@ -43,7 +48,8 @@ RUN git clone --depth 1 https://github.com/asymmetric-effort/leakdetector.git /t
 
 # ── Final assembly (layer order: most stable → least stable) ─────────────────
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG}
 
 ENV DEBIAN_FRONTEND=noninteractive
 

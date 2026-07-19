@@ -5,7 +5,8 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Build — compile Go binary and install Claude CLI
 # ---------------------------------------------------------------------------
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS build
 
 ARG GO_VERSION=1.26.3
 ARG CLAUDE_VERSION=2.1.197

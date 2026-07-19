@@ -2,7 +2,8 @@
 # Build stage: ubuntu:24.04
 # Runtime stage: distroless
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS build
 
 ARG REGISTRY_VERSION=3.1.1
 ARG DEPS_URL

@@ -3,7 +3,8 @@
 # Stage 2: Go compiles the static file server
 # Runtime: distroless
 
-FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS bundle
+ARG UBUNTU_BASE_TAG=latest
+FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG} AS bundle
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
