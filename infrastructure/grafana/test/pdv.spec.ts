@@ -117,9 +117,11 @@ test.describe.serial("Grafana PDV — grafana-a pre-production verification", ()
         redirect_uri: "https://dev.grafana.asymmetric-effort.com/login/generic_oauth",
       }).toString(),
     });
-    expect(tokenResp.status).toBe(200);
-
     const tokenBody = await tokenResp.json();
+    if (tokenResp.status !== 200) {
+      console.error("Token exchange failed:", JSON.stringify(tokenBody));
+    }
+    expect(tokenResp.status).toBe(200);
     expect(tokenBody.access_token).toBeTruthy();
     expect(tokenBody.id_token).toBeTruthy();
     expect(tokenBody.token_type).toBe("Bearer");
