@@ -1,0 +1,157 @@
+{
+  "description": "Third-party software dependencies with pinned versions. Changes trigger the fetch_deps workflow which downloads and stores artifacts in GitHub Releases.",
+  "dependencies": [
+    {
+      "name": "go",
+      "version": "1.26.4",
+      "type": "tarball",
+      "url": "https://go.dev/dl/go1.26.4.linux-amd64.tar.gz",
+      "filename": "go-1.26.4-linux-amd64.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "openbao",
+      "version": "2.5.5",
+      "type": "tarball",
+      "url": "https://github.com/openbao/openbao/releases/download/v2.5.5/bao_2.5.5_Linux_x86_64.tar.gz",
+      "filename": "openbao-2.5.5-linux-amd64.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "grafana",
+      "version": "13.1.0",
+      "type": "tarball",
+      "url": "https://dl.grafana.com/oss/release/grafana-13.1.0.linux-amd64.tar.gz",
+      "filename": "grafana-13.1.0-linux-amd64.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "prometheus",
+      "version": "3.4.1",
+      "type": "tarball",
+      "url": "https://github.com/prometheus/prometheus/releases/download/v3.4.1/prometheus-3.4.1.linux-amd64.tar.gz",
+      "filename": "prometheus-3.4.1-linux-amd64.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "influxdb",
+      "version": "2.7.11",
+      "type": "tarball",
+      "url": "https://dl.influxdata.com/influxdb/releases/influxdb2-2.7.11_linux_amd64.tar.gz",
+      "filename": "influxdb-2.7.11-linux-amd64.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "minio",
+      "version": "latest",
+      "type": "binary",
+      "url": "https://dl.min.io/server/minio/release/linux-amd64/minio",
+      "filename": "minio-linux-amd64",
+      "sha256": ""
+    },
+    {
+      "name": "redis",
+      "version": "7.2.7",
+      "type": "tarball",
+      "url": "https://download.redis.io/releases/redis-7.2.7.tar.gz",
+      "filename": "redis-7.2.7.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "helm",
+      "version": "3.17.3",
+      "type": "tarball",
+      "url": "https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz",
+      "filename": "helm-3.17.3-linux-amd64.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "kubectl",
+      "version": "1.31.4",
+      "type": "binary",
+      "url": "https://dl.k8s.io/release/v1.31.4/bin/linux/amd64/kubectl",
+      "filename": "kubectl-1.31.4-linux-amd64",
+      "sha256": ""
+    },
+    {
+      "name": "github-actions-runner",
+      "version": "2.335.1",
+      "type": "tarball",
+      "url": "https://github.com/actions/runner/releases/download/v2.335.1/actions-runner-linux-x64-2.335.1.tar.gz",
+      "filename": "actions-runner-2.335.1-linux-x64.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "docker-registry",
+      "version": "3.1.1",
+      "type": "tarball",
+      "url": "https://github.com/distribution/distribution/releases/download/v3.1.1/registry_3.1.1_linux_amd64.tar.gz",
+      "filename": "registry-3.1.1-linux-amd64.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "hadolint",
+      "version": "2.12.0",
+      "type": "binary",
+      "url": "https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64",
+      "filename": "hadolint-2.12.0-linux-x86_64",
+      "sha256": ""
+    },
+    {
+      "name": "claude-code",
+      "version": "2.1.197",
+      "type": "npm",
+      "package": "@anthropic-ai/claude-code",
+      "filename": "claude-code-2.1.197.tgz",
+      "sha256": ""
+    },
+    {
+      "name": "ansible",
+      "version": "11.6.0",
+      "type": "pypi",
+      "package": "ansible",
+      "filename": "ansible-11.6.0.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "playwright",
+      "version": "1.52.0",
+      "type": "npm",
+      "package": "@playwright/test",
+      "filename": "playwright-test-1.52.0.tgz",
+      "sha256": ""
+    },
+    {
+      "name": "nodejs",
+      "version": "22",
+      "type": "deb",
+      "source": "https://deb.nodesource.com/setup_22.x",
+      "package": "nodejs",
+      "sha256": ""
+    },
+    {
+      "name": "docker-ce-cli",
+      "version": "latest",
+      "type": "deb",
+      "source": "https://download.docker.com/linux/ubuntu",
+      "package": "docker-ce-cli",
+      "sha256": ""
+    },
+    {
+      "name": "fluent-bit",
+      "version": "latest",
+      "type": "deb",
+      "source": "https://packages.fluentbit.io/ubuntu/noble",
+      "package": "fluent-bit",
+      "sha256": ""
+    },
+    {
+      "name": "postgresql",
+      "version": "17",
+      "type": "deb",
+      "source": "https://apt.postgresql.org/pub/repos/apt",
+      "package": "postgresql-17",
+      "sha256": ""
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+name: Fetch Dependencies
+on:
+  push:
+    branches: [main]
+    paths: ['infrastructure/DEPENDENCIES.json']
+  workflow_dispatch:
+jobs:
+  fetch:
+    name: Download and store dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download all dependencies
+        run: |
+          mkdir -p /tmp/deps
+          DEPS_FILE=infrastructure/DEPENDENCIES.json
+
+          # Process each dependency
+          jq -c '.dependencies[]' "$DEPS_FILE" | while read -r dep; do
+            NAME=$(echo "$dep" | jq -r '.name')
+            VERSION=$(echo "$dep" | jq -r '.version')
+            TYPE=$(echo "$dep" | jq -r '.type')
+            FILENAME=$(echo "$dep" | jq -r '.filename')
+            URL=$(echo "$dep" | jq -r '.url // empty')
+            PACKAGE=$(echo "$dep" | jq -r '.package // empty')
+            SOURCE=$(echo "$dep" | jq -r '.source // empty')
+            EXPECTED_SHA=$(echo "$dep" | jq -r '.sha256 // empty')
+
+            echo "=== Fetching ${NAME} ${VERSION} (${TYPE}) ==="
+
+            case "$TYPE" in
+              tarball|binary)
+                curl -fsSL -o "/tmp/deps/${FILENAME}" "$URL"
+                ;;
+              npm)
+                npm pack "${PACKAGE}@${VERSION}" --pack-destination /tmp/deps 2>/dev/null
+                # npm pack generates its own filename, rename to our standard
+                PACKED=$(ls /tmp/deps/*.tgz | tail -1)
+                if [ -f "$PACKED" ] && [ "$PACKED" != "/tmp/deps/${FILENAME}" ]; then
+                  mv "$PACKED" "/tmp/deps/${FILENAME}"
+                fi
+                ;;
+              pypi)
+                pip download --no-deps --dest /tmp/deps "${PACKAGE}==${VERSION}" 2>/dev/null || \
+                pip download --no-deps --dest /tmp/deps "${PACKAGE}" 2>/dev/null
+                # Rename to standard filename
+                DOWNLOADED=$(ls /tmp/deps/${PACKAGE}* 2>/dev/null | head -1)
+                if [ -f "$DOWNLOADED" ] && [ "$(basename "$DOWNLOADED")" != "$FILENAME" ]; then
+                  mv "$DOWNLOADED" "/tmp/deps/${FILENAME}"
+                fi
+                ;;
+              deb)
+                # Download the top-level .deb package
+                # Create a temp container to download the .deb
+                docker run --rm -v /tmp/deps:/out ubuntu:24.04 bash -c "
+                  apt-get update -qq && \
+                  if [ -n '${SOURCE}' ]; then
+                    apt-get install -y -qq ca-certificates curl gnupg >/dev/null 2>&1
+                    if echo '${SOURCE}' | grep -q nodesource; then
+                      curl -fsSL https://deb.nodesource.com/setup_${VERSION}.x | bash - >/dev/null 2>&1
+                    elif echo '${SOURCE}' | grep -q docker; then
+                      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker.gpg 2>/dev/null
+                      echo 'deb [signed-by=/usr/share/keyrings/docker.gpg] ${SOURCE} noble stable' > /etc/apt/sources.list.d/docker.list
+                      apt-get update -qq
+                    elif echo '${SOURCE}' | grep -q fluentbit; then
+                      curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor -o /usr/share/keyrings/fb.gpg 2>/dev/null
+                      echo 'deb [signed-by=/usr/share/keyrings/fb.gpg] ${SOURCE} noble main' > /etc/apt/sources.list.d/fb.list
+                      apt-get update -qq
+                    elif echo '${SOURCE}' | grep -q postgresql; then
+                      curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg 2>/dev/null
+                      echo 'deb [signed-by=/usr/share/keyrings/pgdg.gpg] ${SOURCE} noble-pgdg main' > /etc/apt/sources.list.d/pgdg.list
+                      apt-get update -qq
+                    fi
+                  fi && \
+                  apt-get download ${PACKAGE} -o Dir::Cache::archives=/out 2>/dev/null && \
+                  echo 'Downloaded ${PACKAGE}' || echo 'WARN: Could not download ${PACKAGE}'
+                " 2>/dev/null || echo "WARN: deb download failed for ${NAME}"
+                ;;
+            esac
+
+            # Verify download exists
+            if [ -f "/tmp/deps/${FILENAME}" ]; then
+              SIZE=$(stat -c%s "/tmp/deps/${FILENAME}")
+              echo "  Downloaded: ${FILENAME} (${SIZE} bytes)"
+
+              # Compute and record SHA256
+              ACTUAL_SHA=$(sha256sum "/tmp/deps/${FILENAME}" | awk '{print $1}')
+              echo "  SHA256: ${ACTUAL_SHA}"
+
+              # Verify if expected SHA is set
+              if [ -n "$EXPECTED_SHA" ] && [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+                echo "::error::SHA256 mismatch for ${NAME}: expected ${EXPECTED_SHA}, got ${ACTUAL_SHA}"
+                exit 1
+              fi
+            else
+              # Check for deb files with different names
+              DEB_FILES=$(ls /tmp/deps/${PACKAGE}*.deb 2>/dev/null || true)
+              if [ -n "$DEB_FILES" ]; then
+                echo "  Downloaded deb: $(basename $DEB_FILES)"
+              else
+                echo "::warning::Could not download ${NAME}"
+              fi
+            fi
+          done
+
+          echo "=== All downloads complete ==="
+          ls -lh /tmp/deps/
+
+      - name: Generate checksums manifest
+        run: |
+          cd /tmp/deps
+          sha256sum * > SHA256SUMS 2>/dev/null || true
+          cat SHA256SUMS
+
+      - name: Create or update deps release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="deps-$(date +%Y%m%d-%H%M%S)"
+          TITLE="Dependencies $(date +%Y-%m-%d)"
+
+          # Delete old deps releases (keep last 3)
+          gh release list --repo ${{ github.repository }} | grep "^deps-" | tail -n +4 | awk '{print $1}' | while read -r old_tag; do
+            gh release delete "$old_tag" --repo ${{ github.repository }} --yes --cleanup-tag 2>/dev/null || true
+          done
+
+          # Create new release with all artifacts
+          gh release create "$TAG" \
+            --repo ${{ github.repository }} \
+            --title "$TITLE" \
+            --notes "Auto-fetched third-party dependencies from infrastructure/DEPENDENCIES.json" \
+            /tmp/deps/*
