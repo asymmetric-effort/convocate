@@ -1,4 +1,5 @@
 ---
+# Redeploy from scratch — GHCR images
 - name: Bootstrap svr00 — base OS, network, firewall
   hosts: svr00
   become: true

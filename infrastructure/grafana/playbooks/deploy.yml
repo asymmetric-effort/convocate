@@ -1,5 +1,5 @@
 ---
-# Deploy Grafana — application-level only.
+# Deploy Grafana — application-level only. Uses GHCR images.
 # Assumes bootstrap has already run (directories, TLS certs, OIDC config).
 - name: Deploy Grafana monitoring infrastructure
   hosts: svr00
