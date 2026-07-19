@@ -5,6 +5,7 @@
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
 ARG REDIS_VERSION=7.2.7
+ARG DEPS_URL
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -14,7 +15,7 @@ RUN apt-get update && \
 
 WORKDIR /build
 
-RUN curl -fsSL "https://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz" \
+RUN curl -fsSL "${DEPS_URL}/redis-7.2.7.tar.gz" \
         -o redis.tar.gz && \
     tar -xzf redis.tar.gz && \
     cd "redis-${REDIS_VERSION}" && \

@@ -4,7 +4,9 @@
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
-RUN curl -fsSL https://dl.influxdata.com/influxdb/releases/influxdb2-2.7.11_linux_amd64.tar.gz \
+ARG DEPS_URL
+
+RUN curl -fsSL "${DEPS_URL}/influxdb-2.7.11-linux-amd64.tar.gz" \
         -o /tmp/influxdb.tar.gz && \
     tar xzf /tmp/influxdb.tar.gz -C /tmp && \
     cp /tmp/influxdb2-2.7.11/usr/bin/influxd /usr/local/bin/influxd && \

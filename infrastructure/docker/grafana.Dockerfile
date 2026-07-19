@@ -4,12 +4,14 @@
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
+ARG DEPS_URL
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         libfontconfig1 && \
     rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://dl.grafana.com/oss/release/grafana-13.1.0.linux-amd64.tar.gz \
+RUN curl -fsSL "${DEPS_URL}/grafana-13.1.0-linux-amd64.tar.gz" \
         -o /tmp/grafana.tar.gz && \
     tar xzf /tmp/grafana.tar.gz -C /opt && \
     mv /opt/grafana-13.1.0 /opt/grafana && \

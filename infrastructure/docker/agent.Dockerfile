@@ -9,7 +9,7 @@ FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
 ARG GO_VERSION=1.26.3
 ARG CLAUDE_VERSION=2.1.197
-ARG NODE_MAJOR=22
+ARG NODE_MAJOR=24
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -47,7 +47,7 @@ RUN go build -ldflags "-X main.version=${CLAUDE_VERSION}-wrapper" \
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04
 
-ARG NODE_MAJOR=22
+ARG NODE_MAJOR=24
 
 # Install only the Node.js runtime (no build tools)
 RUN apt-get update && \

@@ -4,7 +4,9 @@
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
-RUN curl -fsSL https://dl.min.io/server/minio/release/linux-amd64/minio \
+ARG DEPS_URL
+
+RUN curl -fsSL "${DEPS_URL}/minio-linux-amd64" \
         -o /usr/local/bin/minio && \
     chmod +x /usr/local/bin/minio
 

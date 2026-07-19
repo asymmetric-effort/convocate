@@ -53,31 +53,41 @@ jobs:
                 fi
                 ;;
               deb)
-                # Download the top-level .deb package
-                # Create a temp container to download the .deb
-                docker run --rm -v /tmp/deps:/out ubuntu:24.04 bash -c "
-                  apt-get update -qq && \
-                  if [ -n '${SOURCE}' ]; then
-                    apt-get install -y -qq ca-certificates curl gnupg >/dev/null 2>&1
-                    if echo '${SOURCE}' | grep -q nodesource; then
-                      curl -fsSL https://deb.nodesource.com/setup_${VERSION}.x | bash - >/dev/null 2>&1
-                    elif echo '${SOURCE}' | grep -q docker; then
-                      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker.gpg 2>/dev/null
-                      echo 'deb [signed-by=/usr/share/keyrings/docker.gpg] ${SOURCE} noble stable' > /etc/apt/sources.list.d/docker.list
-                      apt-get update -qq
-                    elif echo '${SOURCE}' | grep -q fluentbit; then
-                      curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor -o /usr/share/keyrings/fb.gpg 2>/dev/null
-                      echo 'deb [signed-by=/usr/share/keyrings/fb.gpg] ${SOURCE} noble main' > /etc/apt/sources.list.d/fb.list
-                      apt-get update -qq
-                    elif echo '${SOURCE}' | grep -q postgresql; then
-                      curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg 2>/dev/null
-                      echo 'deb [signed-by=/usr/share/keyrings/pgdg.gpg] ${SOURCE} noble-pgdg main' > /etc/apt/sources.list.d/pgdg.list
-                      apt-get update -qq
-                    fi
-                  fi && \
-                  apt-get download ${PACKAGE} -o Dir::Cache::archives=/out 2>/dev/null && \
-                  echo 'Downloaded ${PACKAGE}' || echo 'WARN: Could not download ${PACKAGE}'
-                " 2>/dev/null || echo "WARN: deb download failed for ${NAME}"
+                # Download the top-level .deb package using a container
+                cat > /tmp/fetch-deb.sh << 'DEBSCRIPT'
+          #!/bin/bash
+          set -e
+          apt-get update -qq
+          apt-get install -y -qq ca-certificates curl gnupg >/dev/null 2>&1
+          DEBSCRIPT
+
+                # Add repo setup based on source
+                if echo "$SOURCE" | grep -q nodesource; then
+                  echo "curl -fsSL https://deb.nodesource.com/setup_${VERSION}.x | bash - >/dev/null 2>&1" >> /tmp/fetch-deb.sh
+                elif echo "$SOURCE" | grep -q docker; then
+                  cat >> /tmp/fetch-deb.sh << DEBSCRIPT2
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker.gpg 2>/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/docker.gpg] ${SOURCE} noble stable" > /etc/apt/sources.list.d/docker.list
+          apt-get update -qq
+          DEBSCRIPT2
+                elif echo "$SOURCE" | grep -q fluentbit; then
+                  cat >> /tmp/fetch-deb.sh << DEBSCRIPT3
+          curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor -o /usr/share/keyrings/fb.gpg 2>/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/fb.gpg] ${SOURCE} noble main" > /etc/apt/sources.list.d/fb.list
+          apt-get update -qq
+          DEBSCRIPT3
+                elif echo "$SOURCE" | grep -q postgresql; then
+                  cat >> /tmp/fetch-deb.sh << DEBSCRIPT4
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg 2>/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] ${SOURCE} noble-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+          apt-get update -qq
+          DEBSCRIPT4
+                fi
+
+                echo "cd /out && apt-get download ${PACKAGE}" >> /tmp/fetch-deb.sh
+                chmod +x /tmp/fetch-deb.sh
+
+                docker run --rm -v /tmp/deps:/out -v /tmp/fetch-deb.sh:/fetch.sh:ro ubuntu:24.04 bash /fetch.sh
                 ;;
             esac
 
@@ -97,11 +107,12 @@ jobs:
               fi
             else
               # Check for deb files with different names
-              DEB_FILES=$(ls /tmp/deps/${PACKAGE}*.deb 2>/dev/null || true)
+              DEB_FILES=$(ls /tmp/deps/${PACKAGE}*.deb 2>/dev/null || ls /tmp/deps/*${NAME}*.deb 2>/dev/null || true)
               if [ -n "$DEB_FILES" ]; then
                 echo "  Downloaded deb: $(basename $DEB_FILES)"
               else
-                echo "::warning::Could not download ${NAME}"
+                echo "::error::Failed to download ${NAME}"
+                exit 1
               fi
             fi
           done
@@ -119,7 +130,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="deps-$(date +%Y%m%d-%H%M%S)"
+          TAG="deps-$(git log -1 --format=%h -- infrastructure/DEPENDENCIES.json)"
           TITLE="Dependencies $(date +%Y-%m-%d)"
 
           # Delete old deps releases (keep last 3)

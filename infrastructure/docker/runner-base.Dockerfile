@@ -5,16 +5,19 @@
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-go
 ARG GO_VERSION=1.26.4
-RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | \
+ARG DEPS_URL
+RUN curl -fsSL "${DEPS_URL}/go-1.26.4-linux-amd64.tar.gz" | \
     tar -xz -C /usr/local
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-kubectl
-RUN curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+ARG DEPS_URL
+RUN curl -fsSL "${DEPS_URL}/kubectl-1.31.4-linux-amd64" \
         -o /usr/local/bin/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-helm
-RUN curl -fsSL https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz | \
+ARG DEPS_URL
+RUN curl -fsSL "${DEPS_URL}/helm-3.17.3-linux-amd64.tar.gz" | \
     tar -xz -C /tmp && \
     mv /tmp/linux-amd64/helm /usr/local/bin/helm && \
     chmod +x /usr/local/bin/helm
@@ -67,7 +70,7 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
     rm -rf /var/lib/apt/lists/*
 
 # 3. Node.js (stable — major version pinned)
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 

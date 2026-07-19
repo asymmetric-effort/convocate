@@ -123,9 +123,9 @@
     },
     {
       "name": "nodejs",
-      "version": "22",
+      "version": "24",
       "type": "deb",
-      "source": "https://deb.nodesource.com/setup_22.x",
+      "source": "https://deb.nodesource.com/setup_24.x",
       "package": "nodejs",
       "sha256": ""
     },

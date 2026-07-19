@@ -5,12 +5,11 @@
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
 ARG OPENBAO_VERSION=2.5.5
+ARG DEPS_URL
 
 WORKDIR /build
 
-RUN ARCH=$(uname -m) && \
-    curl -fsSL \
-        "https://github.com/openbao/openbao/releases/download/v${OPENBAO_VERSION}/bao_${OPENBAO_VERSION}_Linux_${ARCH}.tar.gz" \
+RUN curl -fsSL "${DEPS_URL}/openbao-2.5.5-linux-amd64.tar.gz" \
         -o openbao.tar.gz && \
     tar -xzf openbao.tar.gz && \
     chmod +x bao && \

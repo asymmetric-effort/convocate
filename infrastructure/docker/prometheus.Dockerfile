@@ -4,7 +4,9 @@
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS build
 
-RUN curl -fsSL https://github.com/prometheus/prometheus/releases/download/v3.4.1/prometheus-3.4.1.linux-amd64.tar.gz \
+ARG DEPS_URL
+
+RUN curl -fsSL "${DEPS_URL}/prometheus-3.4.1-linux-amd64.tar.gz" \
         -o /tmp/prometheus.tar.gz && \
     tar xzf /tmp/prometheus.tar.gz -C /tmp && \
     cp /tmp/prometheus-3.4.1.linux-amd64/prometheus /usr/local/bin/prometheus && \

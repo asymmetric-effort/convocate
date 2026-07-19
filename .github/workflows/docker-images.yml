@@ -6,6 +6,32 @@ on:
     tags: ['v*']
   workflow_dispatch:
 jobs:
+  verify-deps:
+    name: Verify deps release exists
+    runs-on: ubuntu-latest
+    outputs:
+      deps_tag: ${{ steps.deps.outputs.deps_tag }}
+      deps_url: ${{ steps.deps.outputs.deps_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compute deps tag and verify release
+        id: deps
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DEPS_TAG="deps-$(git log -1 --format=%h -- infrastructure/DEPENDENCIES.json)"
+          echo "deps_tag=${DEPS_TAG}" >> "$GITHUB_OUTPUT"
+          echo "deps_url=https://github.com/asymmetric-effort/convocate/releases/download/${DEPS_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Verifying release ${DEPS_TAG} exists..."
+          if ! gh release view "$DEPS_TAG" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "::error::Dependencies release '${DEPS_TAG}' not found. Update infrastructure/DEPENDENCIES.json and push to main to trigger the fetch-deps workflow."
+            exit 1
+          fi
+          echo "Release ${DEPS_TAG} verified."
+
   enumerate:
     name: Enumerate Dockerfiles
     runs-on: ubuntu-latest
@@ -40,6 +66,7 @@ jobs:
 
   build-ubuntu-base:
     name: Build ubuntu-base
+    needs: verify-deps
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -59,12 +86,16 @@ jobs:
       - name: Build and push (sha only)
         run: |
           IMAGE=ghcr.io/asymmetric-effort/convocate/ubuntu-base
-          docker build -t "${IMAGE}:${{ steps.tag.outputs.sha_tag }}" -f infrastructure/docker/ubuntu-base.Dockerfile .
+          DEPS_TAG="${{ needs.verify-deps.outputs.deps_tag }}"
+          docker build \
+            --build-arg DEPS_URL=https://github.com/asymmetric-effort/convocate/releases/download/${DEPS_TAG} \
+            -t "${IMAGE}:${{ steps.tag.outputs.sha_tag }}" \
+            -f infrastructure/docker/ubuntu-base.Dockerfile .
           docker push "${IMAGE}:${{ steps.tag.outputs.sha_tag }}"
 
   build-runner-base:
     name: Build runner-base
-    needs: build-ubuntu-base
+    needs: [build-ubuntu-base, verify-deps]
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -80,12 +111,16 @@ jobs:
         run: |
           IMAGE=ghcr.io/asymmetric-effort/convocate/runner-base
           SHA_TAG="${{ needs.build-ubuntu-base.outputs.sha_tag }}"
-          docker build -t "${IMAGE}:${SHA_TAG}" -f infrastructure/docker/runner-base.Dockerfile .
+          DEPS_TAG="${{ needs.verify-deps.outputs.deps_tag }}"
+          docker build \
+            --build-arg DEPS_URL=https://github.com/asymmetric-effort/convocate/releases/download/${DEPS_TAG} \
+            -t "${IMAGE}:${SHA_TAG}" \
+            -f infrastructure/docker/runner-base.Dockerfile .
           docker push "${IMAGE}:${SHA_TAG}"
 
   lint:
     name: Lint ${{ matrix.name }}
-    needs: enumerate
+    needs: [enumerate, verify-deps]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -94,10 +129,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install hadolint
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if ! command -v hadolint &>/dev/null; then
+            DEPS_TAG="${{ needs.verify-deps.outputs.deps_tag }}"
             curl -fsSL -o /usr/local/bin/hadolint \
-              https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+              "https://github.com/asymmetric-effort/convocate/releases/download/${DEPS_TAG}/hadolint-2.12.0-linux-x86_64"
             chmod +x /usr/local/bin/hadolint
           fi
       - name: Lint ${{ matrix.name }}.Dockerfile
@@ -105,7 +143,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.name }}
-    needs: [enumerate, lint, build-ubuntu-base, build-runner-base]
+    needs: [enumerate, lint, build-ubuntu-base, build-runner-base, verify-deps]
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -123,7 +161,11 @@ jobs:
         run: |
           IMAGE=ghcr.io/asymmetric-effort/convocate/${{ matrix.name }}
           SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
-          docker build -t "${IMAGE}:${SHA_TAG}" -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
+          DEPS_TAG="${{ needs.verify-deps.outputs.deps_tag }}"
+          docker build \
+            --build-arg DEPS_URL=https://github.com/asymmetric-effort/convocate/releases/download/${DEPS_TAG} \
+            -t "${IMAGE}:${SHA_TAG}" \
+            -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
           docker push "${IMAGE}:${SHA_TAG}"
 
   test-ubuntu-base:
