@@ -73,6 +73,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Pull existing image for cache
+        run: docker pull 192.168.3.90:5000/convocate/${{ matrix.name }}:latest 2>/dev/null || true
+
       - name: Build and push ${{ matrix.name }}
         run: |
           REGISTRY=192.168.3.90:5000
@@ -86,7 +89,7 @@ jobs:
             TAGS="${TAGS} -t ${IMAGE}:${SEMVER_TAG}"
           fi
 
-          docker build ${TAGS} -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
+          docker build --cache-from "${IMAGE}:latest" ${TAGS} -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
 
           docker push "${IMAGE}:${SHA_TAG}"
           docker push "${IMAGE}:latest"
