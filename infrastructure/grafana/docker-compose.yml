@@ -32,7 +32,7 @@ services:
       GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
       GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
-      GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP: "true"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Admin'"
       # GF_AUTH_GENERIC_OAUTH_CLIENT_ID set via env_file from OpenBao
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
@@ -45,9 +45,9 @@ services:
 
       # client_secret set via env_file from OpenBao (alongside client_id)
 
-      # Admin password from OpenBao (read from file)
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD__FILE: /etc/grafana/tls/admin-password
+      # Disable built-in admin to avoid conflict with OAuth admin login
+      GF_SECURITY_ADMIN_USER: grafana_builtin_admin
+      GF_SECURITY_ADMIN_PASSWORD: "disabled-use-oidc"
 
       # Hide login form — OIDC only (auto-redirect to OpenBao)
       GF_AUTH_DISABLE_LOGIN_FORM: "false"
@@ -90,7 +90,7 @@ services:
       GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
       GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
-      GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP: "true"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Admin'"
       # GF_AUTH_GENERIC_OAUTH_CLIENT_ID set via env_file from OpenBao
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
@@ -103,9 +103,9 @@ services:
 
       # client_secret set via env_file from OpenBao (alongside client_id)
 
-      # Admin password from OpenBao (read from file)
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD__FILE: /etc/grafana/tls/admin-password
+      # Disable built-in admin to avoid conflict with OAuth admin login
+      GF_SECURITY_ADMIN_USER: grafana_builtin_admin
+      GF_SECURITY_ADMIN_PASSWORD: "disabled-use-oidc"
 
       # Hide login form — OIDC only (auto-redirect to OpenBao)
       GF_AUTH_DISABLE_LOGIN_FORM: "false"
