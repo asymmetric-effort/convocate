@@ -6,16 +6,48 @@ on:
     tags: ['v*']
   workflow_dispatch:
 jobs:
-  build:
-    name: Lint, Build, Tag, Push
+  enumerate:
+    name: Enumerate Dockerfiles
     runs-on: [self-hosted, linux, x64]
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+      sha_tag: ${{ steps.meta.outputs.sha_tag }}
+      semver_tag: ${{ steps.meta.outputs.semver_tag }}
+      is_tagged: ${{ steps.meta.outputs.is_tagged }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Clean up Docker to free disk space
-        run: docker system prune -af --volumes 2>/dev/null || true
+      - name: List Dockerfiles
+        id: list
+        run: |
+          NAMES=$(ls infrastructure/docker/*.Dockerfile | xargs -I{} basename {} .Dockerfile | jq -R . | jq -sc .)
+          echo "matrix=${NAMES}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate tags
+        id: meta
+        run: |
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          echo "sha_tag=sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          SEMVER_TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          echo "semver_tag=${SEMVER_TAG}" >> "$GITHUB_OUTPUT"
+          if [ -n "$SEMVER_TAG" ]; then
+            echo "is_tagged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint:
+    name: Lint ${{ matrix.name }}
+    needs: enumerate
+    runs-on: [self-hosted, linux, x64]
+    strategy:
+      matrix:
+        name: ${{ fromJson(needs.enumerate.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v7
 
       - name: Install hadolint
         run: |
@@ -27,65 +59,37 @@ jobs:
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           fi
 
-      - name: Lint all Dockerfiles
-        run: |
-          FAILED=0
-          for df in infrastructure/docker/*.Dockerfile; do
-            NAME=$(basename "$df" .Dockerfile)
-            echo "--- Linting $NAME ---"
-            hadolint --failure-threshold error "$df" || FAILED=1
-          done
-          if [ "$FAILED" = "1" ]; then
-            echo "::error::One or more Dockerfiles have lint errors"
-            exit 1
-          fi
+      - name: Lint ${{ matrix.name }}.Dockerfile
+        run: hadolint --failure-threshold error infrastructure/docker/${{ matrix.name }}.Dockerfile
 
-      - name: Generate tags
-        id: meta
+  build:
+    name: Build ${{ matrix.name }}
+    needs: [enumerate, lint]
+    runs-on: [self-hosted, linux, x64]
+    strategy:
+      matrix:
+        name: ${{ fromJson(needs.enumerate.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build and push ${{ matrix.name }}
         run: |
           REGISTRY=192.168.3.90:5000
-          SHA_SHORT=$(git rev-parse --short HEAD)
-          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
-          echo "sha_tag=sha-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          IMAGE="${REGISTRY}/convocate/${{ matrix.name }}"
+          SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
+          SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
+          IS_TAGGED="${{ needs.enumerate.outputs.is_tagged }}"
 
-          # Check for semver tag on this commit
-          SEMVER_TAG=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
-          echo "semver_tag=${SEMVER_TAG}" >> "$GITHUB_OUTPUT"
-
-          if [ -n "$SEMVER_TAG" ]; then
-            echo "is_tagged=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_tagged=false" >> "$GITHUB_OUTPUT"
+          TAGS="-t ${IMAGE}:${SHA_TAG} -t ${IMAGE}:latest"
+          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
+            TAGS="${TAGS} -t ${IMAGE}:${SEMVER_TAG}"
           fi
 
-      - name: Build and push all images
-        run: |
-          REGISTRY=${{ steps.meta.outputs.registry }}
-          SHA_TAG=${{ steps.meta.outputs.sha_tag }}
-          SEMVER_TAG=${{ steps.meta.outputs.semver_tag }}
-          IS_TAGGED=${{ steps.meta.outputs.is_tagged }}
+          docker build ${TAGS} -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
 
-          for df in infrastructure/docker/*.Dockerfile; do
-            NAME=$(basename "$df" .Dockerfile)
-            IMAGE="${REGISTRY}/convocate/${NAME}"
-            echo "=== Building ${NAME} ==="
-
-            # Always tag with commit sha and latest
-            TAGS="-t ${IMAGE}:${SHA_TAG} -t ${IMAGE}:latest"
-
-            # Also tag with semver if this is a tagged build
-            if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
-              TAGS="${TAGS} -t ${IMAGE}:${SEMVER_TAG}"
-            fi
-
-            docker build ${TAGS} -f "$df" .
-
-            echo "=== Pushing ${NAME} ==="
-            docker push "${IMAGE}:${SHA_TAG}"
-            docker push "${IMAGE}:latest"
-            if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
-              docker push "${IMAGE}:${SEMVER_TAG}"
-            fi
-
-            echo "=== Done: ${NAME} ==="
-          done
+          docker push "${IMAGE}:${SHA_TAG}"
+          docker push "${IMAGE}:latest"
+          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
+            docker push "${IMAGE}:${SEMVER_TAG}"
+          fi
