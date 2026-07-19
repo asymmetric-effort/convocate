@@ -84,33 +84,44 @@
     # Fetch OIDC client secrets from secrets-b before starting containers
     # =========================================================================
 
-    - name: Fetch OIDC client secret for grafana-a from secrets-b KV
+    - name: Fetch OIDC client_id and client_secret for grafana-a
       ansible.builtin.shell:
         cmd: |
-          SECRET=$(curl -sf -k \
-            -H "X-Vault-Token:$(cat /var/grafana/tls/a/.vault-token 2>/dev/null)" \
-            https://192.168.3.161:443/v1/secret/data/grafana/oidc-client-secret-a \
-            | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["data"]["secret"])' 2>/dev/null)
-          if [ -n "$SECRET" ]; then
-            echo -n "$SECRET" > /var/grafana/tls/a/oidc-client-secret
-            chown 65534:0 /var/grafana/tls/a/oidc-client-secret
-            chmod 0400 /var/grafana/tls/a/oidc-client-secret
+          BAO=https://192.168.3.161:443
+          TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || cat /var/grafana/tls/a/.vault-token 2>/dev/null)
+          [ -z "$TOKEN" ] && exit 0
+
+          # Get client_id and client_secret from the OIDC client object
+          CLIENT=$(curl -sf -k -H "X-Vault-Token:$TOKEN" $BAO/v1/identity/oidc/client/grafana-a 2>/dev/null)
+          if [ -n "$CLIENT" ]; then
+            CLIENT_ID=$(echo "$CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_id"])' 2>/dev/null)
+            CLIENT_SECRET=$(echo "$CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_secret"])' 2>/dev/null)
+
+            echo -n "$CLIENT_ID" > /var/grafana/tls/a/oidc-client-id
+            echo -n "$CLIENT_SECRET" > /var/grafana/tls/a/oidc-client-secret
+            chown 65534:0 /var/grafana/tls/a/oidc-client-id /var/grafana/tls/a/oidc-client-secret
+            chmod 0400 /var/grafana/tls/a/oidc-client-id /var/grafana/tls/a/oidc-client-secret
           fi
       changed_when: false
       failed_when: false
       when: deploy_target == "all" or deploy_target == "grafana-a"
 
-    - name: Fetch OIDC client secret for grafana-b from secrets-b KV
+    - name: Fetch OIDC client_id and client_secret for grafana-b
       ansible.builtin.shell:
         cmd: |
-          SECRET=$(curl -sf -k \
-            -H "X-Vault-Token:$(cat /var/grafana/tls/b/.vault-token 2>/dev/null)" \
-            https://192.168.3.161:443/v1/secret/data/grafana/oidc-client-secret-b \
-            | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["data"]["secret"])' 2>/dev/null)
-          if [ -n "$SECRET" ]; then
-            echo -n "$SECRET" > /var/grafana/tls/b/oidc-client-secret
-            chown 65534:0 /var/grafana/tls/b/oidc-client-secret
-            chmod 0400 /var/grafana/tls/b/oidc-client-secret
+          BAO=https://192.168.3.161:443
+          TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || cat /var/grafana/tls/b/.vault-token 2>/dev/null)
+          [ -z "$TOKEN" ] && exit 0
+
+          CLIENT=$(curl -sf -k -H "X-Vault-Token:$TOKEN" $BAO/v1/identity/oidc/client/grafana-b 2>/dev/null)
+          if [ -n "$CLIENT" ]; then
+            CLIENT_ID=$(echo "$CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_id"])' 2>/dev/null)
+            CLIENT_SECRET=$(echo "$CLIENT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["client_secret"])' 2>/dev/null)
+
+            echo -n "$CLIENT_ID" > /var/grafana/tls/b/oidc-client-id
+            echo -n "$CLIENT_SECRET" > /var/grafana/tls/b/oidc-client-secret
+            chown 65534:0 /var/grafana/tls/b/oidc-client-id /var/grafana/tls/b/oidc-client-secret
+            chmod 0400 /var/grafana/tls/b/oidc-client-id /var/grafana/tls/b/oidc-client-secret
           fi
       changed_when: false
       failed_when: false

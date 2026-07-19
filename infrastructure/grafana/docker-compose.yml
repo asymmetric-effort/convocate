@@ -29,14 +29,14 @@ services:
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
-      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana-a
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID__FILE: /etc/grafana/tls/oidc-client-id
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/authorize
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
       GF_AUTH_GENERIC_OAUTH_API_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
       GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "true"
 
-      # client_secret is read from file at runtime (mounted from secrets-b KV)
+      # client_id and client_secret read from files (populated from secrets-b at deploy)
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /etc/grafana/tls/oidc-client-secret
 
       # Admin password from OpenBao (read from file)
@@ -80,14 +80,14 @@ services:
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: OpenBao
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
-      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana-b
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID__FILE: /etc/grafana/tls/oidc-client-id
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/ui/vault/identity/oidc/provider/default/authorize
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/authorize
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/token
       GF_AUTH_GENERIC_OAUTH_API_URL: https://auth.asymmetric-effort.com/v1/identity/oidc/provider/default/userinfo
       GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "true"
 
-      # client_secret is read from file at runtime (mounted from secrets-b KV)
+      # client_id and client_secret read from files (populated from secrets-b at deploy)
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /etc/grafana/tls/oidc-client-secret
 
       # Admin password from OpenBao (read from file)
