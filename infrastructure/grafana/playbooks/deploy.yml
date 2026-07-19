@@ -32,6 +32,55 @@
       changed_when: true
 
     # =========================================================================
+    # Create/update admin user in OpenBao for OIDC login
+    # =========================================================================
+
+    - name: Create admin user in OpenBao userpass with GF_SECURITY_ADMIN_PASSWORD
+      ansible.builtin.shell:
+        cmd: |
+          BAO=https://192.168.3.161:443
+          TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || cat /var/grafana/tls/a/.vault-token 2>/dev/null)
+          if [ -z "$TOKEN" ] || [ -z "{{ admin_password | default('') }}" ]; then
+            echo "SKIP: No token or admin_password available"
+            exit 0
+          fi
+          H="X-Vault-Token:$TOKEN"
+
+          # Create/update admin user in userpass
+          curl -sf -k -X PUT \
+            -d '{"password":"{{ admin_password }}","policies":"default"}' \
+            -H "$H" $BAO/v1/auth/userpass/users/admin
+
+          # Write admin password to file for Grafana
+          echo -n "{{ admin_password }}" > /var/grafana/tls/a/admin-password
+          echo -n "{{ admin_password }}" > /var/grafana/tls/b/admin-password
+          chown 65534:0 /var/grafana/tls/a/admin-password /var/grafana/tls/b/admin-password
+          chmod 0400 /var/grafana/tls/a/admin-password /var/grafana/tls/b/admin-password
+
+          # Create identity entity for admin if not exists
+          ENTITY=$(curl -sf -k -H "$H" $BAO/v1/identity/entity/name/admin 2>/dev/null)
+          if [ -z "$ENTITY" ] || echo "$ENTITY" | grep -q '"errors"'; then
+            curl -sf -k -X PUT \
+              -d '{"name":"admin","metadata":{"email":"admin@asymmetric-effort.com"}}' \
+              -H "$H" $BAO/v1/identity/entity/name/admin
+          fi
+
+          # Get the userpass accessor for alias creation
+          ACCESSOR=$(curl -sf -k -H "$H" $BAO/v1/sys/auth | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["userpass/"]["accessor"])' 2>/dev/null)
+          ENTITY_ID=$(curl -sf -k -H "$H" $BAO/v1/identity/entity/name/admin | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["id"])' 2>/dev/null)
+
+          # Create alias linking admin entity to userpass/admin
+          if [ -n "$ACCESSOR" ] && [ -n "$ENTITY_ID" ]; then
+            curl -sf -k -X PUT \
+              -d "{\"name\":\"admin\",\"canonical_id\":\"$ENTITY_ID\",\"mount_accessor\":\"$ACCESSOR\"}" \
+              -H "$H" $BAO/v1/identity/entity-alias 2>/dev/null || true
+          fi
+
+          echo "admin user configured in OpenBao"
+      changed_when: false
+      failed_when: false
+
+    # =========================================================================
     # Fetch OIDC client secrets from secrets-b before starting containers
     # =========================================================================
 

@@ -17,6 +17,7 @@ jobs:
       - name: Deploy grafana-a
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
@@ -26,7 +27,8 @@ jobs:
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/grafana/playbooks/deploy.yml \
             -i infrastructure/bootstrap/inventory/svr00.yml \
-            -e "deploy_target=grafana-a"
+            -e "deploy_target=grafana-a" \
+            -e "admin_password=${GF_SECURITY_ADMIN_PASSWORD}"
           rm -f ~/.ssh/ansible_key
 
   pdv-grafana-a:
@@ -63,6 +65,7 @@ jobs:
       - name: Deploy grafana-b (non-destructive)
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
@@ -72,7 +75,8 @@ jobs:
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/grafana/playbooks/deploy.yml \
             -i infrastructure/bootstrap/inventory/svr00.yml \
-            -e "deploy_target=grafana-b"
+            -e "deploy_target=grafana-b" \
+            -e "admin_password=${GF_SECURITY_ADMIN_PASSWORD}"
           rm -f ~/.ssh/ansible_key
 
   smoke-grafana-b:
