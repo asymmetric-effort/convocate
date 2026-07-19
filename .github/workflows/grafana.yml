@@ -38,6 +38,7 @@ jobs:
     env:
       GRAFANA_URL: https://192.168.3.162:443
       NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
 

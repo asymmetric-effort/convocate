@@ -170,11 +170,16 @@ test.describe.serial("Grafana PDV — grafana-a pre-production verification", ()
     // Capture Grafana's cookies (oauth state stored in cookies)
     const rawCookies = initiateResp.headers.get("set-cookie") ?? "";
 
-    // Step 2: Login as pdv-test to OpenBao
-    const loginResp = await fetch(`${BAO_URL}/v1/auth/userpass/login/pdv-test`, {
+    // Step 2: Login as admin to OpenBao (same user that fails in browser)
+    const adminPassword = process.env.GF_SECURITY_ADMIN_PASSWORD;
+    if (!adminPassword) {
+      console.log("GF_SECURITY_ADMIN_PASSWORD not in env — skipping");
+      return;
+    }
+    const loginResp = await fetch(`${BAO_URL}/v1/auth/userpass/login/admin`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: "PdvTest-2026-Secure" }),
+      body: JSON.stringify({ password: adminPassword }),
     });
     expect(loginResp.status).toBe(200);
     const vaultToken = (await loginResp.json()).auth.client_token;
