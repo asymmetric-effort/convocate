@@ -125,5 +125,18 @@ test.describe.serial("Grafana PDV — grafana-a pre-production verification", ()
     expect(tokenBody.access_token).toBeTruthy();
     expect(tokenBody.id_token).toBeTruthy();
     expect(tokenBody.token_type).toBe("Bearer");
+
+    // Step 6: Verify userinfo returns expected fields for Grafana user sync
+    const BAO_URL_USERINFO = "https://192.168.3.161:443";
+    const userinfoResp = await fetch(
+      `${BAO_URL_USERINFO}/v1/identity/oidc/provider/default/userinfo`,
+      { headers: { "Authorization": `Bearer ${tokenBody.access_token}` } }
+    );
+    expect(userinfoResp.status).toBe(200);
+
+    const userinfo = await userinfoResp.json();
+    expect(userinfo.username).toBeTruthy();
+    expect(userinfo.email).toBeTruthy();
+    expect(userinfo.sub).toBeTruthy();
   });
 });
