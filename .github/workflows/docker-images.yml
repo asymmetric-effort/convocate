@@ -89,7 +89,7 @@ jobs:
             TAGS="${TAGS} -t ${IMAGE}:${SEMVER_TAG}"
           fi
 
-          docker build --cache-from "${IMAGE}:latest" ${TAGS} -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
+          docker build ${TAGS} -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
 
           docker push "${IMAGE}:${SHA_TAG}"
           docker push "${IMAGE}:latest"
