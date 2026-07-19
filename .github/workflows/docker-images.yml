@@ -176,29 +176,3 @@ jobs:
             docker push "${LOCAL}/${{ matrix.name }}:${SEMVER_TAG}"
           fi
 
-  mirror-base:
-    name: Mirror ubuntu-base to local registry
-    needs: [enumerate, build-base]
-    runs-on: [self-hosted, linux, x64]
-    steps:
-      - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Pull from GHCR and push to local registry
-        run: |
-          GHCR=ghcr.io/asymmetric-effort/convocate
-          LOCAL=192.168.3.90:5000/convocate
-          SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
-          SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
-          IS_TAGGED="${{ needs.enumerate.outputs.is_tagged }}"
-
-          docker pull "${GHCR}/ubuntu-base:${SHA_TAG}"
-          docker tag "${GHCR}/ubuntu-base:${SHA_TAG}" "${LOCAL}/ubuntu-base:${SHA_TAG}"
-          docker tag "${GHCR}/ubuntu-base:${SHA_TAG}" "${LOCAL}/ubuntu-base:latest"
-          docker push "${LOCAL}/ubuntu-base:${SHA_TAG}"
-          docker push "${LOCAL}/ubuntu-base:latest"
-
-          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
-            docker tag "${GHCR}/ubuntu-base:${SHA_TAG}" "${LOCAL}/ubuntu-base:${SEMVER_TAG}"
-            docker push "${LOCAL}/ubuntu-base:${SEMVER_TAG}"
-          fi
