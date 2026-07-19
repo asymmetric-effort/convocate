@@ -1,4 +1,4 @@
-REGISTRY := 192.168.3.90:5000
+REGISTRY := ghcr.io/asymmetric-effort
 NAMESPACE := convocate
 IMAGES := openbao redis postgresql minio influxdb prometheus grafana api ui pdv metrics agent fluentbit
 IMAGE_TAG := sha-$(shell git rev-parse --short HEAD)

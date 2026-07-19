@@ -18,7 +18,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: verify
-          image: 192.168.3.90:5000/convocate/redis:latest
+          image: ghcr.io/asymmetric-effort/convocate/redis:latest
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

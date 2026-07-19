@@ -48,9 +48,15 @@
     - src: "{{ playbook_dir }}/../../secrets/config/openbao-config-secrets-b.hcl"
       dest: /opt/openbao/config/openbao-config-secrets-b.hcl
 
+- name: Login to GHCR
+  ansible.builtin.shell:
+    cmd: echo "{{ ghcr_token }}" | docker login ghcr.io -u "{{ ghcr_user }}" --password-stdin
+  changed_when: false
+  no_log: true
+
 - name: Pull OpenBao image
   ansible.builtin.command:
-    cmd: docker pull 192.168.3.90:5000/convocate/openbao:latest
+    cmd: docker pull ghcr.io/asymmetric-effort/convocate/openbao:latest
   changed_when: true
 
 # =========================================================================
@@ -90,7 +96,7 @@
             -v /opt/openbao/config/openbao-config-http.hcl:/openbao/config/config.hcl:ro \
             -e BAO_API_ADDR=http://192.168.3.160:8200 \
             -e BAO_CLUSTER_ADDR=http://192.168.3.160:8201 \
-            192.168.3.90:5000/convocate/openbao:latest \
+            ghcr.io/asymmetric-effort/convocate/openbao:latest \
             server -config=/openbao/config/config.hcl
 
     - name: Wait for secrets-a HTTP to be ready
@@ -279,7 +285,7 @@
             -v /opt/openbao/config/openbao-config-http.hcl:/openbao/config/config.hcl:ro \
             -e BAO_API_ADDR=http://192.168.3.161:8200 \
             -e BAO_CLUSTER_ADDR=http://192.168.3.161:8201 \
-            192.168.3.90:5000/convocate/openbao:latest \
+            ghcr.io/asymmetric-effort/convocate/openbao:latest \
             server -config=/openbao/config/config.hcl
 
     - name: Wait for secrets-b HTTP to be ready

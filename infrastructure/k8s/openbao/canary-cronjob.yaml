@@ -21,7 +21,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: canary
-              image: 192.168.3.90:5000/convocate/openbao:latest
+              image: ghcr.io/asymmetric-effort/convocate/openbao:latest
               command:
                 - /bin/sh
                 - -c

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# One-time setup: configure all K8s nodes to trust the private registry at 192.168.3.90:5000.
+# One-time setup: configure all K8s nodes to trust the private registry at ghcr.io/asymmetric-effort.
 # Run from the build host (192.168.3.90). Requires SSH access to svr00 (192.168.3.159).
 set -euo pipefail
 
-REGISTRY_HOST="192.168.3.90:5000"
+REGISTRY_HOST="ghcr.io/asymmetric-effort"
 SVR00="samcaldwell@192.168.3.159"
 VAGRANT_DIR="/home/samcaldwell/git/svr00"
 NODES="convocate01 convocate02 convocate03 convocate04 convocate05 convocate06"

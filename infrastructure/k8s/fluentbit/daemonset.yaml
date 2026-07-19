@@ -24,7 +24,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: fluent-bit
-          image: 192.168.3.90:5000/convocate/fluentbit:latest
+          image: ghcr.io/asymmetric-effort/convocate/fluentbit:latest
           envFrom:
             - secretRef:
                 name: fluentbit-credentials

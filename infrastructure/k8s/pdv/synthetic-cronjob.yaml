@@ -253,7 +253,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: checks
-              image: 192.168.3.90:5000/convocate/openbao:latest
+              image: ghcr.io/asymmetric-effort/convocate/openbao:latest
               command: ["/busybox/sh", "/scripts/synthetic-checks.sh"]
               securityContext:
                 allowPrivilegeEscalation: false

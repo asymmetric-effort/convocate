@@ -54,6 +54,7 @@ jobs:
           ANSIBLE_ROLES_PATH=infrastructure/bootstrap/roles \
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/bootstrap/playbooks/bootstrap-svr00.yml \
+            -e "ghcr_token=${{ secrets.GITHUB_TOKEN }}" -e "ghcr_user=${{ github.actor }}" \
             -i infrastructure/bootstrap/inventory/svr00.yml \
             -e "cloudflared_credentials_file=/tmp/cloudflared-credentials.json"
           rm -f ~/.ssh/ansible_key /tmp/cloudflared-credentials.json

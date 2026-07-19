@@ -21,7 +21,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: grafana
-          image: 192.168.3.90:5000/convocate/grafana:latest
+          image: ghcr.io/asymmetric-effort/convocate/grafana:latest
           securityContext:
             runAsUser: 65534
             allowPrivilegeEscalation: false

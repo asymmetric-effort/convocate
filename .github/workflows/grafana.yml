@@ -26,6 +26,7 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/grafana/playbooks/deploy.yml \
+            -e "ghcr_token=${{ secrets.GITHUB_TOKEN }}" -e "ghcr_user=${{ github.actor }}" \
             -i infrastructure/bootstrap/inventory/svr00.yml \
             -e "deploy_target=grafana-a" \
             -e "admin_password=${GF_SECURITY_ADMIN_PASSWORD}"
@@ -89,6 +90,7 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/grafana/playbooks/deploy.yml \
+            -e "ghcr_token=${{ secrets.GITHUB_TOKEN }}" -e "ghcr_user=${{ github.actor }}" \
             -i infrastructure/bootstrap/inventory/svr00.yml \
             -e "deploy_target=grafana-b" \
             -e "admin_password=${GF_SECURITY_ADMIN_PASSWORD}"

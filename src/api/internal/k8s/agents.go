@@ -16,7 +16,7 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/types"
 )
 
-const defaultAgentImage = "192.168.3.90:5000/convocate/agent:latest"
+const defaultAgentImage = "ghcr.io/asymmetric-effort/convocate/agent:latest"
 
 // Default resource values for agent pods
 const (

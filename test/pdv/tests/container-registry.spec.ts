@@ -1,7 +1,7 @@
 /**
  * Private Container Registry — Post-Deployment Verification Tests
  *
- * Validates that the private container registry at 192.168.3.90:5000
+ * Validates that the private container registry at ghcr.io/asymmetric-effort/convocate
  * is accessible, serves the Docker Registry HTTP API V2, and contains
  * Convocate images.
  */
@@ -9,10 +9,10 @@
 import { test, expect } from "@playwright/test";
 
 
-const REGISTRY_URL = process.env.REGISTRY_URL || "http://192.168.3.90:5000";
+const REGISTRY_URL = process.env.REGISTRY_URL || "http://ghcr.io/asymmetric-effort/convocate";
 
 test.describe("Container registry accessibility", () => {
-  test("registry at 192.168.3.90:5000 responds to v2 API", async () => {
+  test("registry at ghcr.io/asymmetric-effort/convocate responds to v2 API", async () => {
     try {
       const res = await fetch(`${REGISTRY_URL}/v2/`);
       expect(res.status).toBe(200);
