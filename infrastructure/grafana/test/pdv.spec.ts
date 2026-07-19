@@ -139,4 +139,66 @@ test.describe.serial("Grafana PDV — grafana-a pre-production verification", ()
     expect(userinfo.email).toBeTruthy();
     expect(userinfo.sub).toBeTruthy();
   });
+
+  test("OIDC Grafana login — full browser flow creates user session", async () => {
+    const BAO_URL = "https://192.168.3.161:443";
+
+    const clientId = process.env.OIDC_CLIENT_ID_A;
+    const clientSecret = process.env.OIDC_CLIENT_SECRET_A;
+
+    if (!clientId || !clientSecret) {
+      console.log("OIDC credentials not in env — skipping Grafana login test");
+      return;
+    }
+
+    // Step 1: Login as pdv-test to OpenBao
+    const loginResp = await fetch(`${BAO_URL}/v1/auth/userpass/login/pdv-test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "PdvTest-2026-Secure" }),
+    });
+    expect(loginResp.status).toBe(200);
+    const vaultToken = (await loginResp.json()).auth.client_token;
+
+    // Step 2: Get auth code with redirect_uri matching Grafana's config
+    const redirectUri = `${GRAFANA_URL}/login/generic_oauth`;
+    const authorizeUrl = new URL(`${BAO_URL}/v1/identity/oidc/provider/default/authorize`);
+    authorizeUrl.searchParams.set("client_id", clientId);
+    authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+    authorizeUrl.searchParams.set("response_type", "code");
+    authorizeUrl.searchParams.set("scope", "openid profile email");
+    authorizeUrl.searchParams.set("state", "pdv-grafana-login-test");
+
+    const authResp = await fetch(authorizeUrl.toString(), {
+      headers: { "X-Vault-Token": vaultToken },
+    });
+    expect(authResp.status).toBe(200);
+    const code = (await authResp.json()).code;
+    expect(code).toBeTruthy();
+
+    // Step 3: Call Grafana's OAuth callback with the auth code
+    // This is exactly what the browser does after OpenBao redirects back
+    const callbackUrl = `${GRAFANA_URL}/login/generic_oauth?code=${code}&state=pdv-grafana-login-test`;
+    const callbackResp = await fetch(callbackUrl, {
+      redirect: "manual",
+    });
+
+    // Grafana should either:
+    // - 302 redirect to / (success — user created, session set)
+    // - 302 redirect to /login with error (failure)
+    const location = callbackResp.headers.get("location") ?? "";
+    const setCookie = callbackResp.headers.get("set-cookie") ?? "";
+
+    if (callbackResp.status === 302 && location.includes("/login")) {
+      // Login failed — get the error from Grafana logs
+      const logsHint = "Check: docker logs grafana-a | grep user.sync";
+      expect(location).not.toContain("/login");  // This will fail with useful message
+    }
+
+    expect(callbackResp.status).toBe(302);
+    // Success redirect should go to / or /? not /login
+    expect(location).not.toContain("login");
+    // Should set a session cookie
+    expect(setCookie).toContain("grafana_session");
+  });
 });
