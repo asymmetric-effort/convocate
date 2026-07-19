@@ -20,6 +20,7 @@ RUN curl -fsSL https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz | \
     chmod +x /usr/local/bin/helm
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-bun
+RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
 RUN curl -fsSL https://bun.sh/install | bash
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:latest AS dl-leakdetector
