@@ -1,7 +1,7 @@
 # GitHub Actions Self-Hosted Runner
 # Runtime: ubuntu:24.04 (needs full OS for Ansible, Docker, Playwright)
 
-FROM ubuntu:24.04
+FROM 192.168.3.90:5000/convocate/ubuntu-base:latest
 
 # Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -9,8 +9,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 # ── System packages ──────────────────────────────────────────────────────────
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
         git \
         gnupg \
         jq \

@@ -6,14 +6,12 @@
 # /usr tree needed at runtime. This avoids glibc mismatch and dynamic
 # linker issues because we bring all libs from the same build.
 
-FROM ubuntu:24.04 AS build
+FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
 
 ARG PG_VERSION=17
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
         gnupg && \
     echo "deb http://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list && \

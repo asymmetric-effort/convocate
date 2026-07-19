@@ -2,15 +2,9 @@
 # Build stage: ubuntu:24.04
 # Runtime stage: distroless
 
-FROM ubuntu:24.04 AS build
+FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
 
 ARG OPENBAO_VERSION=2.5.5
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl && \
-    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 

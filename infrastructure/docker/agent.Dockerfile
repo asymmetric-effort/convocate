@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Build — compile Go binary and install Claude CLI
 # ---------------------------------------------------------------------------
-FROM ubuntu:24.04 AS build
+FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
 
 ARG GO_VERSION=1.26.3
 ARG CLAUDE_VERSION=2.1.197
@@ -13,8 +13,6 @@ ARG NODE_MAJOR=22
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
         gnupg && \
     rm -rf /var/lib/apt/lists/*
 

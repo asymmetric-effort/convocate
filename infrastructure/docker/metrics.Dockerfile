@@ -1,15 +1,9 @@
 # Convocate Node Metrics — lightweight DaemonSet agent
 # Reads /proc and filesystem stats, pushes to the API every 3s.
 
-FROM ubuntu:24.04 AS build
+FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
 
 ARG GO_VERSION=1.26.3
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl && \
-    rm -rf /var/lib/apt/lists/*
 
 RUN ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') && \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \

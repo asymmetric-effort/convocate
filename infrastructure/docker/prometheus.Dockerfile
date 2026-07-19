@@ -2,13 +2,7 @@
 # Build stage: ubuntu:24.04 (download binary)
 # Runtime stage: distroless
 
-FROM ubuntu:24.04 AS build
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl && \
-    rm -rf /var/lib/apt/lists/*
+FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
 
 RUN curl -fsSL https://github.com/prometheus/prometheus/releases/download/v3.4.1/prometheus-3.4.1.linux-amd64.tar.gz \
         -o /tmp/prometheus.tar.gz && \

@@ -2,14 +2,12 @@
 # Build stage: ubuntu:24.04
 # Runtime stage: distroless
 
-FROM ubuntu:24.04 AS build
+FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
 
 ARG REGISTRY_VERSION=3.1.1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
         openssl && \
     rm -rf /var/lib/apt/lists/*
 

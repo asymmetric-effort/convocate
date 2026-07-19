@@ -19,10 +19,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: List Dockerfiles
+      - name: List Dockerfiles (excluding ubuntu-base)
         id: list
         run: |
-          NAMES=$(ls infrastructure/docker/*.Dockerfile | xargs -I{} basename {} .Dockerfile | jq -R . | jq -sc .)
+          NAMES=$(ls infrastructure/docker/*.Dockerfile | xargs -I{} basename {} .Dockerfile | grep -v ubuntu-base | jq -R . | jq -sc .)
           echo "matrix=${NAMES}" >> "$GITHUB_OUTPUT"
 
       - name: Generate tags
@@ -36,6 +36,49 @@ jobs:
             echo "is_tagged=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-base:
+    name: Build ubuntu-base
+    needs: enumerate
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install hadolint
+        run: |
+          if ! command -v hadolint &>/dev/null; then
+            mkdir -p "$HOME/.local/bin"
+            curl -fsSL -o "$HOME/.local/bin/hadolint" \
+              https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+            chmod +x "$HOME/.local/bin/hadolint"
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Lint ubuntu-base.Dockerfile
+        run: hadolint --failure-threshold error infrastructure/docker/ubuntu-base.Dockerfile
+
+      - name: Pull existing base for cache
+        run: docker pull 192.168.3.90:5000/convocate/ubuntu-base:latest 2>/dev/null || true
+
+      - name: Build and push ubuntu-base
+        run: |
+          REGISTRY=192.168.3.90:5000
+          IMAGE="${REGISTRY}/convocate/ubuntu-base"
+          SHA_TAG="${{ needs.enumerate.outputs.sha_tag }}"
+          SEMVER_TAG="${{ needs.enumerate.outputs.semver_tag }}"
+          IS_TAGGED="${{ needs.enumerate.outputs.is_tagged }}"
+
+          TAGS="-t ${IMAGE}:${SHA_TAG} -t ${IMAGE}:latest"
+          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
+            TAGS="${TAGS} -t ${IMAGE}:${SEMVER_TAG}"
+          fi
+
+          docker build ${TAGS} -f infrastructure/docker/ubuntu-base.Dockerfile .
+          docker push "${IMAGE}:${SHA_TAG}"
+          docker push "${IMAGE}:latest"
+          if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then
+            docker push "${IMAGE}:${SEMVER_TAG}"
           fi
 
   lint:
@@ -64,7 +107,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.name }}
-    needs: [enumerate, lint]
+    needs: [enumerate, lint, build-base]
     runs-on: [self-hosted, linux, x64]
     strategy:
       matrix:
@@ -90,7 +133,6 @@ jobs:
           fi
 
           docker build ${TAGS} -f infrastructure/docker/${{ matrix.name }}.Dockerfile .
-
           docker push "${IMAGE}:${SHA_TAG}"
           docker push "${IMAGE}:latest"
           if [ "$IS_TAGGED" = "true" ] && [ -n "$SEMVER_TAG" ]; then

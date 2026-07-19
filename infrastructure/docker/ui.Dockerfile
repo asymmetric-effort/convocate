@@ -3,12 +3,10 @@
 # Stage 2: Go compiles the static file server
 # Runtime: distroless
 
-FROM ubuntu:24.04 AS bundle
+FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS bundle
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
         unzip && \
     rm -rf /var/lib/apt/lists/*
 

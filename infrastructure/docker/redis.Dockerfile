@@ -2,15 +2,13 @@
 # Build stage: ubuntu:24.04
 # Runtime stage: distroless
 
-FROM ubuntu:24.04 AS build
+FROM 192.168.3.90:5000/convocate/ubuntu-base:latest AS build
 
 ARG REDIS_VERSION=7.2.7
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
-        ca-certificates \
-        curl \
         pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
