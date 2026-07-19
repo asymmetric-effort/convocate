@@ -209,24 +209,10 @@
 
           echo "secrets-a OIDC provider configured"
 
-          # Create pdv-test identity entity + alias for OIDC
-          curl -sf -X PUT \
-            -d '{"name":"pdv-test","metadata":{"email":"pdv-test@asymmetric-effort.com"}}' \
-            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/entity/name/pdv-test
-
-          ACCESSOR=$(curl -sf -H "X-Vault-Token:$ROOT" $BAO/v1/sys/auth | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["userpass/"]["accessor"])' 2>/dev/null)
-          ENTITY_ID=$(curl -sf -H "X-Vault-Token:$ROOT" $BAO/v1/identity/entity/name/pdv-test | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["id"])' 2>/dev/null)
-
-          if [ -n "$ACCESSOR" ] && [ -n "$ENTITY_ID" ]; then
-            curl -sf -X PUT \
-              -d "{\"name\":\"pdv-test\",\"canonical_id\":\"$ENTITY_ID\",\"mount_accessor\":\"$ACCESSOR\"}" \
-              -H "X-Vault-Token:$ROOT" $BAO/v1/identity/entity-alias
-          fi
-
-          echo "pdv-test identity entity and alias created"
-
-          # Store unseal key for post-TLS-restart unseal
+          # Store unseal key and root token
           echo "$UNSEAL_KEY" > /var/openbao/tls/secrets-a/.unseal-key
+          echo "$ROOT" > /var/openbao/tls/secrets-a/.root-token
+          chmod 0400 /var/openbao/tls/secrets-a/.unseal-key /var/openbao/tls/secrets-a/.root-token
           chmod 0400 /var/openbao/tls/secrets-a/.unseal-key
 
           echo "secrets-a initialized with KV, PKI, OIDC and TLS cert"
@@ -410,28 +396,7 @@
             -d '{"issuer":"https://auth.asymmetric-effort.com","scopes_supported":["profile","email"]}' \
             -H "X-Vault-Token:$ROOT" $BAO/v1/identity/oidc/provider/default
 
-          # Create samcaldwell identity entity
-          curl -sf -X PUT \
-            -d '{"name":"samcaldwell","metadata":{"email":"sam@asymmetric-effort.com"}}' \
-            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/entity/name/samcaldwell
-
           echo "secrets-b OIDC provider configured"
-
-          # Create pdv-test identity entity + alias for OIDC
-          curl -sf -X PUT \
-            -d '{"name":"pdv-test","metadata":{"email":"pdv-test@asymmetric-effort.com"}}' \
-            -H "X-Vault-Token:$ROOT" $BAO/v1/identity/entity/name/pdv-test
-
-          ACCESSOR=$(curl -sf -H "X-Vault-Token:$ROOT" $BAO/v1/sys/auth | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["userpass/"]["accessor"])' 2>/dev/null)
-          ENTITY_ID=$(curl -sf -H "X-Vault-Token:$ROOT" $BAO/v1/identity/entity/name/pdv-test | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["id"])' 2>/dev/null)
-
-          if [ -n "$ACCESSOR" ] && [ -n "$ENTITY_ID" ]; then
-            curl -sf -X PUT \
-              -d "{\"name\":\"pdv-test\",\"canonical_id\":\"$ENTITY_ID\",\"mount_accessor\":\"$ACCESSOR\"}" \
-              -H "X-Vault-Token:$ROOT" $BAO/v1/identity/entity-alias
-          fi
-
-          echo "pdv-test identity entity and alias created"
 
           # Store unseal key for post-TLS-restart unseal
           echo "$UNSEAL_KEY" > /var/openbao/tls/secrets-b/.unseal-key

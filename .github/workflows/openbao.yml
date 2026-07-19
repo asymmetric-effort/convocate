@@ -29,30 +29,9 @@ jobs:
             -e "deploy_target=secrets-a"
           rm -f ~/.ssh/ansible_key
 
-  pdv-secrets-a:
-    name: PDV Tests (secrets-a)
-    needs: deploy-secrets-a
-    runs-on: [self-hosted, linux, x64]
-    env:
-      OPENBAO_URL: https://192.168.3.160:443
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install test dependencies
-        working-directory: infrastructure/secrets/test
-        run: bun install
-
-      - name: Run PDV tests against secrets-a
-        working-directory: infrastructure/secrets/test
-        run: bunx playwright test pdv.spec.ts
-
   deploy-secrets-b:
     name: Deploy to secrets-b (production)
-    needs: pdv-secrets-a
+    needs: deploy-secrets-a
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
@@ -75,9 +54,54 @@ jobs:
             -e "deploy_target=secrets-b"
           rm -f ~/.ssh/ansible_key
 
+  configure-entities:
+    name: Configure Identity Entities
+    needs: deploy-secrets-b
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Create/update entities on both instances
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/secrets/playbooks/entities.yml \
+            -i infrastructure/bootstrap/inventory/svr00.yml
+          rm -f ~/.ssh/ansible_key
+
+  pdv-secrets-a:
+    name: PDV Tests (secrets-a)
+    needs: configure-entities
+    runs-on: [self-hosted, linux, x64]
+    env:
+      OPENBAO_URL: https://192.168.3.160:443
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/secrets/test
+        run: bun install
+
+      - name: Run PDV tests against secrets-a
+        working-directory: infrastructure/secrets/test
+        run: bunx playwright test pdv.spec.ts
+
   smoke-secrets-b:
     name: Smoke Tests (secrets-b)
-    needs: deploy-secrets-b
+    needs: configure-entities
     runs-on: [self-hosted, linux, x64]
     env:
       OPENBAO_URL: https://192.168.3.161:443
