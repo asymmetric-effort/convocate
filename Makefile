@@ -10,7 +10,7 @@ all: build
 
 # ── setup ──────────────────────────────────────────────
 setup:
-	./scripts/install-hooks.sh
+	./tools/install-hooks.sh
 
 # ── tag ───────────────────────────────────────────────
 tag:
@@ -37,7 +37,7 @@ test:
 
 # ── test-metrics ──────────────────────────────────────────
 test-metrics:
-	./scripts/test-metrics.sh
+	./tools/test-metrics.sh
 
 # ── build ──────────────────────────────────────────────
 build: $(addprefix build-,$(IMAGES))

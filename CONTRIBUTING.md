@@ -63,7 +63,7 @@ make lint
 ## Infrastructure Cutover
 
 The svr00 repository cutover runbook is at [docs/svr00-cutover.md](docs/svr00-cutover.md).
-Run `scripts/verify-cutover-readiness.sh` to check prerequisites before cutover.
+Run `tools/verify-cutover-readiness.sh` to check prerequisites before cutover.
 
 ## Reporting Issues
 

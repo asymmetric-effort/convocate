@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generate a TOTP code for pdv-test user from OpenBao seed.
 #
-# Usage: ./scripts/pdv-totp.sh [openbao-addr] [openbao-token]
+# Usage: ./tools/pdv-totp.sh [openbao-addr] [openbao-token]
 # Outputs: TOTP code on stdout
 #
 # This is a placeholder. The actual TOTP generation requires the seed and
