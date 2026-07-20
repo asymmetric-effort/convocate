@@ -30,10 +30,10 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
           chmod 600 ~/.ssh/ansible_key
 
-          # Install lxml on svr00 (needed by community.libvirt)
+          # Install dependencies on svr00 (lxml for libvirt, genisoimage for cloud-init)
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -i ~/.ssh/ansible_key samcaldwell@192.168.3.159 \
-            'sudo pip install lxml --break-system-packages 2>/dev/null || sudo apt-get install -y python3-lxml' || true
+            'sudo apt-get install -y python3-lxml genisoimage qemu-utils' || true
 
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \

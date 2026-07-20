@@ -29,6 +29,9 @@
       - software-properties-common
       - ufw
       - iputils-ping
+      - python3-lxml
+      - genisoimage
+      - qemu-utils
       - dnsutils
       - iptables-persistent
     state: present
