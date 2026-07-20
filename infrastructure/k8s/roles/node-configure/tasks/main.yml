@@ -3,6 +3,18 @@
 # Mounts disks, configures networking, installs containerd + kubeadm,
 # applies CIS hardening basics.
 
+# --- Ansible tmp directory ---
+# Must exist before /tmp gets mounted with noexec (Ansible uses this
+# directory for module payload extraction instead of /tmp).
+
+- name: Create ansible remote tmp directory
+  ansible.builtin.file:
+    path: /home/convocate/.ansible/tmp
+    state: directory
+    owner: convocate
+    group: convocate
+    mode: "0755"
+
 # --- Disk mounts ---
 
 - name: Format log disk (vdb) if not already formatted

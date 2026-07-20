@@ -28,6 +28,7 @@ all:
     ssh_public_key: "{{ lookup('env', 'SSH_PUBLIC_KEY') }}"
     vm_password_hash: "{{ lookup('env', 'VM_PASSWORD_HASH') }}"
     ansible_user: convocate
+    ansible_remote_tmp: /home/convocate/.ansible/tmp
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
     ansible_ssh_private_key_file: "{{ lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | default('~/.ssh/ansible_key', true) }}"
   children:
@@ -37,6 +38,7 @@ all:
           ansible_host: 192.168.3.159
           ansible_user: "{{ lookup('env', 'HYPERVISOR_USER') | default('root', true) }}"
           ansible_ssh_common_args: ""
+          ansible_remote_tmp: /root/.ansible/tmp
     control_plane:
       hosts:
         node-b-0:
