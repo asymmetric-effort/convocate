@@ -14,9 +14,11 @@
     path: "{{ cloud_image_path }}"
   register: cloud_image_stat
 
-- name: Fail if cloud image is missing
-  ansible.builtin.fail:
-    msg: "Cloud image not found at {{ cloud_image_path }}. Download Ubuntu 24.04 server cloud image first."
+- name: Download Ubuntu cloud image if missing
+  ansible.builtin.get_url:
+    url: https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
+    dest: "{{ cloud_image_path }}"
+    mode: "0644"
   when: not cloud_image_stat.stat.exists
 
 - name: Get list of existing VMs

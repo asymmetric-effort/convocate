@@ -170,11 +170,11 @@
       "sha256": ""
     },
     {
-      "name": "ubuntu-server-iso",
+      "name": "ubuntu-cloud-image",
       "version": "24.04.2",
-      "type": "iso",
-      "url": "https://releases.ubuntu.com/24.04.2/ubuntu-24.04.2-live-server-amd64.iso",
-      "filename": "ubuntu-24.04.2-live-server-amd64.iso",
+      "type": "binary",
+      "url": "https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img",
+      "filename": "ubuntu-24.04-server-cloudimg-amd64.img",
       "sha256": ""
     },
     {
