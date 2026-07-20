@@ -33,6 +33,57 @@
         group: root
       when: not admin_conf.stat.exists
 
+    - name: Create Kubernetes config directory
+      ansible.builtin.file:
+        path: /etc/kubernetes
+        state: directory
+        mode: "0755"
+      when: not admin_conf.stat.exists
+
+    - name: Create audit policy file
+      ansible.builtin.copy:
+        content: |
+          apiVersion: audit.k8s.io/v1
+          kind: Policy
+          rules:
+            - level: None
+              resources:
+                - group: ""
+                  resources: ["endpoints", "services", "services/status"]
+            - level: None
+              users: ["system:kube-proxy"]
+              verbs: ["watch"]
+              resources:
+                - group: ""
+                  resources: ["endpoints", "services", "services/status"]
+            - level: None
+              resources:
+                - group: ""
+                  resources: ["events"]
+            - level: None
+              users:
+                - "system:kube-scheduler"
+                - "system:kube-proxy"
+                - "system:apiserver"
+                - "system:kube-controller-manager"
+              verbs: ["get", "list", "watch"]
+            - level: None
+              userGroups: ["system:nodes"]
+              verbs: ["get", "list", "watch"]
+            - level: RequestResponse
+              resources:
+                - group: ""
+                  resources: ["secrets", "configmaps"]
+            - level: Metadata
+              resources:
+                - group: ""
+                - group: "apps"
+                - group: "batch"
+                - group: "rbac.authorization.k8s.io"
+        dest: /etc/kubernetes/audit-policy.yaml
+        mode: "0600"
+      when: not admin_conf.stat.exists
+
     - name: Join cluster as control plane node
       ansible.builtin.command:
         cmd: >-
