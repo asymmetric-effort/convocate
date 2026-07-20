@@ -36,15 +36,6 @@
       virsh net-autostart {{ cluster_bridge }} 2>/dev/null || true
   changed_when: false
 
-- name: Restart cluster network DHCP (flush stale leases)
-  ansible.builtin.shell:
-    cmd: |
-      virsh net-destroy {{ cluster_bridge }} 2>/dev/null || true
-      sleep 2
-      virsh net-start {{ cluster_bridge }}
-  changed_when: false
-  when: cluster_name is match("cluster-a")
-
 - name: Check cloud image exists
   ansible.builtin.stat:
     path: "{{ cloud_image_path }}"
@@ -64,6 +55,15 @@
       virsh undefine {{ item.name }} --remove-all-storage 2>/dev/null || true
       rm -f {{ vm_pool_path }}/{{ item.name }}-* 2>/dev/null || true
   loop: "{{ vm_nodes }}"
+  when: cluster_name is match("cluster-a")
+
+- name: Restart cluster network DHCP after VM cleanup
+  ansible.builtin.shell:
+    cmd: |
+      virsh net-destroy {{ cluster_bridge }} 2>/dev/null || true
+      sleep 2
+      virsh net-start {{ cluster_bridge }}
+  changed_when: false
   when: cluster_name is match("cluster-a")
 
 - name: Get list of existing VMs
