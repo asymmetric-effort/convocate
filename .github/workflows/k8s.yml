@@ -16,8 +16,10 @@ jobs:
       - name: Run leakdetector
         run: leakdetector --skip-history --exit-code 0
 
-      - name: Install Ansible collections
-        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+      - name: Install Ansible dependencies
+        run: |
+          pip install lxml 2>/dev/null || pip install --break-system-packages lxml
+          ansible-galaxy collection install -r infrastructure/requirements.yml
 
       - name: Deploy cluster-a
         env:
