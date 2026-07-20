@@ -27,7 +27,7 @@ scrape_configs:
     metrics_path: /v1/sys/metrics
     params:
       format: ["prometheus"]
-    bearer_token_file: /etc/prometheus/openbao-token
+    # unauthenticated_metrics_access enabled in OpenBao config
     static_configs:
       - targets: ["192.168.3.160:443"]
         labels:
@@ -41,7 +41,7 @@ scrape_configs:
     metrics_path: /v1/sys/metrics
     params:
       format: ["prometheus"]
-    bearer_token_file: /etc/prometheus/openbao-token
+    # unauthenticated_metrics_access enabled in OpenBao config
     static_configs:
       - targets: ["192.168.3.161:443"]
         labels:
