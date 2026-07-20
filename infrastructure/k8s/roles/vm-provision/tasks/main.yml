@@ -163,6 +163,11 @@
     state: started
   loop: "{{ vm_nodes }}"
 
+- name: Wait for cloud-init to complete on VMs
+  ansible.builtin.pause:
+    seconds: 30
+    prompt: "Waiting for cloud-init to finish on VMs..."
+
 - name: Print VM assignments
   ansible.builtin.debug:
     msg: "{{ item.name }}: cluster={{ item.cluster_ip }} lan={{ item.lan_ip }}"
