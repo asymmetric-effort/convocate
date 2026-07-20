@@ -3,7 +3,7 @@ name: Kubernetes Clusters
 on:
   push:
     branches: [main]
-    paths: ['infrastructure/k8s/**']
+    paths: ['infrastructure/k8s/**', '.github/workflows/k8s.yml']
   workflow_dispatch:
 
 jobs:
