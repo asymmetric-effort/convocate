@@ -38,7 +38,7 @@ all:
           ansible_host: 192.168.3.159
           ansible_user: "{{ lookup('env', 'HYPERVISOR_USER') | default('root', true) }}"
           ansible_ssh_common_args: ""
-          ansible_remote_tmp: /root/.ansible/tmp
+          ansible_remote_tmp: "~/.ansible/tmp"
     control_plane:
       hosts:
         node-a-0:
