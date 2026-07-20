@@ -2,7 +2,7 @@ apiVersion: 1
 providers:
   - name: 'convocate'
     orgId: 1
-    folder: 'Convocate'
+    folder: 'Platform'
     type: file
     disableDeletion: false
     editable: true
