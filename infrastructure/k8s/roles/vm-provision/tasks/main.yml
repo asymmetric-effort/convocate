@@ -169,10 +169,14 @@
     msg: "{{ item.item.name }}: {{ item.stdout }}"
   loop: "{{ vm_discovery.results }}"
 
-- name: Update inventory with discovered hosts
+- name: Update inventory with discovered hosts (via svr00 jump host)
   ansible.builtin.add_host:
     name: "{{ item.item.name }}"
     ansible_host: "{{ item.stdout | regex_search('DISCOVERED:(.+)', '\\1') | first }}"
     ansible_user: "{{ vm_user }}"
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump=samcaldwell@192.168.3.159"
+    groups:
+      - k8s_nodes
+      - "{{ 'control_plane' if item.item.name in ['node-a-0','node-a-1','node-a-2','node-b-0','node-b-1','node-b-2'] else 'workers' }}"
   loop: "{{ vm_discovery.results }}"
   when: "'DISCOVERED' in item.stdout"
