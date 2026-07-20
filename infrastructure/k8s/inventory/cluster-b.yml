@@ -17,6 +17,13 @@ all:
     vm_os_variant: ubuntu24.04
     cloud_image_path: /var/lib/libvirt/images/ubuntu-24.04-server-cloudimg-amd64.img
     vm_pool_path: /var/lib/libvirt/images
+    vm_nodes:
+      - { name: node-b-0, cluster_ip: "192.168.56.10", lan_ip: "192.168.3.180" }
+      - { name: node-b-1, cluster_ip: "192.168.56.11", lan_ip: "192.168.3.181" }
+      - { name: node-b-2, cluster_ip: "192.168.56.12", lan_ip: "192.168.3.182" }
+      - { name: node-b-3, cluster_ip: "192.168.56.13", lan_ip: "192.168.3.183" }
+      - { name: node-b-4, cluster_ip: "192.168.56.14", lan_ip: "192.168.3.184" }
+      - { name: node-b-5, cluster_ip: "192.168.56.15", lan_ip: "192.168.3.185" }
     ssh_public_key: "{{ lookup('env', 'SSH_PUBLIC_KEY') }}"
     vm_password_hash: "{{ lookup('env', 'VM_PASSWORD_HASH') }}"
     ansible_user: convocate
