@@ -127,7 +127,7 @@
       --disk path={{ vm_pool_path }}/{{ item.name }}-tmp.qcow2,format=qcow2,bus=virtio
       --disk path={{ vm_pool_path }}/{{ item.name }}-cidata.iso,device=cdrom
       --os-variant {{ vm_os_variant }}
-      --network network={{ cluster_bridge }},model=virtio
+      --network network={{ cluster_bridge }},model=e1000
       --graphics none
       --console pty,target_type=serial
       --noautoconsole
