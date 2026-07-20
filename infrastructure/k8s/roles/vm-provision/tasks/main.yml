@@ -116,13 +116,17 @@
   loop: "{{ vm_nodes }}"
 
 - name: Create cloud-init ISO
-  ansible.builtin.command:
-    cmd: >-
-      genisoimage -output {{ vm_pool_path }}/{{ item.name }}-cidata.iso
-      -volid cidata -joliet -rock
-      {{ vm_pool_path }}/{{ item.name }}-user-data
-      {{ vm_pool_path }}/{{ item.name }}-meta-data
-      {{ vm_pool_path }}/{{ item.name }}-network-config
+  ansible.builtin.shell:
+    cmd: |
+      TMPDIR=$(mktemp -d)
+      cp {{ vm_pool_path }}/{{ item.name }}-user-data "$TMPDIR/user-data"
+      cp {{ vm_pool_path }}/{{ item.name }}-meta-data "$TMPDIR/meta-data"
+      cp {{ vm_pool_path }}/{{ item.name }}-network-config "$TMPDIR/network-config"
+      genisoimage -output {{ vm_pool_path }}/{{ item.name }}-cidata.iso \
+        -volid cidata -joliet -rock \
+        "$TMPDIR/user-data" "$TMPDIR/meta-data" "$TMPDIR/network-config"
+      rm -rf "$TMPDIR"
+    creates: "{{ vm_pool_path }}/{{ item.name }}-cidata.iso"
   loop: "{{ vm_nodes }}"
 
 - name: Create VMs with dual NIC and 3-disk layout
