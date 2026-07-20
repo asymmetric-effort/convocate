@@ -1,0 +1,21 @@
+---
+# Full cluster deployment playbook.
+# Runs all stages in order: provision VMs, configure nodes,
+# bootstrap K8s, install Cilium CNI, install ESO.
+#
+# For cluster-b (production): zero-downtime only. No destructive operations.
+
+- name: Provision VMs on hypervisor
+  ansible.builtin.import_playbook: provision-vms.yml
+
+- name: Configure all Kubernetes nodes
+  ansible.builtin.import_playbook: configure-nodes.yml
+
+- name: Bootstrap Kubernetes cluster
+  ansible.builtin.import_playbook: bootstrap-cluster.yml
+
+- name: Install Cilium CNI
+  ansible.builtin.import_playbook: install-cilium.yml
+
+- name: Install External Secrets Operator
+  ansible.builtin.import_playbook: install-eso.yml

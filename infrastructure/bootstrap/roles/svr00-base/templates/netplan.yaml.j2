@@ -17,12 +17,18 @@ network:
         - 192.168.3.165/24  # core: reserved
         - 192.168.3.166/24  # core: reserved
         - 192.168.3.167/24  # core: reserved
-        - 192.168.3.170/24
-        - 192.168.3.171/24
-        - 192.168.3.172/24
-        - 192.168.3.180/24
-        - 192.168.3.181/24
-        - 192.168.3.182/24
+        - 192.168.3.170/24  # cluster-a: node-a-0 (control plane)
+        - 192.168.3.171/24  # cluster-a: node-a-1 (control plane)
+        - 192.168.3.172/24  # cluster-a: node-a-2 (control plane)
+        - 192.168.3.173/24  # cluster-a: node-a-3 (worker)
+        - 192.168.3.174/24  # cluster-a: node-a-4 (worker)
+        - 192.168.3.175/24  # cluster-a: node-a-5 (worker)
+        - 192.168.3.180/24  # cluster-b: node-b-0 (control plane)
+        - 192.168.3.181/24  # cluster-b: node-b-1 (control plane)
+        - 192.168.3.182/24  # cluster-b: node-b-2 (control plane)
+        - 192.168.3.183/24  # cluster-b: node-b-3 (worker)
+        - 192.168.3.184/24  # cluster-b: node-b-4 (worker)
+        - 192.168.3.185/24  # cluster-b: node-b-5 (worker)
         - 192.168.3.190/24
         - 192.168.3.191/24
         - 192.168.3.192/24

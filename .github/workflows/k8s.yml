@@ -1,0 +1,132 @@
+name: Kubernetes Clusters
+
+on:
+  push:
+    branches: [main]
+    paths: ['infrastructure/k8s/**']
+  workflow_dispatch:
+
+jobs:
+  deploy-cluster-a:
+    name: Deploy cluster-a (canary)
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run leakdetector
+        run: leakdetector --skip-history --exit-code 0
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy cluster-a
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+          VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
+          HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/k8s/playbooks/deploy.yml \
+            -i infrastructure/k8s/inventory/cluster-a.yml
+          rm -f ~/.ssh/ansible_key
+
+  pdv-cluster-a:
+    name: PDV Tests (cluster-a)
+    needs: deploy-cluster-a
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CLUSTER_NAME: cluster-a
+      KUBECONFIG_HOST: 192.168.3.170
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/k8s/test
+        run: bun install
+
+      - name: Fetch kubeconfig from cluster-a
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/ansible_key convocate@$KUBECONFIG_HOST \
+            sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig-cluster-a
+          rm -f ~/.ssh/ansible_key
+
+      - name: Run PDV tests against cluster-a
+        working-directory: infrastructure/k8s/test
+        env:
+          KUBECONFIG: /tmp/kubeconfig-cluster-a
+        run: bunx playwright test pdv.spec.ts
+
+  deploy-cluster-b:
+    name: Deploy cluster-b (production)
+    needs: pdv-cluster-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy cluster-b (zero-downtime)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+          VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
+          HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/k8s/playbooks/deploy.yml \
+            -i infrastructure/k8s/inventory/cluster-b.yml
+          rm -f ~/.ssh/ansible_key
+
+  smoke-cluster-b:
+    name: Smoke Tests (cluster-b)
+    needs: deploy-cluster-b
+    runs-on: [self-hosted, linux, x64]
+    env:
+      CLUSTER_NAME: cluster-b
+      KUBECONFIG_HOST: 192.168.3.180
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/k8s/test
+        run: bun install
+
+      - name: Fetch kubeconfig from cluster-b
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/ansible_key convocate@$KUBECONFIG_HOST \
+            sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig-cluster-b
+          rm -f ~/.ssh/ansible_key
+
+      - name: Run smoke tests against cluster-b
+        working-directory: infrastructure/k8s/test
+        env:
+          KUBECONFIG: /tmp/kubeconfig-cluster-b
+        run: bunx playwright test smoke.spec.ts

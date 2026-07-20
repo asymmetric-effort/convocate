@@ -1,0 +1,14 @@
+---
+- name: apply netplan
+  ansible.builtin.command:
+    cmd: netplan apply
+
+- name: restart containerd
+  ansible.builtin.service:
+    name: containerd
+    state: restarted
+
+- name: restart sshd
+  ansible.builtin.service:
+    name: sshd
+    state: restarted

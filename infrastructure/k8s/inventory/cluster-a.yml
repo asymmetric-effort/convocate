@@ -1,0 +1,71 @@
+---
+all:
+  vars:
+    cluster_name: cluster-a
+    cluster_network: 192.168.55.0/24
+    cluster_bridge: cluster-a
+    lan_bridge: enp4s0f0
+    pod_cidr: 10.55.0.0/16
+    service_cidr: 10.96.0.0/16
+    openbao_addr: https://192.168.3.161:443
+    k8s_version: "1.31"
+    kube_version: "v1.31.14"
+    kube_package_version: "1.31.14-1.1"
+    vm_cpus: 8
+    vm_memory_mb: 8192
+    vm_user: convocate
+    vm_os_variant: ubuntu24.04
+    cloud_image_path: /var/lib/libvirt/images/ubuntu-24.04-server-cloudimg-amd64.img
+    vm_pool_path: /var/lib/libvirt/images
+    ssh_public_key: "{{ lookup('env', 'SSH_PUBLIC_KEY') }}"
+    vm_password_hash: "{{ lookup('env', 'VM_PASSWORD_HASH') }}"
+    ansible_user: convocate
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+  children:
+    hypervisor:
+      hosts:
+        svr00:
+          ansible_host: 192.168.3.159
+          ansible_user: "{{ lookup('env', 'HYPERVISOR_USER') | default('root', true) }}"
+          ansible_ssh_common_args: ""
+    control_plane:
+      hosts:
+        node-a-0:
+          cluster_ip: 192.168.55.10
+          lan_ip: 192.168.3.170
+          vm_name: node-a-0
+          ansible_host: 192.168.3.170
+        node-a-1:
+          cluster_ip: 192.168.55.11
+          lan_ip: 192.168.3.171
+          vm_name: node-a-1
+          ansible_host: 192.168.3.171
+        node-a-2:
+          cluster_ip: 192.168.55.12
+          lan_ip: 192.168.3.172
+          vm_name: node-a-2
+          ansible_host: 192.168.3.172
+    control_plane_primary:
+      hosts:
+        node-a-0:
+    workers:
+      hosts:
+        node-a-3:
+          cluster_ip: 192.168.55.13
+          lan_ip: 192.168.3.173
+          vm_name: node-a-3
+          ansible_host: 192.168.3.173
+        node-a-4:
+          cluster_ip: 192.168.55.14
+          lan_ip: 192.168.3.174
+          vm_name: node-a-4
+          ansible_host: 192.168.3.174
+        node-a-5:
+          cluster_ip: 192.168.55.15
+          lan_ip: 192.168.3.175
+          vm_name: node-a-5
+          ansible_host: 192.168.3.175
+    k8s_nodes:
+      children:
+        control_plane:
+        workers:

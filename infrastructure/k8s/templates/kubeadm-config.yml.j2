@@ -1,0 +1,55 @@
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: {{ kube_version }}
+controlPlaneEndpoint: "{{ cluster_ip }}:6443"
+clusterName: {{ cluster_name }}
+networking:
+  podSubnet: {{ pod_cidr }}
+  serviceSubnet: {{ service_cidr }}
+  dnsDomain: cluster.local
+apiServer:
+  certSANs:
+    - "{{ cluster_ip }}"
+    - "{{ lan_ip }}"
+    - "{{ ansible_hostname }}"
+{% for host in groups['control_plane'] %}
+    - "{{ hostvars[host].cluster_ip }}"
+    - "{{ hostvars[host].lan_ip }}"
+{% endfor %}
+    - "api.{{ cluster_name }}.convocate.local"
+  extraArgs:
+    - name: authorization-mode
+      value: "Node,RBAC"
+    - name: enable-admission-plugins
+      value: "NodeRestriction,PodSecurity"
+    - name: audit-log-path
+      value: "/var/log/kubernetes/audit.log"
+    - name: audit-policy-file
+      value: "/etc/kubernetes/audit-policy.yaml"
+    - name: audit-log-maxage
+      value: "30"
+    - name: audit-log-maxbackup
+      value: "10"
+    - name: audit-log-maxsize
+      value: "100"
+  extraVolumes:
+    - name: audit-log
+      hostPath: /var/log/kubernetes
+      mountPath: /var/log/kubernetes
+      pathType: DirectoryOrCreate
+    - name: audit-policy
+      hostPath: /etc/kubernetes/audit-policy.yaml
+      mountPath: /etc/kubernetes/audit-policy.yaml
+      readOnly: true
+      pathType: File
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: "{{ cluster_ip }}"
+  bindPort: 6443
+nodeRegistration:
+  criSocket: unix:///var/run/containerd/containerd.sock
+skipPhases:
+  - addon/kube-proxy

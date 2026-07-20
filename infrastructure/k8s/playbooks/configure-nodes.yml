@@ -1,0 +1,7 @@
+---
+- name: Configure all Kubernetes nodes
+  hosts: k8s_nodes
+  gather_facts: true
+  become: true
+  roles:
+    - role: ../roles/node-configure

@@ -1,0 +1,114 @@
+---
+# Install Cilium CNI with OpenBao PKI as external CA.
+# Cilium replaces kube-proxy and provides mTLS service mesh.
+
+- name: Ensure Helm is installed
+  ansible.builtin.shell:
+    cmd: |
+      if ! command -v helm &>/dev/null; then
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      fi
+    creates: /usr/local/bin/helm
+
+- name: Add Cilium Helm repository
+  ansible.builtin.command:
+    cmd: helm repo add cilium https://helm.cilium.io/
+  changed_when: false
+  failed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Update Helm repos
+  ansible.builtin.command:
+    cmd: helm repo update
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Fetch OpenBao PKI root CA certificate
+  ansible.builtin.shell:
+    cmd: >-
+      curl -sk {{ openbao_addr }}/v1/pki/ca/pem > /tmp/openbao-ca.pem
+  changed_when: false
+
+- name: Check if CA cert was retrieved
+  ansible.builtin.stat:
+    path: /tmp/openbao-ca.pem
+  register: openbao_ca_stat
+
+- name: Verify CA cert is not empty
+  ansible.builtin.shell:
+    cmd: test -s /tmp/openbao-ca.pem
+  register: ca_check
+  failed_when: false
+  changed_when: false
+
+- name: Create Cilium CA secret from OpenBao PKI
+  ansible.builtin.shell:
+    cmd: |
+      kubectl create namespace cilium-secrets --dry-run=client -o yaml | kubectl apply -f -
+      kubectl create secret generic cilium-ca \
+        --namespace kube-system \
+        --from-file=ca.crt=/tmp/openbao-ca.pem \
+        --dry-run=client -o yaml | kubectl apply -f -
+  when: ca_check.rc == 0
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Render Cilium Helm values
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../templates/cilium-values.yml.j2"
+    dest: /tmp/cilium-values.yaml
+    mode: "0600"
+
+- name: Check if Cilium is already installed
+  ansible.builtin.shell:
+    cmd: helm status cilium -n kube-system 2>/dev/null
+  register: cilium_helm_status
+  failed_when: false
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Install Cilium via Helm
+  ansible.builtin.command:
+    cmd: >-
+      helm upgrade --install cilium cilium/cilium
+      --namespace kube-system
+      --values /tmp/cilium-values.yaml
+      --version 1.16.6
+      --timeout 10m0s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Wait for Cilium pods to be ready
+  ansible.builtin.shell:
+    cmd: >-
+      kubectl wait --for=condition=Ready pod
+      -l app.kubernetes.io/name=cilium-agent
+      -n kube-system --timeout=300s
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  retries: 3
+  delay: 15
+
+- name: Verify Cilium status
+  ansible.builtin.shell:
+    cmd: kubectl get pods -n kube-system -l app.kubernetes.io/part-of=cilium --no-headers
+  register: cilium_pods
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Show Cilium pods
+  ansible.builtin.debug:
+    msg: "{{ cilium_pods.stdout_lines }}"
+
+- name: Clean up temporary files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/cilium-values.yaml
+    - /tmp/openbao-ca.pem

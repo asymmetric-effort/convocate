@@ -1,0 +1,75 @@
+# Cilium Helm values for {{ cluster_name }}
+# Replaces kube-proxy, provides mTLS service mesh via OpenBao PKI CA.
+
+kubeProxyReplacement: true
+
+k8sServiceHost: "{{ hostvars[groups['control_plane_primary'][0]].cluster_ip }}"
+k8sServicePort: 6443
+
+ipam:
+  mode: kubernetes
+
+# Use OpenBao PKI root CA for mesh certificate issuance
+tls:
+  ca:
+    cert: /etc/cilium/ca/ca.crt
+    certValidityDuration: 8760h  # 1 year
+  caBundle:
+    enabled: true
+    useSecret: true
+    secretName: cilium-ca
+    secretNamespace: kube-system
+
+# Enable mTLS between all pods
+encryption:
+  enabled: true
+  type: wireguard
+  wireguard:
+    userspaceFallback: false
+
+# Hubble observability
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: true
+  metrics:
+    enabled:
+      - dns
+      - drop
+      - tcp
+      - flow
+      - icmp
+      - http
+    serviceMonitor:
+      enabled: false
+
+# Prometheus metrics
+prometheus:
+  enabled: true
+  port: 9962
+  serviceMonitor:
+    enabled: false
+
+operator:
+  prometheus:
+    enabled: true
+    port: 9963
+    serviceMonitor:
+      enabled: false
+
+# Pod CIDR
+cluster:
+  name: {{ cluster_name }}
+
+# BGP and L2 announcements disabled (not needed for libvirt)
+bgpControlPlane:
+  enabled: false
+
+# Enable host firewall for CIS compliance
+hostFirewall:
+  enabled: true
+
+# Policy enforcement
+policyEnforcementMode: default

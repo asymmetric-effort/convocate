@@ -1,0 +1,231 @@
+---
+# OS configuration for Kubernetes nodes.
+# Mounts disks, configures networking, installs containerd + kubeadm,
+# applies CIS hardening basics.
+
+# --- Disk mounts ---
+
+- name: Format log disk (vdb) if not already formatted
+  ansible.builtin.command:
+    cmd: mkfs.ext4 -F /dev/vdb
+  args:
+    creates: /dev/disk/by-label/LOGDISK
+  register: format_vdb
+  failed_when: false
+
+- name: Create /var/log mount point
+  ansible.builtin.file:
+    path: /var/log
+    state: directory
+    mode: "0755"
+
+- name: Mount vdb at /var/log
+  ansible.posix.mount:
+    path: /var/log
+    src: /dev/vdb
+    fstype: ext4
+    opts: defaults,noatime
+    state: mounted
+
+- name: Format tmp disk (vdc) if not already formatted
+  ansible.builtin.command:
+    cmd: mkfs.ext4 -F /dev/vdc
+  args:
+    creates: /dev/disk/by-label/TMPDISK
+  register: format_vdc
+  failed_when: false
+
+- name: Mount vdc at /tmp with noexec
+  ansible.posix.mount:
+    path: /tmp
+    src: /dev/vdc
+    fstype: ext4
+    opts: defaults,noatime,noexec,nosuid,nodev
+    state: mounted
+
+# --- Networking ---
+
+- name: Configure netplan for dual NIC
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../templates/netplan-node.yml.j2"
+    dest: /etc/netplan/50-cloud-init.yaml
+    mode: "0600"
+  notify: apply netplan
+
+- name: Disable swap
+  ansible.builtin.command:
+    cmd: swapoff -a
+  changed_when: false
+
+- name: Remove swap from fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '\sswap\s'
+    state: absent
+
+# --- Kernel modules ---
+
+- name: Load required kernel modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Persist kernel modules
+  ansible.builtin.copy:
+    content: |
+      overlay
+      br_netfilter
+    dest: /etc/modules-load.d/kubernetes.conf
+    mode: "0644"
+
+# --- Sysctl ---
+
+- name: Set sysctl parameters for Kubernetes
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-kubernetes.conf
+    reload: true
+  loop:
+    - { key: net.bridge.bridge-nf-call-iptables, value: "1" }
+    - { key: net.bridge.bridge-nf-call-ip6tables, value: "1" }
+    - { key: net.ipv4.ip_forward, value: "1" }
+
+# --- Prerequisites ---
+
+- name: Install prerequisite packages
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - socat
+      - conntrack
+      - ipset
+    state: present
+    update_cache: true
+
+# --- Containerd ---
+
+- name: Install containerd
+  ansible.builtin.apt:
+    name: containerd
+    state: present
+    update_cache: true
+
+- name: Create containerd config directory
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: "0755"
+
+- name: Generate default containerd config
+  ansible.builtin.shell:
+    cmd: "containerd config default > /etc/containerd/config.toml"
+    creates: /etc/containerd/config.toml
+
+- name: Enable SystemdCgroup in containerd
+  ansible.builtin.lineinfile:
+    path: /etc/containerd/config.toml
+    regexp: '(\s*)SystemdCgroup\s*='
+    line: '\1SystemdCgroup = true'
+    backrefs: true
+  notify: restart containerd
+
+- name: Set sandbox image in containerd config
+  ansible.builtin.lineinfile:
+    path: /etc/containerd/config.toml
+    regexp: '(\s*)sandbox_image\s*='
+    line: '\1sandbox_image = "registry.k8s.io/pause:3.10"'
+    backrefs: true
+  notify: restart containerd
+
+- name: Enable and start containerd
+  ansible.builtin.service:
+    name: containerd
+    state: started
+    enabled: true
+
+# --- Kubernetes packages ---
+
+- name: Create keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add Kubernetes apt key
+  ansible.builtin.shell:
+    cmd: >-
+      curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key |
+      gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+- name: Add Kubernetes apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
+    filename: kubernetes
+    state: present
+
+- name: Install Kubernetes packages
+  ansible.builtin.apt:
+    name:
+      - "kubelet={{ kube_package_version }}"
+      - "kubeadm={{ kube_package_version }}"
+      - "kubectl={{ kube_package_version }}"
+    state: present
+    update_cache: true
+
+- name: Hold Kubernetes packages at pinned version
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+
+- name: Enable kubelet service
+  ansible.builtin.service:
+    name: kubelet
+    enabled: true
+
+# --- SSH keys ---
+
+- name: Ensure sam-caldwell SSH keys from GitHub
+  ansible.builtin.shell:
+    cmd: |
+      mkdir -p /home/sam-caldwell/.ssh
+      curl -sfL https://github.com/sam-caldwell.keys > /home/sam-caldwell/.ssh/authorized_keys
+      chmod 600 /home/sam-caldwell/.ssh/authorized_keys
+      chown -R sam-caldwell:sam-caldwell /home/sam-caldwell/.ssh
+  changed_when: false
+  failed_when: false
+
+# --- CIS hardening basics ---
+
+- name: Disable root login via SSH
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#*PermitRootLogin'
+    line: 'PermitRootLogin no'
+  notify: restart sshd
+
+- name: Set SSH MaxAuthTries
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#*MaxAuthTries'
+    line: 'MaxAuthTries 3'
+  notify: restart sshd
+
+- name: Disable SSH password authentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#*PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+  notify: restart sshd

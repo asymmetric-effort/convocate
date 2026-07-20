@@ -90,3 +90,97 @@ scrape_configs:
       - targets: ["192.168.3.165:443"]
         labels:
           instance: prometheus-b
+
+  # --- Kubernetes cluster-a metrics ---
+
+  # Kubelet metrics on cluster-a nodes (192.168.3.170-175)
+  - job_name: kubelet-cluster-a
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    bearer_token_file: /etc/prometheus/tokens/cluster-a.token
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "192.168.3.170:10250"
+          - "192.168.3.171:10250"
+          - "192.168.3.172:10250"
+          - "192.168.3.173:10250"
+          - "192.168.3.174:10250"
+          - "192.168.3.175:10250"
+        labels:
+          cluster: cluster-a
+
+  # Cilium agent metrics on cluster-a nodes
+  - job_name: cilium-agent-cluster-a
+    static_configs:
+      - targets:
+          - "192.168.3.170:9962"
+          - "192.168.3.171:9962"
+          - "192.168.3.172:9962"
+          - "192.168.3.173:9962"
+          - "192.168.3.174:9962"
+          - "192.168.3.175:9962"
+        labels:
+          cluster: cluster-a
+
+  # Cilium operator metrics on cluster-a
+  - job_name: cilium-operator-cluster-a
+    static_configs:
+      - targets: ["192.168.3.170:9963"]
+        labels:
+          cluster: cluster-a
+
+  # kube-state-metrics on cluster-a
+  - job_name: kube-state-metrics-cluster-a
+    static_configs:
+      - targets: ["192.168.3.170:8080"]
+        labels:
+          cluster: cluster-a
+
+  # --- Kubernetes cluster-b metrics ---
+
+  # Kubelet metrics on cluster-b nodes (192.168.3.180-185)
+  - job_name: kubelet-cluster-b
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    bearer_token_file: /etc/prometheus/tokens/cluster-b.token
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "192.168.3.180:10250"
+          - "192.168.3.181:10250"
+          - "192.168.3.182:10250"
+          - "192.168.3.183:10250"
+          - "192.168.3.184:10250"
+          - "192.168.3.185:10250"
+        labels:
+          cluster: cluster-b
+
+  # Cilium agent metrics on cluster-b nodes
+  - job_name: cilium-agent-cluster-b
+    static_configs:
+      - targets:
+          - "192.168.3.180:9962"
+          - "192.168.3.181:9962"
+          - "192.168.3.182:9962"
+          - "192.168.3.183:9962"
+          - "192.168.3.184:9962"
+          - "192.168.3.185:9962"
+        labels:
+          cluster: cluster-b
+
+  # Cilium operator metrics on cluster-b
+  - job_name: cilium-operator-cluster-b
+    static_configs:
+      - targets: ["192.168.3.180:9963"]
+        labels:
+          cluster: cluster-b
+
+  # kube-state-metrics on cluster-b
+  - job_name: kube-state-metrics-cluster-b
+    static_configs:
+      - targets: ["192.168.3.180:8080"]
+        labels:
+          cluster: cluster-b

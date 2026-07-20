@@ -1,0 +1,94 @@
+---
+# Install External Secrets Operator and configure OpenBao backend.
+# ESO fetches secrets from OpenBao (secrets-b) and creates K8s secrets.
+
+- name: Ensure Helm is installed
+  ansible.builtin.shell:
+    cmd: |
+      if ! command -v helm &>/dev/null; then
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      fi
+    creates: /usr/local/bin/helm
+
+- name: Add External Secrets Helm repository
+  ansible.builtin.command:
+    cmd: helm repo add external-secrets https://charts.external-secrets.io
+  changed_when: false
+  failed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Update Helm repos
+  ansible.builtin.command:
+    cmd: helm repo update
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Create external-secrets namespace
+  ansible.builtin.command:
+    cmd: kubectl create namespace external-secrets --dry-run=client -o yaml
+  register: eso_ns_yaml
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Apply external-secrets namespace
+  ansible.builtin.shell:
+    cmd: echo '{{ eso_ns_yaml.stdout }}' | kubectl apply -f -
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Install External Secrets Operator via Helm
+  ansible.builtin.command:
+    cmd: >-
+      helm upgrade --install external-secrets
+      external-secrets/external-secrets
+      --namespace external-secrets
+      --set installCRDs=true
+      --set webhook.port=9443
+      --timeout 5m0s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Wait for ESO pods to be ready
+  ansible.builtin.shell:
+    cmd: >-
+      kubectl wait --for=condition=Ready pod
+      -l app.kubernetes.io/name=external-secrets
+      -n external-secrets --timeout=120s
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  retries: 3
+  delay: 10
+
+- name: Render ESO SecretStore configuration
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../templates/eso-secretstore.yml.j2"
+    dest: /tmp/eso-secretstore.yaml
+    mode: "0600"
+
+- name: Apply ClusterSecretStore for OpenBao
+  ansible.builtin.command:
+    cmd: kubectl apply -f /tmp/eso-secretstore.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Verify ESO status
+  ansible.builtin.shell:
+    cmd: kubectl get pods -n external-secrets --no-headers
+  register: eso_pods
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Show ESO pods
+  ansible.builtin.debug:
+    msg: "{{ eso_pods.stdout_lines }}"
+
+- name: Clean up temporary files
+  ansible.builtin.file:
+    path: /tmp/eso-secretstore.yaml
+    state: absent

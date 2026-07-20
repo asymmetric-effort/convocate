@@ -1,0 +1,7 @@
+---
+- name: Install Cilium CNI with OpenBao PKI
+  hosts: control_plane_primary
+  gather_facts: true
+  become: true
+  roles:
+    - role: ../roles/cilium

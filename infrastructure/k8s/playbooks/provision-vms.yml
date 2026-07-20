@@ -1,0 +1,7 @@
+---
+- name: Provision Kubernetes VMs on hypervisor
+  hosts: hypervisor
+  gather_facts: true
+  become: true
+  roles:
+    - role: ../roles/vm-provision

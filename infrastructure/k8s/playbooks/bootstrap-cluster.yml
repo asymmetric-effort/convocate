@@ -1,0 +1,64 @@
+---
+- name: Initialize primary control plane
+  hosts: control_plane_primary
+  gather_facts: true
+  become: true
+  roles:
+    - role: ../roles/k8s-control-plane
+
+- name: Join additional control plane nodes
+  hosts: control_plane:!control_plane_primary
+  gather_facts: true
+  become: true
+  serial: 1
+  tasks:
+    - name: Get join parameters from primary control plane
+      ansible.builtin.set_fact:
+        join_token: "{{ hostvars[groups['control_plane_primary'][0]]['kubeadm_token'] }}"
+        join_ca_hash: "{{ hostvars[groups['control_plane_primary'][0]]['kubeadm_ca_hash'] }}"
+        join_endpoint: "{{ hostvars[groups['control_plane_primary'][0]]['kubeadm_api_endpoint'] }}"
+        join_cert_key: "{{ hostvars[groups['control_plane_primary'][0]]['kubeadm_cert_key'] }}"
+
+    - name: Check if node has already joined the cluster
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      register: admin_conf
+
+    - name: Create audit log directory
+      ansible.builtin.file:
+        path: /var/log/kubernetes
+        state: directory
+        mode: "0750"
+        owner: root
+        group: root
+      when: not admin_conf.stat.exists
+
+    - name: Join cluster as control plane node
+      ansible.builtin.command:
+        cmd: >-
+          kubeadm join {{ join_endpoint }}
+          --token {{ join_token }}
+          --discovery-token-ca-cert-hash {{ join_ca_hash }}
+          --control-plane
+          --certificate-key {{ join_cert_key }}
+      when: not admin_conf.stat.exists
+
+    - name: Create .kube directory for root
+      ansible.builtin.file:
+        path: /root/.kube
+        state: directory
+        mode: "0700"
+
+    - name: Copy admin.conf to root .kube
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /root/.kube/config
+        remote_src: true
+        mode: "0600"
+
+- name: Join worker nodes
+  hosts: workers
+  gather_facts: true
+  become: true
+  roles:
+    - role: ../roles/k8s-worker

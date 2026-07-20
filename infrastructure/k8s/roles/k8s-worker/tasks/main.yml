@@ -1,0 +1,21 @@
+---
+# Join worker nodes to the Kubernetes cluster.
+
+- name: Check if node has already joined the cluster
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Get join parameters from primary control plane
+  ansible.builtin.set_fact:
+    join_token: "{{ hostvars[groups['control_plane_primary'][0]]['kubeadm_token'] }}"
+    join_ca_hash: "{{ hostvars[groups['control_plane_primary'][0]]['kubeadm_ca_hash'] }}"
+    join_endpoint: "{{ hostvars[groups['control_plane_primary'][0]]['kubeadm_api_endpoint'] }}"
+
+- name: Join cluster as worker node
+  ansible.builtin.command:
+    cmd: >-
+      kubeadm join {{ join_endpoint }}
+      --token {{ join_token }}
+      --discovery-token-ca-cert-hash {{ join_ca_hash }}
+  when: not kubelet_conf.stat.exists

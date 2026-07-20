@@ -1,0 +1,182 @@
+---
+# Provision VMs on svr00 hypervisor using virt-install.
+# Each VM gets 3 disks: 100GB root (vda), 10GB /var/log (vdb), 5GB /tmp (vdc).
+# Two NICs: cluster bridge + macvtap on LAN interface.
+
+- name: Ensure libvirt is running
+  ansible.builtin.service:
+    name: libvirtd
+    state: started
+    enabled: true
+
+- name: Check cloud image exists
+  ansible.builtin.stat:
+    path: "{{ cloud_image_path }}"
+  register: cloud_image_stat
+
+- name: Fail if cloud image is missing
+  ansible.builtin.fail:
+    msg: "Cloud image not found at {{ cloud_image_path }}. Download Ubuntu 24.04 server cloud image first."
+  when: not cloud_image_stat.stat.exists
+
+- name: Get list of existing VMs
+  community.libvirt.virt:
+    command: list_vms
+  register: existing_vms
+
+- name: Create root disk (100GB) from cloud image
+  ansible.builtin.command:
+    cmd: >-
+      qemu-img create -f qcow2 -F qcow2
+      -b {{ cloud_image_path }}
+      {{ vm_pool_path }}/{{ item }}.qcow2
+      100G
+    creates: "{{ vm_pool_path }}/{{ item }}.qcow2"
+  loop: "{{ vm_nodes }}"
+
+- name: Create log disk (10GB)
+  ansible.builtin.command:
+    cmd: >-
+      qemu-img create -f qcow2
+      {{ vm_pool_path }}/{{ item }}-log.qcow2
+      10G
+    creates: "{{ vm_pool_path }}/{{ item }}-log.qcow2"
+  loop: "{{ vm_nodes }}"
+
+- name: Create tmp disk (5GB)
+  ansible.builtin.command:
+    cmd: >-
+      qemu-img create -f qcow2
+      {{ vm_pool_path }}/{{ item }}-tmp.qcow2
+      5G
+    creates: "{{ vm_pool_path }}/{{ item }}-tmp.qcow2"
+  loop: "{{ vm_nodes }}"
+
+- name: Build VM host vars lookup
+  ansible.builtin.set_fact:
+    vm_host_vars: >-
+      {{ vm_host_vars | default({}) | combine({
+        item: hostvars[item]
+      }) }}
+  loop: "{{ vm_nodes }}"
+
+- name: Generate cloud-init meta-data
+  ansible.builtin.copy:
+    content: |
+      instance-id: {{ item }}-{{ ansible_date_time.epoch }}
+      local-hostname: {{ item }}
+    dest: "{{ vm_pool_path }}/{{ item }}-meta-data"
+    mode: "0644"
+  loop: "{{ vm_nodes }}"
+
+- name: Generate cloud-init user-data
+  ansible.builtin.copy:
+    content: |
+      #cloud-config
+      hostname: {{ item }}
+      manage_etc_hosts: true
+      ssh_pwauth: true
+      users:
+        - name: {{ vm_user }}
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          shell: /bin/bash
+          lock_passwd: false
+          passwd: {{ vm_password_hash | default('!') }}
+          ssh_authorized_keys:
+            - {{ ssh_public_key | default('ssh-ed25519 PLACEHOLDER') }}
+        - name: sam-caldwell
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          shell: /bin/bash
+          lock_passwd: true
+          ssh_import_id:
+            - gh:sam-caldwell
+      package_update: false
+      package_upgrade: false
+      runcmd:
+        - apt-get update -qq && apt-get install -y -qq qemu-guest-agent && systemctl enable --now qemu-guest-agent || true
+        - mkdir -p /home/sam-caldwell/.ssh && curl -sfL https://github.com/sam-caldwell.keys > /home/sam-caldwell/.ssh/authorized_keys && chmod 600 /home/sam-caldwell/.ssh/authorized_keys && chown -R sam-caldwell:sam-caldwell /home/sam-caldwell/.ssh || true
+    dest: "{{ vm_pool_path }}/{{ item }}-user-data"
+    mode: "0644"
+  loop: "{{ vm_nodes }}"
+
+- name: Generate cloud-init network-config (dual NIC)
+  ansible.builtin.copy:
+    content: |
+      version: 2
+      ethernets:
+        enp1s0:
+          dhcp4: false
+          addresses:
+            - {{ vm_host_vars[item].cluster_ip }}/24
+          routes:
+            - to: {{ cluster_network }}
+              via: {{ cluster_network | ansible.utils.ipaddr('1') | ansible.utils.ipaddr('address') }}
+          nameservers:
+            addresses:
+              - 1.1.1.1
+              - 8.8.8.8
+        enp2s0:
+          dhcp4: false
+          addresses:
+            - {{ vm_host_vars[item].lan_ip }}/24
+          routes:
+            - to: default
+              via: 192.168.3.1
+          nameservers:
+            addresses:
+              - 192.168.3.1
+    dest: "{{ vm_pool_path }}/{{ item }}-network-config"
+    mode: "0644"
+  loop: "{{ vm_nodes }}"
+
+- name: Create cloud-init ISO
+  ansible.builtin.command:
+    cmd: >-
+      genisoimage -output {{ vm_pool_path }}/{{ item }}-cidata.iso
+      -volid cidata -joliet -rock
+      {{ vm_pool_path }}/{{ item }}-user-data
+      {{ vm_pool_path }}/{{ item }}-meta-data
+      {{ vm_pool_path }}/{{ item }}-network-config
+  loop: "{{ vm_nodes }}"
+
+- name: Create VMs with dual NIC and 3-disk layout
+  ansible.builtin.command:
+    cmd: >-
+      virt-install
+      --name {{ item }}
+      --ram {{ vm_memory_mb }}
+      --vcpus {{ vm_cpus }}
+      --disk path={{ vm_pool_path }}/{{ item }}.qcow2,format=qcow2,bus=virtio
+      --disk path={{ vm_pool_path }}/{{ item }}-log.qcow2,format=qcow2,bus=virtio
+      --disk path={{ vm_pool_path }}/{{ item }}-tmp.qcow2,format=qcow2,bus=virtio
+      --disk path={{ vm_pool_path }}/{{ item }}-cidata.iso,device=cdrom
+      --os-variant {{ vm_os_variant }}
+      --network network={{ cluster_bridge }},model=virtio
+      --network type=direct,source={{ lan_bridge }},source_mode=bridge,model=virtio
+      --graphics none
+      --console pty,target_type=serial
+      --noautoconsole
+      --import
+  when: item not in existing_vms.list_vms
+  loop: "{{ vm_nodes }}"
+
+- name: Wait for VMs to be reachable via SSH on LAN
+  ansible.builtin.wait_for:
+    host: "{{ vm_host_vars[item].lan_ip }}"
+    port: 22
+    delay: 10
+    timeout: 300
+    state: started
+  loop: "{{ vm_nodes }}"
+
+- name: Print VM assignments
+  ansible.builtin.debug:
+    msg: "{{ item }}: cluster={{ vm_host_vars[item].cluster_ip }} lan={{ vm_host_vars[item].lan_ip }}"
+  loop: "{{ vm_nodes }}"
+
+- name: Update inventory with discovered hosts
+  ansible.builtin.add_host:
+    name: "{{ item }}"
+    ansible_host: "{{ vm_host_vars[item].lan_ip }}"
+    ansible_user: "{{ vm_user }}"
+  loop: "{{ vm_nodes }}"

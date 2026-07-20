@@ -1,0 +1,13 @@
+{
+  "name": "convocate-k8s-pdv",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "test": "bunx playwright test",
+    "pdv": "bunx playwright test pdv.spec.ts",
+    "smoke": "bunx playwright test smoke.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}

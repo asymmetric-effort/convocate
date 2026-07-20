@@ -1,0 +1,7 @@
+---
+- name: Install External Secrets Operator with OpenBao backend
+  hosts: control_plane_primary
+  gather_facts: true
+  become: true
+  roles:
+    - role: ../roles/eso

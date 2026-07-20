@@ -168,6 +168,62 @@
       "source": "https://apt.postgresql.org/pub/repos/apt",
       "package": "postgresql-17",
       "sha256": ""
+    },
+    {
+      "name": "ubuntu-server-iso",
+      "version": "24.04.2",
+      "type": "iso",
+      "url": "https://releases.ubuntu.com/24.04.2/ubuntu-24.04.2-live-server-amd64.iso",
+      "filename": "ubuntu-24.04.2-live-server-amd64.iso",
+      "sha256": ""
+    },
+    {
+      "name": "cilium-cli",
+      "version": "0.16.24",
+      "type": "tarball",
+      "url": "https://github.com/cilium/cilium-cli/releases/download/v0.16.24/cilium-linux-amd64.tar.gz",
+      "filename": "cilium-cli-0.16.24-linux-amd64.tar.gz",
+      "sha256": ""
+    },
+    {
+      "name": "cilium-helm-chart",
+      "version": "1.16.6",
+      "type": "helm",
+      "url": "https://helm.cilium.io",
+      "chart": "cilium",
+      "sha256": ""
+    },
+    {
+      "name": "external-secrets-helm-chart",
+      "version": "0.12.1",
+      "type": "helm",
+      "url": "https://charts.external-secrets.io",
+      "chart": "external-secrets",
+      "sha256": ""
+    },
+    {
+      "name": "kubeadm",
+      "version": "1.31.14",
+      "type": "deb",
+      "source": "https://pkgs.k8s.io/core:/stable:/v1.31/deb/",
+      "package": "kubeadm",
+      "sha256": ""
+    },
+    {
+      "name": "kubelet",
+      "version": "1.31.14",
+      "type": "deb",
+      "source": "https://pkgs.k8s.io/core:/stable:/v1.31/deb/",
+      "package": "kubelet",
+      "sha256": ""
+    },
+    {
+      "name": "kubectl-deb",
+      "version": "1.31.14",
+      "type": "deb",
+      "source": "https://pkgs.k8s.io/core:/stable:/v1.31/deb/",
+      "package": "kubectl",
+      "sha256": ""
     }
   ]
 }
