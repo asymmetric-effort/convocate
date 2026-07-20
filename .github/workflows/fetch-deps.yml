@@ -2,7 +2,7 @@ name: Fetch Dependencies
 on:
   push:
     branches: [main]
-    paths: ['infrastructure/DEPENDENCIES.json']
+    paths: ['infrastructure/DEPENDENCIES.json', '.github/workflows/fetch-deps.yml']
   workflow_dispatch:
 jobs:
   fetch:
