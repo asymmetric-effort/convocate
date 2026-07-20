@@ -17,9 +17,7 @@ jobs:
         run: leakdetector --skip-history --exit-code 0
 
       - name: Install Ansible dependencies
-        run: |
-          pip install lxml 2>/dev/null || pip install --break-system-packages lxml
-          ansible-galaxy collection install -r infrastructure/requirements.yml
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
 
       - name: Deploy cluster-a
         env:
@@ -31,6 +29,12 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
           chmod 600 ~/.ssh/ansible_key
+
+          # Install lxml on svr00 (needed by community.libvirt)
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i ~/.ssh/ansible_key samcaldwell@192.168.3.159 \
+            'sudo pip install lxml --break-system-packages 2>/dev/null || sudo apt-get install -y python3-lxml' || true
+
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/k8s/playbooks/deploy.yml \
