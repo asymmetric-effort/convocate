@@ -31,43 +31,35 @@
     cmd: >-
       qemu-img create -f qcow2 -F qcow2
       -b {{ cloud_image_path }}
-      {{ vm_pool_path }}/{{ item }}.qcow2
+      {{ vm_pool_path }}/{{ item.name }}.qcow2
       100G
-    creates: "{{ vm_pool_path }}/{{ item }}.qcow2"
+    creates: "{{ vm_pool_path }}/{{ item.name }}.qcow2"
   loop: "{{ vm_nodes }}"
 
 - name: Create log disk (10GB)
   ansible.builtin.command:
     cmd: >-
       qemu-img create -f qcow2
-      {{ vm_pool_path }}/{{ item }}-log.qcow2
+      {{ vm_pool_path }}/{{ item.name }}-log.qcow2
       10G
-    creates: "{{ vm_pool_path }}/{{ item }}-log.qcow2"
+    creates: "{{ vm_pool_path }}/{{ item.name }}-log.qcow2"
   loop: "{{ vm_nodes }}"
 
 - name: Create tmp disk (5GB)
   ansible.builtin.command:
     cmd: >-
       qemu-img create -f qcow2
-      {{ vm_pool_path }}/{{ item }}-tmp.qcow2
+      {{ vm_pool_path }}/{{ item.name }}-tmp.qcow2
       5G
-    creates: "{{ vm_pool_path }}/{{ item }}-tmp.qcow2"
-  loop: "{{ vm_nodes }}"
-
-- name: Build VM host vars lookup
-  ansible.builtin.set_fact:
-    vm_host_vars: >-
-      {{ vm_host_vars | default({}) | combine({
-        item: hostvars[item]
-      }) }}
+    creates: "{{ vm_pool_path }}/{{ item.name }}-tmp.qcow2"
   loop: "{{ vm_nodes }}"
 
 - name: Generate cloud-init meta-data
   ansible.builtin.copy:
     content: |
-      instance-id: {{ item }}-{{ ansible_date_time.epoch }}
-      local-hostname: {{ item }}
-    dest: "{{ vm_pool_path }}/{{ item }}-meta-data"
+      instance-id: {{ item.name }}-{{ ansible_date_time.epoch }}
+      local-hostname: {{ item.name }}
+    dest: "{{ vm_pool_path }}/{{ item.name }}-meta-data"
     mode: "0644"
   loop: "{{ vm_nodes }}"
 
@@ -75,7 +67,7 @@
   ansible.builtin.copy:
     content: |
       #cloud-config
-      hostname: {{ item }}
+      hostname: {{ item.name }}
       manage_etc_hosts: true
       ssh_pwauth: true
       users:
@@ -97,7 +89,7 @@
       runcmd:
         - apt-get update -qq && apt-get install -y -qq qemu-guest-agent && systemctl enable --now qemu-guest-agent || true
         - mkdir -p /home/sam-caldwell/.ssh && curl -sfL https://github.com/sam-caldwell.keys > /home/sam-caldwell/.ssh/authorized_keys && chmod 600 /home/sam-caldwell/.ssh/authorized_keys && chown -R sam-caldwell:sam-caldwell /home/sam-caldwell/.ssh || true
-    dest: "{{ vm_pool_path }}/{{ item }}-user-data"
+    dest: "{{ vm_pool_path }}/{{ item.name }}-user-data"
     mode: "0644"
   loop: "{{ vm_nodes }}"
 
@@ -109,7 +101,7 @@
         enp1s0:
           dhcp4: false
           addresses:
-            - {{ vm_host_vars[item].cluster_ip }}/24
+            - {{ item.cluster_ip }}/24
           routes:
             - to: {{ cluster_network }}
               via: {{ cluster_network | ansible.utils.ipaddr('1') | ansible.utils.ipaddr('address') }}
@@ -120,38 +112,38 @@
         enp2s0:
           dhcp4: false
           addresses:
-            - {{ vm_host_vars[item].lan_ip }}/24
+            - {{ item.lan_ip }}/24
           routes:
             - to: default
               via: 192.168.3.1
           nameservers:
             addresses:
               - 192.168.3.1
-    dest: "{{ vm_pool_path }}/{{ item }}-network-config"
+    dest: "{{ vm_pool_path }}/{{ item.name }}-network-config"
     mode: "0644"
   loop: "{{ vm_nodes }}"
 
 - name: Create cloud-init ISO
   ansible.builtin.command:
     cmd: >-
-      genisoimage -output {{ vm_pool_path }}/{{ item }}-cidata.iso
+      genisoimage -output {{ vm_pool_path }}/{{ item.name }}-cidata.iso
       -volid cidata -joliet -rock
-      {{ vm_pool_path }}/{{ item }}-user-data
-      {{ vm_pool_path }}/{{ item }}-meta-data
-      {{ vm_pool_path }}/{{ item }}-network-config
+      {{ vm_pool_path }}/{{ item.name }}-user-data
+      {{ vm_pool_path }}/{{ item.name }}-meta-data
+      {{ vm_pool_path }}/{{ item.name }}-network-config
   loop: "{{ vm_nodes }}"
 
 - name: Create VMs with dual NIC and 3-disk layout
   ansible.builtin.command:
     cmd: >-
       virt-install
-      --name {{ item }}
+      --name {{ item.name }}
       --ram {{ vm_memory_mb }}
       --vcpus {{ vm_cpus }}
-      --disk path={{ vm_pool_path }}/{{ item }}.qcow2,format=qcow2,bus=virtio
-      --disk path={{ vm_pool_path }}/{{ item }}-log.qcow2,format=qcow2,bus=virtio
-      --disk path={{ vm_pool_path }}/{{ item }}-tmp.qcow2,format=qcow2,bus=virtio
-      --disk path={{ vm_pool_path }}/{{ item }}-cidata.iso,device=cdrom
+      --disk path={{ vm_pool_path }}/{{ item.name }}.qcow2,format=qcow2,bus=virtio
+      --disk path={{ vm_pool_path }}/{{ item.name }}-log.qcow2,format=qcow2,bus=virtio
+      --disk path={{ vm_pool_path }}/{{ item.name }}-tmp.qcow2,format=qcow2,bus=virtio
+      --disk path={{ vm_pool_path }}/{{ item.name }}-cidata.iso,device=cdrom
       --os-variant {{ vm_os_variant }}
       --network network={{ cluster_bridge }},model=virtio
       --network type=direct,source={{ lan_bridge }},source_mode=bridge,model=virtio
@@ -159,12 +151,12 @@
       --console pty,target_type=serial
       --noautoconsole
       --import
-  when: item not in existing_vms.list_vms
+  when: item.name not in existing_vms.list_vms
   loop: "{{ vm_nodes }}"
 
 - name: Wait for VMs to be reachable via SSH on LAN
   ansible.builtin.wait_for:
-    host: "{{ vm_host_vars[item].lan_ip }}"
+    host: "{{ item.lan_ip }}"
     port: 22
     delay: 10
     timeout: 300
@@ -173,12 +165,12 @@
 
 - name: Print VM assignments
   ansible.builtin.debug:
-    msg: "{{ item }}: cluster={{ vm_host_vars[item].cluster_ip }} lan={{ vm_host_vars[item].lan_ip }}"
+    msg: "{{ item.name }}: cluster={{ item.cluster_ip }} lan={{ item.lan_ip }}"
   loop: "{{ vm_nodes }}"
 
 - name: Update inventory with discovered hosts
   ansible.builtin.add_host:
-    name: "{{ item }}"
-    ansible_host: "{{ vm_host_vars[item].lan_ip }}"
+    name: "{{ item.name }}"
+    ansible_host: "{{ item.lan_ip }}"
     ansible_user: "{{ vm_user }}"
   loop: "{{ vm_nodes }}"
