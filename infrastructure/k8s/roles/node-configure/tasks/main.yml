@@ -20,12 +20,10 @@
     mode: "0755"
 
 - name: Mount vdb at /var/log
-  ansible.posix.mount:
-    path: /var/log
-    src: /dev/vdb
-    fstype: ext4
-    opts: defaults,noatime
-    state: mounted
+  ansible.builtin.shell:
+    cmd: |
+      grep -q '/var/log' /etc/fstab || echo '/dev/vdb /var/log ext4 defaults,noatime 0 2' >> /etc/fstab
+      mountpoint -q /var/log || mount /dev/vdb /var/log
 
 - name: Format tmp disk (vdc) if not already formatted
   ansible.builtin.command:
@@ -36,21 +34,15 @@
   failed_when: false
 
 - name: Mount vdc at /tmp with noexec
-  ansible.posix.mount:
-    path: /tmp
-    src: /dev/vdc
-    fstype: ext4
-    opts: defaults,noatime,noexec,nosuid,nodev
-    state: mounted
+  ansible.builtin.shell:
+    cmd: |
+      grep -q '/tmp' /etc/fstab || echo '/dev/vdc /tmp ext4 defaults,noatime,noexec,nosuid,nodev 0 2' >> /etc/fstab
+      mountpoint -q /tmp || mount /dev/vdc /tmp
+      chmod 1777 /tmp
 
 # --- Networking ---
 
-- name: Configure netplan for dual NIC
-  ansible.builtin.template:
-    src: "{{ playbook_dir }}/../templates/netplan-node.yml.j2"
-    dest: /etc/netplan/50-cloud-init.yaml
-    mode: "0600"
-  notify: apply netplan
+# Network configured by cloud-init DHCP — no netplan changes needed
 
 - name: Disable swap
   ansible.builtin.command:
