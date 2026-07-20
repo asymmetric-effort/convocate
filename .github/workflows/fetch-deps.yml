@@ -82,6 +82,12 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] ${SOURCE} noble-pgdg main" > /etc/apt/sources.list.d/pgdg.list
           apt-get update -qq
           DEBSCRIPT4
+                elif echo "$SOURCE" | grep -q pkgs.k8s.io; then
+                  cat >> /tmp/fetch-deb.sh << DEBSCRIPT5
+          curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /usr/share/keyrings/k8s.gpg 2>/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/k8s.gpg] ${SOURCE} /" > /etc/apt/sources.list.d/k8s.list
+          apt-get update -qq
+          DEBSCRIPT5
                 fi
 
                 echo "cd /out && apt-get download ${PACKAGE}" >> /tmp/fetch-deb.sh
@@ -109,7 +115,7 @@ jobs:
               # Check for deb files with different names
               DEB_FILES=$(ls /tmp/deps/${PACKAGE}*.deb 2>/dev/null || ls /tmp/deps/*${NAME}*.deb 2>/dev/null || true)
               if [ -n "$DEB_FILES" ]; then
-                echo "  Downloaded deb: $(basename $DEB_FILES)"
+                echo "  Downloaded deb: $(echo "$DEB_FILES" | head -1 | xargs basename)"
               else
                 echo "::error::Failed to download ${NAME}"
                 exit 1
