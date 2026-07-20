@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directory: "/"
+    directory: "/src/api"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -12,7 +12,7 @@ updates:
       - "go"
 
   - package-ecosystem: "gomod"
-    directory: "/metrics"
+    directory: "/src/agent"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -23,7 +23,29 @@ updates:
       - "go"
 
   - package-ecosystem: "gomod"
-    directory: "/agent"
+    directory: "/src/gatekeeper"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "go"
+
+  - package-ecosystem: "gomod"
+    directory: "/src/ui/cmd/serve"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "go"
+
+  - package-ecosystem: "gomod"
+    directory: "/o11y/metrics"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -34,7 +56,7 @@ updates:
       - "go"
 
   - package-ecosystem: "npm"
-    directory: "/ui"
+    directory: "/src/ui"
     schedule:
       interval: "weekly"
       day: "monday"
