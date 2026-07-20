@@ -175,6 +175,7 @@
       echo "TIMEOUT waiting for {{ item.name }}"
       exit 1
   delegate_to: localhost
+  become: false
   loop: "{{ vm_nodes }}"
 
 - name: Print VM assignments
