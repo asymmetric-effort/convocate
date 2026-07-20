@@ -10,6 +10,7 @@ jobs:
   deploy-cluster-a:
     name: Deploy cluster-a (canary)
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 
@@ -54,6 +55,7 @@ jobs:
     name: PDV Tests (cluster-a)
     needs: deploy-cluster-a
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 15
     env:
       CLUSTER_NAME: cluster-a
       KUBECONFIG_HOST: 192.168.3.170
@@ -89,6 +91,7 @@ jobs:
     name: Deploy cluster-b (production)
     needs: pdv-cluster-a
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 
@@ -120,6 +123,7 @@ jobs:
     name: Smoke Tests (cluster-b)
     needs: deploy-cluster-b
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 15
     env:
       CLUSTER_NAME: cluster-b
       KUBECONFIG_HOST: 192.168.3.180
