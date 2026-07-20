@@ -21,6 +21,15 @@
     mode: "0644"
   when: not cloud_image_stat.stat.exists
 
+- name: Destroy existing cluster VMs (canary clusters get wiped)
+  ansible.builtin.shell:
+    cmd: |
+      virsh destroy {{ item.name }} 2>/dev/null || true
+      virsh undefine {{ item.name }} --remove-all-storage 2>/dev/null || true
+      rm -f {{ vm_pool_path }}/{{ item.name }}-* 2>/dev/null || true
+  loop: "{{ vm_nodes }}"
+  when: cluster_name is match("cluster-a")
+
 - name: Get list of existing VMs
   community.libvirt.virt:
     command: list_vms
