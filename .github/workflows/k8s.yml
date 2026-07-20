@@ -22,7 +22,7 @@ jobs:
       - name: Deploy cluster-a
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+          # SSH_PUBLIC_KEY derived from SSH_PRIVATE_KEY at runtime
           VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
           HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
         run: |
@@ -34,6 +34,10 @@ jobs:
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -i ~/.ssh/ansible_key samcaldwell@192.168.3.159 \
             'sudo apt-get install -y python3-lxml genisoimage qemu-utils' || true
+
+          # Derive public key from private key for VM injection
+          ssh-keygen -y -f ~/.ssh/ansible_key > ~/.ssh/ansible_key.pub
+          export SSH_PUBLIC_KEY="$(cat ~/.ssh/ansible_key.pub)"
 
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
@@ -89,13 +93,18 @@ jobs:
       - name: Deploy cluster-b (zero-downtime)
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+          # SSH_PUBLIC_KEY derived from SSH_PRIVATE_KEY at runtime
           VM_PASSWORD_HASH: ${{ secrets.VM_PASSWORD_HASH }}
           HYPERVISOR_USER: ${{ secrets.HYPERVISOR_USER }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
           chmod 600 ~/.ssh/ansible_key
+
+          # Derive public key from private key for VM injection
+          ssh-keygen -y -f ~/.ssh/ansible_key > ~/.ssh/ansible_key.pub
+          export SSH_PUBLIC_KEY="$(cat ~/.ssh/ansible_key.pub)"
+
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
           ansible-playbook infrastructure/k8s/playbooks/deploy.yml \
