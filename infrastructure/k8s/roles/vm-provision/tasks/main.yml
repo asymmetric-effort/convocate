@@ -146,7 +146,7 @@
       --disk path={{ vm_pool_path }}/{{ item.name }}-cidata.iso,device=cdrom
       --os-variant {{ vm_os_variant }}
       --network network={{ cluster_bridge }},model=virtio
-      --network type=direct,source={{ lan_bridge }},source_mode=bridge,model=virtio
+      --network bridge=br-lan,model=virtio
       --graphics none
       --console pty,target_type=serial
       --noautoconsole
