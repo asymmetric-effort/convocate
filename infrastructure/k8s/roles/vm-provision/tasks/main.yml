@@ -9,6 +9,42 @@
     state: started
     enabled: true
 
+- name: Define cluster virtual network
+  ansible.builtin.shell:
+    cmd: |
+      if ! virsh net-info {{ cluster_bridge }} >/dev/null 2>&1; then
+        cat > /tmp/{{ cluster_bridge }}-net.xml <<'NETXML'
+      <network>
+        <name>{{ cluster_bridge }}</name>
+        <bridge name='{{ cluster_bridge }}' stp='on' delay='0'/>
+        <ip address='{{ gateway_ip }}' netmask='255.255.255.0'>
+          <dhcp>
+            <range start='{{ cluster_network | regex_replace("\\.0/.*", ".100") }}' end='{{ cluster_network | regex_replace("\\.0/.*", ".250") }}'/>
+          </dhcp>
+        </ip>
+      </network>
+      NETXML
+        virsh net-define /tmp/{{ cluster_bridge }}-net.xml
+        rm -f /tmp/{{ cluster_bridge }}-net.xml
+      fi
+  changed_when: false
+
+- name: Ensure cluster network is started and autostarted
+  ansible.builtin.shell:
+    cmd: |
+      virsh net-start {{ cluster_bridge }} 2>/dev/null || true
+      virsh net-autostart {{ cluster_bridge }} 2>/dev/null || true
+  changed_when: false
+
+- name: Restart cluster network DHCP (flush stale leases)
+  ansible.builtin.shell:
+    cmd: |
+      virsh net-destroy {{ cluster_bridge }} 2>/dev/null || true
+      sleep 2
+      virsh net-start {{ cluster_bridge }}
+  changed_when: false
+  when: cluster_name is match("cluster-a")
+
 - name: Check cloud image exists
   ansible.builtin.stat:
     path: "{{ cloud_image_path }}"
