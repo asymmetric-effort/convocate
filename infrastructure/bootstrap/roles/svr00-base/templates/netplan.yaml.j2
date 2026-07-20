@@ -1,12 +1,18 @@
 # svr00 network configuration
-# Physical NIC: enp4s0f0 (hardcoded — do not autodetect)
-# 192.168.3.160-169 are reserved for core services
-# All IPs on a single interface to avoid multi-NIC routing issues
+# Physical NIC: enp4s0f0 bridged to br0
+# VMs attach to br0 and get their own LAN IPs directly
+# 192.168.3.160-169 are reserved for core services on svr00
 network:
   version: 2
   renderer: networkd
   ethernets:
     enp4s0f0:
+      dhcp4: false
+      dhcp6: false
+  bridges:
+    br0:
+      interfaces:
+        - enp4s0f0
       addresses:
         - 192.168.3.159/24  # svr00 ssh
         - 192.168.3.160/24  # core: secrets-a (openbao test)
@@ -17,18 +23,6 @@ network:
         - 192.168.3.165/24  # core: prometheus-b
         - 192.168.3.166/24  # core: reserved
         - 192.168.3.167/24  # core: reserved
-        - 192.168.3.170/24  # cluster-a: node-a-0 (control plane)
-        - 192.168.3.171/24  # cluster-a: node-a-1 (control plane)
-        - 192.168.3.172/24  # cluster-a: node-a-2 (control plane)
-        - 192.168.3.173/24  # cluster-a: node-a-3 (worker)
-        - 192.168.3.174/24  # cluster-a: node-a-4 (worker)
-        - 192.168.3.175/24  # cluster-a: node-a-5 (worker)
-        - 192.168.3.180/24  # cluster-b: node-b-0 (control plane)
-        - 192.168.3.181/24  # cluster-b: node-b-1 (control plane)
-        - 192.168.3.182/24  # cluster-b: node-b-2 (control plane)
-        - 192.168.3.183/24  # cluster-b: node-b-3 (worker)
-        - 192.168.3.184/24  # cluster-b: node-b-4 (worker)
-        - 192.168.3.185/24  # cluster-b: node-b-5 (worker)
         - 192.168.3.190/24
         - 192.168.3.191/24
         - 192.168.3.192/24
@@ -38,3 +32,6 @@ network:
       nameservers:
         addresses:
           - 192.168.3.1
+      parameters:
+        stp: false
+        forward-delay: 0

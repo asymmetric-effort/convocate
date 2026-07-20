@@ -2,12 +2,9 @@
 all:
   vars:
     cluster_name: cluster-a
-    cluster_network: 192.168.55.0/24
-    cluster_bridge: cluster-a
-    lan_bridge: enp4s0f0
+    host_bridge: br0
     pod_cidr: 10.55.0.0/16
     service_cidr: 10.96.0.0/16
-    gateway_ip: 192.168.55.1
     openbao_addr: https://192.168.3.161:443
     k8s_version: "1.31"
     kube_version: "v1.31.14"
@@ -19,12 +16,12 @@ all:
     cloud_image_path: /var/lib/libvirt/images/ubuntu-24.04-server-cloudimg-amd64.img
     vm_pool_path: /var/lib/libvirt/images
     vm_nodes:
-      - { name: node-a-0, cluster_ip: "192.168.55.10", lan_ip: "192.168.3.170" }
-      - { name: node-a-1, cluster_ip: "192.168.55.11", lan_ip: "192.168.3.171" }
-      - { name: node-a-2, cluster_ip: "192.168.55.12", lan_ip: "192.168.3.172" }
-      - { name: node-a-3, cluster_ip: "192.168.55.13", lan_ip: "192.168.3.173" }
-      - { name: node-a-4, cluster_ip: "192.168.55.14", lan_ip: "192.168.3.174" }
-      - { name: node-a-5, cluster_ip: "192.168.55.15", lan_ip: "192.168.3.175" }
+      - { name: node-a-0, ip: "192.168.3.170" }
+      - { name: node-a-1, ip: "192.168.3.171" }
+      - { name: node-a-2, ip: "192.168.3.172" }
+      - { name: node-a-3, ip: "192.168.3.173" }
+      - { name: node-a-4, ip: "192.168.3.174" }
+      - { name: node-a-5, ip: "192.168.3.175" }
     ssh_public_key: "{{ lookup('env', 'SSH_PUBLIC_KEY') }}"
     vm_password_hash: "{{ lookup('env', 'VM_PASSWORD_HASH') }}"
     ansible_user: convocate
@@ -42,40 +39,28 @@ all:
     control_plane:
       hosts:
         node-a-0:
-          cluster_ip: 192.168.55.10
-          lan_ip: 192.168.3.170
+          ansible_host: 192.168.3.170
           vm_name: node-a-0
-          ansible_host: 192.168.55.10
         node-a-1:
-          cluster_ip: 192.168.55.11
-          lan_ip: 192.168.3.171
+          ansible_host: 192.168.3.171
           vm_name: node-a-1
-          ansible_host: 192.168.55.11
         node-a-2:
-          cluster_ip: 192.168.55.12
-          lan_ip: 192.168.3.172
+          ansible_host: 192.168.3.172
           vm_name: node-a-2
-          ansible_host: 192.168.55.12
     control_plane_primary:
       hosts:
         node-a-0:
     workers:
       hosts:
         node-a-3:
-          cluster_ip: 192.168.55.13
-          lan_ip: 192.168.3.173
+          ansible_host: 192.168.3.173
           vm_name: node-a-3
-          ansible_host: 192.168.55.13
         node-a-4:
-          cluster_ip: 192.168.55.14
-          lan_ip: 192.168.3.174
+          ansible_host: 192.168.3.174
           vm_name: node-a-4
-          ansible_host: 192.168.55.14
         node-a-5:
-          cluster_ip: 192.168.55.15
-          lan_ip: 192.168.3.175
+          ansible_host: 192.168.3.175
           vm_name: node-a-5
-          ansible_host: 192.168.55.15
     k8s_nodes:
       children:
         control_plane:

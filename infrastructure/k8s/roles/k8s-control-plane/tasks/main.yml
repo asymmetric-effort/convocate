@@ -126,7 +126,7 @@
   ansible.builtin.set_fact:
     kubeadm_token: "{{ bootstrap_token_result.stdout }}"
     kubeadm_ca_hash: "sha256:{{ ca_hash_result.stdout }}"
-    kubeadm_api_endpoint: "{{ ansible_default_ipv4.address }}:6443"
+    kubeadm_api_endpoint: "{{ ansible_host }}:6443"
     kubeadm_cert_key: "{{ kubeadm_certificate_key }}"
 
 - name: Fetch kubeconfig to controller

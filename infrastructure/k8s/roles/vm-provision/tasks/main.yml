@@ -1,40 +1,13 @@
 ---
 # Provision VMs on svr00 hypervisor using virt-install.
 # Each VM gets 3 disks: 100GB root (vda), 10GB /var/log (vdb), 5GB /tmp (vdc).
-# Two NICs: cluster bridge + macvtap on LAN interface.
+# VMs attach to the host bridge (br0) and get static LAN IPs via cloud-init.
 
 - name: Ensure libvirt is running
   ansible.builtin.service:
     name: libvirtd
     state: started
     enabled: true
-
-- name: Define cluster virtual network
-  ansible.builtin.shell:
-    cmd: |
-      if ! virsh net-info {{ cluster_bridge }} >/dev/null 2>&1; then
-        cat > /tmp/{{ cluster_bridge }}-net.xml <<'NETXML'
-      <network>
-        <name>{{ cluster_bridge }}</name>
-        <bridge name='{{ cluster_bridge }}' stp='on' delay='0'/>
-        <ip address='{{ gateway_ip }}' netmask='255.255.255.0'>
-          <dhcp>
-            <range start='{{ cluster_network | regex_replace("\\.0/.*", ".100") }}' end='{{ cluster_network | regex_replace("\\.0/.*", ".250") }}'/>
-          </dhcp>
-        </ip>
-      </network>
-      NETXML
-        virsh net-define /tmp/{{ cluster_bridge }}-net.xml
-        rm -f /tmp/{{ cluster_bridge }}-net.xml
-      fi
-  changed_when: false
-
-- name: Ensure cluster network is started and autostarted
-  ansible.builtin.shell:
-    cmd: |
-      virsh net-start {{ cluster_bridge }} 2>/dev/null || true
-      virsh net-autostart {{ cluster_bridge }} 2>/dev/null || true
-  changed_when: false
 
 - name: Check cloud image exists
   ansible.builtin.stat:
@@ -55,15 +28,6 @@
       virsh undefine {{ item.name }} --remove-all-storage 2>/dev/null || true
       rm -f {{ vm_pool_path }}/{{ item.name }}-* 2>/dev/null || true
   loop: "{{ vm_nodes }}"
-  when: cluster_name is match("cluster-a")
-
-- name: Restart cluster network DHCP after VM cleanup
-  ansible.builtin.shell:
-    cmd: |
-      virsh net-destroy {{ cluster_bridge }} 2>/dev/null || true
-      sleep 2
-      virsh net-start {{ cluster_bridge }}
-  changed_when: false
   when: cluster_name is match("cluster-a")
 
 - name: Get list of existing VMs
@@ -108,6 +72,24 @@
     mode: "0644"
   loop: "{{ vm_nodes }}"
 
+- name: Generate cloud-init network-config (static IP on LAN)
+  ansible.builtin.copy:
+    content: |
+      version: 2
+      ethernets:
+        enp1s0:
+          addresses:
+            - {{ item.ip }}/24
+          routes:
+            - to: default
+              via: 192.168.3.1
+          nameservers:
+            addresses:
+              - 192.168.3.1
+    dest: "{{ vm_pool_path }}/{{ item.name }}-network-config"
+    mode: "0644"
+  loop: "{{ vm_nodes }}"
+
 - name: Generate cloud-init user-data
   ansible.builtin.copy:
     content: |
@@ -138,20 +120,21 @@
     mode: "0644"
   loop: "{{ vm_nodes }}"
 
-- name: Create cloud-init ISO (no network-config — defaults to DHCP)
+- name: Create cloud-init ISO with network-config
   ansible.builtin.shell:
     cmd: |
       TMPDIR=$(mktemp -d)
       cp {{ vm_pool_path }}/{{ item.name }}-user-data "$TMPDIR/user-data"
       cp {{ vm_pool_path }}/{{ item.name }}-meta-data "$TMPDIR/meta-data"
+      cp {{ vm_pool_path }}/{{ item.name }}-network-config "$TMPDIR/network-config"
       genisoimage -output {{ vm_pool_path }}/{{ item.name }}-cidata.iso \
         -volid cidata -joliet -rock \
-        "$TMPDIR/user-data" "$TMPDIR/meta-data"
+        "$TMPDIR/user-data" "$TMPDIR/meta-data" "$TMPDIR/network-config"
       rm -rf "$TMPDIR"
     creates: "{{ vm_pool_path }}/{{ item.name }}-cidata.iso"
   loop: "{{ vm_nodes }}"
 
-- name: Create VMs with dual NIC and 3-disk layout
+- name: Create VMs on host bridge with 3-disk layout
   ansible.builtin.command:
     cmd: >-
       virt-install
@@ -163,7 +146,7 @@
       --disk path={{ vm_pool_path }}/{{ item.name }}-tmp.qcow2,format=qcow2,bus=virtio
       --disk path={{ vm_pool_path }}/{{ item.name }}-cidata.iso,device=cdrom
       --os-variant {{ vm_os_variant }}
-      --network network={{ cluster_bridge }},model=e1000
+      --network bridge={{ host_bridge }},model=virtio
       --graphics none
       --console pty,target_type=serial
       --noautoconsole
@@ -171,59 +154,24 @@
   when: item.name not in existing_vms.list_vms
   loop: "{{ vm_nodes }}"
 
-- name: Wait for VMs to get DHCP addresses and SSH to be ready
+- name: Wait for VMs to boot and SSH to be ready
   ansible.builtin.shell:
     cmd: |
-      # Wait for DHCP lease via libvirt and SSH readiness
-      # Get the VM's MAC address from libvirt
-      MAC=$(virsh domiflist {{ item.name }} 2>/dev/null | grep -v '^$' | grep -v '^---' | grep -v 'Interface' | head -1 | awk '{print $5}')
-      if [ -z "$MAC" ]; then
-        echo "ERROR: Could not get MAC for {{ item.name }}"
-        exit 1
-      fi
-
       for i in $(seq 1 90); do
-        # Try virsh net-dhcp-leases (queries dnsmasq lease database)
-        IP=$(virsh net-dhcp-leases {{ cluster_bridge }} 2>/dev/null | grep "$MAC" | awk '{print $5}' | cut -d/ -f1)
-
-        # Fallback: try virsh domifaddr with lease source
-        if [ -z "$IP" ]; then
-          IP=$(virsh domifaddr {{ item.name }} --source lease 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}')
-        fi
-
-        # Fallback: try ARP table
-        if [ -z "$IP" ]; then
-          IP=$(arp -n | grep "$MAC" | awk '{print $1}')
-        fi
-
-        if [ -n "$IP" ]; then
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=3 -o BatchMode=yes \
-              {{ vm_user }}@$IP 'test -f /var/lib/cloud/instance/boot-finished && echo ready' 2>/dev/null && {
-            echo "DISCOVERED:$IP"
-            exit 0
-          }
-        fi
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=3 -o BatchMode=yes \
+            {{ vm_user }}@{{ item.ip }} 'test -f /var/lib/cloud/instance/boot-finished && echo ready' 2>/dev/null && {
+          echo "READY:{{ item.ip }}"
+          exit 0
+        }
         sleep 5
       done
-      echo "TIMEOUT waiting for {{ item.name }}"
+      echo "TIMEOUT waiting for {{ item.name }} at {{ item.ip }}"
       exit 1
-  register: vm_discovery
+  register: vm_ready
   loop: "{{ vm_nodes }}"
 
-- name: Print VM assignments
+- name: Print VM status
   ansible.builtin.debug:
-    msg: "{{ item.item.name }}: {{ item.stdout }}"
-  loop: "{{ vm_discovery.results }}"
-
-- name: Update inventory with discovered hosts (via svr00 jump host)
-  ansible.builtin.add_host:
-    name: "{{ item.item.name }}"
-    ansible_host: "{{ item.stdout | regex_search('DISCOVERED:(.+)', '\\1') | first }}"
-    ansible_user: "{{ vm_user }}"
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump=samcaldwell@192.168.3.159"
-    groups:
-      - k8s_nodes
-      - "{{ 'control_plane' if item.item.name in ['node-a-0','node-a-1','node-a-2','node-b-0','node-b-1','node-b-2'] else 'workers' }}"
-  loop: "{{ vm_discovery.results }}"
-  when: "'DISCOVERED' in item.stdout"
+    msg: "{{ item.item.name }} ({{ item.item.ip }}): {{ item.stdout }}"
+  loop: "{{ vm_ready.results }}"
