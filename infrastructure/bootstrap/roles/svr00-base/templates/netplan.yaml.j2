@@ -1,9 +1,7 @@
 # svr00 network configuration
 # Physical NIC: enp4s0f0 (hardcoded — do not autodetect)
-# Bridge NIC: enp4s0f1 → br-lan (for VM LAN access)
 # 192.168.3.160-169 are reserved for core services
-# 192.168.3.170-175 are cluster-a VM LAN IPs (assigned to VMs, not host)
-# 192.168.3.180-185 are cluster-b VM LAN IPs (assigned to VMs, not host)
+# All IPs on a single interface to avoid multi-NIC routing issues
 network:
   version: 2
   renderer: networkd
@@ -19,6 +17,18 @@ network:
         - 192.168.3.165/24  # core: prometheus-b
         - 192.168.3.166/24  # core: reserved
         - 192.168.3.167/24  # core: reserved
+        - 192.168.3.170/24  # cluster-a: node-a-0 (control plane)
+        - 192.168.3.171/24  # cluster-a: node-a-1 (control plane)
+        - 192.168.3.172/24  # cluster-a: node-a-2 (control plane)
+        - 192.168.3.173/24  # cluster-a: node-a-3 (worker)
+        - 192.168.3.174/24  # cluster-a: node-a-4 (worker)
+        - 192.168.3.175/24  # cluster-a: node-a-5 (worker)
+        - 192.168.3.180/24  # cluster-b: node-b-0 (control plane)
+        - 192.168.3.181/24  # cluster-b: node-b-1 (control plane)
+        - 192.168.3.182/24  # cluster-b: node-b-2 (control plane)
+        - 192.168.3.183/24  # cluster-b: node-b-3 (worker)
+        - 192.168.3.184/24  # cluster-b: node-b-4 (worker)
+        - 192.168.3.185/24  # cluster-b: node-b-5 (worker)
         - 192.168.3.190/24
         - 192.168.3.191/24
         - 192.168.3.192/24
@@ -28,13 +38,3 @@ network:
       nameservers:
         addresses:
           - 192.168.3.1
-    enp4s0f1:
-      dhcp4: false
-      dhcp6: false
-  bridges:
-    br-lan:
-      interfaces: [enp4s0f1]
-      dhcp4: false
-      dhcp6: false
-      parameters:
-        stp: false
