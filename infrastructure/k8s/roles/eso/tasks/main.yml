@@ -64,6 +64,23 @@
   retries: 3
   delay: 10
 
+- name: Fetch OpenBao CA cert for ESO
+  ansible.builtin.shell:
+    cmd: >-
+      curl -sk {{ openbao_addr }}/v1/pki/ca/pem > /tmp/openbao-eso-ca.pem
+  changed_when: false
+
+- name: Create openbao-ca ConfigMap with real CA cert
+  ansible.builtin.shell:
+    cmd: |
+      kubectl create namespace external-secrets --dry-run=client -o yaml | kubectl apply -f -
+      kubectl create configmap openbao-ca \
+        --namespace external-secrets \
+        --from-file=ca.crt=/tmp/openbao-eso-ca.pem \
+        --dry-run=client -o yaml | kubectl apply -f -
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
 - name: Render ESO SecretStore configuration
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../templates/eso-secretstore.yml.j2"
@@ -90,5 +107,8 @@
 
 - name: Clean up temporary files
   ansible.builtin.file:
-    path: /tmp/eso-secretstore.yaml
+    path: "{{ item }}"
     state: absent
+  loop:
+    - /tmp/eso-secretstore.yaml
+    - /tmp/openbao-eso-ca.pem
