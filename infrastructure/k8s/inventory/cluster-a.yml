@@ -7,6 +7,7 @@ all:
     lan_bridge: enp4s0f0
     pod_cidr: 10.55.0.0/16
     service_cidr: 10.96.0.0/16
+    gateway_ip: 192.168.55.1
     openbao_addr: https://192.168.3.161:443
     k8s_version: "1.31"
     kube_version: "v1.31.14"
@@ -42,17 +43,17 @@ all:
           cluster_ip: 192.168.55.10
           lan_ip: 192.168.3.170
           vm_name: node-a-0
-          ansible_host: 192.168.3.170
+          ansible_host: 192.168.55.10
         node-a-1:
           cluster_ip: 192.168.55.11
           lan_ip: 192.168.3.171
           vm_name: node-a-1
-          ansible_host: 192.168.3.171
+          ansible_host: 192.168.55.11
         node-a-2:
           cluster_ip: 192.168.55.12
           lan_ip: 192.168.3.172
           vm_name: node-a-2
-          ansible_host: 192.168.3.172
+          ansible_host: 192.168.55.12
     control_plane_primary:
       hosts:
         node-a-0:
@@ -62,17 +63,17 @@ all:
           cluster_ip: 192.168.55.13
           lan_ip: 192.168.3.173
           vm_name: node-a-3
-          ansible_host: 192.168.3.173
+          ansible_host: 192.168.55.13
         node-a-4:
           cluster_ip: 192.168.55.14
           lan_ip: 192.168.3.174
           vm_name: node-a-4
-          ansible_host: 192.168.3.174
+          ansible_host: 192.168.55.14
         node-a-5:
           cluster_ip: 192.168.55.15
           lan_ip: 192.168.3.175
           vm_name: node-a-5
-          ansible_host: 192.168.3.175
+          ansible_host: 192.168.55.15
     k8s_nodes:
       children:
         control_plane:

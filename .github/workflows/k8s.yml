@@ -30,14 +30,19 @@ jobs:
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
           chmod 600 ~/.ssh/ansible_key
 
-          # Install dependencies on svr00 (lxml for libvirt, genisoimage for cloud-init)
+          # Install dependencies on svr00
           ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -i ~/.ssh/ansible_key samcaldwell@192.168.3.159 \
             'sudo apt-get install -y python3-lxml genisoimage qemu-utils' || true
 
-          # Derive public key from private key for VM injection
+          # Derive public key and copy key pair to svr00 for VM SSH access
           ssh-keygen -y -f ~/.ssh/ansible_key > ~/.ssh/ansible_key.pub
           export SSH_PUBLIC_KEY="$(cat ~/.ssh/ansible_key.pub)"
+          scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i ~/.ssh/ansible_key ~/.ssh/ansible_key samcaldwell@192.168.3.159:/tmp/ansible_key
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -i ~/.ssh/ansible_key samcaldwell@192.168.3.159 \
+            'sudo cp /tmp/ansible_key /root/.ssh/id_ed25519 && sudo chmod 600 /root/.ssh/id_ed25519 && rm /tmp/ansible_key'
 
           ANSIBLE_HOST_KEY_CHECKING=False \
           ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \

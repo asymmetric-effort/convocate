@@ -102,7 +102,7 @@
     mode: "0644"
   loop: "{{ vm_nodes }}"
 
-- name: Generate cloud-init network-config (dual NIC)
+- name: Generate cloud-init network-config (single NIC on cluster bridge)
   ansible.builtin.copy:
     content: |
       version: 2
@@ -112,22 +112,12 @@
           addresses:
             - {{ item.cluster_ip }}/24
           routes:
-            - to: {{ cluster_network }}
-              via: {{ cluster_network | ansible.utils.ipaddr('1') | ansible.utils.ipaddr('address') }}
-          nameservers:
-            addresses:
-              - 1.1.1.1
-              - 8.8.8.8
-        enp2s0:
-          dhcp4: false
-          addresses:
-            - {{ item.lan_ip }}/24
-          routes:
             - to: default
-              via: 192.168.3.1
+              via: {{ gateway_ip }}
           nameservers:
             addresses:
-              - 192.168.3.1
+              - {{ gateway_ip }}
+              - 1.1.1.1
     dest: "{{ vm_pool_path }}/{{ item.name }}-network-config"
     mode: "0644"
   loop: "{{ vm_nodes }}"
@@ -155,7 +145,6 @@
       --disk path={{ vm_pool_path }}/{{ item.name }}-cidata.iso,device=cdrom
       --os-variant {{ vm_os_variant }}
       --network network={{ cluster_bridge }},model=virtio
-      --network bridge=br-lan,model=virtio
       --graphics none
       --console pty,target_type=serial
       --noautoconsole
@@ -165,7 +154,7 @@
 
 - name: Wait for VMs to be reachable via SSH on LAN
   ansible.builtin.wait_for:
-    host: "{{ item.lan_ip }}"
+    host: "{{ item.cluster_ip }}"
     port: 22
     delay: 10
     timeout: 300
@@ -178,13 +167,12 @@
       for i in $(seq 1 60); do
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=5 -o BatchMode=yes \
-            {{ vm_user }}@{{ item.lan_ip }} 'test -f /var/lib/cloud/instance/boot-finished && echo ready' 2>/dev/null && exit 0
+            {{ vm_user }}@{{ item.cluster_ip }} 'test -f /var/lib/cloud/instance/boot-finished && echo ready' 2>/dev/null && exit 0
         sleep 5
       done
       echo "TIMEOUT waiting for {{ item.name }}"
       exit 1
-  delegate_to: localhost
-  become: false
+  # Runs on svr00 (the hypervisor/gateway) which can reach the cluster network
   loop: "{{ vm_nodes }}"
 
 - name: Print VM assignments
@@ -195,6 +183,6 @@
 - name: Update inventory with discovered hosts
   ansible.builtin.add_host:
     name: "{{ item.name }}"
-    ansible_host: "{{ item.lan_ip }}"
+    ansible_host: "{{ item.cluster_ip }}"
     ansible_user: "{{ vm_user }}"
   loop: "{{ vm_nodes }}"
