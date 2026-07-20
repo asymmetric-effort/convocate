@@ -7,8 +7,24 @@ on:
   workflow_dispatch:
 
 jobs:
+  verify-prereqs:
+    name: Verify prerequisites
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify last Bootstrap svr00 run passed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LAST_RUN=$(gh run list --workflow=bootstrap-svr00.yml --repo ${{ github.repository }} --limit 1 --json conclusion --jq '.[0].conclusion')
+          if [ "$LAST_RUN" != "success" ]; then
+            echo "::error::Last Bootstrap svr00 run did not pass (status: ${LAST_RUN:-none}). Bootstrap must succeed before deploying K8s."
+            exit 1
+          fi
+          echo "Last Bootstrap svr00 run: success"
+
   deploy-cluster-a:
     name: Deploy cluster-a (canary)
+    needs: verify-prereqs
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 120
     steps:
