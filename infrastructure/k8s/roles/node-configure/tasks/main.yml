@@ -15,6 +15,28 @@
     group: convocate
     mode: "0755"
 
+# --- Wait for cloud-init ---
+# Cloud-init runs apt-get update + install in runcmd, which holds the
+# dpkg lock. Ansible apt tasks will hang if we don't wait for it.
+
+- name: Wait for cloud-init to finish
+  ansible.builtin.shell:
+    cmd: cloud-init status --wait 2>/dev/null || true
+  changed_when: false
+  timeout: 300
+
+- name: Wait for dpkg lock to be released
+  ansible.builtin.shell:
+    cmd: |
+      for i in $(seq 1 60); do
+        if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+          exit 0
+        fi
+        sleep 5
+      done
+      exit 1
+  changed_when: false
+
 # --- Disk mounts ---
 
 - name: Format log disk (vdb) if not already formatted
