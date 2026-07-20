@@ -3,5 +3,12 @@
   hosts: k8s_nodes
   gather_facts: true
   become: true
+  environment:
+    # /tmp gets mounted with noexec for CIS hardening during this role.
+    # Python's tempfile module must use a different directory for Ansible
+    # module payload extraction.
+    TMPDIR: /var/tmp
+    TEMP: /var/tmp
+    TMP: /var/tmp
   roles:
     - role: ../roles/node-configure

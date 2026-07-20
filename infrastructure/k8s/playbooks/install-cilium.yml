@@ -3,5 +3,9 @@
   hosts: control_plane_primary
   gather_facts: true
   become: true
+  environment:
+    TMPDIR: /var/tmp
+    TEMP: /var/tmp
+    TMP: /var/tmp
   roles:
     - role: ../roles/cilium

@@ -3,6 +3,10 @@
   hosts: control_plane_primary
   gather_facts: true
   become: true
+  environment:
+    TMPDIR: /var/tmp
+    TEMP: /var/tmp
+    TMP: /var/tmp
   roles:
     - role: ../roles/k8s-control-plane
 
@@ -11,6 +15,10 @@
   gather_facts: true
   become: true
   serial: 1
+  environment:
+    TMPDIR: /var/tmp
+    TEMP: /var/tmp
+    TMP: /var/tmp
   tasks:
     - name: Get join parameters from primary control plane
       ansible.builtin.set_fact:
@@ -111,5 +119,9 @@
   hosts: workers
   gather_facts: true
   become: true
+  environment:
+    TMPDIR: /var/tmp
+    TEMP: /var/tmp
+    TMP: /var/tmp
   roles:
     - role: ../roles/k8s-worker
