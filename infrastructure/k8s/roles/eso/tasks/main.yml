@@ -11,16 +11,15 @@
     creates: /usr/local/bin/helm
 
 - name: Add External Secrets Helm repository
-  ansible.builtin.command:
-    cmd: helm repo add external-secrets https://charts.external-secrets.io
+  ansible.builtin.shell:
+    cmd: helm repo add external-secrets https://charts.external-secrets.io 2>/dev/null || true
   changed_when: false
-  failed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Update Helm repos
-  ansible.builtin.command:
-    cmd: helm repo update
+  ansible.builtin.shell:
+    cmd: helm repo update 2>/dev/null || true
   changed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
