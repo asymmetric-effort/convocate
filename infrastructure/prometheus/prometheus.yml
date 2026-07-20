@@ -1,6 +1,7 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  scrape_timeout: 10s
 
 scrape_configs:
   # svr00 system stats (node_exporter)
