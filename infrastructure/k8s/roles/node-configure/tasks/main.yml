@@ -134,19 +134,17 @@
     creates: /etc/containerd/config.toml
 
 - name: Enable SystemdCgroup in containerd
-  ansible.builtin.lineinfile:
+  ansible.builtin.replace:
     path: /etc/containerd/config.toml
-    regexp: '(\s*)SystemdCgroup\s*='
-    line: '\1SystemdCgroup = true'
-    backrefs: true
+    regexp: '(\s*)SystemdCgroup\s*=\s*false'
+    replace: '\1SystemdCgroup = true'
   notify: restart containerd
 
 - name: Set sandbox image in containerd config
-  ansible.builtin.lineinfile:
+  ansible.builtin.replace:
     path: /etc/containerd/config.toml
-    regexp: '(\s*)sandbox_image\s*='
-    line: '\1sandbox_image = "registry.k8s.io/pause:3.10"'
-    backrefs: true
+    regexp: '(\s*)sandbox_image\s*=\s*"[^"]*"'
+    replace: '\1sandbox_image = "registry.k8s.io/pause:3.10"'
   notify: restart containerd
 
 - name: Enable and start containerd
