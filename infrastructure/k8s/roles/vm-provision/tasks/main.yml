@@ -102,29 +102,15 @@
     mode: "0644"
   loop: "{{ vm_nodes }}"
 
-- name: Generate cloud-init network-config (DHCP — static reservation in libvirt)
-  ansible.builtin.copy:
-    content: |
-      version: 2
-      ethernets:
-        id0:
-          match:
-            driver: virtio
-          dhcp4: true
-    dest: "{{ vm_pool_path }}/{{ item.name }}-network-config"
-    mode: "0644"
-  loop: "{{ vm_nodes }}"
-
-- name: Create cloud-init ISO
+- name: Create cloud-init ISO (no network-config — defaults to DHCP)
   ansible.builtin.shell:
     cmd: |
       TMPDIR=$(mktemp -d)
       cp {{ vm_pool_path }}/{{ item.name }}-user-data "$TMPDIR/user-data"
       cp {{ vm_pool_path }}/{{ item.name }}-meta-data "$TMPDIR/meta-data"
-      cp {{ vm_pool_path }}/{{ item.name }}-network-config "$TMPDIR/network-config"
       genisoimage -output {{ vm_pool_path }}/{{ item.name }}-cidata.iso \
         -volid cidata -joliet -rock \
-        "$TMPDIR/user-data" "$TMPDIR/meta-data" "$TMPDIR/network-config"
+        "$TMPDIR/user-data" "$TMPDIR/meta-data"
       rm -rf "$TMPDIR"
     creates: "{{ vm_pool_path }}/{{ item.name }}-cidata.iso"
   loop: "{{ vm_nodes }}"
