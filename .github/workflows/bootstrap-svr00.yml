@@ -13,17 +13,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Compute deps tag and verify release
+      - name: Verify deps release exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DEPS_TAG="deps-$(git log -1 --format=%h -- infrastructure/DEPENDENCIES.json)"
           echo "Verifying release ${DEPS_TAG} exists..."
           if ! gh release view "$DEPS_TAG" --repo ${{ github.repository }} >/dev/null 2>&1; then
-            echo "::error::Dependencies release '${DEPS_TAG}' not found. Update infrastructure/DEPENDENCIES.json and push to trigger fetch-deps."
+            echo "::error::Dependencies release '${DEPS_TAG}' not found. Run fetch-deps first."
             exit 1
           fi
           echo "Release ${DEPS_TAG} verified"
+
+      - name: Verify last Docker Images run passed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LAST_RUN=$(gh run list --workflow=docker-images.yml --repo ${{ github.repository }} --limit 1 --json conclusion --jq '.[0].conclusion')
+          if [ "$LAST_RUN" != "success" ]; then
+            echo "::error::Last Docker Images run did not pass (status: ${LAST_RUN:-none}). Fix docker builds before running bootstrap."
+            exit 1
+          fi
+          echo "Last Docker Images run: success"
 
   bootstrap:
     needs: verify-deps
