@@ -163,17 +163,18 @@
     state: started
   loop: "{{ vm_nodes }}"
 
-- name: Wait for cloud-init and SSH auth to be ready
+- name: Wait for cloud-init to complete (check SSH auth)
   ansible.builtin.shell:
     cmd: |
       for i in $(seq 1 60); do
         ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=5 -o BatchMode=yes \
-            {{ vm_user }}@{{ item.lan_ip }} 'echo ready' 2>/dev/null && exit 0
+            {{ vm_user }}@{{ item.lan_ip }} 'test -f /var/lib/cloud/instance/boot-finished && echo ready' 2>/dev/null && exit 0
         sleep 5
       done
       echo "TIMEOUT waiting for {{ item.name }}"
       exit 1
+  delegate_to: localhost
   loop: "{{ vm_nodes }}"
 
 - name: Print VM assignments
