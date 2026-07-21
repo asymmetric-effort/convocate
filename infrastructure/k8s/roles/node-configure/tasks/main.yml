@@ -123,28 +123,22 @@
 # --- Prerequisites ---
 
 - name: Install prerequisite packages
-  ansible.builtin.apt:
-    name:
-      - apt-transport-https
-      - ca-certificates
-      - curl
-      - gnupg
-      - lsb-release
-      - socat
-      - conntrack
-      - ipset
-    state: present
-    update_cache: true
-  timeout: 600
+  ansible.builtin.shell:
+    cmd: >-
+      timeout 300
+      apt-get install -y -qq
+      apt-transport-https ca-certificates curl gnupg
+      lsb-release socat conntrack ipset
+  changed_when: false
+  throttle: 2
 
 # --- Containerd ---
 
 - name: Install containerd
-  ansible.builtin.apt:
-    name: containerd
-    state: present
-    update_cache: true
-  timeout: 300
+  ansible.builtin.shell:
+    cmd: timeout 300 apt-get install -y -qq containerd
+  changed_when: false
+  throttle: 2
 
 - name: Create containerd config directory
   ansible.builtin.file:
@@ -200,18 +194,20 @@
 
 - name: Update apt cache for Kubernetes repo
   ansible.builtin.shell:
-    cmd: apt-get update -qq
+    cmd: timeout 300 apt-get update -qq
   changed_when: false
-  timeout: 300
+  throttle: 2
 
 - name: Install Kubernetes packages
-  ansible.builtin.apt:
-    name:
-      - "kubelet={{ kube_package_version }}"
-      - "kubeadm={{ kube_package_version }}"
-      - "kubectl={{ kube_package_version }}"
-    state: present
-  timeout: 600
+  ansible.builtin.shell:
+    cmd: >-
+      timeout 300
+      apt-get install -y -qq
+      kubelet={{ kube_package_version }}
+      kubeadm={{ kube_package_version }}
+      kubectl={{ kube_package_version }}
+  changed_when: false
+  throttle: 2
 
 - name: Hold Kubernetes packages at pinned version
   ansible.builtin.dpkg_selections:
