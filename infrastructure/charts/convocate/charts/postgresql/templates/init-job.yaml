@@ -3,13 +3,11 @@ kind: Job
 metadata:
   name: postgresql-init
   namespace: {{ .Values.global.namespace | default "data-layer" }}
-  annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-delete-policy": before-hook-creation
-    "helm.sh/hook-weight": "0"
+  labels:
+    app: postgresql-init
 spec:
-  backoffLimit: 3
-  ttlSecondsAfterFinished: 600
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 120
   template:
     metadata:
       labels:
