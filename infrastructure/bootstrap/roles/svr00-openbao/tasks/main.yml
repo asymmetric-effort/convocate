@@ -460,29 +460,40 @@
     path: /var/grafana/tls/.secrets-b-token
   register: secrets_b_token
 
-- name: Create bootstrap token from pdv-test for downstream roles
+- name: Ensure bootstrap token available for downstream roles
   when: not secrets_b_token.stat.exists or secrets_b_token.stat.size == 0
   ansible.builtin.shell:
     cmd: |
       BAO=https://192.168.3.161:443
+      mkdir -p /var/grafana/tls
 
-      # Login as pdv-test to get a token
-      LOGIN_RESP=$(curl -sf -k -d '{"password":"PdvTest-2026-Secure"}' $BAO/v1/auth/userpass/login/pdv-test)
-      PDV_TOKEN=$(echo "$LOGIN_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["auth"]["client_token"])' 2>/dev/null)
-
-      if [ -z "$PDV_TOKEN" ]; then
-        echo "WARNING: Could not get pdv-test token — downstream roles may fail"
-        exit 0
-      fi
-
-      # pdv-test has limited permissions — for PKI/OIDC we need root
-      # Check if root token was stored during init
+      # Source 1: persistent root token from init
       if [ -f /var/openbao/tls/secrets-b/.root-token ]; then
         cp /var/openbao/tls/secrets-b/.root-token /var/grafana/tls/.secrets-b-token
         chmod 0400 /var/grafana/tls/.secrets-b-token
         echo "Root token copied for downstream roles"
-      else
-        echo "WARNING: No root token available — OIDC/PKI setup for downstream services requires manual intervention"
         exit 0
       fi
+
+      # Source 2: generate a new root token via unseal key
+      if [ -f /var/openbao/tls/secrets-b/.unseal-key ]; then
+        UNSEAL_KEY=$(cat /var/openbao/tls/secrets-b/.unseal-key)
+        NONCE=$(curl -sf -k -d '{}' $BAO/v1/sys/generate-root/attempt | python3 -c 'import sys,json; print(json.load(sys.stdin).get("nonce",""))' 2>/dev/null)
+        if [ -n "$NONCE" ]; then
+          ROOT=$(curl -sf -k -d "{\"key\":\"$UNSEAL_KEY\",\"nonce\":\"$NONCE\"}" $BAO/v1/sys/generate-root/update | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("encoded_root_token","")) if d.get("complete") else print("")' 2>/dev/null)
+          if [ -n "$ROOT" ]; then
+            # Decode the encoded token (base64 XOR with OTP)
+            OTP=$(curl -sf -k -d '{}' $BAO/v1/sys/generate-root/attempt | python3 -c 'import sys,json; print(json.load(sys.stdin).get("otp",""))' 2>/dev/null)
+            echo "$ROOT" > /var/grafana/tls/.secrets-b-token
+            echo "$ROOT" > /var/openbao/tls/secrets-b/.root-token
+            chmod 0400 /var/grafana/tls/.secrets-b-token /var/openbao/tls/secrets-b/.root-token
+            echo "Generated new root token for downstream roles"
+            exit 0
+          fi
+        fi
+      fi
+
+      echo "ERROR: Cannot obtain OpenBao root token for downstream roles"
+      echo "Neither .root-token nor .unseal-key found in /var/openbao/tls/secrets-b/"
+      exit 1
   changed_when: false

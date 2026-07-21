@@ -302,9 +302,6 @@
         echo "Identity entity samcaldwell already exists"
       fi
 
-      # Clean up the bootstrap token
-      rm -f /var/grafana/tls/.secrets-b-token
-
       echo "OIDC clients configured for grafana-a and grafana-b"
   changed_when: false
 
