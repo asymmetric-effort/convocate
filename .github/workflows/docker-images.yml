@@ -2,7 +2,7 @@ name: Docker Images
 on:
   push:
     branches: [main]
-    paths: ['infrastructure/docker/**']
+    paths: ['infrastructure/docker/**', 'src/**']
     tags: ['v*']
   workflow_run:
     workflows: ['Fetch Dependencies']

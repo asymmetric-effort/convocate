@@ -1,5 +1,52 @@
-influxdb:
-  storage: 100Gi
+global:
+  imageTag: "latest"
+  registry: "ghcr.io/asymmetric-effort"
+  namespace: "convocate"
+  domain: "convocate.net"
 
+api:
+  enabled: true
+  hostNetwork: true
+  listenAddr: ":443"
+  port: 443
+  nodeSelector:
+    kubernetes.io/hostname: node-b-1
+  tls:
+    enabled: true
+    secretName: convocate-api-tls
+  env:
+    OPENBAO_ADDR: "https://192.168.3.161:443"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+postgresql:
+  enabled: true
+  storage: 10Gi
+
+redis:
+  enabled: true
+
+# Disable services managed outside K8s or not needed on production
+ui:
+  enabled: false
+minio:
+  enabled: false
+influxdb:
+  enabled: false
 prometheus:
-  storage: 20Gi
+  enabled: false
+grafana:
+  enabled: false
+ginger:
+  enabled: false
+fluentbit:
+  enabled: false
+node-metrics:
+  enabled: false
+openbao:
+  enabled: false

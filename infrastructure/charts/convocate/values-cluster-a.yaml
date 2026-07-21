@@ -1,27 +1,52 @@
 global:
-  imageTag: ""  # Set by CI
-
-postgresql:
-  storage: 2Gi
-
-influxdb:
-  storage: 10Gi
+  imageTag: "latest"
+  registry: "ghcr.io/asymmetric-effort"
+  namespace: "convocate"
+  domain: "dev.convocate.net"
 
 api:
+  enabled: true
+  hostNetwork: true
+  listenAddr: ":443"
+  port: 443
+  nodeSelector:
+    kubernetes.io/hostname: node-a-1
+  tls:
+    enabled: true
+    secretName: convocate-api-tls
+  env:
+    OPENBAO_ADDR: "https://192.168.3.161:443"
   resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
     limits:
       cpu: 500m
       memory: 256Mi
 
-ui:
-  resources:
-    limits:
-      cpu: 250m
-      memory: 128Mi
-
-prometheus:
-  storage: 5Gi
-  retentionTime: "30d"
-
-grafana:
+postgresql:
+  enabled: true
   storage: 2Gi
+
+redis:
+  enabled: true
+
+# Disable services managed outside K8s or not needed on canary
+ui:
+  enabled: false
+minio:
+  enabled: false
+influxdb:
+  enabled: false
+prometheus:
+  enabled: false
+grafana:
+  enabled: false
+ginger:
+  enabled: false
+fluentbit:
+  enabled: false
+node-metrics:
+  enabled: false
+openbao:
+  enabled: false

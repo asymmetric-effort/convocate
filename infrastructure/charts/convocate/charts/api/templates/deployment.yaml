@@ -16,6 +16,14 @@ spec:
         app: convocate-api
     spec:
       serviceAccountName: {{ .Values.serviceAccountName | default "convocate-api" }}
+      {{- if .Values.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
@@ -30,15 +38,18 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           env:
+            - name: LISTEN_ADDR
+              value: {{ .Values.listenAddr | default ":8443" | quote }}
             - name: OTEL_SERVICE_NAME
               value: {{ .Values.env.OTEL_SERVICE_NAME | default "convocate-api" | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.env.OTEL_EXPORTER_OTLP_ENDPOINT | default "http://ginger.o11y.svc:4318" | quote }}
             - name: OPENBAO_ADDR
-              value: {{ .Values.env.OPENBAO_ADDR | default "http://openbao.security.svc:8200" | quote }}
+              value: {{ .Values.env.OPENBAO_ADDR | default "https://192.168.3.161:443" | quote }}
             - name: OPENBAO_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -51,26 +62,56 @@ spec:
                 secretKeyRef:
                   name: postgresql-credentials
                   key: DATABASE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: REDIS_URL
             - name: METRICS_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: metrics-api-key
                   key: METRICS_API_KEY
+                  optional: true
+            {{- if .Values.tls.enabled }}
+            - name: TLS_CERT_FILE
+              value: /etc/tls/cert.pem
+            - name: TLS_KEY_FILE
+              value: /etc/tls/key.pem
+            {{- end }}
+          {{- if .Values.tls.enabled }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/tls
+              readOnly: true
+          {{- end }}
           ports:
-            - containerPort: {{ .Values.port | default 8443 }}
+            - containerPort: {{ .Values.port | default 443 }}
               name: api
           readinessProbe:
             httpGet:
               path: /api/v1/status
-              port: {{ .Values.port | default 8443 }}
+              port: {{ .Values.port | default 443 }}
+              {{- if .Values.tls.enabled }}
+              scheme: HTTPS
+              {{- end }}
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /api/v1/status
-              port: {{ .Values.port | default 8443 }}
+              port: {{ .Values.port | default 443 }}
+              {{- if .Values.tls.enabled }}
+              scheme: HTTPS
+              {{- end }}
             initialDelaySeconds: 5
             periodSeconds: 20
+      {{- if .Values.tls.enabled }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName | default "convocate-api-tls" }}
+      {{- end }}
 ---
 # ServiceAccount + RBAC for convocate-api
 apiVersion: v1

@@ -72,6 +72,13 @@ func main() {
 		addr = ":8443"
 	}
 
-	fmt.Printf("Convocate API server listening on %s\n", addr)
-	log.Fatal(http.ListenAndServe(addr, handler))
+	certFile := os.Getenv("TLS_CERT_FILE")
+	keyFile := os.Getenv("TLS_KEY_FILE")
+	if certFile != "" && keyFile != "" {
+		fmt.Printf("Convocate API server listening on %s (TLS)\n", addr)
+		log.Fatal(http.ListenAndServeTLS(addr, certFile, keyFile, handler))
+	} else {
+		fmt.Printf("Convocate API server listening on %s\n", addr)
+		log.Fatal(http.ListenAndServe(addr, handler))
+	}
 }

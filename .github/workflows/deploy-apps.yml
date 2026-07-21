@@ -1,0 +1,313 @@
+name: Deploy Applications
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'infrastructure/charts/**']
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (default: latest)'
+        required: false
+        default: 'latest'
+
+jobs:
+  verify:
+    name: Verify prerequisites
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 2
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify Docker Images pipeline passed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LAST_RUN=$(gh run list --workflow=docker-images.yml --repo ${{ github.repository }} --limit 1 --json conclusion --jq '.[0].conclusion')
+          if [ "$LAST_RUN" != "success" ]; then
+            echo "::error::Last Docker Images run did not pass (status: ${LAST_RUN:-none}). Build images first."
+            exit 1
+          fi
+          echo "Docker Images: success"
+
+      - name: Verify OpenBao is accessible
+        run: |
+          SEAL_STATUS=$(curl -sf --connect-timeout 10 -k https://192.168.3.161:443/v1/sys/seal-status 2>/dev/null)
+          if [ -z "$SEAL_STATUS" ]; then
+            echo "::error::OpenBao not reachable"
+            exit 1
+          fi
+          echo "OpenBao: reachable"
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.image_tag }}"
+          if [ -z "$TAG" ] || [ "$TAG" = "latest" ]; then
+            TAG="latest"
+          fi
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Image tag: $TAG"
+
+  deploy-cluster-a:
+    name: Deploy to cluster-a (canary)
+    needs: verify
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
+    env:
+      KUBECONFIG_HOST: 192.168.3.170
+      CLUSTER: cluster-a
+      IMAGE_TAG: ${{ needs.verify.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Helm
+        run: |
+          if ! command -v helm &>/dev/null; then
+            curl -fsSL https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz | tar xz -C /tmp
+            sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
+          fi
+
+      - name: Fetch kubeconfig
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/key \
+            convocate@$KUBECONFIG_HOST sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig
+          rm -f ~/.ssh/key
+
+      - name: Create namespaces
+        run: |
+          kubectl --kubeconfig=/tmp/kubeconfig create namespace convocate --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          kubectl --kubeconfig=/tmp/kubeconfig create namespace data-layer --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          kubectl --kubeconfig=/tmp/kubeconfig create namespace convocate-agents --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+      - name: Create secrets from OpenBao
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          # Get OpenBao root token from svr00
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          BAO_TOKEN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/key \
+            samcaldwell@192.168.3.159 'sudo cat /var/openbao/tls/secrets-b/.root-token' 2>/dev/null)
+          rm -f ~/.ssh/key
+          BAO=https://192.168.3.161:443
+
+          # Issue TLS cert for API
+          CERT_RESP=$(curl -sf -k \
+            -d '{"common_name":"api.dev.convocate.net","alt_names":"api.dev.convocate.net","ip_sans":"192.168.3.171","ttl":"8760h"}' \
+            -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/pki/issue/server)
+
+          CERT=$(echo "$CERT_RESP" | python3 -c '
+          import sys,json
+          d=json.load(sys.stdin)["data"]
+          c=d["certificate"]
+          if d.get("ca_chain"): c+="\n"+"\n".join(d["ca_chain"])
+          elif d.get("issuing_ca"): c+="\n"+d["issuing_ca"]
+          print(c)')
+          KEY=$(echo "$CERT_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["private_key"])')
+
+          # Create TLS secret
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret tls convocate-api-tls \
+            --cert=<(echo "$CERT") --key=<(echo "$KEY") \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          # Create PostgreSQL credentials
+          kubectl --kubeconfig=/tmp/kubeconfig -n data-layer create secret generic postgresql-credentials \
+            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable" \
+            --from-literal=POSTGRES_USER=convocate \
+            --from-literal=POSTGRES_PASSWORD=convocate \
+            --from-literal=POSTGRES_DB=convocate \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          # Copy PG credentials to convocate namespace (API reads from its own ns)
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic postgresql-credentials \
+            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable" \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          # Create Redis credentials
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic redis-credentials \
+            --from-literal=REDIS_URL="redis://redis.data-layer.svc:6379" \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          # Create OpenBao token secret
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic openbao-root-token \
+            --from-literal=token="$BAO_TOKEN" \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+      - name: Helm upgrade cluster-a
+        run: |
+          helm upgrade --install convocate ./infrastructure/charts/convocate \
+            -f ./infrastructure/charts/convocate/values-cluster-a.yaml \
+            --set global.imageTag=$IMAGE_TAG \
+            --kubeconfig /tmp/kubeconfig \
+            --namespace convocate \
+            --create-namespace \
+            --wait --timeout 120s
+
+      - name: Wait for rollout
+        run: |
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate rollout status deployment/convocate-api --timeout=60s
+          kubectl --kubeconfig=/tmp/kubeconfig -n data-layer rollout status deployment/postgresql --timeout=60s 2>/dev/null || true
+          kubectl --kubeconfig=/tmp/kubeconfig -n data-layer rollout status deployment/redis --timeout=60s 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/kubeconfig
+
+  pdv-cluster-a:
+    name: PDV (cluster-a)
+    needs: deploy-cluster-a
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 2
+    steps:
+      - name: API health check
+        run: |
+          for i in $(seq 1 10); do
+            RESP=$(curl -sfk https://192.168.3.171:443/api/v1/status 2>/dev/null) && break
+            sleep 3
+          done
+          if [ -z "$RESP" ]; then
+            echo "::error::API not responding at https://192.168.3.171:443"
+            exit 1
+          fi
+          echo "$RESP" | python3 -c '
+          import sys,json
+          d=json.load(sys.stdin)
+          print(f"Status: {d[\"status\"]}")
+          for s in d.get("services",[]):
+              print(f"  {s[\"name\"]}: {s[\"status\"]} ({s[\"latencyMs\"]}ms)")
+          assert d["status"] in ("healthy","degraded"), f"Unhealthy: {d}"
+          print("PDV PASS: API healthy")
+          '
+
+  deploy-cluster-b:
+    name: Deploy to cluster-b (production)
+    needs: pdv-cluster-a
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
+    env:
+      KUBECONFIG_HOST: 192.168.3.180
+      CLUSTER: cluster-b
+      IMAGE_TAG: ${{ needs.verify.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch kubeconfig
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/key \
+            convocate@$KUBECONFIG_HOST sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig
+          rm -f ~/.ssh/key
+
+      - name: Create namespaces
+        run: |
+          kubectl --kubeconfig=/tmp/kubeconfig create namespace convocate --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          kubectl --kubeconfig=/tmp/kubeconfig create namespace data-layer --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          kubectl --kubeconfig=/tmp/kubeconfig create namespace convocate-agents --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+      - name: Create secrets from OpenBao
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          BAO_TOKEN=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/key \
+            samcaldwell@192.168.3.159 'sudo cat /var/openbao/tls/secrets-b/.root-token' 2>/dev/null)
+          rm -f ~/.ssh/key
+          BAO=https://192.168.3.161:443
+
+          # Issue TLS cert for API
+          CERT_RESP=$(curl -sf -k \
+            -d '{"common_name":"api.convocate.net","alt_names":"api.convocate.net","ip_sans":"192.168.3.181","ttl":"8760h"}' \
+            -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/pki/issue/server)
+
+          CERT=$(echo "$CERT_RESP" | python3 -c '
+          import sys,json
+          d=json.load(sys.stdin)["data"]
+          c=d["certificate"]
+          if d.get("ca_chain"): c+="\n"+"\n".join(d["ca_chain"])
+          elif d.get("issuing_ca"): c+="\n"+d["issuing_ca"]
+          print(c)')
+          KEY=$(echo "$CERT_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["private_key"])')
+
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret tls convocate-api-tls \
+            --cert=<(echo "$CERT") --key=<(echo "$KEY") \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          kubectl --kubeconfig=/tmp/kubeconfig -n data-layer create secret generic postgresql-credentials \
+            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable" \
+            --from-literal=POSTGRES_USER=convocate \
+            --from-literal=POSTGRES_PASSWORD=convocate \
+            --from-literal=POSTGRES_DB=convocate \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic postgresql-credentials \
+            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable" \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic redis-credentials \
+            --from-literal=REDIS_URL="redis://redis.data-layer.svc:6379" \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic openbao-root-token \
+            --from-literal=token="$BAO_TOKEN" \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+      - name: Helm upgrade cluster-b
+        run: |
+          helm upgrade --install convocate ./infrastructure/charts/convocate \
+            -f ./infrastructure/charts/convocate/values-cluster-b.yaml \
+            --set global.imageTag=$IMAGE_TAG \
+            --kubeconfig /tmp/kubeconfig \
+            --namespace convocate \
+            --create-namespace \
+            --wait --timeout 120s
+
+      - name: Wait for rollout
+        run: |
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate rollout status deployment/convocate-api --timeout=60s
+          kubectl --kubeconfig=/tmp/kubeconfig -n data-layer rollout status deployment/postgresql --timeout=60s 2>/dev/null || true
+          kubectl --kubeconfig=/tmp/kubeconfig -n data-layer rollout status deployment/redis --timeout=60s 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/kubeconfig
+
+  smoke-cluster-b:
+    name: Smoke (cluster-b)
+    needs: deploy-cluster-b
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 2
+    steps:
+      - name: API health check
+        run: |
+          for i in $(seq 1 10); do
+            RESP=$(curl -sfk https://192.168.3.181:443/api/v1/status 2>/dev/null) && break
+            sleep 3
+          done
+          if [ -z "$RESP" ]; then
+            echo "::error::API not responding at https://192.168.3.181:443"
+            exit 1
+          fi
+          echo "$RESP" | python3 -c '
+          import sys,json
+          d=json.load(sys.stdin)
+          print(f"Status: {d[\"status\"]}")
+          for s in d.get("services",[]):
+              print(f"  {s[\"name\"]}: {s[\"status\"]} ({s[\"latencyMs\"]}ms)")
+          assert d["status"] in ("healthy","degraded"), f"Unhealthy: {d}"
+          print("SMOKE PASS: API healthy")
+          '
