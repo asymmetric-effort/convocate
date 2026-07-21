@@ -23,7 +23,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: fix-permissions
-          image: "{{ .Values.global.registry }}/convocate/pg:{{ .Values.global.imageTag }}"
+          image: alpine:3.21
           command: ["/bin/sh", "-c", "chown -R 65534:65534 /var/lib/postgresql/data"]
           securityContext:
             runAsUser: 0

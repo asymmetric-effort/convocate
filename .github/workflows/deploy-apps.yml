@@ -179,7 +179,17 @@ jobs:
             --kubeconfig /tmp/kubeconfig \
             --namespace convocate \
             --create-namespace \
-            --wait --timeout 300s
+            --wait --timeout 300s \
+            --debug 2>&1 || {
+              echo "=== Helm upgrade failed ==="
+              echo "=== Pods ==="
+              kubectl --kubeconfig=/tmp/kubeconfig get pods -n convocate -o wide 2>&1 || true
+              echo "=== Events ==="
+              kubectl --kubeconfig=/tmp/kubeconfig get events -n convocate --sort-by=.lastTimestamp 2>&1 | tail -30 || true
+              echo "=== Helm history ==="
+              helm history convocate --kubeconfig /tmp/kubeconfig -n convocate 2>&1 || true
+              exit 1
+            }
 
       - name: Wait for rollout
         run: |
