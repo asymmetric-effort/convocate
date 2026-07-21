@@ -1,0 +1,34 @@
+services:
+  logs-a:
+    image: ghcr.io/asymmetric-effort/convocate/victorialogs:latest
+    container_name: logs-a
+    restart: unless-stopped
+    network_mode: host
+    user: "0:0"
+    volumes:
+      - /var/victorialogs/a:/victorialogs
+      - /var/victorialogs/tls/a:/etc/victorialogs/tls:ro
+    command:
+      - "--storageDataPath=/victorialogs"
+      - "--httpListenAddr=192.168.3.166:443"
+      - "--retentionPeriod=30d"
+      - "--tls"
+      - "--tlsCertFile=/etc/victorialogs/tls/cert.pem"
+      - "--tlsKeyFile=/etc/victorialogs/tls/key.pem"
+
+  logs-b:
+    image: ghcr.io/asymmetric-effort/convocate/victorialogs:latest
+    container_name: logs-b
+    restart: unless-stopped
+    network_mode: host
+    user: "0:0"
+    volumes:
+      - /var/victorialogs/b:/victorialogs
+      - /var/victorialogs/tls/b:/etc/victorialogs/tls:ro
+    command:
+      - "--storageDataPath=/victorialogs"
+      - "--httpListenAddr=192.168.3.167:443"
+      - "--retentionPeriod=90d"
+      - "--tls"
+      - "--tlsCertFile=/etc/victorialogs/tls/cert.pem"
+      - "--tlsKeyFile=/etc/victorialogs/tls/key.pem"

@@ -1,0 +1,41 @@
+---
+# Bootstrap Fluent Bit log collection on svr00
+# Collects system logs + Docker container logs and forwards to logs-b.
+
+- name: Install Fluent Bit
+  ansible.builtin.shell:
+    cmd: |
+      if command -v fluent-bit &>/dev/null; then
+        echo "Fluent Bit already installed"
+        exit 0
+      fi
+      curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor -o /usr/share/keyrings/fluentbit-keyring.gpg
+      echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/jammy jammy main" \
+        > /etc/apt/sources.list.d/fluent-bit.list
+      apt-get update -qq
+      apt-get install -y -qq fluent-bit
+  changed_when: false
+
+- name: Create Fluent Bit directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - /etc/fluent-bit
+    - /var/fluent-bit
+
+- name: Deploy Fluent Bit configuration
+  ansible.builtin.template:
+    src: fluent-bit.conf.j2
+    dest: /etc/fluent-bit/fluent-bit.conf
+    mode: "0644"
+  notify: restart fluent-bit
+
+- name: Enable and start Fluent Bit
+  ansible.builtin.service:
+    name: fluent-bit
+    state: started
+    enabled: true

@@ -19,3 +19,6 @@
 
 - name: Install External Secrets Operator
   ansible.builtin.import_playbook: install-eso.yml
+
+- name: Install Fluent Bit log collection
+  ansible.builtin.import_playbook: install-fluent-bit.yml

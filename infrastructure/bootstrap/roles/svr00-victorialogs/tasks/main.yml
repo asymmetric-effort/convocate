@@ -1,0 +1,182 @@
+---
+# Bootstrap VictoriaLogs log aggregation on svr00
+# Creates directories, issues TLS certs from secrets-b PKI,
+# deploys logs-a (canary) and logs-b (production).
+
+- name: Create VictoriaLogs directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - /opt/victorialogs
+    - /var/victorialogs/a
+    - /var/victorialogs/b
+    - /var/victorialogs/tls/a
+    - /var/victorialogs/tls/b
+
+- name: Set data directory ownership (65534:0)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "65534"
+    group: "0"
+  loop:
+    - /var/victorialogs/a
+    - /var/victorialogs/b
+
+- name: Set TLS directory ownership (65534:0)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "65534"
+    group: "0"
+  loop:
+    - /var/victorialogs/tls/a
+    - /var/victorialogs/tls/b
+
+- name: Copy VictoriaLogs docker-compose
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../victorialogs/docker-compose.yml"
+    dest: /opt/victorialogs/docker-compose.yml
+    mode: "0644"
+    owner: root
+    group: root
+
+# =========================================================================
+# TLS certificates from secrets-b PKI
+# =========================================================================
+
+- name: Check if logs-a has TLS certs
+  ansible.builtin.stat:
+    path: /var/victorialogs/tls/a/cert.pem
+  register: logs_a_cert
+
+- name: Issue TLS cert for logs-a from secrets-b PKI
+  when: not logs_a_cert.stat.exists
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:443
+
+      ROOT_TOKEN=$(cat /var/grafana/tls/.secrets-b-token 2>/dev/null || cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "ERROR: No secrets-b token available for TLS cert issuance"
+        exit 1
+      fi
+
+      curl -sf -k \
+        -d '{"common_name":"dev.logs.asymmetric-effort.com","alt_names":"dev.logs.asymmetric-effort.com","ip_sans":"192.168.3.166","ttl":"8760h"}' \
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server > /tmp/cert-resp-logs-a.json
+
+      if [ ! -s /tmp/cert-resp-logs-a.json ]; then
+        echo "ERROR: Failed to issue TLS cert for logs-a"
+        exit 1
+      fi
+
+      python3 -c '
+      import json
+      data = json.load(open("/tmp/cert-resp-logs-a.json"))["data"]
+      cert = data["certificate"]
+      if "ca_chain" in data and data["ca_chain"]:
+          cert += "\n" + "\n".join(data["ca_chain"])
+      elif "issuing_ca" in data:
+          cert += "\n" + data["issuing_ca"]
+      print(cert)
+      ' > /var/victorialogs/tls/a/cert.pem
+
+      python3 -c '
+      import json
+      print(json.load(open("/tmp/cert-resp-logs-a.json"))["data"]["private_key"])
+      ' > /var/victorialogs/tls/a/key.pem
+
+      rm -f /tmp/cert-resp-logs-a.json
+
+      chown 65534:0 /var/victorialogs/tls/a/cert.pem /var/victorialogs/tls/a/key.pem
+      chmod 0400 /var/victorialogs/tls/a/key.pem
+      chmod 0444 /var/victorialogs/tls/a/cert.pem
+
+      echo "TLS cert issued for logs-a"
+  changed_when: false
+
+- name: Check if logs-b has TLS certs
+  ansible.builtin.stat:
+    path: /var/victorialogs/tls/b/cert.pem
+  register: logs_b_cert
+
+- name: Issue TLS cert for logs-b from secrets-b PKI
+  when: not logs_b_cert.stat.exists
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:443
+
+      ROOT_TOKEN=$(cat /var/grafana/tls/.secrets-b-token 2>/dev/null || cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "ERROR: No secrets-b token available for TLS cert issuance"
+        exit 1
+      fi
+
+      curl -sf -k \
+        -d '{"common_name":"logs.asymmetric-effort.com","alt_names":"logs.asymmetric-effort.com","ip_sans":"192.168.3.167","ttl":"8760h"}' \
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server > /tmp/cert-resp-logs-b.json
+
+      if [ ! -s /tmp/cert-resp-logs-b.json ]; then
+        echo "ERROR: Failed to issue TLS cert for logs-b"
+        exit 1
+      fi
+
+      python3 -c '
+      import json
+      data = json.load(open("/tmp/cert-resp-logs-b.json"))["data"]
+      cert = data["certificate"]
+      if "ca_chain" in data and data["ca_chain"]:
+          cert += "\n" + "\n".join(data["ca_chain"])
+      elif "issuing_ca" in data:
+          cert += "\n" + data["issuing_ca"]
+      print(cert)
+      ' > /var/victorialogs/tls/b/cert.pem
+
+      python3 -c '
+      import json
+      print(json.load(open("/tmp/cert-resp-logs-b.json"))["data"]["private_key"])
+      ' > /var/victorialogs/tls/b/key.pem
+
+      rm -f /tmp/cert-resp-logs-b.json
+
+      chown 65534:0 /var/victorialogs/tls/b/cert.pem /var/victorialogs/tls/b/key.pem
+      chmod 0400 /var/victorialogs/tls/b/key.pem
+      chmod 0444 /var/victorialogs/tls/b/cert.pem
+
+      echo "TLS cert issued for logs-b"
+  changed_when: false
+
+# =========================================================================
+# Deploy VictoriaLogs containers
+# =========================================================================
+
+- name: Deploy VictoriaLogs containers
+  ansible.builtin.shell:
+    cmd: |
+      cd /opt/victorialogs
+      docker compose pull 2>/dev/null || true
+      docker compose up -d
+  changed_when: false
+
+- name: Wait for VictoriaLogs to be ready
+  ansible.builtin.shell:
+    cmd: |
+      for i in $(seq 1 30); do
+        if curl -sfk https://192.168.3.167:443/health 2>/dev/null; then
+          echo "logs-b healthy"
+          exit 0
+        fi
+        sleep 2
+      done
+      echo "WARNING: logs-b not ready after 60s"
+  changed_when: false
+  failed_when: false

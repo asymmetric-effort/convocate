@@ -1,0 +1,54 @@
+---
+# Deploy Fluent Bit DaemonSet for K8s log collection.
+# Forwards container and node logs to VictoriaLogs.
+
+- name: Create Fluent Bit DB directory on all nodes
+  ansible.builtin.file:
+    path: /var/fluent-bit
+    state: directory
+    mode: "0755"
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['k8s_nodes'] }}"
+
+- name: Render Fluent Bit DaemonSet manifest
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../templates/fluent-bit-daemonset.yml.j2"
+    dest: /tmp/fluent-bit-daemonset.yaml
+    mode: "0600"
+  vars:
+    victorialogs_host: "{{ '192.168.3.166' if cluster_name == 'cluster-a' else '192.168.3.167' }}"
+
+- name: Apply Fluent Bit DaemonSet
+  ansible.builtin.command:
+    cmd: kubectl apply -f /tmp/fluent-bit-daemonset.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Wait for Fluent Bit pods to be ready
+  ansible.builtin.shell:
+    cmd: >-
+      kubectl wait --for=condition=Ready pod
+      -l app=fluent-bit
+      -n logging --timeout=120s
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  retries: 3
+  delay: 10
+
+- name: Show Fluent Bit pods
+  ansible.builtin.shell:
+    cmd: kubectl get pods -n logging --no-headers
+  register: fluentbit_pods
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Display Fluent Bit pod status
+  ansible.builtin.debug:
+    msg: "{{ fluentbit_pods.stdout_lines }}"
+
+- name: Clean up temporary files
+  ansible.builtin.file:
+    path: /tmp/fluent-bit-daemonset.yaml
+    state: absent

@@ -1,0 +1,46 @@
+[SERVICE]
+    Flush        5
+    Daemon       Off
+    Log_Level    info
+    Parsers_File parsers.conf
+
+# System logs
+[INPUT]
+    Name         systemd
+    Tag          syslog.*
+    Read_From_Tail On
+
+# Docker container logs
+[INPUT]
+    Name         docker_events
+    Tag          docker.events
+
+[INPUT]
+    Name         tail
+    Tag          docker.containers.*
+    Path         /var/lib/docker/containers/*/*.log
+    Parser       docker
+    Refresh_Interval 10
+    Rotate_Wait  30
+    Skip_Long_Lines On
+    DB           /var/fluent-bit/docker-logs.db
+
+# Add hostname to all records
+[FILTER]
+    Name         record_modifier
+    Match        *
+    Record       hostname svr00
+    Record       environment production
+
+# Forward to VictoriaLogs (logs-b)
+[OUTPUT]
+    Name         http
+    Match        *
+    Host         192.168.3.167
+    Port         443
+    URI          /insert/jsonline?_stream_fields=hostname,tag&_msg_field=MESSAGE&_time_field=date
+    Format       json_lines
+    Json_date_key date
+    Json_date_format iso8601
+    tls          On
+    tls.verify   Off

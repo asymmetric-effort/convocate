@@ -58,3 +58,17 @@
   gather_facts: false
   roles:
     - svr00-prometheus
+
+- name: Bootstrap svr00 — VictoriaLogs log aggregation
+  hosts: svr00
+  become: true
+  gather_facts: false
+  roles:
+    - svr00-victorialogs
+
+- name: Bootstrap svr00 — Fluent Bit log collection
+  hosts: svr00
+  become: true
+  gather_facts: false
+  roles:
+    - svr00-fluent-bit

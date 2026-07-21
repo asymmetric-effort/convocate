@@ -10,3 +10,10 @@ datasources:
       httpMethod: POST
       timeInterval: 15s
       tlsSkipVerify: true
+  - name: VictoriaLogs
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: https://192.168.3.167:443
+    editable: true
+    jsonData:
+      tlsSkipVerify: true
