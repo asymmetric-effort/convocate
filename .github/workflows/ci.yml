@@ -43,12 +43,6 @@ jobs:
           go test -coverprofile=coverage.out ./... -v
           go tool cover -func=coverage.out | grep "^total:" | awk '{gsub(/%/,"",$3); if($3+0 < 80) {print "FAIL: "$3"% < 80%"; exit 1} else {print "PASS: "$3"%"}}'
 
-      - name: Test Metrics
-        working-directory: o11y/metrics
-        run: |
-          go test -coverprofile=coverage.out ./... -v
-          go tool cover -func=coverage.out | grep total | awk '{gsub(/%/,"",$3); if($3+0 < 98) {print "FAIL: "$3"% < 98%"; exit 1} else {print "PASS: "$3"%"}}'
-
       - name: Test Agent
         working-directory: src/agent
         run: |

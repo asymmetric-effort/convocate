@@ -43,7 +43,6 @@ infrastructure/
   inventory/      — Ansible inventory
   playbooks/      — Ansible playbooks
   roles/          — Ansible roles
-o11y/metrics/     — Go metrics service
 test/pdv/         — PDV tests
 build/            — build artifacts (gitignored)
 ```
