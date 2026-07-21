@@ -1,5 +1,5 @@
 # Gatekeeper — multi-stage build
-# Build stage: ubuntu:24.04 with Go
+# Build stage: ubuntu:26.04 with Go
 # Runtime stage: distroless
 
 ARG UBUNTU_BASE_TAG=latest

@@ -1,5 +1,5 @@
 # Convocate API — multi-stage build
-# Build stage: ubuntu:24.04 with Go 1.26
+# Build stage: ubuntu:26.04 with Go 1.26
 # Runtime stage: distroless
 
 ARG UBUNTU_BASE_TAG=latest
@@ -21,7 +21,7 @@ COPY src/api/ .
 RUN go build -o /convocate-api .
 
 # Runtime stage — needs openssh-client and sshpass for node provisioning
-FROM ubuntu:24.04 AS runtime
+FROM ubuntu:26.04 AS runtime
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

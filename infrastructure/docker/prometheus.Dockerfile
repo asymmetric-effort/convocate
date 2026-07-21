@@ -1,5 +1,5 @@
 # Prometheus — multi-stage build
-# Build stage: ubuntu:24.04 (download binary)
+# Build stage: ubuntu:26.04 (download binary)
 # Runtime stage: distroless
 
 ARG UBUNTU_BASE_TAG=latest

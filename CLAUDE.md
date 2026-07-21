@@ -14,11 +14,11 @@ Five containers orchestrated via Docker Compose:
 
 | Container  | Language/Runtime | Build Stage    | Runtime Stage |
 |------------|-----------------|----------------|---------------|
-| Web UI     | Bun + SpecifyJS | ubuntu:24.04   | distroless    |
-| API        | Go 1.26+        | ubuntu:24.04   | distroless    |
-| Redis      | —               | ubuntu:24.04   | distroless    |
-| PostgreSQL | —               | ubuntu:24.04   | distroless    |
-| OpenBao    | —               | ubuntu:24.04   | distroless    |
+| Web UI     | Bun + SpecifyJS | ubuntu:26.04   | distroless    |
+| API        | Go 1.26+        | ubuntu:26.04   | distroless    |
+| Redis      | —               | ubuntu:26.04   | distroless    |
+| PostgreSQL | —               | ubuntu:26.04   | distroless    |
+| OpenBao    | —               | ubuntu:26.04   | distroless    |
 
 Storage tiering: file-based JSON first, Redis for key-value/sessions,
 PostgreSQL only when relational queries are truly necessary.

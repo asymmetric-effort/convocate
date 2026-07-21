@@ -1,6 +1,6 @@
 # Fluent Bit — single stage using ubuntu runtime
 # Fluent Bit has many shared library dependencies that make
-# distroless impractical — use ubuntu:24.04 as the runtime.
+# distroless impractical — use ubuntu:26.04 as the runtime.
 
 ARG UBUNTU_BASE_TAG=latest
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG}
@@ -9,7 +9,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gnupg && \
     curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor -o /usr/share/keyrings/fluentbit-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/noble noble main" \
+    echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/resolute resolute main" \
         > /etc/apt/sources.list.d/fluent-bit.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends fluent-bit && \

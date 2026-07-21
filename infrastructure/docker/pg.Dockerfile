@@ -1,5 +1,5 @@
 # PostgreSQL — multi-stage build
-# Build stage: ubuntu:24.04 (installs PG, creates entrypoint)
+# Build stage: ubuntu:26.04 (installs PG, creates entrypoint)
 # Runtime stage: distroless (debian13 debug for busybox shell)
 #
 # Strategy: install PG from apt inside ubuntu, then copy the ENTIRE
@@ -14,7 +14,7 @@ ARG PG_VERSION=17
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gnupg && \
-    echo "deb http://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
+    echo "deb http://apt.postgresql.org/pub/repos/apt resolute-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list && \
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
         | gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg && \

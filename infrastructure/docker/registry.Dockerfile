@@ -1,5 +1,5 @@
 # Docker Distribution (CNCF Registry) — multi-stage build
-# Build stage: ubuntu:24.04
+# Build stage: ubuntu:26.04
 # Runtime stage: distroless
 
 ARG UBUNTU_BASE_TAG=latest

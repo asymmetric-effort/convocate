@@ -1,6 +1,6 @@
 # Convocate Agent Container — Go wrapper + Claude CLI
-# Build: ubuntu:24.04 with Go + Node.js + Claude CLI
-# Runtime: minimal ubuntu:24.04 (Node.js required for Claude CLI)
+# Build: ubuntu:26.04 with Go + Node.js + Claude CLI
+# Runtime: minimal ubuntu:26.04 (Node.js required for Claude CLI)
 
 # ---------------------------------------------------------------------------
 # Stage 1: Build — compile Go binary and install Claude CLI
@@ -46,7 +46,7 @@ RUN go build -ldflags "-X main.version=${CLAUDE_VERSION}-wrapper" \
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — minimal ubuntu with Node.js + Claude CLI + Go binary
 # ---------------------------------------------------------------------------
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 ARG NODE_MAJOR=24
 

@@ -28,7 +28,7 @@ RUN bun build src/app.ts --outdir public --minify --target=browser && \
     mv public/app.js "public/app.${HASH}.js" && \
     sed -i "s|/app.js|/app.${HASH}.js|g" public/index.html
 
-FROM ubuntu:24.04 AS build
+FROM ubuntu:26.04 AS build
 
 ARG GO_VERSION=1.26.3
 ARG DEPS_URL
