@@ -84,6 +84,14 @@ jobs:
         working-directory: infrastructure/k8s/test
         run: bun install
 
+      - name: Install kubectl
+        run: |
+          if ! command -v kubectl &>/dev/null; then
+            curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.31.14/bin/linux/amd64/kubectl"
+            chmod 755 /usr/local/bin/kubectl
+          fi
+          kubectl version --client
+
       - name: Fetch kubeconfig from cluster-a
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -150,6 +158,14 @@ jobs:
       - name: Install test dependencies
         working-directory: infrastructure/k8s/test
         run: bun install
+
+      - name: Install kubectl
+        run: |
+          if ! command -v kubectl &>/dev/null; then
+            curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.31.14/bin/linux/amd64/kubectl"
+            chmod 755 /usr/local/bin/kubectl
+          fi
+          kubectl version --client
 
       - name: Fetch kubeconfig from cluster-b
         env:
