@@ -32,6 +32,17 @@ jobs:
           fi
           echo "Docker Images: success"
 
+      - name: Verify Kubernetes Clusters pipeline passed
+        run: |
+          LAST_RUN=$(curl -sf -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/k8s.yml/runs?per_page=1&status=completed" \
+            | python3 -c 'import sys,json; runs=json.load(sys.stdin).get("workflow_runs",[]); print(runs[0]["conclusion"] if runs else "none")' 2>/dev/null)
+          if [ "$LAST_RUN" != "success" ]; then
+            echo "::error::Last Kubernetes Clusters run did not pass (status: ${LAST_RUN:-none}). Clusters must be healthy before deploying apps."
+            exit 1
+          fi
+          echo "Kubernetes Clusters: success"
+
       - name: Verify OpenBao is accessible
         run: |
           SEAL_STATUS=$(curl -sf --connect-timeout 10 -k https://192.168.3.161:443/v1/sys/seal-status 2>/dev/null)
