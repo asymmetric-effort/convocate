@@ -59,8 +59,8 @@ RUN apt-get update && \
         git \
         gnupg \
         jq \
-        libicu74 \
-        libssl3 \
+        libicu78 \
+        libssl3t64 \
         make \
         openssh-client \
         python3 \
