@@ -97,6 +97,15 @@
     dest: /tmp/eso-secretstore.yaml
     mode: "0600"
 
+- name: Wait for ESO CRDs to be registered
+  ansible.builtin.shell:
+    cmd: >-
+      timeout 120
+      bash -c 'until kubectl get crd clustersecretstores.external-secrets.io 2>/dev/null; do sleep 5; done'
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
 - name: Apply ClusterSecretStore for OpenBao
   ansible.builtin.command:
     cmd: kubectl apply -f /tmp/eso-secretstore.yaml
