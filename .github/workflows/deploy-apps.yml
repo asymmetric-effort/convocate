@@ -210,14 +210,22 @@ jobs:
     steps:
       - name: API health check
         run: |
+          echo "Runner IP: $(hostname -I 2>/dev/null || echo unknown)"
+          echo "Testing connectivity to 192.168.3.171:443..."
+          curl -vk --connect-timeout 10 https://192.168.3.171:443/api/v1/status 2>&1 | head -30 || true
+          echo "---"
           sleep 10
           for i in $(seq 1 15); do
-            RESP=$(curl -sfk --connect-timeout 5 https://192.168.3.171:443/api/v1/status 2>/dev/null) && break
-            echo "Attempt $i: waiting for API..."
+            RESP=$(curl -sfk --connect-timeout 10 --max-time 15 https://192.168.3.171:443/api/v1/status 2>/dev/null) && break
+            echo "Attempt $i failed, retrying..."
+            curl -vk --connect-timeout 5 https://192.168.3.171:443/ 2>&1 | tail -5 || true
             sleep 5
           done
           if [ -z "$RESP" ]; then
             echo "::error::API not responding at https://192.168.3.171:443"
+            echo "Final diagnostic:"
+            ping -c 2 -W 2 192.168.3.171 2>&1 || true
+            nc -zv -w 5 192.168.3.171 443 2>&1 || true
             exit 1
           fi
           echo "$RESP" | python3 -c '

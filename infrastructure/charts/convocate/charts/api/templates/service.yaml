@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: convocate-api
   namespace: {{ .Values.global.namespace | default "convocate" }}
+  labels:
+    app: convocate-api
 spec:
   selector:
     app: convocate-api
