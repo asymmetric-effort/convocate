@@ -9,17 +9,7 @@ k8sServicePort: 6443
 ipam:
   mode: kubernetes
 
-# Use OpenBao PKI root CA for mesh certificate issuance
-tls:
-  ca:
-    certValidityDuration: 8760
-  caBundle:
-    enabled: true
-    useSecret: true
-    secretName: cilium-ca
-    secretNamespace: kube-system
-
-# Enable mTLS between all pods
+# Enable encryption between all pods via WireGuard
 encryption:
   enabled: true
   type: wireguard

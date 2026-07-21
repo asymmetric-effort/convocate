@@ -33,36 +33,6 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
-- name: Fetch OpenBao PKI root CA certificate
-  ansible.builtin.shell:
-    cmd: >-
-      curl -sk {{ openbao_addr }}/v1/pki/ca/pem > /tmp/openbao-ca.pem
-  changed_when: false
-
-- name: Check if CA cert was retrieved
-  ansible.builtin.stat:
-    path: /tmp/openbao-ca.pem
-  register: openbao_ca_stat
-
-- name: Verify CA cert is not empty
-  ansible.builtin.shell:
-    cmd: test -s /tmp/openbao-ca.pem
-  register: ca_check
-  failed_when: false
-  changed_when: false
-
-- name: Create Cilium CA secret from OpenBao PKI
-  ansible.builtin.shell:
-    cmd: |
-      kubectl create namespace cilium-secrets --dry-run=client -o yaml | kubectl apply -f -
-      kubectl create secret generic cilium-ca \
-        --namespace kube-system \
-        --from-file=ca.crt=/tmp/openbao-ca.pem \
-        --dry-run=client -o yaml | kubectl apply -f -
-  when: ca_check.rc == 0
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-
 - name: Render Cilium Helm values
   ansible.builtin.template:
     src: "{{ playbook_dir }}/../templates/cilium-values.yml.j2"
@@ -121,4 +91,3 @@
     state: absent
   loop:
     - /tmp/cilium-values.yaml
-    - /tmp/openbao-ca.pem
