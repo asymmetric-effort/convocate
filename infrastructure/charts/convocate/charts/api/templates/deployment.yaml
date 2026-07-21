@@ -120,6 +120,11 @@ spec:
         - name: tls
           secret:
             secretName: {{ .Values.tls.secretName | default "convocate-api-tls" }}
+            items:
+              - key: tls.crt
+                path: cert.pem
+              - key: tls.key
+                path: key.pem
       {{- end }}
 ---
 # ServiceAccount + RBAC for convocate-api
