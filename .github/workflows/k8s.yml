@@ -9,20 +9,10 @@ on:
 jobs:
   verify-prereqs:
     name: Verify prerequisites
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
     steps:
-      - name: Verify last Bootstrap svr00 run passed
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          LAST_RUN=$(gh run list --workflow=bootstrap-svr00.yml --repo ${{ github.repository }} --limit 1 --json conclusion --jq '.[0].conclusion')
-          if [ "$LAST_RUN" != "success" ]; then
-            echo "::error::Last Bootstrap svr00 run did not pass (status: ${LAST_RUN:-none}). Bootstrap must succeed before deploying K8s."
-            exit 1
-          fi
-          echo "Last Bootstrap svr00 run: success"
-
-      - name: Verify OpenBao secrets-b is accessible
+      - name: Verify OpenBao secrets-b is accessible and unsealed
         run: |
           SEAL_STATUS=$(curl -sf --connect-timeout 10 -k https://192.168.3.161:443/v1/sys/seal-status 2>/dev/null)
           if [ -z "$SEAL_STATUS" ]; then

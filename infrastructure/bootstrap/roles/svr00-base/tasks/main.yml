@@ -105,12 +105,11 @@
     proto: tcp
     from_ip: 192.168.3.0/24
 
-- name: Allow HTTPS on OpenBao IPs (443) from local subnet
+- name: Allow HTTPS on OpenBao IPs (443) from any source
   community.general.ufw:
     rule: allow
     port: "443"
     proto: tcp
-    from_ip: 192.168.3.0/24
     to_ip: "{{ item }}"
   loop:
     - 192.168.3.160
