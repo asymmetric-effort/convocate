@@ -22,3 +22,6 @@
 
 - name: Install Fluent Bit log collection
   ansible.builtin.import_playbook: install-fluent-bit.yml
+
+- name: Configure kubectl on svr00
+  ansible.builtin.import_playbook: configure-kubectl.yml

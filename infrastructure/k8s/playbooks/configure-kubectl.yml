@@ -1,0 +1,81 @@
+---
+# Configure kubectl on svr00 for samcaldwell to access both clusters.
+# Fetches admin.conf from the primary CP node and merges into a
+# multi-context kubeconfig with short context names.
+
+- name: Configure kubectl access on svr00
+  hosts: hypervisor
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Install kubectl on svr00
+      ansible.builtin.shell:
+        cmd: |
+          if [ -x /usr/local/bin/kubectl ]; then
+            echo "kubectl already installed"
+            exit 0
+          fi
+          curl -fsSL -o /usr/local/bin/kubectl \
+            "https://dl.k8s.io/release/v{{ kube_version }}/bin/linux/amd64/kubectl"
+          chmod 755 /usr/local/bin/kubectl
+          /usr/local/bin/kubectl version --client
+
+    - name: Create .kube directory for samcaldwell
+      ansible.builtin.file:
+        path: /home/samcaldwell/.kube
+        state: directory
+        mode: "0700"
+        owner: samcaldwell
+        group: samcaldwell
+
+    - name: Fetch kubeconfig from primary control plane
+      ansible.builtin.shell:
+        cmd: >-
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+          {{ vm_user }}@{{ hostvars[groups['control_plane_primary'][0]].ansible_host }}
+          'sudo cat /etc/kubernetes/admin.conf'
+      register: kubeconfig_raw
+
+    - name: Write cluster kubeconfig
+      ansible.builtin.copy:
+        content: "{{ kubeconfig_raw.stdout }}"
+        dest: "/home/samcaldwell/.kube/{{ cluster_name }}.yaml"
+        mode: "0600"
+        owner: samcaldwell
+        group: samcaldwell
+
+    - name: Fix context names in kubeconfig
+      ansible.builtin.shell:
+        cmd: |
+          sed -i \
+            -e 's/kubernetes-admin@kubernetes/{{ cluster_name }}/g' \
+            -e 's/kubernetes-admin/{{ cluster_name }}-admin/g' \
+            -e 's/name: kubernetes/name: {{ cluster_name }}/g' \
+            /home/samcaldwell/.kube/{{ cluster_name }}.yaml
+
+    - name: Create short-name kubeconfig symlinks
+      ansible.builtin.shell:
+        cmd: |
+          # Create short aliases: ~/.kube/a and ~/.kube/b
+          ln -sf /home/samcaldwell/.kube/cluster-a.yaml /home/samcaldwell/.kube/a
+          ln -sf /home/samcaldwell/.kube/cluster-b.yaml /home/samcaldwell/.kube/b
+          chown -h samcaldwell:samcaldwell /home/samcaldwell/.kube/a /home/samcaldwell/.kube/b
+
+          # Merge into default config with both contexts
+          A=/home/samcaldwell/.kube/cluster-a.yaml
+          B=/home/samcaldwell/.kube/cluster-b.yaml
+          if [ -f "$A" ] && [ -f "$B" ]; then
+            KUBECONFIG="$A:$B" /usr/local/bin/kubectl config view --flatten \
+              > /home/samcaldwell/.kube/config
+          elif [ -f "/home/samcaldwell/.kube/{{ cluster_name }}.yaml" ]; then
+            cp /home/samcaldwell/.kube/{{ cluster_name }}.yaml /home/samcaldwell/.kube/config
+          fi
+          chmod 600 /home/samcaldwell/.kube/config
+          chown samcaldwell:samcaldwell /home/samcaldwell/.kube/config
+
+          # Rename contexts to short names
+          su - samcaldwell -c '/usr/local/bin/kubectl config rename-context "cluster-a-admin@cluster-a" cluster-a 2>/dev/null || true'
+          su - samcaldwell -c '/usr/local/bin/kubectl config rename-context "cluster-b-admin@cluster-b" cluster-b 2>/dev/null || true'
+          su - samcaldwell -c '/usr/local/bin/kubectl config use-context cluster-b 2>/dev/null || true'
+          echo "kubectl configured: --kubeconfig=~/.kube/a (cluster-a), --kubeconfig=~/.kube/b (cluster-b)"
+      changed_when: false
