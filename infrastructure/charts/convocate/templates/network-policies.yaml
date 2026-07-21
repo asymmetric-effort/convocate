@@ -269,7 +269,7 @@ spec:
       ports:
         - port: {{ .Values.ui.port | default 8080 }}
 ---
-# Allow convocate-api to reach PostgreSQL
+# Allow access to PostgreSQL from within the namespace and from hostNetwork pods
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -283,19 +283,16 @@ spec:
     - Ingress
   ingress:
     - from:
-        - podSelector:
-            matchLabels:
-              app: convocate-api
+        - podSelector: {}
       ports:
         - port: 5432
     - from:
-        - podSelector:
-            matchLabels:
-              app: postgresql-init
+        - ipBlock:
+            cidr: 192.168.3.0/24
       ports:
         - port: 5432
 ---
-# Allow convocate-api to reach Redis
+# Allow access to Redis from within the namespace and from hostNetwork pods
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -309,9 +306,12 @@ spec:
     - Ingress
   ingress:
     - from:
-        - podSelector:
-            matchLabels:
-              app: convocate-api
+        - podSelector: {}
+      ports:
+        - port: 6379
+    - from:
+        - ipBlock:
+            cidr: 192.168.3.0/24
       ports:
         - port: 6379
 ---
