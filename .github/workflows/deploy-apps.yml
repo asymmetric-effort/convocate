@@ -164,7 +164,7 @@ jobs:
 
           # Create Redis credentials
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic redis-credentials \
-            --from-literal=REDIS_URL="redis://redis.convocate.svc:6379" \
+            --from-literal=REDIS_URL="redis.convocate.svc:6379" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
           # Create OpenBao token secret
@@ -316,7 +316,7 @@ jobs:
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic redis-credentials \
-            --from-literal=REDIS_URL="redis://redis.convocate.svc:6379" \
+            --from-literal=REDIS_URL="redis.convocate.svc:6379" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic openbao-root-token \
