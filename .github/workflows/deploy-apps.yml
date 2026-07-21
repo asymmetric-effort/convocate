@@ -228,15 +228,14 @@ jobs:
             nc -zv -w 5 192.168.3.171 443 2>&1 || true
             exit 1
           fi
-          echo "$RESP" | python3 -c '
-          import sys,json
-          d=json.load(sys.stdin)
-          print(f"Status: {d[\"status\"]}")
-          for s in d.get("services",[]):
-              print(f"  {s[\"name\"]}: {s[\"status\"]} ({s[\"latencyMs\"]}ms)")
-          assert d["status"] in ("healthy","degraded"), f"Unhealthy: {d}"
-          print("PDV PASS: API healthy")
-          '
+          echo "$RESP"
+          STATUS=$(echo "$RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["status"])')
+          echo "API status: $STATUS"
+          if [ "$STATUS" != "healthy" ] && [ "$STATUS" != "degraded" ]; then
+            echo "::error::API unhealthy: $STATUS"
+            exit 1
+          fi
+          echo "PDV PASS: API healthy"
 
   deploy-cluster-b:
     name: Deploy to cluster-b (production)
@@ -371,12 +370,11 @@ jobs:
             echo "::error::API not responding at https://192.168.3.181:443"
             exit 1
           fi
-          echo "$RESP" | python3 -c '
-          import sys,json
-          d=json.load(sys.stdin)
-          print(f"Status: {d[\"status\"]}")
-          for s in d.get("services",[]):
-              print(f"  {s[\"name\"]}: {s[\"status\"]} ({s[\"latencyMs\"]}ms)")
-          assert d["status"] in ("healthy","degraded"), f"Unhealthy: {d}"
-          print("SMOKE PASS: API healthy")
-          '
+          echo "$RESP"
+          STATUS=$(echo "$RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["status"])')
+          echo "API status: $STATUS"
+          if [ "$STATUS" != "healthy" ] && [ "$STATUS" != "degraded" ]; then
+            echo "::error::API unhealthy: $STATUS"
+            exit 1
+          fi
+          echo "SMOKE PASS: API healthy"
