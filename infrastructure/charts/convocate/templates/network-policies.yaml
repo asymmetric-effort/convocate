@@ -47,7 +47,7 @@ spec:
   policyTypes:
     - Ingress
 ---
-# Allow ingress-nginx to reach convocate-api
+# Allow traffic to reach convocate-api (external LAN + internal pods)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -60,17 +60,7 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-      ports:
-        - port: {{ .Values.api.port | default 8443 }}
-    - from:
-        - podSelector:
-            matchLabels:
-              app: convocate-ui
-      ports:
+    - ports:
         - port: {{ .Values.api.port | default 8443 }}
 ---
 # Allow ingress-nginx to reach convocate-ui
@@ -278,6 +268,52 @@ spec:
               app: synthetic-checks
       ports:
         - port: {{ .Values.ui.port | default 8080 }}
+---
+# Allow convocate-api to reach PostgreSQL
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-postgresql
+  namespace: {{ include "convocate.namespace.app" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresql
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: convocate-api
+      ports:
+        - port: 5432
+    - from:
+        - podSelector:
+            matchLabels:
+              app: postgresql-init
+      ports:
+        - port: 5432
+---
+# Allow convocate-api to reach Redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-redis
+  namespace: {{ include "convocate.namespace.app" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: convocate-api
+      ports:
+        - port: 6379
 ---
 # Allow node-metrics to reach convocate-api
 apiVersion: networking.k8s.io/v1
