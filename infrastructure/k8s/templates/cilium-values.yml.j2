@@ -48,6 +48,14 @@ operator:
     serviceMonitor:
       enabled: false
 
+# Enable socket-level load balancing for hostNetwork pods to reach ClusterIP services
+socketLB:
+  enabled: true
+  hostNamespaceOnly: true
+
+bpf:
+  lbExternalClusterIP: true
+
 # Pod CIDR
 cluster:
   name: {{ cluster_name }}

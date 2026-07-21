@@ -6,7 +6,8 @@ global:
 
 api:
   enabled: true
-  hostNetwork: true
+  hostNetwork: false
+  useHostPort: true
   listenAddr: ":443"
   port: 443
   nodeSelector:

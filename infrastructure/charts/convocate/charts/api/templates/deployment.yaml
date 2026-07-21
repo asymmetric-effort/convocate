@@ -18,7 +18,7 @@ spec:
       serviceAccountName: {{ .Values.serviceAccountName | default "convocate-api" }}
       imagePullSecrets:
         - name: ghcr-pull
-      {{- if .Values.hostNetwork }}
+      {{- if and .Values.hostNetwork (not .Values.useHostPort) }}
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       {{- end }}
@@ -93,6 +93,9 @@ spec:
           {{- end }}
           ports:
             - containerPort: {{ .Values.port | default 443 }}
+              {{- if .Values.useHostPort }}
+              hostPort: {{ .Values.port | default 443 }}
+              {{- end }}
               name: api
           readinessProbe:
             httpGet:
