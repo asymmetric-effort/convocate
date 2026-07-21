@@ -44,7 +44,7 @@
     {
       "name": "victorialogs",
       "version": "1.121.0",
-      "type": "source",
+      "type": "tarball",
       "url": "https://github.com/VictoriaMetrics/VictoriaMetrics/archive/refs/tags/v1.121.0.tar.gz",
       "filename": "victorialogs-1.121.0-source.tar.gz",
       "sha256": ""
