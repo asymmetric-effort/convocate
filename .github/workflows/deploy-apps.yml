@@ -239,7 +239,7 @@ jobs:
 
   deploy-cluster-b:
     name: Deploy to cluster-b (production)
-    needs: pdv-cluster-a
+    needs: [verify, pdv-cluster-a]
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 10
     env:
