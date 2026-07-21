@@ -165,7 +165,9 @@
 
 - name: Flush stale NAT REDIRECT rules (services listen on 443 directly)
   ansible.builtin.shell:
-    cmd: iptables -t nat -F OUTPUT 2>/dev/null || true
+    cmd: |
+      iptables -t nat -F OUTPUT 2>/dev/null || true
+      iptables -t nat -F PREROUTING 2>/dev/null || true
   changed_when: false
 
 - name: Enable UFW
