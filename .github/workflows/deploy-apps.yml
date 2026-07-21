@@ -11,6 +11,10 @@ on:
         required: false
         default: 'latest'
 
+concurrency:
+  group: deploy-apps
+  cancel-in-progress: true
+
 jobs:
   verify:
     name: Verify prerequisites
