@@ -92,11 +92,14 @@ jobs:
             convocate@$KUBECONFIG_HOST sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig
           rm -f ~/.ssh/key
 
-      - name: Create namespaces
+      - name: Create namespaces with Helm labels
         run: |
-          kubectl --kubeconfig=/tmp/kubeconfig create namespace convocate --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
-          kubectl --kubeconfig=/tmp/kubeconfig create namespace data-layer --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
-          kubectl --kubeconfig=/tmp/kubeconfig create namespace convocate-agents --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          KC="--kubeconfig=/tmp/kubeconfig"
+          for NS in convocate data-layer convocate-agents; do
+            kubectl $KC create namespace $NS --dry-run=client -o yaml | kubectl $KC apply -f -
+            kubectl $KC label namespace $NS app.kubernetes.io/managed-by=Helm --overwrite
+            kubectl $KC annotate namespace $NS meta.helm.sh/release-name=convocate meta.helm.sh/release-namespace=convocate --overwrite
+          done
 
       - name: Create secrets from OpenBao
         env:
@@ -222,11 +225,14 @@ jobs:
             convocate@$KUBECONFIG_HOST sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig
           rm -f ~/.ssh/key
 
-      - name: Create namespaces
+      - name: Create namespaces with Helm labels
         run: |
-          kubectl --kubeconfig=/tmp/kubeconfig create namespace convocate --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
-          kubectl --kubeconfig=/tmp/kubeconfig create namespace data-layer --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
-          kubectl --kubeconfig=/tmp/kubeconfig create namespace convocate-agents --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          KC="--kubeconfig=/tmp/kubeconfig"
+          for NS in convocate data-layer convocate-agents; do
+            kubectl $KC create namespace $NS --dry-run=client -o yaml | kubectl $KC apply -f -
+            kubectl $KC label namespace $NS app.kubernetes.io/managed-by=Helm --overwrite
+            kubectl $KC annotate namespace $NS meta.helm.sh/release-name=convocate meta.helm.sh/release-namespace=convocate --overwrite
+          done
 
       - name: Create secrets from OpenBao
         env:
