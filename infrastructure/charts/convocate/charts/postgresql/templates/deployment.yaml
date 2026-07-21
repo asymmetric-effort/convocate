@@ -21,6 +21,15 @@ spec:
         fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: fix-permissions
+          image: "{{ .Values.global.registry }}/convocate/pg:{{ .Values.global.imageTag }}"
+          command: ["/bin/sh", "-c", "chown -R 65534:65534 /var/lib/postgresql/data"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
       containers:
         - name: postgresql
           image: "{{ .Values.global.registry }}/convocate/pg:{{ .Values.global.imageTag }}"
