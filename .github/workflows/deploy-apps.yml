@@ -3,7 +3,7 @@ name: Deploy Applications
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'infrastructure/charts/**']
+    paths: ['src/**', 'infrastructure/charts/**', '.github/workflows/deploy-apps.yml']
   workflow_dispatch:
     inputs:
       image_tag:
