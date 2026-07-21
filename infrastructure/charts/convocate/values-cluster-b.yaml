@@ -2,7 +2,7 @@ global:
   imageTag: "latest"
   registry: "ghcr.io/asymmetric-effort"
   namespace: "convocate"
-  domain: "convocate.net"
+  domain: "prod.convocate.net"
 
 api:
   enabled: true

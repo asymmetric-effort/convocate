@@ -300,7 +300,7 @@ jobs:
 
           # Issue TLS cert for API
           CERT_RESP=$(curl -sf -k \
-            -d '{"common_name":"api.convocate.net","alt_names":"api.convocate.net","ip_sans":"192.168.3.181","ttl":"8760h"}' \
+            -d '{"common_name":"api.prod.convocate.net","alt_names":"api.prod.convocate.net","ip_sans":"192.168.3.181","ttl":"8760h"}' \
             -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/pki/issue/server)
 
           CERT=$(echo "$CERT_RESP" | python3 -c '
