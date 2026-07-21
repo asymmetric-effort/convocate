@@ -92,13 +92,20 @@ jobs:
             convocate@$KUBECONFIG_HOST sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig
           rm -f ~/.ssh/key
 
-      - name: Create namespaces with Helm labels
+      - name: Create namespaces and GHCR pull secret
         run: |
           KC="--kubeconfig=/tmp/kubeconfig"
           for NS in convocate data-layer convocate-agents; do
             kubectl $KC create namespace $NS --dry-run=client -o yaml | kubectl $KC apply -f -
             kubectl $KC label namespace $NS app.kubernetes.io/managed-by=Helm --overwrite
             kubectl $KC annotate namespace $NS meta.helm.sh/release-name=convocate meta.helm.sh/release-namespace=convocate --overwrite
+          done
+          for NS in convocate data-layer; do
+            kubectl $KC -n $NS create secret docker-registry ghcr-pull \
+              --docker-server=ghcr.io \
+              --docker-username=${{ github.actor }} \
+              --docker-password=${{ secrets.GITHUB_TOKEN }} \
+              --dry-run=client -o yaml | kubectl $KC apply -f -
           done
 
       - name: Create secrets from OpenBao
@@ -164,7 +171,7 @@ jobs:
             --kubeconfig /tmp/kubeconfig \
             --namespace convocate \
             --create-namespace \
-            --wait --timeout 120s
+            --wait --timeout 300s
 
       - name: Wait for rollout
         run: |
@@ -225,13 +232,20 @@ jobs:
             convocate@$KUBECONFIG_HOST sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig
           rm -f ~/.ssh/key
 
-      - name: Create namespaces with Helm labels
+      - name: Create namespaces and GHCR pull secret
         run: |
           KC="--kubeconfig=/tmp/kubeconfig"
           for NS in convocate data-layer convocate-agents; do
             kubectl $KC create namespace $NS --dry-run=client -o yaml | kubectl $KC apply -f -
             kubectl $KC label namespace $NS app.kubernetes.io/managed-by=Helm --overwrite
             kubectl $KC annotate namespace $NS meta.helm.sh/release-name=convocate meta.helm.sh/release-namespace=convocate --overwrite
+          done
+          for NS in convocate data-layer; do
+            kubectl $KC -n $NS create secret docker-registry ghcr-pull \
+              --docker-server=ghcr.io \
+              --docker-username=${{ github.actor }} \
+              --docker-password=${{ secrets.GITHUB_TOKEN }} \
+              --dry-run=client -o yaml | kubectl $KC apply -f -
           done
 
       - name: Create secrets from OpenBao
@@ -291,7 +305,7 @@ jobs:
             --kubeconfig /tmp/kubeconfig \
             --namespace convocate \
             --create-namespace \
-            --wait --timeout 120s
+            --wait --timeout 300s
 
       - name: Wait for rollout
         run: |

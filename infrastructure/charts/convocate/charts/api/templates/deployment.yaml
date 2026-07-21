@@ -16,6 +16,8 @@ spec:
         app: convocate-api
     spec:
       serviceAccountName: {{ .Values.serviceAccountName | default "convocate-api" }}
+      imagePullSecrets:
+        - name: ghcr-pull
       {{- if .Values.hostNetwork }}
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
