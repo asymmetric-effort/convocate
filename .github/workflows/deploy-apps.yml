@@ -162,6 +162,15 @@ jobs:
             --from-literal=token="$BAO_TOKEN" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
+      - name: Reset Helm release if stuck
+        run: |
+          STATUS=$(helm status convocate --kubeconfig /tmp/kubeconfig -n convocate -o json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["info"]["status"])' 2>/dev/null || echo "not-found")
+          echo "Helm release status: $STATUS"
+          if [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ] || [ "$STATUS" = "pending-rollback" ]; then
+            echo "Release stuck in $STATUS — uninstalling for clean install"
+            helm uninstall convocate --kubeconfig /tmp/kubeconfig -n convocate --wait 2>/dev/null || true
+          fi
+
       - name: Helm upgrade cluster-a
         run: |
           helm upgrade --install convocate ./infrastructure/charts/convocate \
@@ -292,6 +301,15 @@ jobs:
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic openbao-root-token \
             --from-literal=token="$BAO_TOKEN" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+      - name: Reset Helm release if stuck
+        run: |
+          STATUS=$(helm status convocate --kubeconfig /tmp/kubeconfig -n convocate -o json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["info"]["status"])' 2>/dev/null || echo "not-found")
+          echo "Helm release status: $STATUS"
+          if [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ] || [ "$STATUS" = "pending-rollback" ]; then
+            echo "Release stuck in $STATUS — uninstalling for clean install"
+            helm uninstall convocate --kubeconfig /tmp/kubeconfig -n convocate --wait 2>/dev/null || true
+          fi
 
       - name: Helm upgrade cluster-b
         run: |
