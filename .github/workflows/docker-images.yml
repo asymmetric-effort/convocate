@@ -266,3 +266,73 @@ jobs:
             fi
             echo "Tagged ${NAME}:latest"
           done
+
+  trigger-deploys:
+    name: Trigger downstream deploys
+    needs: [tag, enumerate]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed images and trigger deploys
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Determine which Dockerfiles changed in this push
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- infrastructure/docker/ src/ 2>/dev/null | \
+            sed -n 's|infrastructure/docker/\(.*\)\.Dockerfile|\1|p' || true)
+
+          # If triggered by workflow_run (Fetch Dependencies) or dispatch, all images rebuilt
+          if [ -z "$CHANGED" ] || [ "${{ github.event_name }}" = "workflow_run" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CHANGED=$(echo '${{ needs.enumerate.outputs.matrix }}' | jq -r '.[]')
+            CHANGED="ubuntu-base runner-base $CHANGED"
+          fi
+
+          echo "Changed images: $CHANGED"
+
+          # Map images to downstream workflows
+          DEPLOY_APPS=false
+          DEPLOY_OPENBAO=false
+          DEPLOY_GRAFANA=false
+          DEPLOY_VICTORIALOGS=false
+
+          for IMG in $CHANGED; do
+            case "$IMG" in
+              convocate-api|pg|redis|ubuntu-base)
+                DEPLOY_APPS=true ;;
+              openbao)
+                DEPLOY_OPENBAO=true ;;
+              grafana)
+                DEPLOY_GRAFANA=true ;;
+              victorialogs)
+                DEPLOY_VICTORIALOGS=true ;;
+            esac
+          done
+
+          REPO="${{ github.repository }}"
+
+          if [ "$DEPLOY_APPS" = "true" ]; then
+            echo "Triggering Deploy Applications..."
+            gh workflow run deploy-apps.yml --repo "$REPO" --ref main
+          fi
+
+          if [ "$DEPLOY_OPENBAO" = "true" ]; then
+            echo "Triggering OpenBao deploy..."
+            gh workflow run openbao.yml --repo "$REPO" --ref main
+          fi
+
+          if [ "$DEPLOY_GRAFANA" = "true" ]; then
+            echo "Triggering Grafana deploy..."
+            gh workflow run grafana.yml --repo "$REPO" --ref main
+          fi
+
+          if [ "$DEPLOY_VICTORIALOGS" = "true" ]; then
+            echo "Triggering VictoriaLogs deploy..."
+            gh workflow run victorialogs.yml --repo "$REPO" --ref main
+          fi
+
+          echo "Done. Triggered deploys based on changed images."
