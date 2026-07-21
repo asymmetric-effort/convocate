@@ -32,15 +32,14 @@ func main() {
 	llm.Init()
 
 	if err := db.InitPostgres(); err != nil {
-		log.Printf("WARNING: PostgreSQL unavailable: %v (using mock stores)", err)
-	} else {
-		if err := db.RunMigrations(); err != nil {
-			log.Printf("WARNING: migration failed: %v", err)
-		}
+		log.Fatalf("FATAL: PostgreSQL required but unavailable: %v", err)
+	}
+	if err := db.RunMigrations(); err != nil {
+		log.Fatalf("FATAL: PostgreSQL migration failed: %v", err)
 	}
 
 	if err := db.InitRedis(); err != nil {
-		log.Printf("WARNING: Redis unavailable: %v", err)
+		log.Fatalf("FATAL: Redis required but unavailable: %v", err)
 	}
 
 	if err := k8s.Init(); err != nil {

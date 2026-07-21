@@ -23,25 +23,25 @@ jobs:
 
       - name: Verify Docker Images pipeline passed
         run: |
-          LAST_RUN=$(curl -sf -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/docker-images.yml/runs?per_page=1&status=completed" \
-            | python3 -c 'import sys,json; runs=json.load(sys.stdin).get("workflow_runs",[]); print(runs[0]["conclusion"] if runs else "none")' 2>/dev/null)
+          LAST_RUN=$(curl -s \
+            "https://api.github.com/repos/asymmetric-effort/convocate/actions/workflows/docker-images.yml/runs?per_page=1&status=completed" \
+            | python3 -c 'import sys,json; runs=json.load(sys.stdin).get("workflow_runs",[]); print(runs[0]["conclusion"] if runs else "none")')
+          echo "Docker Images last run: $LAST_RUN"
           if [ "$LAST_RUN" != "success" ]; then
-            echo "::error::Last Docker Images run did not pass (status: ${LAST_RUN:-none}). Build images first."
+            echo "::error::Last Docker Images run did not pass (status: $LAST_RUN)."
             exit 1
           fi
-          echo "Docker Images: success"
 
       - name: Verify Kubernetes Clusters pipeline passed
         run: |
-          LAST_RUN=$(curl -sf -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/k8s.yml/runs?per_page=1&status=completed" \
-            | python3 -c 'import sys,json; runs=json.load(sys.stdin).get("workflow_runs",[]); print(runs[0]["conclusion"] if runs else "none")' 2>/dev/null)
+          LAST_RUN=$(curl -s \
+            "https://api.github.com/repos/asymmetric-effort/convocate/actions/workflows/k8s.yml/runs?per_page=1&status=completed" \
+            | python3 -c 'import sys,json; runs=json.load(sys.stdin).get("workflow_runs",[]); print(runs[0]["conclusion"] if runs else "none")')
+          echo "K8s Clusters last run: $LAST_RUN"
           if [ "$LAST_RUN" != "success" ]; then
-            echo "::error::Last Kubernetes Clusters run did not pass (status: ${LAST_RUN:-none}). Clusters must be healthy before deploying apps."
+            echo "::error::Last K8s Clusters run did not pass (status: $LAST_RUN)."
             exit 1
           fi
-          echo "Kubernetes Clusters: success"
 
       - name: Verify OpenBao is accessible
         run: |

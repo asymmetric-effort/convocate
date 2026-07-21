@@ -14,14 +14,14 @@ jobs:
     steps:
       - name: Verify last Docker Images run passed
         run: |
-          LAST_RUN=$(curl -sf -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/docker-images.yml/runs?per_page=1&status=completed" \
-            | python3 -c 'import sys,json; runs=json.load(sys.stdin).get("workflow_runs",[]); print(runs[0]["conclusion"] if runs else "none")' 2>/dev/null)
+          LAST_RUN=$(curl -s \
+            "https://api.github.com/repos/asymmetric-effort/convocate/actions/workflows/docker-images.yml/runs?per_page=1&status=completed" \
+            | python3 -c 'import sys,json; runs=json.load(sys.stdin).get("workflow_runs",[]); print(runs[0]["conclusion"] if runs else "none")')
+          echo "Docker Images last run: $LAST_RUN"
           if [ "$LAST_RUN" != "success" ]; then
-            echo "::error::Last Docker Images run did not pass (status: ${LAST_RUN:-none}). Fix docker builds before deploying K8s."
+            echo "::error::Last Docker Images run did not pass (status: $LAST_RUN)."
             exit 1
           fi
-          echo "Last Docker Images run: success"
 
       - name: Verify OpenBao secrets-b is accessible and unsealed
         run: |
