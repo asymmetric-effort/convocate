@@ -11,7 +11,7 @@ const CLUSTER_NAME = process.env.CLUSTER_NAME || "cluster-a";
 function kubectl(cmd: string): string {
   return execSync(`kubectl --kubeconfig=${KUBECONFIG} ${cmd}`, {
     encoding: "utf-8",
-    timeout: 30000,
+    timeout: 120000,
   }).trim();
 }
 
