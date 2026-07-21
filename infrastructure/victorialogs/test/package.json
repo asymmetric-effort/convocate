@@ -1,0 +1,7 @@
+{
+  "name": "victorialogs-pdv",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}

@@ -1,0 +1,99 @@
+name: VictoriaLogs
+on:
+  push:
+    branches: [main]
+    paths: ['infrastructure/victorialogs/**']
+  workflow_dispatch:
+jobs:
+  deploy-logs-a:
+    name: Deploy to logs-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy logs-a
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/victorialogs/playbooks/deploy.yml \
+            -e "ghcr_token=${{ secrets.GITHUB_TOKEN }}" -e "ghcr_user=${{ github.actor }}" \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=logs-a"
+          rm -f ~/.ssh/ansible_key
+
+  pdv-logs-a:
+    name: PDV Tests (logs-a)
+    needs: deploy-logs-a
+    runs-on: [self-hosted, linux, x64]
+    env:
+      VICTORIALOGS_URL: https://192.168.3.166:443
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/victorialogs/test
+        run: bun install
+
+      - name: Run PDV tests against logs-a
+        working-directory: infrastructure/victorialogs/test
+        run: bunx playwright test pdv.spec.ts
+
+  deploy-logs-b:
+    name: Deploy to logs-b (production)
+    needs: pdv-logs-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy logs-b (non-destructive)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/victorialogs/playbooks/deploy.yml \
+            -e "ghcr_token=${{ secrets.GITHUB_TOKEN }}" -e "ghcr_user=${{ github.actor }}" \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=logs-b"
+          rm -f ~/.ssh/ansible_key
+
+  smoke-logs-b:
+    name: Smoke Tests (logs-b)
+    needs: deploy-logs-b
+    runs-on: [self-hosted, linux, x64]
+    env:
+      VICTORIALOGS_URL: https://192.168.3.167:443
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/victorialogs/test
+        run: bun install
+
+      - name: Run smoke tests against logs-b
+        working-directory: infrastructure/victorialogs/test
+        run: bunx playwright test smoke.spec.ts

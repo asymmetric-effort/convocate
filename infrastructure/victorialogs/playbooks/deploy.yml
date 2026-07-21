@@ -1,0 +1,73 @@
+---
+# Deploy VictoriaLogs — application-level only. Pulls from GHCR.
+# Assumes bootstrap has already run (directories, TLS certs).
+- name: Deploy VictoriaLogs log aggregation
+  hosts: svr00
+  become: true
+  gather_facts: false
+  vars:
+    victorialogs_dir: /opt/victorialogs
+    deploy_target: "all"
+  tasks:
+    - name: Copy docker-compose.yml to svr00
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../docker-compose.yml"
+        dest: "{{ victorialogs_dir }}/docker-compose.yml"
+        mode: "0644"
+
+    - name: Login to GHCR
+      ansible.builtin.shell:
+        cmd: echo "{{ ghcr_token }}" | docker login ghcr.io -u "{{ ghcr_user }}" --password-stdin
+      changed_when: false
+      no_log: true
+
+    - name: Pull latest VictoriaLogs image
+      ansible.builtin.command:
+        cmd: docker pull ghcr.io/asymmetric-effort/convocate/victorialogs:latest
+      changed_when: true
+
+    # logs-a (canary)
+    - name: Deploy logs-a (recreate)
+      ansible.builtin.command:
+        cmd: docker compose -f {{ victorialogs_dir }}/docker-compose.yml up -d --force-recreate logs-a
+      changed_when: true
+      when: deploy_target == "all" or deploy_target == "logs-a"
+
+    - name: Wait for logs-a to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            if curl -sfk https://192.168.3.166:443/health 2>/dev/null; then
+              echo "logs-a healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ERROR: logs-a not ready after 60s"
+          exit 1
+      changed_when: false
+      when: deploy_target == "all" or deploy_target == "logs-a"
+
+    # logs-b (production)
+    - name: Deploy logs-b (pull and restart)
+      ansible.builtin.shell:
+        cmd: |
+          docker compose -f {{ victorialogs_dir }}/docker-compose.yml pull logs-b
+          docker compose -f {{ victorialogs_dir }}/docker-compose.yml up -d logs-b
+      changed_when: true
+      when: deploy_target == "all" or deploy_target == "logs-b"
+
+    - name: Wait for logs-b to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            if curl -sfk https://192.168.3.167:443/health 2>/dev/null; then
+              echo "logs-b healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ERROR: logs-b not ready after 60s"
+          exit 1
+      changed_when: false
+      when: deploy_target == "all" or deploy_target == "logs-b"
