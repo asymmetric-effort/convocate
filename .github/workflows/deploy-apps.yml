@@ -96,6 +96,16 @@ jobs:
             convocate@$KUBECONFIG_HOST sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig
           rm -f ~/.ssh/key
 
+      - name: Reset Helm release if stuck
+        run: |
+          STATUS=$(helm status convocate --kubeconfig /tmp/kubeconfig -n convocate -o json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["info"]["status"])' 2>/dev/null || echo "not-found")
+          echo "Helm release status: $STATUS"
+          if [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ] || [ "$STATUS" = "pending-rollback" ] || [ "$STATUS" = "failed" ]; then
+            echo "Release in $STATUS — uninstalling for clean install"
+            helm uninstall convocate --kubeconfig /tmp/kubeconfig -n convocate --wait 2>/dev/null || true
+            kubectl --kubeconfig=/tmp/kubeconfig -n convocate delete job postgresql-init --ignore-not-found 2>&1 || true
+          fi
+
       - name: Create namespaces and GHCR pull secret
         run: |
           KC="--kubeconfig=/tmp/kubeconfig"
@@ -161,16 +171,6 @@ jobs:
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic openbao-root-token \
             --from-literal=token="$BAO_TOKEN" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
-
-      - name: Reset Helm release if stuck
-        run: |
-          STATUS=$(helm status convocate --kubeconfig /tmp/kubeconfig -n convocate -o json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["info"]["status"])' 2>/dev/null || echo "not-found")
-          echo "Helm release status: $STATUS"
-          if [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ] || [ "$STATUS" = "pending-rollback" ] || [ "$STATUS" = "failed" ]; then
-            echo "Release in $STATUS — uninstalling for clean install"
-            helm uninstall convocate --kubeconfig /tmp/kubeconfig -n convocate --wait 2>/dev/null || true
-            kubectl --kubeconfig=/tmp/kubeconfig -n convocate delete job postgresql-init --ignore-not-found 2>&1 || true
-          fi
 
       - name: Helm upgrade cluster-a
         run: |
@@ -251,6 +251,16 @@ jobs:
             convocate@$KUBECONFIG_HOST sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig
           rm -f ~/.ssh/key
 
+      - name: Reset Helm release if stuck
+        run: |
+          STATUS=$(helm status convocate --kubeconfig /tmp/kubeconfig -n convocate -o json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["info"]["status"])' 2>/dev/null || echo "not-found")
+          echo "Helm release status: $STATUS"
+          if [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ] || [ "$STATUS" = "pending-rollback" ] || [ "$STATUS" = "failed" ]; then
+            echo "Release in $STATUS — uninstalling for clean install"
+            helm uninstall convocate --kubeconfig /tmp/kubeconfig -n convocate --wait 2>/dev/null || true
+            kubectl --kubeconfig=/tmp/kubeconfig -n convocate delete job postgresql-init --ignore-not-found 2>&1 || true
+          fi
+
       - name: Create namespaces and GHCR pull secret
         run: |
           KC="--kubeconfig=/tmp/kubeconfig"
@@ -312,16 +322,6 @@ jobs:
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic openbao-root-token \
             --from-literal=token="$BAO_TOKEN" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
-
-      - name: Reset Helm release if stuck
-        run: |
-          STATUS=$(helm status convocate --kubeconfig /tmp/kubeconfig -n convocate -o json 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin)["info"]["status"])' 2>/dev/null || echo "not-found")
-          echo "Helm release status: $STATUS"
-          if [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ] || [ "$STATUS" = "pending-rollback" ] || [ "$STATUS" = "failed" ]; then
-            echo "Release in $STATUS — uninstalling for clean install"
-            helm uninstall convocate --kubeconfig /tmp/kubeconfig -n convocate --wait 2>/dev/null || true
-            kubectl --kubeconfig=/tmp/kubeconfig -n convocate delete job postgresql-init --ignore-not-found 2>&1 || true
-          fi
 
       - name: Helm upgrade cluster-b
         run: |
