@@ -22,10 +22,10 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Verify Docker Images pipeline passed
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LAST_RUN=$(gh run list --workflow=docker-images.yml --repo ${{ github.repository }} --limit 1 --json conclusion --jq '.[0].conclusion')
+          LAST_RUN=$(curl -sf -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/docker-images.yml/runs?per_page=1&status=completed" \
+            | python3 -c 'import sys,json; runs=json.load(sys.stdin).get("workflow_runs",[]); print(runs[0]["conclusion"] if runs else "none")' 2>/dev/null)
           if [ "$LAST_RUN" != "success" ]; then
             echo "::error::Last Docker Images run did not pass (status: ${LAST_RUN:-none}). Build images first."
             exit 1
