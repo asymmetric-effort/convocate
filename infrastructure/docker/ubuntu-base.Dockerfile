@@ -1,7 +1,7 @@
 # Ubuntu base image for all Convocate build stages
 # Pre-installs common packages, applies CIS hardening
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # Update packages and install base dependencies
 RUN apt-get update && \

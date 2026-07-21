@@ -46,7 +46,7 @@ RUN go build -ldflags "-X main.version=${CLAUDE_VERSION}-wrapper" \
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — minimal ubuntu with Node.js + Claude CLI + Go binary
 # ---------------------------------------------------------------------------
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 ARG NODE_MAJOR=24
 
