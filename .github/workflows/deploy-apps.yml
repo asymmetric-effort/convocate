@@ -66,7 +66,7 @@ jobs:
     name: Deploy to cluster-a (canary)
     needs: verify
     runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       KUBECONFIG_HOST: 192.168.3.170
       CLUSTER: cluster-a
@@ -213,7 +213,7 @@ jobs:
     name: Deploy to cluster-b (production)
     needs: pdv-cluster-a
     runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       KUBECONFIG_HOST: 192.168.3.180
       CLUSTER: cluster-b
