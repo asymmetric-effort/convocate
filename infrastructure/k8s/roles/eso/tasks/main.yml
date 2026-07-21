@@ -51,28 +51,32 @@
 - name: Install External Secrets Operator via Helm
   ansible.builtin.shell:
     cmd: >-
-      timeout 600
       /usr/local/bin/helm upgrade --install external-secrets
       external-secrets/external-secrets
       --namespace external-secrets
       --set installCRDs=true
       --set webhook.port=9443
       --timeout 5m0s
+      --wait
+  register: eso_helm_result
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Show ESO Helm install result
+  ansible.builtin.debug:
+    msg: "{{ eso_helm_result.stdout_lines }}"
 
 - name: Wait for ESO pods to be ready
   ansible.builtin.shell:
     cmd: >-
-      timeout 180
       kubectl wait --for=condition=Ready pod
       -l app.kubernetes.io/name=external-secrets
-      -n external-secrets --timeout=120s
+      -n external-secrets --timeout=300s
   changed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   retries: 3
-  delay: 10
+  delay: 15
 
 - name: Fetch OpenBao CA cert for ESO
   ansible.builtin.shell:
@@ -99,18 +103,29 @@
 
 - name: Wait for ESO CRDs to be registered
   ansible.builtin.shell:
-    cmd: >-
-      timeout 120
-      bash -c 'until kubectl get crd clustersecretstores.external-secrets.io 2>/dev/null; do sleep 5; done'
+    cmd: |
+      for i in $(seq 1 60); do
+        if kubectl get crd clustersecretstores.external-secrets.io >/dev/null 2>&1; then
+          echo "CRD found"
+          exit 0
+        fi
+        echo "Waiting for CRD... ($i)"
+        sleep 5
+      done
+      echo "CRD not found after 5 minutes"
+      kubectl get crd 2>/dev/null | grep external || true
+      exit 1
   changed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Apply ClusterSecretStore for OpenBao
-  ansible.builtin.command:
+  ansible.builtin.shell:
     cmd: kubectl apply -f /tmp/eso-secretstore.yaml
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
+  retries: 3
+  delay: 10
 
 - name: Verify ESO status
   ansible.builtin.shell:
