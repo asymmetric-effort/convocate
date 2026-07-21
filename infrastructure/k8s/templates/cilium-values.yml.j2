@@ -12,8 +12,7 @@ ipam:
 # Use OpenBao PKI root CA for mesh certificate issuance
 tls:
   ca:
-    cert: /etc/cilium/ca/ca.crt
-    certValidityDuration: 8760h  # 1 year
+    certValidityDuration: 8760
   caBundle:
     enabled: true
     useSecret: true
