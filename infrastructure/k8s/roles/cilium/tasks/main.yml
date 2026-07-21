@@ -79,6 +79,7 @@
       --timeout 10m0s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
+  timeout: 900
 
 - name: Wait for Cilium pods to be ready
   ansible.builtin.shell:
@@ -91,6 +92,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   retries: 3
   delay: 15
+  timeout: 360
 
 - name: Verify Cilium status
   ansible.builtin.shell:

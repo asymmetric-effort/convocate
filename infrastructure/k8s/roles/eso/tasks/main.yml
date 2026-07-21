@@ -50,6 +50,7 @@
       --timeout 5m0s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
+  timeout: 600
 
 - name: Wait for ESO pods to be ready
   ansible.builtin.shell:
@@ -62,6 +63,7 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   retries: 3
   delay: 10
+  timeout: 180
 
 - name: Fetch OpenBao CA cert for ESO
   ansible.builtin.shell:
