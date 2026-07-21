@@ -122,13 +122,24 @@
 
 # --- Prerequisites ---
 
+- name: Disable man-db auto-update (prevents apt trigger hang)
+  ansible.builtin.shell:
+    cmd: |
+      if [ -f /usr/bin/mandb ]; then
+        dpkg-divert --local --rename --add /usr/bin/mandb
+        ln -sf /bin/true /usr/bin/mandb
+      fi
+  changed_when: false
+
 - name: Install prerequisite packages
   ansible.builtin.shell:
     cmd: >-
-      timeout 600
-      apt-get install -y -qq
+      DEBIAN_FRONTEND=noninteractive
+      apt-get install -y -qq -o Dpkg::Options::="--force-confdef"
       apt-transport-https ca-certificates curl gnupg
       lsb-release socat conntrack ipset
+  environment:
+    DEBIAN_FRONTEND: noninteractive
   changed_when: false
   throttle: 2
 
@@ -136,7 +147,9 @@
 
 - name: Install containerd
   ansible.builtin.shell:
-    cmd: timeout 600 apt-get install -y -qq containerd
+    cmd: DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Options::="--force-confdef" containerd
+  environment:
+    DEBIAN_FRONTEND: noninteractive
   changed_when: false
   throttle: 2
 
@@ -201,11 +214,13 @@
 - name: Install Kubernetes packages
   ansible.builtin.shell:
     cmd: >-
-      timeout 600
-      apt-get install -y -qq
+      DEBIAN_FRONTEND=noninteractive
+      apt-get install -y -qq -o Dpkg::Options::="--force-confdef"
       kubelet={{ kube_package_version }}
       kubeadm={{ kube_package_version }}
       kubectl={{ kube_package_version }}
+  environment:
+    DEBIAN_FRONTEND: noninteractive
   changed_when: false
   throttle: 2
 

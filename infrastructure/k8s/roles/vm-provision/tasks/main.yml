@@ -9,6 +9,15 @@
     state: started
     enabled: true
 
+- name: Remove VM IPs from host interfaces (prevent IP conflicts)
+  ansible.builtin.shell:
+    cmd: |
+      for IP in {{ vm_nodes | map(attribute='ip') | join(' ') }}; do
+        ip addr del $IP/24 dev br0 2>/dev/null || true
+        ip addr del $IP/24 dev enp4s0f0 2>/dev/null || true
+      done
+  changed_when: false
+
 - name: Check cloud image exists
   ansible.builtin.stat:
     path: "{{ cloud_image_path }}"
