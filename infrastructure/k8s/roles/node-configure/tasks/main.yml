@@ -76,7 +76,7 @@
 
 # --- Networking ---
 
-# Network configured by cloud-init DHCP — no netplan changes needed
+# Network configured by cloud-init static IP — no netplan changes needed
 
 - name: Disable swap
   ansible.builtin.command:

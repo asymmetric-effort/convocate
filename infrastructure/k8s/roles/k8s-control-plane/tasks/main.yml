@@ -80,7 +80,6 @@
       kubeadm init
       --config /tmp/kubeadm-config.yaml
       --upload-certs
-      --skip-phases=addon/kube-proxy
   register: kubeadm_init
   when: not admin_conf.stat.exists
 
