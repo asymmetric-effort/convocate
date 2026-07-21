@@ -135,6 +135,7 @@
       - ipset
     state: present
     update_cache: true
+  timeout: 600
 
 # --- Containerd ---
 
@@ -143,6 +144,7 @@
     name: containerd
     state: present
     update_cache: true
+  timeout: 300
 
 - name: Create containerd config directory
   ansible.builtin.file:
@@ -191,10 +193,16 @@
     creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
 - name: Add Kubernetes apt repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
-    filename: kubernetes
-    state: present
+  ansible.builtin.copy:
+    content: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /"
+    dest: /etc/apt/sources.list.d/kubernetes.list
+    mode: "0644"
+
+- name: Update apt cache for Kubernetes repo
+  ansible.builtin.shell:
+    cmd: apt-get update -qq
+  changed_when: false
+  timeout: 300
 
 - name: Install Kubernetes packages
   ansible.builtin.apt:
@@ -203,7 +211,7 @@
       - "kubeadm={{ kube_package_version }}"
       - "kubectl={{ kube_package_version }}"
     state: present
-    update_cache: true
+  timeout: 600
 
 - name: Hold Kubernetes packages at pinned version
   ansible.builtin.dpkg_selections:
