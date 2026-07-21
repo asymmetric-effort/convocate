@@ -210,9 +210,11 @@ jobs:
     steps:
       - name: API health check
         run: |
-          for i in $(seq 1 10); do
-            RESP=$(curl -sfk https://192.168.3.171:443/api/v1/status 2>/dev/null) && break
-            sleep 3
+          sleep 10
+          for i in $(seq 1 15); do
+            RESP=$(curl -sfk --connect-timeout 5 https://192.168.3.171:443/api/v1/status 2>/dev/null) && break
+            echo "Attempt $i: waiting for API..."
+            sleep 5
           done
           if [ -z "$RESP" ]; then
             echo "::error::API not responding at https://192.168.3.171:443"
@@ -351,9 +353,11 @@ jobs:
     steps:
       - name: API health check
         run: |
-          for i in $(seq 1 10); do
-            RESP=$(curl -sfk https://192.168.3.181:443/api/v1/status 2>/dev/null) && break
-            sleep 3
+          sleep 10
+          for i in $(seq 1 15); do
+            RESP=$(curl -sfk --connect-timeout 5 https://192.168.3.181:443/api/v1/status 2>/dev/null) && break
+            echo "Attempt $i: waiting for API..."
+            sleep 5
           done
           if [ -z "$RESP" ]; then
             echo "::error::API not responding at https://192.168.3.181:443"
