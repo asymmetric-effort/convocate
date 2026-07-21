@@ -5,15 +5,17 @@
 - name: Install Fluent Bit
   ansible.builtin.shell:
     cmd: |
-      if command -v fluent-bit &>/dev/null; then
+      if [ -x /opt/fluent-bit/bin/fluent-bit ]; then
         echo "Fluent Bit already installed"
+        /opt/fluent-bit/bin/fluent-bit --version
         exit 0
       fi
-      curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor -o /usr/share/keyrings/fluentbit-keyring.gpg
+      curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --batch --yes --dearmor -o /usr/share/keyrings/fluentbit-keyring.gpg
       echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/jammy jammy main" \
         > /etc/apt/sources.list.d/fluent-bit.list
       apt-get update -qq
-      apt-get install -y -qq fluent-bit
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Options::="--force-confdef" fluent-bit
+      /opt/fluent-bit/bin/fluent-bit --version
   changed_when: false
 
 - name: Create Fluent Bit directories
