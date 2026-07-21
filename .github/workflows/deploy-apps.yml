@@ -140,22 +140,17 @@ jobs:
             --cert=<(echo "$CERT") --key=<(echo "$KEY") \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
-          # Create PostgreSQL credentials
-          kubectl --kubeconfig=/tmp/kubeconfig -n data-layer create secret generic postgresql-credentials \
-            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable" \
+          # Create PostgreSQL credentials (all services in convocate namespace)
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic postgresql-credentials \
+            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.convocate.svc:5432/convocate?sslmode=disable" \
             --from-literal=POSTGRES_USER=convocate \
             --from-literal=POSTGRES_PASSWORD=convocate \
             --from-literal=POSTGRES_DB=convocate \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
-          # Copy PG credentials to convocate namespace (API reads from its own ns)
-          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic postgresql-credentials \
-            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable" \
-            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
-
           # Create Redis credentials
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic redis-credentials \
-            --from-literal=REDIS_URL="redis://redis.data-layer.svc:6379" \
+            --from-literal=REDIS_URL="redis://redis.convocate.svc:6379" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
           # Create OpenBao token secret
@@ -278,19 +273,16 @@ jobs:
             --cert=<(echo "$CERT") --key=<(echo "$KEY") \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
-          kubectl --kubeconfig=/tmp/kubeconfig -n data-layer create secret generic postgresql-credentials \
-            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable" \
+          # Create PostgreSQL credentials (all services in convocate namespace)
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic postgresql-credentials \
+            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.convocate.svc:5432/convocate?sslmode=disable" \
             --from-literal=POSTGRES_USER=convocate \
             --from-literal=POSTGRES_PASSWORD=convocate \
             --from-literal=POSTGRES_DB=convocate \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
-          kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic postgresql-credentials \
-            --from-literal=DATABASE_URL="postgresql://convocate:convocate@postgresql.data-layer.svc:5432/convocate?sslmode=disable" \
-            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
-
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic redis-credentials \
-            --from-literal=REDIS_URL="redis://redis.data-layer.svc:6379" \
+            --from-literal=REDIS_URL="redis://redis.convocate.svc:6379" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic openbao-root-token \

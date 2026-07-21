@@ -27,9 +27,11 @@ api:
 postgresql:
   enabled: true
   storage: 2Gi
+  nodeAffinity: node-a-3
 
 redis:
   enabled: true
+  nodeAffinity: node-a-4
 
 # Disable services managed outside K8s or not needed on canary
 ui:

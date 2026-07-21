@@ -11,6 +11,8 @@ spec:
       labels:
         app: postgresql-init
     spec:
+      imagePullSecrets:
+        - name: ghcr-pull
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534

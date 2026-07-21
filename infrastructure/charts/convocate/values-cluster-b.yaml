@@ -27,9 +27,11 @@ api:
 postgresql:
   enabled: true
   storage: 10Gi
+  nodeAffinity: node-b-4
 
 redis:
   enabled: true
+  nodeAffinity: node-b-3
 
 # Disable services managed outside K8s or not needed on production
 ui:
