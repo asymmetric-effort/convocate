@@ -5,10 +5,19 @@
 - name: Ensure Helm is installed
   ansible.builtin.shell:
     cmd: |
-      if ! command -v helm &>/dev/null; then
-        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/tools/get-helm-3 | bash
+      if command -v helm &>/dev/null; then
+        echo "Helm already installed"
+        exit 0
       fi
-    creates: /usr/local/bin/helm
+      TMPDIR=/var/tmp
+      export TMPDIR
+      cd /var/tmp
+      curl -fsSL https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz -o helm.tar.gz
+      tar xzf helm.tar.gz
+      mv linux-amd64/helm /usr/local/bin/helm
+      chmod 755 /usr/local/bin/helm
+      rm -rf helm.tar.gz linux-amd64
+      helm version --short
 
 - name: Add Cilium Helm repository
   ansible.builtin.shell:
