@@ -22,6 +22,20 @@ jobs:
           fi
           echo "Last Bootstrap svr00 run: success"
 
+      - name: Verify OpenBao secrets-b is accessible
+        run: |
+          SEAL_STATUS=$(curl -sf --connect-timeout 10 -k https://192.168.3.161:443/v1/sys/seal-status 2>/dev/null)
+          if [ -z "$SEAL_STATUS" ]; then
+            echo "::error::OpenBao secrets-b at 192.168.3.161:443 is not reachable."
+            exit 1
+          fi
+          SEALED=$(echo "$SEAL_STATUS" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("sealed","unknown"))')
+          if [ "$SEALED" != "False" ]; then
+            echo "::error::OpenBao secrets-b is sealed. Unseal before deploying K8s."
+            exit 1
+          fi
+          echo "OpenBao secrets-b: reachable and unsealed"
+
   deploy-cluster-a:
     name: Deploy cluster-a (canary)
     needs: verify-prereqs

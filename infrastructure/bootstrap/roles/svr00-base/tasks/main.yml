@@ -164,6 +164,11 @@
     line: 'DEFAULT_FORWARD_POLICY="ACCEPT"'
   notify: Reload UFW
 
+- name: Flush stale NAT REDIRECT rules (services listen on 443 directly)
+  ansible.builtin.shell:
+    cmd: iptables -t nat -F OUTPUT 2>/dev/null || true
+  changed_when: false
+
 - name: Enable UFW
   community.general.ufw:
     state: enabled
