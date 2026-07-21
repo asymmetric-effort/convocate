@@ -66,6 +66,72 @@ updates:
       - "dependencies"
       - "javascript"
 
+  - package-ecosystem: "npm"
+    directory: "/test/pdv"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  - package-ecosystem: "npm"
+    directory: "/infrastructure/secrets/test"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  - package-ecosystem: "npm"
+    directory: "/infrastructure/grafana/test"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  - package-ecosystem: "npm"
+    directory: "/infrastructure/prometheus/test"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  - package-ecosystem: "npm"
+    directory: "/infrastructure/k8s/test"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  - package-ecosystem: "docker"
+    directory: "/infrastructure/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    reviewers:
+      - "asymmetric-effort/convocate"
+    labels:
+      - "dependencies"
+      - "docker"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
