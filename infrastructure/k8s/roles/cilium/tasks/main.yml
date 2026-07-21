@@ -5,30 +5,30 @@
 - name: Ensure Helm is installed
   ansible.builtin.shell:
     cmd: |
-      if command -v helm &>/dev/null; then
+      if [ -x /usr/local/bin/helm ]; then
         echo "Helm already installed"
+        /usr/local/bin/helm version --short
         exit 0
       fi
-      TMPDIR=/var/tmp
-      export TMPDIR
+      export TMPDIR=/var/tmp
       cd /var/tmp
       curl -fsSL https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz -o helm.tar.gz
       tar xzf helm.tar.gz
       mv linux-amd64/helm /usr/local/bin/helm
       chmod 755 /usr/local/bin/helm
       rm -rf helm.tar.gz linux-amd64
-      helm version --short
+      /usr/local/bin/helm version --short
 
 - name: Add Cilium Helm repository
   ansible.builtin.shell:
-    cmd: helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
+    cmd: /usr/local/bin/helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
   changed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Update Helm repos
   ansible.builtin.shell:
-    cmd: helm repo update 2>/dev/null || true
+    cmd: /usr/local/bin/helm repo update 2>/dev/null || true
   changed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
@@ -71,7 +71,7 @@
 
 - name: Check if Cilium is already installed
   ansible.builtin.shell:
-    cmd: helm status cilium -n kube-system 2>/dev/null
+    cmd: /usr/local/bin/helm status cilium -n kube-system 2>/dev/null
   register: cilium_helm_status
   failed_when: false
   changed_when: false
@@ -82,7 +82,7 @@
   ansible.builtin.shell:
     cmd: >-
       timeout 900
-      helm upgrade --install cilium cilium/cilium
+      /usr/local/bin/helm upgrade --install cilium cilium/cilium
       --namespace kube-system
       --values /tmp/cilium-values.yaml
       --version 1.16.6
@@ -102,7 +102,6 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   retries: 3
   delay: 15
-  timeout: 360
 
 - name: Verify Cilium status
   ansible.builtin.shell:

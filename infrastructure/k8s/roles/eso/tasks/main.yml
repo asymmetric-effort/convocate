@@ -5,30 +5,30 @@
 - name: Ensure Helm is installed
   ansible.builtin.shell:
     cmd: |
-      if command -v helm &>/dev/null; then
+      if [ -x /usr/local/bin/helm ]; then
         echo "Helm already installed"
+        /usr/local/bin/helm version --short
         exit 0
       fi
-      TMPDIR=/var/tmp
-      export TMPDIR
+      export TMPDIR=/var/tmp
       cd /var/tmp
       curl -fsSL https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz -o helm.tar.gz
       tar xzf helm.tar.gz
       mv linux-amd64/helm /usr/local/bin/helm
       chmod 755 /usr/local/bin/helm
       rm -rf helm.tar.gz linux-amd64
-      helm version --short
+      /usr/local/bin/helm version --short
 
 - name: Add External Secrets Helm repository
   ansible.builtin.shell:
-    cmd: helm repo add external-secrets https://charts.external-secrets.io 2>/dev/null || true
+    cmd: /usr/local/bin/helm repo add external-secrets https://charts.external-secrets.io 2>/dev/null || true
   changed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Update Helm repos
   ansible.builtin.shell:
-    cmd: helm repo update 2>/dev/null || true
+    cmd: /usr/local/bin/helm repo update 2>/dev/null || true
   changed_when: false
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
@@ -52,7 +52,7 @@
   ansible.builtin.shell:
     cmd: >-
       timeout 600
-      helm upgrade --install external-secrets
+      /usr/local/bin/helm upgrade --install external-secrets
       external-secrets/external-secrets
       --namespace external-secrets
       --set installCRDs=true
