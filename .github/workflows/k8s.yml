@@ -99,7 +99,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
           chmod 600 ~/.ssh/ansible_key
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/ansible_key convocate@$KUBECONFIG_HOST \
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/ansible_key convocate@$KUBECONFIG_HOST \
             sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig-cluster-a
           rm -f ~/.ssh/ansible_key
 
@@ -174,7 +174,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
           chmod 600 ~/.ssh/ansible_key
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/ansible_key convocate@$KUBECONFIG_HOST \
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/ansible_key convocate@$KUBECONFIG_HOST \
             sudo cat /etc/kubernetes/admin.conf > /tmp/kubeconfig-cluster-b
           rm -f ~/.ssh/ansible_key
 
