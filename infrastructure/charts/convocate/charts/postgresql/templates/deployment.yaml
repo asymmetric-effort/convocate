@@ -23,7 +23,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: postgresql
-          image: "{{ .Values.global.registry }}/convocate/postgresql:{{ .Values.global.imageTag }}"
+          image: "{{ .Values.global.registry }}/convocate/pg:{{ .Values.global.imageTag }}"
           securityContext:
             runAsUser: 65534
             allowPrivilegeEscalation: false
