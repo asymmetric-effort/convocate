@@ -40,8 +40,9 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Install External Secrets Operator via Helm
-  ansible.builtin.command:
+  ansible.builtin.shell:
     cmd: >-
+      timeout 600
       helm upgrade --install external-secrets
       external-secrets/external-secrets
       --namespace external-secrets
@@ -50,11 +51,11 @@
       --timeout 5m0s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  timeout: 600
 
 - name: Wait for ESO pods to be ready
   ansible.builtin.shell:
     cmd: >-
+      timeout 180
       kubectl wait --for=condition=Ready pod
       -l app.kubernetes.io/name=external-secrets
       -n external-secrets --timeout=120s
@@ -63,7 +64,6 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   retries: 3
   delay: 10
-  timeout: 180
 
 - name: Fetch OpenBao CA cert for ESO
   ansible.builtin.shell:

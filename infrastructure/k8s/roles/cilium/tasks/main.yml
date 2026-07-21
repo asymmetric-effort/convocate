@@ -70,8 +70,9 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
 
 - name: Install Cilium via Helm
-  ansible.builtin.command:
+  ansible.builtin.shell:
     cmd: >-
+      timeout 900
       helm upgrade --install cilium cilium/cilium
       --namespace kube-system
       --values /tmp/cilium-values.yaml
@@ -79,11 +80,11 @@
       --timeout 10m0s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  timeout: 900
 
 - name: Wait for Cilium pods to be ready
   ansible.builtin.shell:
     cmd: >-
+      timeout 360
       kubectl wait --for=condition=Ready pod
       -l app.kubernetes.io/name=cilium-agent
       -n kube-system --timeout=300s
