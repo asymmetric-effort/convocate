@@ -25,6 +25,9 @@ COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 
 EXPOSE 9428
 
+VOLUME /victorialogs
+
 USER 65534:65534
 
 ENTRYPOINT ["/usr/local/bin/victoria-logs-prod"]
+CMD ["--storageDataPath=/victorialogs"]

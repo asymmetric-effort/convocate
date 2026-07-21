@@ -10,9 +10,10 @@ trap cleanup EXIT
 
 echo "Testing victorialogs image: $IMAGE"
 
-# Start VictoriaLogs
+# Start VictoriaLogs with tmpfs for storage
 docker run -d --name "$CONTAINER_NAME" \
     -p "${HOST_PORT}:9428" \
+    --tmpfs /victorialogs:uid=65534,gid=65534 \
     "$IMAGE"
 
 # Wait for health endpoint
