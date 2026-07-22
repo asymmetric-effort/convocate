@@ -277,6 +277,7 @@ func TestLoadOrGenerateKeysExisting_Ed25519(t *testing.T) {
 				"data": map[string]interface{}{
 					"private_key": string(keyPEM),
 					"certificate": string(kp.CertPEM),
+					"algorithm":   "ed25519",
 				},
 			},
 		}

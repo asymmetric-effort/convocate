@@ -46,3 +46,5 @@ Thumbs.db
 .env.*.local
 .claude/worktrees/
 infrastructure/grafana/.env.*
+# Added by code-review-graph
+.code-review-graph/

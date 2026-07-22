@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "/home/claude/.bin/uvx",
+      "args": [
+        "code-review-graph",
+        "serve"
+      ],
+      "cwd": "/home/claude/git/convocate",
+      "type": "stdio"
+    }
+  }
+}

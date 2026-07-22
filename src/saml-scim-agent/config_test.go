@@ -284,7 +284,7 @@ func TestKeyAlgorithm_Invalid(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid key algorithm")
 	}
-	if !strings.Contains(err.Error(), "invalid key algorithm") {
-		t.Errorf("expected error to contain 'invalid key algorithm', got: %v", err)
+	if !strings.Contains(err.Error(), "invalid SAML_SCIM_AGENT_KEY_ALGORITHM") {
+		t.Errorf("expected error to contain 'invalid SAML_SCIM_AGENT_KEY_ALGORITHM', got: %v", err)
 	}
 }
