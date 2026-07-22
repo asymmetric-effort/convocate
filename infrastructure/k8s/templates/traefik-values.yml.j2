@@ -24,7 +24,7 @@ service:
 
 ports:
   web:
-    port: 8080
+    port: 9080
     expose:
       default: false
   websecure:
@@ -32,8 +32,6 @@ ports:
     hostPort: 443
     expose:
       default: true
-    tls:
-      enabled: true
 
 providers:
   kubernetesCRD:
@@ -49,7 +47,3 @@ providers:
 ingressRoute:
   dashboard:
     enabled: false
-
-logs:
-  general:
-    level: INFO
