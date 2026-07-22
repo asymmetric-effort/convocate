@@ -10,10 +10,10 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/openbao"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/openbao"
 )
 
-const kvPath = "secret/data/gatekeeper/saml-signing-key"
+const kvPath = "secret/data/saml-scim-agent/saml-signing-key"
 
 // KeyPair holds the SAML signing key and certificate.
 type KeyPair struct {
@@ -74,7 +74,7 @@ func generateKeyPair() (*KeyPair, error) {
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
-			CommonName:   "Gatekeeper SAML Signing",
+			CommonName:   "SAML-SCIM-Agent SAML Signing",
 			Organization: []string{"Asymmetric Effort"},
 		},
 		NotBefore:             time.Now(),

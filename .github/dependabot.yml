@@ -23,7 +23,7 @@ updates:
       - "go"
 
   - package-ecosystem: "gomod"
-    directory: "/src/gatekeeper"
+    directory: "/src/saml-scim-agent"
     schedule:
       interval: "weekly"
       day: "monday"

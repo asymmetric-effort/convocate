@@ -2,21 +2,21 @@
 set -euo pipefail
 
 IMAGE="${1:?Usage: $0 <image>}"
-CONTAINER_NAME="test-gatekeeper-$$"
+CONTAINER_NAME="test-saml-scim-agent-$$"
 HOST_PORT=$(( (RANDOM % 10000) + 20000 ))
 
 cleanup() { docker rm -f "$CONTAINER_NAME" 2>/dev/null || true; }
 trap cleanup EXIT
 
-echo "Testing gatekeeper image: $IMAGE"
+echo "Testing saml-scim-agent image: $IMAGE"
 
-# Start gatekeeper with mock config
+# Start saml-scim-agent with mock config
 # The binary may exit if required config is missing — that is acceptable
 # as long as it does not segfault or crash with a non-configuration error.
 docker run -d --name "$CONTAINER_NAME" \
     -p "${HOST_PORT}:8443" \
-    -e GATEKEEPER_LISTEN_ADDR="0.0.0.0:8443" \
-    -e GATEKEEPER_TLS_DISABLE="true" \
+    -e SAML_SCIM_AGENT_LISTEN_ADDR="0.0.0.0:8443" \
+    -e SAML_SCIM_AGENT_TLS_DISABLE="true" \
     -e OPENBAO_ADDR="http://127.0.0.1:8200" \
     "$IMAGE"
 

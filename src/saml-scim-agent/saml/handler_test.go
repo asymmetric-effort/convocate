@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/openbao"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/openbao"
 )
 
 func TestGenerateMetadata(t *testing.T) {
@@ -434,8 +434,8 @@ func TestKeyGeneration(t *testing.T) {
 	}
 
 	// Verify certificate subject
-	if kp.Certificate.Subject.CommonName != "Gatekeeper SAML Signing" {
-		t.Errorf("expected CN 'Gatekeeper SAML Signing', got %s", kp.Certificate.Subject.CommonName)
+	if kp.Certificate.Subject.CommonName != "SAML-SCIM-Agent SAML Signing" {
+		t.Errorf("expected CN 'SAML-SCIM-Agent SAML Signing', got %s", kp.Certificate.Subject.CommonName)
 	}
 	if len(kp.Certificate.Subject.Organization) != 1 || kp.Certificate.Subject.Organization[0] != "Asymmetric Effort" {
 		t.Errorf("unexpected organization: %v", kp.Certificate.Subject.Organization)
@@ -613,7 +613,7 @@ func TestLoadOrGenerateKeysNew(t *testing.T) {
 	// Mock OpenBao that returns 404 for read, then accepts write
 	mux := http.NewServeMux()
 	readCount := 0
-	mux.HandleFunc("/v1/secret/data/gatekeeper/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			readCount++
@@ -651,7 +651,7 @@ func TestLoadOrGenerateKeysExisting(t *testing.T) {
 	})
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/gatekeeper/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]interface{}{
 			"data": map[string]interface{}{
 				"data": map[string]interface{}{
@@ -683,7 +683,7 @@ func TestLoadOrGenerateKeysExisting(t *testing.T) {
 func TestLoadOrGenerateKeysNonStringValues(t *testing.T) {
 	// Stored data has non-string values for keys
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/gatekeeper/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			resp := map[string]interface{}{
@@ -724,7 +724,7 @@ func TestLoadOrGenerateKeysReadError(t *testing.T) {
 
 func TestLoadOrGenerateKeysWriteError(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/gatekeeper/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			w.WriteHeader(http.StatusNotFound)
@@ -746,7 +746,7 @@ func TestLoadOrGenerateKeysWriteError(t *testing.T) {
 func TestLoadOrGenerateKeysInvalidStoredKey(t *testing.T) {
 	// Stored data has invalid PEM - should regenerate
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/gatekeeper/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			resp := map[string]interface{}{
@@ -780,7 +780,7 @@ func TestLoadOrGenerateKeysInvalidStoredKey(t *testing.T) {
 func TestLoadOrGenerateKeysMissingFields(t *testing.T) {
 	// Stored data is missing required fields
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/gatekeeper/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			resp := map[string]interface{}{

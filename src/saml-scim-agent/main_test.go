@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/openbao"
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/saml"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/openbao"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/saml"
 )
 
 func generateTestKeyPair(t *testing.T) *saml.KeyPair {
@@ -73,7 +73,7 @@ func TestRunKeysError(t *testing.T) {
 func TestRunSuccess(t *testing.T) {
 	// Mock OpenBao that returns 404 for key read (triggers generation) and accepts write
 	baoMux := http.NewServeMux()
-	baoMux.HandleFunc("/v1/secret/data/gatekeeper/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
+	baoMux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			w.WriteHeader(http.StatusNotFound)
@@ -129,7 +129,7 @@ func TestStartInvalidBaoAddr(t *testing.T) {
 func TestStartListenError(t *testing.T) {
 	// Mock OpenBao for key generation
 	baoMux := http.NewServeMux()
-	baoMux.HandleFunc("/v1/secret/data/gatekeeper/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
+	baoMux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			w.WriteHeader(http.StatusNotFound)

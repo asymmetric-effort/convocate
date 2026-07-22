@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/openbao"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/openbao"
 )
 
 // ListUsers handles GET /scim/v2/Users.

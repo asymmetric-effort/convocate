@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/openbao"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/openbao"
 )
 
 // HealthHandler serves the /health endpoint.

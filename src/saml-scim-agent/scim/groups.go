@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/openbao"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/openbao"
 )
 
 // ListGroups handles GET /scim/v2/Groups.

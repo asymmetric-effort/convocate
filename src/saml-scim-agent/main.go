@@ -5,9 +5,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/openbao"
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/saml"
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/scim"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/openbao"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/saml"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/scim"
 )
 
 // buildMux creates the HTTP mux with all routes configured.
@@ -43,7 +43,7 @@ func buildMux(client *openbao.Client, keys *saml.KeyPair, cfg Config) *http.Serv
 	return mux
 }
 
-// run initializes and starts the gatekeeper server. Returns an error if setup fails.
+// run initializes and starts the saml-scim-agent server. Returns an error if setup fails.
 func run(cfg Config) (*http.ServeMux, *openbao.Client, error) {
 	if cfg.OpenBaoToken == "" {
 		return nil, nil, fmt.Errorf("OPENBAO_TOKEN or OPENBAO_TOKEN_FILE must be set")
@@ -63,7 +63,7 @@ func run(cfg Config) (*http.ServeMux, *openbao.Client, error) {
 
 // serve starts the HTTP(S) server and blocks until it returns an error.
 func serve(cfg Config, mux *http.ServeMux) error {
-	log.Printf("Gatekeeper starting on %s", cfg.ListenAddr)
+	log.Printf("SAML/SCIM Agent starting on %s", cfg.ListenAddr)
 	log.Printf("Entity ID: %s", cfg.EntityID)
 	log.Printf("SSO URL: %s", cfg.SSOURL)
 	log.Printf("OpenBao: %s", cfg.OpenBaoAddr)

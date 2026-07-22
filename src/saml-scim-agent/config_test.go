@@ -9,14 +9,14 @@ import (
 func TestLoadConfigDefaults(t *testing.T) {
 	// Clear all env vars that LoadConfig reads
 	envVars := []string{
-		"GATEKEEPER_LISTEN_ADDR",
-		"GATEKEEPER_TLS_CERT",
-		"GATEKEEPER_TLS_KEY",
+		"SAML_SCIM_AGENT_LISTEN_ADDR",
+		"SAML_SCIM_AGENT_TLS_CERT",
+		"SAML_SCIM_AGENT_TLS_KEY",
 		"OPENBAO_ADDR",
 		"OPENBAO_TOKEN",
 		"OPENBAO_SKIP_VERIFY",
-		"GATEKEEPER_ENTITY_ID",
-		"GATEKEEPER_SSO_URL",
+		"SAML_SCIM_AGENT_ENTITY_ID",
+		"SAML_SCIM_AGENT_SSO_URL",
 		"OPENBAO_TOKEN_FILE",
 	}
 	for _, v := range envVars {
@@ -52,23 +52,23 @@ func TestLoadConfigDefaults(t *testing.T) {
 }
 
 func TestLoadConfigFromEnv(t *testing.T) {
-	os.Setenv("GATEKEEPER_LISTEN_ADDR", "localhost:9999")
-	os.Setenv("GATEKEEPER_TLS_CERT", "/path/to/cert.pem")
-	os.Setenv("GATEKEEPER_TLS_KEY", "/path/to/key.pem")
+	os.Setenv("SAML_SCIM_AGENT_LISTEN_ADDR", "localhost:9999")
+	os.Setenv("SAML_SCIM_AGENT_TLS_CERT", "/path/to/cert.pem")
+	os.Setenv("SAML_SCIM_AGENT_TLS_KEY", "/path/to/key.pem")
 	os.Setenv("OPENBAO_ADDR", "https://vault.example.com:8200")
 	os.Setenv("OPENBAO_TOKEN", "s.mytoken123")
 	os.Setenv("OPENBAO_SKIP_VERIFY", "true")
-	os.Setenv("GATEKEEPER_ENTITY_ID", "https://custom.entity.id")
-	os.Setenv("GATEKEEPER_SSO_URL", "https://custom.sso.url/saml/sso")
+	os.Setenv("SAML_SCIM_AGENT_ENTITY_ID", "https://custom.entity.id")
+	os.Setenv("SAML_SCIM_AGENT_SSO_URL", "https://custom.sso.url/saml/sso")
 	defer func() {
-		os.Unsetenv("GATEKEEPER_LISTEN_ADDR")
-		os.Unsetenv("GATEKEEPER_TLS_CERT")
-		os.Unsetenv("GATEKEEPER_TLS_KEY")
+		os.Unsetenv("SAML_SCIM_AGENT_LISTEN_ADDR")
+		os.Unsetenv("SAML_SCIM_AGENT_TLS_CERT")
+		os.Unsetenv("SAML_SCIM_AGENT_TLS_KEY")
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_TOKEN")
 		os.Unsetenv("OPENBAO_SKIP_VERIFY")
-		os.Unsetenv("GATEKEEPER_ENTITY_ID")
-		os.Unsetenv("GATEKEEPER_SSO_URL")
+		os.Unsetenv("SAML_SCIM_AGENT_ENTITY_ID")
+		os.Unsetenv("SAML_SCIM_AGENT_SSO_URL")
 	}()
 
 	cfg := LoadConfig()

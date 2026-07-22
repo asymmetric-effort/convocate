@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/openbao"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/openbao"
 )
 
 func mockBaoServer(t *testing.T) (*httptest.Server, *openbao.Client) {

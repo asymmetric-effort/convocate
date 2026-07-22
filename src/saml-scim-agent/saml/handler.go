@@ -6,7 +6,7 @@ import (
 	"html/template"
 	"net/http"
 
-	"github.com/asymmetric-effort/convocate/src/gatekeeper/openbao"
+	"github.com/asymmetric-effort/convocate/src/saml-scim-agent/openbao"
 )
 
 // Handler handles SAML IdP endpoints.
@@ -20,7 +20,7 @@ type Handler struct {
 // loginFormHTML is a simple HTML login form.
 const loginFormHTML = `<!DOCTYPE html>
 <html>
-<head><title>Gatekeeper SSO Login</title></head>
+<head><title>SAML/SCIM Agent SSO Login</title></head>
 <body>
 <h1>Sign In</h1>
 {{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}

@@ -1,4 +1,4 @@
-# Gatekeeper — multi-stage build
+# SAML/SCIM Agent — multi-stage build
 # Build stage: ubuntu:26.04 with Go
 # Runtime stage: distroless
 
@@ -17,16 +17,16 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 ENV CGO_ENABLED=0
 
 WORKDIR /build
-COPY src/gatekeeper/ .
-RUN go build -o /gatekeeper .
+COPY src/saml-scim-agent/ .
+RUN go build -o /saml-scim-agent .
 
 # Runtime stage
 FROM gcr.io/distroless/cc-debian13:debug
 
-COPY --from=build /gatekeeper /usr/local/bin/gatekeeper
+COPY --from=build /saml-scim-agent /usr/local/bin/saml-scim-agent
 
 EXPOSE 8443
 
 USER 65534:65534
 
-ENTRYPOINT ["/usr/local/bin/gatekeeper"]
+ENTRYPOINT ["/usr/local/bin/saml-scim-agent"]
