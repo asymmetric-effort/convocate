@@ -5,9 +5,9 @@
 # The cloudflared binary is a statically-linked Go binary, so we
 # extract it from the upstream image into our ubuntu base.
 
+ARG UBUNTU_BASE_TAG=latest
 FROM cloudflare/cloudflared:latest AS upstream
 
-ARG UBUNTU_BASE_TAG=latest
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG}
 
 COPY --from=upstream /usr/local/bin/cloudflared /usr/local/bin/cloudflared
