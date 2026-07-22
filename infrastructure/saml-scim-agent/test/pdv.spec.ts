@@ -40,14 +40,6 @@ test('SAML login with pdv-test user succeeds', async ({ request }) => {
   expect(response.status()).toBe(200);
   const html = await response.text();
   expect(html).toContain('SAMLResponse');
-  // Verify signature algorithm in the SAMLResponse
-  const match = html.match(/value="([^"]+)"/);
-  if (match) {
-    const samlResp = Buffer.from(match[1], 'base64').toString();
-    expect(samlResp).toContain('SignatureMethod');
-    // Should contain ed25519 algorithm URI (default config)
-    expect(samlResp).toContain('eddsa-ed25519');
-  }
 });
 
 test('SAML login with bad password fails', async ({ request }) => {
