@@ -17,8 +17,9 @@
 - name: Install Cilium CNI
   ansible.builtin.import_playbook: install-cilium.yml
 
-- name: Install Traefik ingress controller
-  ansible.builtin.import_playbook: install-traefik.yml
+# Traefik ingress controller — temporarily disabled while debugging install
+# - name: Install Traefik ingress controller
+#   ansible.builtin.import_playbook: install-traefik.yml
 
 - name: Install External Secrets Operator
   ansible.builtin.import_playbook: install-eso.yml
