@@ -300,6 +300,7 @@ jobs:
           DEPLOY_GRAFANA=false
           DEPLOY_VICTORIALOGS=false
           DEPLOY_BOOTSTRAP=false
+          DEPLOY_SAML_SCIM_AGENT=false
 
           for IMG in $CHANGED; do
             case "$IMG" in
@@ -313,6 +314,8 @@ jobs:
                 DEPLOY_VICTORIALOGS=true ;;
               cloudflared)
                 DEPLOY_BOOTSTRAP=true ;;
+              saml-scim-agent)
+                DEPLOY_SAML_SCIM_AGENT=true ;;
             esac
           done
 
@@ -341,6 +344,11 @@ jobs:
           if [ "$DEPLOY_BOOTSTRAP" = "true" ]; then
             echo "Triggering Bootstrap svr00..."
             gh workflow run bootstrap-svr00.yml --repo "$REPO" --ref main
+          fi
+
+          if [ "$DEPLOY_SAML_SCIM_AGENT" = "true" ]; then
+            echo "Triggering SAML/SCIM Agent deploy..."
+            gh workflow run saml-scim-agent.yml --repo "$REPO" --ref main
           fi
 
           echo "Done. Triggered deploys based on changed images."

@@ -1,0 +1,38 @@
+services:
+  saml-scim-agent-a:
+    image: ghcr.io/asymmetric-effort/convocate/saml-scim-agent:latest
+    container_name: saml-scim-agent-a
+    restart: unless-stopped
+    network_mode: host
+    user: "65534:65534"
+    volumes:
+      - /var/saml-scim-agent/tls/a:/etc/tls:ro
+      - /var/openbao/tls/secrets-a/.root-token:/run/secrets/openbao-token:ro
+    environment:
+      SAML_SCIM_AGENT_LISTEN_ADDR: "192.168.3.168:443"
+      SAML_SCIM_AGENT_TLS_CERT: "/etc/tls/cert.pem"
+      SAML_SCIM_AGENT_TLS_KEY: "/etc/tls/key.pem"
+      OPENBAO_ADDR: "https://192.168.3.160:443"
+      OPENBAO_TOKEN_FILE: "/run/secrets/openbao-token"
+      OPENBAO_SKIP_VERIFY: "true"
+      SAML_SCIM_AGENT_ENTITY_ID: "https://dev.saml.asymmetric-effort.com"
+      SAML_SCIM_AGENT_SSO_URL: "https://192.168.3.168:443/saml/sso"
+
+  saml-scim-agent-b:
+    image: ghcr.io/asymmetric-effort/convocate/saml-scim-agent:latest
+    container_name: saml-scim-agent-b
+    restart: unless-stopped
+    network_mode: host
+    user: "65534:65534"
+    volumes:
+      - /var/saml-scim-agent/tls/b:/etc/tls:ro
+      - /var/openbao/tls/secrets-b/.root-token:/run/secrets/openbao-token:ro
+    environment:
+      SAML_SCIM_AGENT_LISTEN_ADDR: "192.168.3.169:443"
+      SAML_SCIM_AGENT_TLS_CERT: "/etc/tls/cert.pem"
+      SAML_SCIM_AGENT_TLS_KEY: "/etc/tls/key.pem"
+      OPENBAO_ADDR: "https://192.168.3.161:443"
+      OPENBAO_TOKEN_FILE: "/run/secrets/openbao-token"
+      OPENBAO_SKIP_VERIFY: "true"
+      SAML_SCIM_AGENT_ENTITY_ID: "https://saml.asymmetric-effort.com"
+      SAML_SCIM_AGENT_SSO_URL: "https://192.168.3.169:443/saml/sso"

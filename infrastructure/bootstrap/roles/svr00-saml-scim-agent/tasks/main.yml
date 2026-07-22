@@ -1,0 +1,183 @@
+---
+# Bootstrap SAML/SCIM Agent on svr00
+# Creates directories, issues TLS certs from secrets-b PKI,
+# deploys saml-scim-agent-a (canary) and saml-scim-agent-b (production).
+
+- name: Create SAML/SCIM Agent directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - /opt/saml-scim-agent
+    - /var/saml-scim-agent/tls/a
+    - /var/saml-scim-agent/tls/b
+
+- name: Set TLS directory ownership (65534:0)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: "65534"
+    group: "0"
+  loop:
+    - /var/saml-scim-agent/tls/a
+    - /var/saml-scim-agent/tls/b
+
+- name: Copy SAML/SCIM Agent docker-compose
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../saml-scim-agent/docker-compose.yml"
+    dest: /opt/saml-scim-agent/docker-compose.yml
+    mode: "0644"
+    owner: root
+    group: root
+
+# =========================================================================
+# TLS certificates from secrets-b PKI
+# =========================================================================
+
+- name: Check if saml-scim-agent-a has TLS certs
+  ansible.builtin.stat:
+    path: /var/saml-scim-agent/tls/a/cert.pem
+  register: saml_a_cert
+
+- name: Issue TLS cert for saml-scim-agent-a from secrets-b PKI
+  when: not saml_a_cert.stat.exists
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:443
+
+      ROOT_TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "ERROR: No secrets-b token available for TLS cert issuance"
+        exit 1
+      fi
+
+      curl -sf -k \
+        -d '{"common_name":"dev.saml.asymmetric-effort.com","alt_names":"dev.saml.asymmetric-effort.com","ip_sans":"192.168.3.168","ttl":"8760h"}' \
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server > /tmp/cert-resp-saml-a.json
+
+      if [ ! -s /tmp/cert-resp-saml-a.json ]; then
+        echo "ERROR: Failed to issue TLS cert for saml-scim-agent-a"
+        exit 1
+      fi
+
+      python3 -c '
+      import json
+      data = json.load(open("/tmp/cert-resp-saml-a.json"))["data"]
+      cert = data["certificate"]
+      if "ca_chain" in data and data["ca_chain"]:
+          cert += "\n" + "\n".join(data["ca_chain"])
+      elif "issuing_ca" in data:
+          cert += "\n" + data["issuing_ca"]
+      print(cert)
+      ' > /var/saml-scim-agent/tls/a/cert.pem
+
+      python3 -c '
+      import json
+      print(json.load(open("/tmp/cert-resp-saml-a.json"))["data"]["private_key"])
+      ' > /var/saml-scim-agent/tls/a/key.pem
+
+      rm -f /tmp/cert-resp-saml-a.json
+
+      chown 65534:0 /var/saml-scim-agent/tls/a/cert.pem /var/saml-scim-agent/tls/a/key.pem
+      chmod 0400 /var/saml-scim-agent/tls/a/key.pem
+      chmod 0444 /var/saml-scim-agent/tls/a/cert.pem
+
+      echo "TLS cert issued for saml-scim-agent-a"
+  changed_when: false
+
+- name: Check if saml-scim-agent-b has TLS certs
+  ansible.builtin.stat:
+    path: /var/saml-scim-agent/tls/b/cert.pem
+  register: saml_b_cert
+
+- name: Issue TLS cert for saml-scim-agent-b from secrets-b PKI
+  when: not saml_b_cert.stat.exists
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:443
+
+      ROOT_TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null || true)
+
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "ERROR: No secrets-b token available for TLS cert issuance"
+        exit 1
+      fi
+
+      curl -sf -k \
+        -d '{"common_name":"saml.asymmetric-effort.com","alt_names":"saml.asymmetric-effort.com","ip_sans":"192.168.3.169","ttl":"8760h"}' \
+        -H "X-Vault-Token:$ROOT_TOKEN" $BAO/v1/pki/issue/server > /tmp/cert-resp-saml-b.json
+
+      if [ ! -s /tmp/cert-resp-saml-b.json ]; then
+        echo "ERROR: Failed to issue TLS cert for saml-scim-agent-b"
+        exit 1
+      fi
+
+      python3 -c '
+      import json
+      data = json.load(open("/tmp/cert-resp-saml-b.json"))["data"]
+      cert = data["certificate"]
+      if "ca_chain" in data and data["ca_chain"]:
+          cert += "\n" + "\n".join(data["ca_chain"])
+      elif "issuing_ca" in data:
+          cert += "\n" + data["issuing_ca"]
+      print(cert)
+      ' > /var/saml-scim-agent/tls/b/cert.pem
+
+      python3 -c '
+      import json
+      print(json.load(open("/tmp/cert-resp-saml-b.json"))["data"]["private_key"])
+      ' > /var/saml-scim-agent/tls/b/key.pem
+
+      rm -f /tmp/cert-resp-saml-b.json
+
+      chown 65534:0 /var/saml-scim-agent/tls/b/cert.pem /var/saml-scim-agent/tls/b/key.pem
+      chmod 0400 /var/saml-scim-agent/tls/b/key.pem
+      chmod 0444 /var/saml-scim-agent/tls/b/cert.pem
+
+      echo "TLS cert issued for saml-scim-agent-b"
+  changed_when: false
+
+# =========================================================================
+# Deploy SAML/SCIM Agent containers
+# =========================================================================
+
+- name: Deploy SAML/SCIM Agent containers
+  ansible.builtin.shell:
+    cmd: |
+      cd /opt/saml-scim-agent
+      docker compose pull 2>/dev/null || true
+      docker compose up -d
+  changed_when: false
+
+- name: Wait for saml-scim-agent-a to be ready
+  ansible.builtin.shell:
+    cmd: |
+      for i in $(seq 1 30); do
+        if curl -sfk https://192.168.3.168:443/health 2>/dev/null; then
+          echo "saml-scim-agent-a healthy"
+          exit 0
+        fi
+        sleep 2
+      done
+      echo "WARNING: saml-scim-agent-a not ready after 60s"
+  changed_when: false
+  failed_when: false
+
+- name: Wait for saml-scim-agent-b to be ready
+  ansible.builtin.shell:
+    cmd: |
+      for i in $(seq 1 30); do
+        if curl -sfk https://192.168.3.169:443/health 2>/dev/null; then
+          echo "saml-scim-agent-b healthy"
+          exit 0
+        fi
+        sleep 2
+      done
+      echo "WARNING: saml-scim-agent-b not ready after 60s"
+  changed_when: false
+  failed_when: false

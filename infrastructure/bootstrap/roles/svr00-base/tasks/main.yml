@@ -148,6 +148,17 @@
     - 192.168.3.166
     - 192.168.3.167
 
+- name: Allow HTTPS on SAML/SCIM Agent IPs (443) from local subnet
+  community.general.ufw:
+    rule: allow
+    port: "443"
+    proto: tcp
+    from_ip: 192.168.3.0/24
+    to_ip: "{{ item }}"
+  loop:
+    - 192.168.3.168
+    - 192.168.3.169
+
 - name: Allow node_exporter (9100) from local subnet
   community.general.ufw:
     rule: allow

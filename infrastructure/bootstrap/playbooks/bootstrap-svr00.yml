@@ -72,3 +72,10 @@
   gather_facts: false
   roles:
     - svr00-fluent-bit
+
+- name: Bootstrap svr00 — SAML/SCIM Agent
+  hosts: svr00
+  become: true
+  gather_facts: false
+  roles:
+    - svr00-saml-scim-agent

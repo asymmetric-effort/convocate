@@ -1,0 +1,99 @@
+name: SAML/SCIM Agent
+on:
+  push:
+    branches: [main]
+    paths: ['infrastructure/saml-scim-agent/**']
+  workflow_dispatch:
+jobs:
+  deploy-saml-scim-agent-a:
+    name: Deploy to saml-scim-agent-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy saml-scim-agent-a
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/saml-scim-agent/playbooks/deploy.yml \
+            -e "ghcr_token=${{ secrets.GITHUB_TOKEN }}" -e "ghcr_user=${{ github.actor }}" \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=saml-scim-agent-a"
+          rm -f ~/.ssh/ansible_key
+
+  pdv-saml-scim-agent-a:
+    name: PDV Tests (saml-scim-agent-a)
+    needs: deploy-saml-scim-agent-a
+    runs-on: [self-hosted, linux, x64]
+    env:
+      SAML_SCIM_AGENT_URL: https://192.168.3.168:443
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/saml-scim-agent/test
+        run: bun install
+
+      - name: Run PDV tests against saml-scim-agent-a
+        working-directory: infrastructure/saml-scim-agent/test
+        run: bunx playwright test pdv.spec.ts
+
+  deploy-saml-scim-agent-b:
+    name: Deploy to saml-scim-agent-b (production)
+    needs: pdv-saml-scim-agent-a
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r infrastructure/requirements.yml
+
+      - name: Deploy saml-scim-agent-b (non-destructive)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/ansible_key
+          chmod 600 ~/.ssh/ansible_key
+          ssh-keygen -f ~/.ssh/known_hosts -R 192.168.3.159 2>/dev/null || true
+          ANSIBLE_HOST_KEY_CHECKING=False \
+          ANSIBLE_PRIVATE_KEY_FILE=~/.ssh/ansible_key \
+          ansible-playbook infrastructure/saml-scim-agent/playbooks/deploy.yml \
+            -e "ghcr_token=${{ secrets.GITHUB_TOKEN }}" -e "ghcr_user=${{ github.actor }}" \
+            -i infrastructure/bootstrap/inventory/svr00.yml \
+            -e "deploy_target=saml-scim-agent-b"
+          rm -f ~/.ssh/ansible_key
+
+  smoke-saml-scim-agent-b:
+    name: Smoke Tests (saml-scim-agent-b)
+    needs: deploy-saml-scim-agent-b
+    runs-on: [self-hosted, linux, x64]
+    env:
+      SAML_SCIM_AGENT_URL: https://192.168.3.169:443
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install test dependencies
+        working-directory: infrastructure/saml-scim-agent/test
+        run: bun install
+
+      - name: Run smoke tests against saml-scim-agent-b
+        working-directory: infrastructure/saml-scim-agent/test
+        run: bunx playwright test smoke.spec.ts

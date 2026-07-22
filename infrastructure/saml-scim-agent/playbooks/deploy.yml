@@ -1,0 +1,73 @@
+---
+# Deploy SAML/SCIM Agent — application-level only. Pulls from GHCR.
+# Assumes bootstrap has already run (directories, TLS certs).
+- name: Deploy SAML/SCIM Agent
+  hosts: svr00
+  become: true
+  gather_facts: false
+  vars:
+    saml_scim_agent_dir: /opt/saml-scim-agent
+    deploy_target: "all"
+  tasks:
+    - name: Copy docker-compose.yml to svr00
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../docker-compose.yml"
+        dest: "{{ saml_scim_agent_dir }}/docker-compose.yml"
+        mode: "0644"
+
+    - name: Login to GHCR
+      ansible.builtin.shell:
+        cmd: echo "{{ ghcr_token }}" | docker login ghcr.io -u "{{ ghcr_user }}" --password-stdin
+      changed_when: false
+      no_log: true
+
+    - name: Pull latest SAML/SCIM Agent image
+      ansible.builtin.command:
+        cmd: docker pull ghcr.io/asymmetric-effort/convocate/saml-scim-agent:latest
+      changed_when: true
+
+    # saml-scim-agent-a (canary)
+    - name: Deploy saml-scim-agent-a (recreate)
+      ansible.builtin.command:
+        cmd: docker compose -f {{ saml_scim_agent_dir }}/docker-compose.yml up -d --force-recreate saml-scim-agent-a
+      changed_when: true
+      when: deploy_target == "all" or deploy_target == "saml-scim-agent-a"
+
+    - name: Wait for saml-scim-agent-a to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            if curl -sfk https://192.168.3.168:443/health 2>/dev/null; then
+              echo "saml-scim-agent-a healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ERROR: saml-scim-agent-a not ready after 60s"
+          exit 1
+      changed_when: false
+      when: deploy_target == "all" or deploy_target == "saml-scim-agent-a"
+
+    # saml-scim-agent-b (production)
+    - name: Deploy saml-scim-agent-b (pull and restart)
+      ansible.builtin.shell:
+        cmd: |
+          docker compose -f {{ saml_scim_agent_dir }}/docker-compose.yml pull saml-scim-agent-b
+          docker compose -f {{ saml_scim_agent_dir }}/docker-compose.yml up -d saml-scim-agent-b
+      changed_when: true
+      when: deploy_target == "all" or deploy_target == "saml-scim-agent-b"
+
+    - name: Wait for saml-scim-agent-b to be ready
+      ansible.builtin.shell:
+        cmd: |
+          for i in $(seq 1 30); do
+            if curl -sfk https://192.168.3.169:443/health 2>/dev/null; then
+              echo "saml-scim-agent-b healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ERROR: saml-scim-agent-b not ready after 60s"
+          exit 1
+      changed_when: false
+      when: deploy_target == "all" or deploy_target == "saml-scim-agent-b"

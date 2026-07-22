@@ -1,0 +1,7 @@
+{
+  "name": "saml-scim-agent-pdv",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}
