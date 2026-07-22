@@ -42,7 +42,7 @@ test('SAML login with pdv-test user succeeds', async ({ request }) => {
   expect(html).toContain('SAMLResponse');
 });
 
-test('SAML login with bad password fails', async ({ request }) => {
+test('SAML login with bad password shows login form (no SAMLResponse)', async ({ request }) => {
   const samlRequest = Buffer.from(
     '<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" ' +
     'ID="_test_bad" Version="2.0" IssueInstant="' + new Date().toISOString() + '" ' +
@@ -57,5 +57,8 @@ test('SAML login with bad password fails', async ({ request }) => {
     data: `SAMLRequest=${encodeURIComponent(samlRequest)}&RelayState=test&username=pdv-test&password=wrong-password`,
   });
 
-  expect(response.status()).not.toBe(200);
+  const html = await response.text();
+  // Bad password returns the login form again, NOT a SAMLResponse
+  expect(html).not.toContain('SAMLResponse');
+  expect(html).toContain('Sign In');
 });
