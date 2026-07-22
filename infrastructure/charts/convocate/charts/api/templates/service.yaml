@@ -9,7 +9,7 @@ spec:
   selector:
     app: convocate-api
   ports:
-    - port: 443
-      targetPort: {{ .Values.port | default 443 }}
+    - port: {{ .Values.port | default 8443 }}
+      targetPort: {{ .Values.port | default 8443 }}
       name: api
   type: ClusterIP

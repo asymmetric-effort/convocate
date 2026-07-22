@@ -301,6 +301,7 @@ jobs:
           DEPLOY_VICTORIALOGS=false
           DEPLOY_BOOTSTRAP=false
           DEPLOY_SAML_SCIM_AGENT=false
+          DEPLOY_K8S=false
 
           for IMG in $CHANGED; do
             case "$IMG" in
@@ -316,6 +317,8 @@ jobs:
                 DEPLOY_BOOTSTRAP=true ;;
               saml-scim-agent)
                 DEPLOY_SAML_SCIM_AGENT=true ;;
+              traefik)
+                DEPLOY_K8S=true ;;
             esac
           done
 
@@ -349,6 +352,11 @@ jobs:
           if [ "$DEPLOY_SAML_SCIM_AGENT" = "true" ]; then
             echo "Triggering SAML/SCIM Agent deploy..."
             gh workflow run saml-scim-agent.yml --repo "$REPO" --ref main
+          fi
+
+          if [ "$DEPLOY_K8S" = "true" ]; then
+            echo "Triggering K8s Clusters rebuild..."
+            gh workflow run k8s.yml --repo "$REPO" --ref main
           fi
 
           echo "Done. Triggered deploys based on changed images."

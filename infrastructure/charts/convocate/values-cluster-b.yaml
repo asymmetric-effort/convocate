@@ -6,15 +6,13 @@ global:
 
 api:
   enabled: true
-  hostNetwork: false
-  useHostPort: true
-  listenAddr: ":443"
-  port: 443
-  nodeSelector:
-    kubernetes.io/hostname: node-b-1
+  listenAddr: ":8443"
+  port: 8443
   tls:
-    enabled: true
+    enabled: false
     secretName: convocate-api-tls
+  ingress:
+    enabled: true
   env:
     OPENBAO_ADDR: "https://192.168.3.161:443"
   resources:

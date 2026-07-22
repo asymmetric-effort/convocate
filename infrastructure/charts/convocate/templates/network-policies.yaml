@@ -47,7 +47,7 @@ spec:
   policyTypes:
     - Ingress
 ---
-# Allow traffic to reach convocate-api (external LAN + internal pods)
+# Allow Traefik to reach convocate-api
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -60,10 +60,14 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
         - port: {{ .Values.api.port | default 8443 }}
 ---
-# Allow ingress-nginx to reach convocate-ui
+# Allow Traefik to reach convocate-ui
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -79,7 +83,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
+              kubernetes.io/metadata.name: traefik
       ports:
         - port: {{ .Values.ui.port | default 8080 }}
 ---
@@ -269,7 +273,7 @@ spec:
       ports:
         - port: {{ .Values.ui.port | default 8080 }}
 ---
-# Allow access to PostgreSQL from within the namespace and from hostNetwork pods
+# Allow access to PostgreSQL from within the namespace
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -286,13 +290,8 @@ spec:
         - podSelector: {}
       ports:
         - port: 5432
-    - from:
-        - ipBlock:
-            cidr: 192.168.3.0/24
-      ports:
-        - port: 5432
 ---
-# Allow access to Redis from within the namespace and from hostNetwork pods
+# Allow access to Redis from within the namespace
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -307,11 +306,6 @@ spec:
   ingress:
     - from:
         - podSelector: {}
-      ports:
-        - port: 6379
-    - from:
-        - ipBlock:
-            cidr: 192.168.3.0/24
       ports:
         - port: 6379
 ---

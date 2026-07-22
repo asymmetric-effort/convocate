@@ -1,0 +1,20 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: convocate-api
+  namespace: {{ .Values.global.namespace | default "convocate" }}
+  labels:
+    app: convocate-api
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`api.{{ .Values.global.domain }}`)
+      kind: Rule
+      services:
+        - name: convocate-api
+          port: {{ .Values.port | default 8443 }}
+  tls:
+    secretName: {{ .Values.tls.secretName | default "convocate-api-tls" }}
+{{- end }}

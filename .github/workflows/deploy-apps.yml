@@ -135,9 +135,9 @@ jobs:
           rm -f ~/.ssh/key
           BAO=https://192.168.3.161:443
 
-          # Issue TLS cert for API
+          # Issue wildcard TLS cert for Traefik
           CERT_RESP=$(curl -sf -k \
-            -d '{"common_name":"api.dev.convocate.net","alt_names":"api.dev.convocate.net","ip_sans":"192.168.3.171","ttl":"8760h"}' \
+            -d '{"common_name":"*.dev.convocate.net","alt_names":"*.dev.convocate.net","ip_sans":"192.168.3.171","ttl":"8760h"}' \
             -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/pki/issue/server)
 
           CERT=$(echo "$CERT_RESP" | python3 -c '
@@ -149,8 +149,14 @@ jobs:
           print(c)')
           KEY=$(echo "$CERT_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["private_key"])')
 
-          # Create TLS secret
+          # Create TLS secret in convocate namespace (referenced by IngressRoute)
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret tls convocate-api-tls \
+            --cert=<(echo "$CERT") --key=<(echo "$KEY") \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          # Create TLS secret in traefik namespace for Traefik's default cert
+          kubectl --kubeconfig=/tmp/kubeconfig create namespace traefik --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          kubectl --kubeconfig=/tmp/kubeconfig -n traefik create secret tls traefik-default-tls \
             --cert=<(echo "$CERT") --key=<(echo "$KEY") \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
@@ -211,18 +217,18 @@ jobs:
       - name: API health check
         run: |
           echo "Runner IP: $(hostname -I 2>/dev/null || echo unknown)"
-          echo "Testing connectivity to 192.168.3.171:443..."
-          curl -vk --connect-timeout 10 https://192.168.3.171:443/api/v1/status 2>&1 | head -30 || true
+          echo "Testing connectivity to api.dev.convocate.net via 192.168.3.171:443..."
+          curl -vk --resolve api.dev.convocate.net:443:192.168.3.171 --connect-timeout 10 https://api.dev.convocate.net/api/v1/status 2>&1 | head -30 || true
           echo "---"
           sleep 10
           for i in $(seq 1 15); do
-            RESP=$(curl -sfk --connect-timeout 10 --max-time 15 https://192.168.3.171:443/api/v1/status 2>/dev/null) && break
+            RESP=$(curl -sfk --resolve api.dev.convocate.net:443:192.168.3.171 --connect-timeout 10 --max-time 15 https://api.dev.convocate.net/api/v1/status 2>/dev/null) && break
             echo "Attempt $i failed, retrying..."
-            curl -vk --connect-timeout 5 https://192.168.3.171:443/ 2>&1 | tail -5 || true
+            curl -vk --resolve api.dev.convocate.net:443:192.168.3.171 --connect-timeout 5 https://api.dev.convocate.net/ 2>&1 | tail -5 || true
             sleep 5
           done
           if [ -z "$RESP" ]; then
-            echo "::error::API not responding at https://192.168.3.171:443"
+            echo "::error::API not responding at https://api.dev.convocate.net (via 192.168.3.171)"
             echo "Final diagnostic:"
             ping -c 2 -W 2 192.168.3.171 2>&1 || true
             nc -zv -w 5 192.168.3.171 443 2>&1 || true
@@ -298,9 +304,9 @@ jobs:
           rm -f ~/.ssh/key
           BAO=https://192.168.3.161:443
 
-          # Issue TLS cert for API
+          # Issue wildcard TLS cert for Traefik
           CERT_RESP=$(curl -sf -k \
-            -d '{"common_name":"api.prod.convocate.net","alt_names":"api.prod.convocate.net","ip_sans":"192.168.3.181","ttl":"8760h"}' \
+            -d '{"common_name":"*.prod.convocate.net","alt_names":"*.prod.convocate.net","ip_sans":"192.168.3.181","ttl":"8760h"}' \
             -H "X-Vault-Token:$BAO_TOKEN" $BAO/v1/pki/issue/server)
 
           CERT=$(echo "$CERT_RESP" | python3 -c '
@@ -312,7 +318,14 @@ jobs:
           print(c)')
           KEY=$(echo "$CERT_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["private_key"])')
 
+          # Create TLS secret in convocate namespace (referenced by IngressRoute)
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret tls convocate-api-tls \
+            --cert=<(echo "$CERT") --key=<(echo "$KEY") \
+            --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          # Create TLS secret in traefik namespace for Traefik's default cert
+          kubectl --kubeconfig=/tmp/kubeconfig create namespace traefik --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          kubectl --kubeconfig=/tmp/kubeconfig -n traefik create secret tls traefik-default-tls \
             --cert=<(echo "$CERT") --key=<(echo "$KEY") \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
@@ -362,12 +375,12 @@ jobs:
         run: |
           sleep 10
           for i in $(seq 1 15); do
-            RESP=$(curl -sfk --connect-timeout 5 https://192.168.3.181:443/api/v1/status 2>/dev/null) && break
+            RESP=$(curl -sfk --resolve api.prod.convocate.net:443:192.168.3.181 --connect-timeout 10 --max-time 15 https://api.prod.convocate.net/api/v1/status 2>/dev/null) && break
             echo "Attempt $i: waiting for API..."
             sleep 5
           done
           if [ -z "$RESP" ]; then
-            echo "::error::API not responding at https://192.168.3.181:443"
+            echo "::error::API not responding at https://api.prod.convocate.net (via 192.168.3.181)"
             exit 1
           fi
           echo "$RESP"
