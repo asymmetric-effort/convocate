@@ -299,6 +299,7 @@ jobs:
           DEPLOY_OPENBAO=false
           DEPLOY_GRAFANA=false
           DEPLOY_VICTORIALOGS=false
+          DEPLOY_BOOTSTRAP=false
 
           for IMG in $CHANGED; do
             case "$IMG" in
@@ -310,6 +311,8 @@ jobs:
                 DEPLOY_GRAFANA=true ;;
               victorialogs)
                 DEPLOY_VICTORIALOGS=true ;;
+              cloudflared)
+                DEPLOY_BOOTSTRAP=true ;;
             esac
           done
 
@@ -333,6 +336,11 @@ jobs:
           if [ "$DEPLOY_VICTORIALOGS" = "true" ]; then
             echo "Triggering VictoriaLogs deploy..."
             gh workflow run victorialogs.yml --repo "$REPO" --ref main
+          fi
+
+          if [ "$DEPLOY_BOOTSTRAP" = "true" ]; then
+            echo "Triggering Bootstrap svr00..."
+            gh workflow run bootstrap-svr00.yml --repo "$REPO" --ref main
           fi
 
           echo "Done. Triggered deploys based on changed images."

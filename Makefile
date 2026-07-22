@@ -1,6 +1,6 @@
 REGISTRY := ghcr.io/asymmetric-effort
 NAMESPACE := convocate
-IMAGES := openbao redis postgresql minio influxdb prometheus grafana api ui pdv metrics agent fluentbit
+IMAGES := openbao redis postgresql minio influxdb prometheus grafana api ui pdv metrics agent fluentbit cloudflared
 IMAGE_TAG := sha-$(shell git rev-parse --short HEAD)
 SEMVER := $(or $(shell git describe --tags --abbrev=0 2>/dev/null | awk -F. '{printf "%s.%s.%d", $$1, $$2, $$3+1}'),v2.0.1)
 
@@ -119,6 +119,12 @@ build-agent:
 		-t $(REGISTRY)/convocate/agent:$(IMAGE_TAG) \
 		-t $(REGISTRY)/convocate/agent:latest \
 		-t $(REGISTRY)/convocate/agent:$(SEMVER) .
+
+build-cloudflared:
+	docker build -f infrastructure/docker/cloudflared.Dockerfile \
+		-t $(REGISTRY)/convocate/cloudflared:$(IMAGE_TAG) \
+		-t $(REGISTRY)/convocate/cloudflared:latest \
+		-t $(REGISTRY)/convocate/cloudflared:$(SEMVER) .
 
 # ── cover ──────────────────────────────────────────────
 cover:

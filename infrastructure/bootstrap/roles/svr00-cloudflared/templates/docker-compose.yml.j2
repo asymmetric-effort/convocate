@@ -1,6 +1,6 @@
 services:
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: ghcr.io/asymmetric-effort/convocate/cloudflared:latest
     container_name: cloudflared
     restart: unless-stopped
     command: tunnel --config /etc/cloudflared/config.yml run
