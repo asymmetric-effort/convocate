@@ -7,7 +7,7 @@ services:
     user: "65534:65534"
     volumes:
       - /var/saml-scim-agent/tls/a:/etc/tls:ro
-      - /var/openbao/tls/secrets-a/.root-token:/run/secrets/openbao-token:ro
+      - /var/saml-scim-agent/tls/a/.openbao-token:/run/secrets/openbao-token:ro
     environment:
       SAML_SCIM_AGENT_LISTEN_ADDR: "192.168.3.168:443"
       SAML_SCIM_AGENT_TLS_CERT: "/etc/tls/cert.pem"
@@ -26,7 +26,7 @@ services:
     user: "65534:65534"
     volumes:
       - /var/saml-scim-agent/tls/b:/etc/tls:ro
-      - /var/openbao/tls/secrets-b/.root-token:/run/secrets/openbao-token:ro
+      - /var/saml-scim-agent/tls/b/.openbao-token:/run/secrets/openbao-token:ro
     environment:
       SAML_SCIM_AGENT_LISTEN_ADDR: "192.168.3.169:443"
       SAML_SCIM_AGENT_TLS_CERT: "/etc/tls/cert.pem"

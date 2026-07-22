@@ -21,6 +21,17 @@
       changed_when: false
       no_log: true
 
+    - name: Copy OpenBao tokens (readable by container user 65534)
+      ansible.builtin.shell:
+        cmd: |
+          cp /var/openbao/tls/secrets-a/.root-token /var/saml-scim-agent/tls/a/.openbao-token 2>/dev/null || true
+          chown 65534:0 /var/saml-scim-agent/tls/a/.openbao-token 2>/dev/null || true
+          chmod 0400 /var/saml-scim-agent/tls/a/.openbao-token 2>/dev/null || true
+          cp /var/openbao/tls/secrets-b/.root-token /var/saml-scim-agent/tls/b/.openbao-token 2>/dev/null || true
+          chown 65534:0 /var/saml-scim-agent/tls/b/.openbao-token 2>/dev/null || true
+          chmod 0400 /var/saml-scim-agent/tls/b/.openbao-token 2>/dev/null || true
+      changed_when: false
+
     - name: Pull latest SAML/SCIM Agent image
       ansible.builtin.command:
         cmd: docker pull ghcr.io/asymmetric-effort/convocate/saml-scim-agent:latest

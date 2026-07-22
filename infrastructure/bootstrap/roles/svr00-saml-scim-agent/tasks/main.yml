@@ -26,6 +26,17 @@
     - /var/saml-scim-agent/tls/a
     - /var/saml-scim-agent/tls/b
 
+- name: Copy OpenBao tokens for SAML/SCIM Agent (readable by container user 65534)
+  ansible.builtin.shell:
+    cmd: |
+      cp /var/openbao/tls/secrets-a/.root-token /var/saml-scim-agent/tls/a/.openbao-token
+      chown 65534:0 /var/saml-scim-agent/tls/a/.openbao-token
+      chmod 0400 /var/saml-scim-agent/tls/a/.openbao-token
+      cp /var/openbao/tls/secrets-b/.root-token /var/saml-scim-agent/tls/b/.openbao-token
+      chown 65534:0 /var/saml-scim-agent/tls/b/.openbao-token
+      chmod 0400 /var/saml-scim-agent/tls/b/.openbao-token
+  changed_when: false
+
 - name: Copy SAML/SCIM Agent docker-compose
   ansible.builtin.copy:
     src: "{{ playbook_dir }}/../../saml-scim-agent/docker-compose.yml"
