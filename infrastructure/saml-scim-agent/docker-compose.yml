@@ -4,7 +4,7 @@ services:
     container_name: saml-scim-agent-a
     restart: unless-stopped
     network_mode: host
-    user: "65534:65534"
+    user: "0:0"
     volumes:
       - /var/saml-scim-agent/tls/a:/etc/tls:ro
       - /var/saml-scim-agent/tls/a/.openbao-token:/run/secrets/openbao-token:ro
@@ -23,7 +23,7 @@ services:
     container_name: saml-scim-agent-b
     restart: unless-stopped
     network_mode: host
-    user: "65534:65534"
+    user: "0:0"
     volumes:
       - /var/saml-scim-agent/tls/b:/etc/tls:ro
       - /var/saml-scim-agent/tls/b/.openbao-token:/run/secrets/openbao-token:ro
