@@ -1,10 +1,12 @@
 # Traefik Helm values for {{ cluster_name }}
 # Ingress controller with TLS termination for Convocate services.
 
+# Use upstream image for K8s infrastructure install (no GHCR pull secret needed)
+# deploy-apps.yml handles app-level container updates via GHCR
 image:
-  registry: ghcr.io
-  repository: asymmetric-effort/convocate/traefik
-  tag: latest
+  registry: docker.io
+  repository: traefik
+  tag: v3.7
 
 deployment:
   replicas: 1
