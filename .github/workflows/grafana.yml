@@ -5,8 +5,25 @@ on:
     paths: ['infrastructure/grafana/**']
   workflow_dispatch:
 jobs:
+  verify:
+    name: Verify prerequisites
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 2
+    steps:
+      - name: Verify Docker Images pipeline passed
+        run: |
+          LAST_RUN=$(curl -s \
+            "https://api.github.com/repos/asymmetric-effort/convocate/actions/workflows/docker-images.yml/runs?per_page=1&status=completed" \
+            | python3 -c 'import sys,json; runs=json.load(sys.stdin).get("workflow_runs",[]); print(runs[0]["conclusion"] if runs else "none")')
+          echo "Docker Images last run: $LAST_RUN"
+          if [ "$LAST_RUN" != "success" ]; then
+            echo "::error::Last Docker Images run did not pass (status: $LAST_RUN)."
+            exit 1
+          fi
+
   deploy-grafana-a:
     name: Deploy to grafana-a
+    needs: verify
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v7
