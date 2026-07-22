@@ -1,0 +1,77 @@
+---
+# Install Traefik ingress controller via Helm.
+# Binds to hostPort 443 on the designated traefik_node.
+
+- name: Add Traefik Helm repository
+  ansible.builtin.shell:
+    cmd: /usr/local/bin/helm repo add traefik https://traefik.github.io/charts 2>/dev/null || true
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Update Helm repos
+  ansible.builtin.shell:
+    cmd: /usr/local/bin/helm repo update 2>/dev/null || true
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Render Traefik Helm values
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../templates/traefik-values.yml.j2"
+    dest: /tmp/traefik-values.yaml
+    mode: "0600"
+
+- name: Check if Traefik is already installed
+  ansible.builtin.shell:
+    cmd: /usr/local/bin/helm status traefik -n traefik 2>/dev/null
+  register: traefik_helm_status
+  failed_when: false
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Install Traefik via Helm
+  ansible.builtin.shell:
+    cmd: >-
+      timeout 600
+      /usr/local/bin/helm upgrade --install traefik traefik/traefik
+      --namespace traefik
+      --create-namespace
+      --values /tmp/traefik-values.yaml
+      --version 34.5.0
+      --timeout 5m0s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Wait for Traefik pods to be ready
+  ansible.builtin.shell:
+    cmd: >-
+      timeout 360
+      kubectl wait --for=condition=Ready pod
+      -l app.kubernetes.io/name=traefik
+      -n traefik --timeout=300s
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  retries: 3
+  delay: 15
+
+- name: Verify Traefik status
+  ansible.builtin.shell:
+    cmd: kubectl get pods -n traefik -l app.kubernetes.io/name=traefik --no-headers
+  register: traefik_pods
+  changed_when: false
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+
+- name: Show Traefik pods
+  ansible.builtin.debug:
+    msg: "{{ traefik_pods.stdout_lines }}"
+
+- name: Clean up temporary files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/traefik-values.yaml

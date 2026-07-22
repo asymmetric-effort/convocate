@@ -1,0 +1,53 @@
+# Traefik Helm values for {{ cluster_name }}
+# Ingress controller with TLS termination for Convocate services.
+
+image:
+  registry: ghcr.io
+  repository: asymmetric-effort/convocate/traefik
+  tag: latest
+
+deployment:
+  replicas: 1
+
+nodeSelector:
+  kubernetes.io/hostname: {{ traefik_node }}
+
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+service:
+  type: ClusterIP
+
+ports:
+  web:
+    port: 8080
+    expose:
+      default: false
+  websecure:
+    port: 8443
+    hostPort: 443
+    expose:
+      default: true
+    tls:
+      enabled: true
+
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: false
+    namespaces:
+      - convocate
+  kubernetesIngress:
+    enabled: true
+    namespaces:
+      - convocate
+
+ingressRoute:
+  dashboard:
+    enabled: false
+
+logs:
+  general:
+    level: INFO
