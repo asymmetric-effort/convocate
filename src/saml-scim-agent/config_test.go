@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -18,12 +19,16 @@ func TestLoadConfigDefaults(t *testing.T) {
 		"SAML_SCIM_AGENT_ENTITY_ID",
 		"SAML_SCIM_AGENT_SSO_URL",
 		"OPENBAO_TOKEN_FILE",
+		"SAML_SCIM_AGENT_KEY_ALGORITHM",
 	}
 	for _, v := range envVars {
 		os.Unsetenv(v)
 	}
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if cfg.ListenAddr != "0.0.0.0:8443" {
 		t.Errorf("expected default listen addr 0.0.0.0:8443, got %s", cfg.ListenAddr)
@@ -71,7 +76,10 @@ func TestLoadConfigFromEnv(t *testing.T) {
 		os.Unsetenv("SAML_SCIM_AGENT_SSO_URL")
 	}()
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if cfg.ListenAddr != "localhost:9999" {
 		t.Errorf("expected localhost:9999, got %s", cfg.ListenAddr)
@@ -111,7 +119,10 @@ func TestLoadConfigTokenFromFile(t *testing.T) {
 	os.Setenv("OPENBAO_TOKEN_FILE", tokenFile)
 	defer os.Unsetenv("OPENBAO_TOKEN_FILE")
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if cfg.OpenBaoToken != "s.file-token-123" {
 		t.Errorf("expected 's.file-token-123', got '%s'", cfg.OpenBaoToken)
@@ -130,7 +141,10 @@ func TestLoadConfigTokenDirectOverridesFile(t *testing.T) {
 		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	}()
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if cfg.OpenBaoToken != "s.direct-token" {
 		t.Errorf("expected direct token to take precedence, got %s", cfg.OpenBaoToken)
@@ -142,7 +156,10 @@ func TestLoadConfigTokenFileNotExist(t *testing.T) {
 	os.Setenv("OPENBAO_TOKEN_FILE", "/nonexistent/path/token")
 	defer os.Unsetenv("OPENBAO_TOKEN_FILE")
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if cfg.OpenBaoToken != "" {
 		t.Errorf("expected empty token when file doesn't exist, got %s", cfg.OpenBaoToken)
@@ -165,7 +182,7 @@ func TestLoadConfigSkipTLSCaseInsensitive(t *testing.T) {
 
 	for _, tc := range tests {
 		os.Setenv("OPENBAO_SKIP_VERIFY", tc.value)
-		cfg := LoadConfig()
+		cfg, _ := LoadConfig()
 		if cfg.OpenBaoSkipTLS != tc.expected {
 			t.Errorf("OPENBAO_SKIP_VERIFY=%q: expected %v, got %v", tc.value, tc.expected, cfg.OpenBaoSkipTLS)
 		}
@@ -192,7 +209,7 @@ func TestLoadConfigTokenFileEmpty(t *testing.T) {
 	os.Unsetenv("OPENBAO_TOKEN")
 	os.Unsetenv("OPENBAO_TOKEN_FILE")
 
-	cfg := LoadConfig()
+	cfg, _ := LoadConfig()
 	if cfg.OpenBaoToken != "" {
 		t.Errorf("expected empty token, got %s", cfg.OpenBaoToken)
 	}
@@ -207,8 +224,67 @@ func TestLoadConfigTokenFileEmptyContent(t *testing.T) {
 	os.Setenv("OPENBAO_TOKEN_FILE", tokenFile)
 	defer os.Unsetenv("OPENBAO_TOKEN_FILE")
 
-	cfg := LoadConfig()
+	cfg, _ := LoadConfig()
 	if cfg.OpenBaoToken != "" {
 		t.Errorf("expected empty token from whitespace-only file, got '%s'", cfg.OpenBaoToken)
+	}
+}
+
+func TestKeyAlgorithm_Default(t *testing.T) {
+	os.Unsetenv("SAML_SCIM_AGENT_KEY_ALGORITHM")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.KeyAlgorithm != "ed25519" {
+		t.Errorf("expected default KeyAlgorithm ed25519, got %s", cfg.KeyAlgorithm)
+	}
+}
+
+func TestKeyAlgorithm_RSA(t *testing.T) {
+	os.Setenv("SAML_SCIM_AGENT_KEY_ALGORITHM", "rsa")
+	defer os.Unsetenv("SAML_SCIM_AGENT_KEY_ALGORITHM")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.KeyAlgorithm != "rsa" {
+		t.Errorf("expected KeyAlgorithm rsa, got %s", cfg.KeyAlgorithm)
+	}
+}
+
+func TestKeyAlgorithm_Ed25519(t *testing.T) {
+	os.Setenv("SAML_SCIM_AGENT_KEY_ALGORITHM", "ed25519")
+	defer os.Unsetenv("SAML_SCIM_AGENT_KEY_ALGORITHM")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.KeyAlgorithm != "ed25519" {
+		t.Errorf("expected KeyAlgorithm ed25519, got %s", cfg.KeyAlgorithm)
+	}
+}
+
+func TestKeyAlgorithm_CaseInsensitive(t *testing.T) {
+	os.Setenv("SAML_SCIM_AGENT_KEY_ALGORITHM", "Ed25519")
+	defer os.Unsetenv("SAML_SCIM_AGENT_KEY_ALGORITHM")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.KeyAlgorithm != "ed25519" {
+		t.Errorf("expected KeyAlgorithm ed25519 (lowercased), got %s", cfg.KeyAlgorithm)
+	}
+}
+
+func TestKeyAlgorithm_Invalid(t *testing.T) {
+	os.Setenv("SAML_SCIM_AGENT_KEY_ALGORITHM", "dsa")
+	defer os.Unsetenv("SAML_SCIM_AGENT_KEY_ALGORITHM")
+	_, err := LoadConfig()
+	if err == nil {
+		t.Fatal("expected error for invalid key algorithm")
+	}
+	if !strings.Contains(err.Error(), "invalid key algorithm") {
+		t.Errorf("expected error to contain 'invalid key algorithm', got: %v", err)
 	}
 }

@@ -43,14 +43,16 @@ func generateTestKeyPair(t *testing.T) *saml.KeyPair {
 		PrivateKey:  key,
 		Certificate: cert,
 		CertPEM:     certDER,
+		Algorithm:   "rsa",
 	}
 }
 
 func TestRunNoToken(t *testing.T) {
 	cfg := Config{
-		ListenAddr: "localhost:8443",
-		OpenBaoAddr: "https://127.0.0.1:8200",
+		ListenAddr:   "localhost:8443",
+		OpenBaoAddr:  "https://127.0.0.1:8200",
 		OpenBaoToken: "",
+		KeyAlgorithm: "ed25519",
 	}
 	_, _, err := run(cfg)
 	if err == nil {
@@ -63,6 +65,7 @@ func TestRunKeysError(t *testing.T) {
 		ListenAddr:   "localhost:8443",
 		OpenBaoAddr:  "http://127.0.0.1:1", // unreachable
 		OpenBaoToken: "test-token",
+		KeyAlgorithm: "ed25519",
 	}
 	_, _, err := run(cfg)
 	if err == nil {
@@ -90,6 +93,7 @@ func TestRunSuccess(t *testing.T) {
 		OpenBaoToken: "test-token",
 		EntityID:     "https://sso.example.com",
 		SSOURL:       "https://sso.example.com/saml/sso",
+		KeyAlgorithm: "ed25519",
 	}
 
 	mux, client, err := run(cfg)
@@ -107,6 +111,7 @@ func TestRunSuccess(t *testing.T) {
 func TestStartNoToken(t *testing.T) {
 	cfg := Config{
 		OpenBaoToken: "",
+		KeyAlgorithm: "ed25519",
 	}
 	err := start(cfg)
 	if err == nil {
@@ -119,6 +124,7 @@ func TestStartInvalidBaoAddr(t *testing.T) {
 		OpenBaoAddr:  "http://127.0.0.1:1",
 		OpenBaoToken: "test-token",
 		ListenAddr:   "localhost:0",
+		KeyAlgorithm: "ed25519",
 	}
 	err := start(cfg)
 	if err == nil {
@@ -146,6 +152,7 @@ func TestStartListenError(t *testing.T) {
 		ListenAddr:   "invalid:-1",
 		EntityID:     "https://sso.example.com",
 		SSOURL:       "https://sso.example.com/saml/sso",
+		KeyAlgorithm: "ed25519",
 	}
 	err := start(cfg)
 	if err == nil {

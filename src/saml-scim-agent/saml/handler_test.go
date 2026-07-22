@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"encoding/xml"
 	"fmt"
 	"math/big"
@@ -21,7 +20,7 @@ import (
 )
 
 func TestGenerateMetadata(t *testing.T) {
-	kp, err := generateKeyPair()
+	kp, err := generateKeyPair("rsa")
 	if err != nil {
 		t.Fatalf("failed to generate key pair: %v", err)
 	}
@@ -79,7 +78,7 @@ func TestGenerateMetadata(t *testing.T) {
 }
 
 func TestGenerateMetadataSLOURLNoSSOSuffix(t *testing.T) {
-	kp, err := generateKeyPair()
+	kp, err := generateKeyPair("rsa")
 	if err != nil {
 		t.Fatalf("failed to generate key pair: %v", err)
 	}
@@ -105,7 +104,7 @@ func TestGenerateMetadataSLOURLNoSSOSuffix(t *testing.T) {
 }
 
 func TestGenerateMetadataShortURL(t *testing.T) {
-	kp, err := generateKeyPair()
+	kp, err := generateKeyPair("rsa")
 	if err != nil {
 		t.Fatalf("failed to generate key pair: %v", err)
 	}
@@ -129,7 +128,7 @@ func TestGenerateMetadataShortURL(t *testing.T) {
 }
 
 func TestBuildSignedResponse(t *testing.T) {
-	kp, err := generateKeyPair()
+	kp, err := generateKeyPair("rsa")
 	if err != nil {
 		t.Fatalf("failed to generate key pair: %v", err)
 	}
@@ -185,7 +184,7 @@ func TestBuildSignedResponse(t *testing.T) {
 }
 
 func TestBuildSignedResponseNoGroups(t *testing.T) {
-	kp, err := generateKeyPair()
+	kp, err := generateKeyPair("rsa")
 	if err != nil {
 		t.Fatalf("failed to generate key pair: %v", err)
 	}
@@ -222,7 +221,7 @@ func TestBuildSignedResponseNoGroups(t *testing.T) {
 }
 
 func TestBuildSignedResponseEmptyGroups(t *testing.T) {
-	kp, err := generateKeyPair()
+	kp, err := generateKeyPair("rsa")
 	if err != nil {
 		t.Fatalf("failed to generate key pair: %v", err)
 	}
@@ -264,7 +263,7 @@ func TestBuildSignedResponseBadKey(t *testing.T) {
 	}
 
 	// Create a key pair with a 1-bit key that's too small for PKCS1v15 signing with SHA-256
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 	// Use a key where N is too small for the hash + padding
 	smallKey := &rsa.PrivateKey{
 		PublicKey: rsa.PublicKey{
@@ -405,111 +404,7 @@ func TestParseAuthnRequestRedirectUncompressed(t *testing.T) {
 	}
 }
 
-func TestKeyGeneration(t *testing.T) {
-	kp, err := generateKeyPair()
-	if err != nil {
-		t.Fatalf("failed to generate: %v", err)
-	}
-
-	if kp.PrivateKey == nil {
-		t.Fatal("private key is nil")
-	}
-	if kp.Certificate == nil {
-		t.Fatal("certificate is nil")
-	}
-	if len(kp.CertPEM) == 0 {
-		t.Fatal("cert PEM is empty")
-	}
-
-	block, _ := pem.Decode(kp.CertPEM)
-	if block == nil {
-		t.Fatal("failed to decode cert PEM")
-	}
-	if block.Type != "CERTIFICATE" {
-		t.Errorf("expected CERTIFICATE block, got %s", block.Type)
-	}
-
-	if kp.PrivateKey.N.BitLen() != 2048 {
-		t.Errorf("expected 2048 bit key, got %d", kp.PrivateKey.N.BitLen())
-	}
-
-	// Verify certificate subject
-	if kp.Certificate.Subject.CommonName != "SAML-SCIM-Agent SAML Signing" {
-		t.Errorf("expected CN 'SAML-SCIM-Agent SAML Signing', got %s", kp.Certificate.Subject.CommonName)
-	}
-	if len(kp.Certificate.Subject.Organization) != 1 || kp.Certificate.Subject.Organization[0] != "Asymmetric Effort" {
-		t.Errorf("unexpected organization: %v", kp.Certificate.Subject.Organization)
-	}
-}
-
-func TestKeyPairEncodeDecode(t *testing.T) {
-	kp, err := generateKeyPair()
-	if err != nil {
-		t.Fatalf("failed to generate: %v", err)
-	}
-
-	keyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(kp.PrivateKey),
-	})
-
-	decoded, err := decodeKeyPair(keyPEM, kp.CertPEM)
-	if err != nil {
-		t.Fatalf("failed to decode: %v", err)
-	}
-
-	if decoded.PrivateKey.N.Cmp(kp.PrivateKey.N) != 0 {
-		t.Error("private keys don't match")
-	}
-}
-
-func TestDecodeKeyPairInvalidKeyPEM(t *testing.T) {
-	kp, _ := generateKeyPair()
-	_, err := decodeKeyPair([]byte("not a pem"), kp.CertPEM)
-	if err == nil {
-		t.Fatal("expected error for invalid key PEM")
-	}
-}
-
-func TestDecodeKeyPairInvalidCertPEM(t *testing.T) {
-	kp, _ := generateKeyPair()
-	keyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(kp.PrivateKey),
-	})
-	_, err := decodeKeyPair(keyPEM, []byte("not a pem"))
-	if err == nil {
-		t.Fatal("expected error for invalid cert PEM")
-	}
-}
-
-func TestDecodeKeyPairInvalidKeyBytes(t *testing.T) {
-	kp, _ := generateKeyPair()
-	badKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: []byte("not a real key"),
-	})
-	_, err := decodeKeyPair(badKeyPEM, kp.CertPEM)
-	if err == nil {
-		t.Fatal("expected error for invalid key bytes")
-	}
-}
-
-func TestDecodeKeyPairInvalidCertBytes(t *testing.T) {
-	kp, _ := generateKeyPair()
-	keyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(kp.PrivateKey),
-	})
-	badCertPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: []byte("not a real cert"),
-	})
-	_, err := decodeKeyPair(keyPEM, badCertPEM)
-	if err == nil {
-		t.Fatal("expected error for invalid cert bytes")
-	}
-}
+// Key generation, encode/decode, and LoadOrGenerateKeys tests are in keys_test.go
 
 func TestCanonicalize(t *testing.T) {
 	input := `<?xml version="1.0"?><Root b="2" a="1"><Child>text</Child></Root>`
@@ -609,212 +504,13 @@ func TestGenerateID(t *testing.T) {
 	}
 }
 
-func TestLoadOrGenerateKeysNew(t *testing.T) {
-	// Mock OpenBao that returns 404 for read, then accepts write
-	mux := http.NewServeMux()
-	readCount := 0
-	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			readCount++
-			w.WriteHeader(http.StatusNotFound)
-		case http.MethodPost:
-			w.WriteHeader(http.StatusOK)
-		}
-	})
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	client := openbao.NewClient(ts.URL, "test-token", true)
-	kp, err := LoadOrGenerateKeys(client)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if kp == nil {
-		t.Fatal("expected key pair")
-	}
-	if kp.PrivateKey == nil {
-		t.Fatal("private key is nil")
-	}
-	if kp.Certificate == nil {
-		t.Fatal("certificate is nil")
-	}
-}
-
-func TestLoadOrGenerateKeysExisting(t *testing.T) {
-	// Generate a key pair to store
-	kp, _ := generateKeyPair()
-	keyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(kp.PrivateKey),
-	})
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{
-			"data": map[string]interface{}{
-				"data": map[string]interface{}{
-					"private_key": string(keyPEM),
-					"certificate": string(kp.CertPEM),
-				},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	})
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	client := openbao.NewClient(ts.URL, "test-token", true)
-	loaded, err := LoadOrGenerateKeys(client)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if loaded == nil {
-		t.Fatal("expected key pair")
-	}
-	if loaded.PrivateKey.N.Cmp(kp.PrivateKey.N) != 0 {
-		t.Error("loaded key doesn't match stored key")
-	}
-}
-
-func TestLoadOrGenerateKeysNonStringValues(t *testing.T) {
-	// Stored data has non-string values for keys
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			resp := map[string]interface{}{
-				"data": map[string]interface{}{
-					"data": map[string]interface{}{
-						"private_key": 12345,
-						"certificate": true,
-					},
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		case http.MethodPost:
-			w.WriteHeader(http.StatusOK)
-		}
-	})
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	client := openbao.NewClient(ts.URL, "test-token", true)
-	kp, err := LoadOrGenerateKeys(client)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if kp == nil {
-		t.Fatal("expected newly generated key pair")
-	}
-}
-
-func TestLoadOrGenerateKeysReadError(t *testing.T) {
-	client := openbao.NewClient("http://127.0.0.1:1", "test-token", true)
-	_, err := LoadOrGenerateKeys(client)
-	if err == nil {
-		t.Fatal("expected error for connection failure")
-	}
-}
-
-func TestLoadOrGenerateKeysWriteError(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			w.WriteHeader(http.StatusNotFound)
-		case http.MethodPost:
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	})
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	client := openbao.NewClient(ts.URL, "test-token", true)
-	_, err := LoadOrGenerateKeys(client)
-	if err == nil {
-		t.Fatal("expected error when write fails")
-	}
-}
-
-func TestLoadOrGenerateKeysInvalidStoredKey(t *testing.T) {
-	// Stored data has invalid PEM - should regenerate
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			resp := map[string]interface{}{
-				"data": map[string]interface{}{
-					"data": map[string]interface{}{
-						"private_key": "invalid-pem",
-						"certificate": "invalid-pem",
-					},
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		case http.MethodPost:
-			w.WriteHeader(http.StatusOK)
-		}
-	})
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	client := openbao.NewClient(ts.URL, "test-token", true)
-	kp, err := LoadOrGenerateKeys(client)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if kp == nil {
-		t.Fatal("expected newly generated key pair")
-	}
-}
-
-func TestLoadOrGenerateKeysMissingFields(t *testing.T) {
-	// Stored data is missing required fields
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/secret/data/saml-scim-agent/saml-signing-key", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			resp := map[string]interface{}{
-				"data": map[string]interface{}{
-					"data": map[string]interface{}{
-						"other_field": "something",
-					},
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		case http.MethodPost:
-			w.WriteHeader(http.StatusOK)
-		}
-	})
-
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-
-	client := openbao.NewClient(ts.URL, "test-token", true)
-	kp, err := LoadOrGenerateKeys(client)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if kp == nil {
-		t.Fatal("expected newly generated key pair")
-	}
-}
+// LoadOrGenerateKeys tests are in keys_test.go
 
 // Helper: ServeMetadata tests
 
 func makeTestHandler(t *testing.T) (*Handler, *httptest.Server) {
 	t.Helper()
-	kp, err := generateKeyPair()
+	kp, err := generateKeyPair("rsa")
 	if err != nil {
 		t.Fatalf("failed to generate key pair: %v", err)
 	}
@@ -864,7 +560,7 @@ func TestServeMetadataGET(t *testing.T) {
 func TestServeMetadataEmptyCertRaw(t *testing.T) {
 	// Test with empty certificate raw bytes - GenerateMetadata still won't error
 	// since it just base64-encodes whatever it gets
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 	origRaw := kp.Certificate.Raw
 	kp.Certificate.Raw = []byte{} // empty
 
@@ -1090,7 +786,7 @@ func TestServeLoginMissingSAMLRequest(t *testing.T) {
 }
 
 func TestServeLoginAuthFailure(t *testing.T) {
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 
 	baoMux := http.NewServeMux()
 	baoMux.HandleFunc("/v1/auth/userpass/login/baduser", func(w http.ResponseWriter, r *http.Request) {
@@ -1129,7 +825,7 @@ func TestServeLoginAuthFailure(t *testing.T) {
 }
 
 func TestServeLoginSuccess(t *testing.T) {
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 
 	baoMux := http.NewServeMux()
 	baoMux.HandleFunc("/v1/auth/userpass/login/testuser", func(w http.ResponseWriter, r *http.Request) {
@@ -1201,7 +897,7 @@ func TestServeLoginSuccess(t *testing.T) {
 }
 
 func TestServeLoginSuccessWithEntityNoEmail(t *testing.T) {
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 
 	baoMux := http.NewServeMux()
 	baoMux.HandleFunc("/v1/auth/userpass/login/testuser", func(w http.ResponseWriter, r *http.Request) {
@@ -1254,7 +950,7 @@ func TestServeLoginSuccessWithEntityNoEmail(t *testing.T) {
 }
 
 func TestServeLoginSuccessPostFormat(t *testing.T) {
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 
 	baoMux := http.NewServeMux()
 	baoMux.HandleFunc("/v1/auth/userpass/login/testuser", func(w http.ResponseWriter, r *http.Request) {
@@ -1304,7 +1000,7 @@ func TestServeLoginSuccessPostFormat(t *testing.T) {
 }
 
 func TestServeLoginInvalidSAMLRequest(t *testing.T) {
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 
 	baoMux := http.NewServeMux()
 	baoMux.HandleFunc("/v1/auth/userpass/login/testuser", func(w http.ResponseWriter, r *http.Request) {
@@ -1353,7 +1049,7 @@ func TestServeLoginBuildResponseError(t *testing.T) {
 		},
 		D: big.NewInt(5),
 	}
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 	kp.PrivateKey = smallKey
 
 	baoMux := http.NewServeMux()
@@ -1396,7 +1092,7 @@ func TestServeLoginBuildResponseError(t *testing.T) {
 }
 
 func TestServeLoginNoIssuer(t *testing.T) {
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 
 	baoMux := http.NewServeMux()
 	baoMux.HandleFunc("/v1/auth/userpass/login/testuser", func(w http.ResponseWriter, r *http.Request) {
@@ -1443,7 +1139,7 @@ func TestServeLoginNoIssuer(t *testing.T) {
 }
 
 func TestServeLoginNoACSURL(t *testing.T) {
-	kp, _ := generateKeyPair()
+	kp, _ := generateKeyPair("rsa")
 
 	baoMux := http.NewServeMux()
 	baoMux.HandleFunc("/v1/auth/userpass/login/testuser", func(w http.ResponseWriter, r *http.Request) {
@@ -1589,6 +1285,169 @@ func TestShowLoginFormNoError(t *testing.T) {
 	body := w.Body.String()
 	if strings.Contains(body, `style="color:red"`) {
 		t.Error("should not show error paragraph when no error")
+	}
+}
+
+// makeTestHandlerEd25519 creates a test handler using ed25519 keys.
+func makeTestHandlerEd25519(t *testing.T) (*Handler, *httptest.Server) {
+	t.Helper()
+	kp, err := generateKeyPair("ed25519")
+	if err != nil {
+		t.Fatalf("failed to generate ed25519 key pair: %v", err)
+	}
+
+	baoMux := http.NewServeMux()
+	baoMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	baoServer := httptest.NewServer(baoMux)
+
+	client := openbao.NewClient(baoServer.URL, "test-token", true)
+	handler := &Handler{
+		Client:   client,
+		Keys:     kp,
+		EntityID: "https://sso.example.com",
+		SSOURL:   "https://sso.example.com/saml/sso",
+	}
+
+	return handler, baoServer
+}
+
+func TestServeMetadataGET_Ed25519(t *testing.T) {
+	handler, baoServer := makeTestHandlerEd25519(t)
+	defer baoServer.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/metadata", nil)
+	w := httptest.NewRecorder()
+	handler.ServeMetadata(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/xml" {
+		t.Errorf("expected Content-Type application/xml, got %s", ct)
+	}
+
+	var descriptor EntityDescriptor
+	if err := xml.Unmarshal(w.Body.Bytes(), &descriptor); err != nil {
+		t.Fatalf("invalid XML: %v", err)
+	}
+	if descriptor.EntityID != "https://sso.example.com" {
+		t.Errorf("wrong entity ID: %s", descriptor.EntityID)
+	}
+}
+
+func TestServeLoginSuccess_Ed25519(t *testing.T) {
+	kp, _ := generateKeyPair("ed25519")
+
+	baoMux := http.NewServeMux()
+	baoMux.HandleFunc("/v1/auth/userpass/login/testuser", func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"auth": map[string]interface{}{
+				"client_token": "s.user-token",
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+	baoMux.HandleFunc("/v1/identity/entity/name/testuser", func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"id":        "entity-1",
+				"name":      "testuser",
+				"metadata":  map[string]string{"email": "test@example.com"},
+				"group_ids": []string{"group-1"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+	baoServer := httptest.NewServer(baoMux)
+	defer baoServer.Close()
+
+	client := openbao.NewClient(baoServer.URL, "test-token", true)
+	handler := &Handler{
+		Client:   client,
+		Keys:     kp,
+		EntityID: "https://sso.example.com",
+		SSOURL:   "https://sso.example.com/saml/sso",
+	}
+
+	reqXML := `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_req_ed25519" Version="2.0" IssueInstant="2026-01-01T00:00:00Z" AssertionConsumerServiceURL="https://sp.example.com/acs"><saml:Issuer>https://sp.example.com</saml:Issuer></samlp:AuthnRequest>`
+
+	var buf bytes.Buffer
+	fw, _ := flate.NewWriter(&buf, flate.DefaultCompression)
+	fw.Write([]byte(reqXML))
+	fw.Close()
+	b64 := url.QueryEscape(base64.StdEncoding.EncodeToString(buf.Bytes()))
+
+	form := url.Values{}
+	form.Set("SAMLRequest", b64)
+	form.Set("RelayState", "test-relay")
+	form.Set("username", "testuser")
+	form.Set("password", "password")
+	req := httptest.NewRequest(http.MethodPost, "/saml/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	handler.ServeLogin(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "SAMLResponse") {
+		t.Error("expected SAMLResponse in response")
+	}
+	if !strings.Contains(body, "test-relay") {
+		t.Error("expected RelayState in response")
+	}
+	if !strings.Contains(body, "https://sp.example.com/acs") {
+		t.Error("expected ACS URL in form action")
+	}
+
+	// Verify the SAMLResponse contains ed25519 signature
+	// Extract the base64-encoded SAMLResponse from the HTML
+	if idx := strings.Index(body, `name="SAMLResponse" value="`); idx >= 0 {
+		start := idx + len(`name="SAMLResponse" value="`)
+		end := strings.Index(body[start:], `"`)
+		if end > 0 {
+			samlRespB64 := body[start : start+end]
+			samlRespBytes, err := base64.StdEncoding.DecodeString(samlRespB64)
+			if err != nil {
+				t.Fatalf("decode SAMLResponse: %v", err)
+			}
+			samlRespStr := string(samlRespBytes)
+			if !strings.Contains(samlRespStr, "eddsa-ed25519") {
+				t.Error("expected ed25519 algorithm URI in SAMLResponse signature")
+			}
+		}
+	}
+}
+
+func TestServeSSOGetValid_Ed25519(t *testing.T) {
+	handler, baoServer := makeTestHandlerEd25519(t)
+	defer baoServer.Close()
+
+	reqXML := `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_req_ed" Version="2.0" IssueInstant="2026-01-01T00:00:00Z" AssertionConsumerServiceURL="https://sp.example.com/acs"><saml:Issuer>https://sp.example.com</saml:Issuer></samlp:AuthnRequest>`
+
+	var buf bytes.Buffer
+	w2, _ := flate.NewWriter(&buf, flate.DefaultCompression)
+	w2.Write([]byte(reqXML))
+	w2.Close()
+	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
+	doubleEncoded := url.QueryEscape(url.QueryEscape(b64))
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest="+doubleEncoded+"&RelayState=test", nil)
+	w := httptest.NewRecorder()
+	handler.ServeSSO(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Sign In") {
+		t.Error("expected login form")
 	}
 }
 

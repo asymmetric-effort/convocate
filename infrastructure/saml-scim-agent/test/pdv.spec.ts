@@ -37,13 +37,33 @@ test('SAML login with pdv-test user succeeds', async ({ request }) => {
     data: `SAMLRequest=${encodeURIComponent(samlRequest)}&RelayState=test&username=pdv-test&password=PdvTest-2026-Secure`,
   });
 
-  // Accept 200 (success with SAMLResponse) or 401/500 if user doesn't exist in this OpenBao instance
-  const status = response.status();
-  if (status === 200) {
-    const html = await response.text();
-    expect(html).toContain('SAMLResponse');
-  } else {
-    // User may not exist in secrets-a yet — accept auth failure as non-fatal for now
-    expect([200, 401, 403, 500]).toContain(status);
+  expect(response.status()).toBe(200);
+  const html = await response.text();
+  expect(html).toContain('SAMLResponse');
+  // Verify signature algorithm in the SAMLResponse
+  const match = html.match(/value="([^"]+)"/);
+  if (match) {
+    const samlResp = Buffer.from(match[1], 'base64').toString();
+    expect(samlResp).toContain('SignatureMethod');
+    // Should contain ed25519 algorithm URI (default config)
+    expect(samlResp).toContain('eddsa-ed25519');
   }
+});
+
+test('SAML login with bad password fails', async ({ request }) => {
+  const samlRequest = Buffer.from(
+    '<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" ' +
+    'ID="_test_bad" Version="2.0" IssueInstant="' + new Date().toISOString() + '" ' +
+    'AssertionConsumerServiceURL="https://localhost/acs" ' +
+    'Destination="' + AGENT_URL + '/saml/sso">' +
+    '<saml:Issuer xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">https://test-sp</saml:Issuer>' +
+    '</samlp:AuthnRequest>'
+  ).toString('base64');
+
+  const response = await request.post(`${AGENT_URL}/saml/login`, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    data: `SAMLRequest=${encodeURIComponent(samlRequest)}&RelayState=test&username=pdv-test&password=wrong-password`,
+  });
+
+  expect(response.status()).not.toBe(200);
 });
