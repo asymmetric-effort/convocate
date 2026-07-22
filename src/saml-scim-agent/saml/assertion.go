@@ -2,6 +2,7 @@ package saml
 
 import (
 	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -391,13 +392,22 @@ func signElement(elementXML []byte, refID string, keys *KeyPair, certB64 string)
 	digest := sha256.Sum256(canonical)
 	digestB64 := base64.StdEncoding.EncodeToString(digest[:])
 
+	// Algorithm URI based on key type
+	var signatureAlgorithm string
+	switch keys.Algorithm {
+	case "ed25519":
+		signatureAlgorithm = "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed25519"
+	default:
+		signatureAlgorithm = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+	}
+
 	// Build SignedInfo
 	signedInfo := SignedInfo{
 		CanonicalizationMethod: CanonicalizationMethod{
 			Algorithm: "http://www.w3.org/2001/10/xml-exc-c14n#",
 		},
 		SignatureMethod: SignatureMethod{
-			Algorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+			Algorithm: signatureAlgorithm,
 		},
 		Reference: Reference{
 			URI: "#" + refID,
@@ -423,11 +433,20 @@ func signElement(elementXML []byte, refID string, keys *KeyPair, certB64 string)
 	}
 	canonicalSignedInfo := canonicalize(signedInfoXML)
 
-	// Sign
-	hash := sha256.Sum256(canonicalSignedInfo)
-	signature, err := rsa.SignPKCS1v15(rand.Reader, keys.PrivateKey, crypto.SHA256, hash[:])
-	if err != nil {
-		return nil, fmt.Errorf("sign: %w", err)
+	// Sign based on key type
+	var signature []byte
+	switch key := keys.PrivateKey.(type) {
+	case ed25519.PrivateKey:
+		signature = ed25519.Sign(key, canonicalSignedInfo)
+	case *rsa.PrivateKey:
+		hash := sha256.Sum256(canonicalSignedInfo)
+		var signErr error
+		signature, signErr = rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hash[:])
+		if signErr != nil {
+			return nil, fmt.Errorf("rsa sign: %w", signErr)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported key type: %T", keys.PrivateKey)
 	}
 	sigB64 := base64.StdEncoding.EncodeToString(signature)
 

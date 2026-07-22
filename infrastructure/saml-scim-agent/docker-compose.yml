@@ -17,6 +17,7 @@ services:
       OPENBAO_SKIP_VERIFY: "true"
       SAML_SCIM_AGENT_ENTITY_ID: "https://dev.saml.asymmetric-effort.com"
       SAML_SCIM_AGENT_SSO_URL: "https://192.168.3.168:443/saml/sso"
+      SAML_SCIM_AGENT_KEY_ALGORITHM: "ed25519"
 
   saml-scim-agent-b:
     image: ghcr.io/asymmetric-effort/convocate/saml-scim-agent:latest
@@ -36,3 +37,4 @@ services:
       OPENBAO_SKIP_VERIFY: "true"
       SAML_SCIM_AGENT_ENTITY_ID: "https://saml.asymmetric-effort.com"
       SAML_SCIM_AGENT_SSO_URL: "https://192.168.3.169:443/saml/sso"
+      SAML_SCIM_AGENT_KEY_ALGORITHM: "ed25519"

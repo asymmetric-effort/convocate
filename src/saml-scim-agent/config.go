@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 )
@@ -15,10 +16,12 @@ type Config struct {
 	OpenBaoSkipTLS bool
 	EntityID       string
 	SSOURL         string
+	KeyAlgorithm   string
 }
 
 // LoadConfig reads configuration from environment variables.
-func LoadConfig() Config {
+// Returns an error if any configuration value is invalid.
+func LoadConfig() (Config, error) {
 	cfg := Config{
 		ListenAddr:     envOrDefault("SAML_SCIM_AGENT_LISTEN_ADDR", "0.0.0.0:8443"),
 		TLSCert:        os.Getenv("SAML_SCIM_AGENT_TLS_CERT"),
@@ -41,7 +44,16 @@ func LoadConfig() Config {
 		}
 	}
 
-	return cfg
+	// Validate and normalize key algorithm
+	algo := strings.ToLower(envOrDefault("SAML_SCIM_AGENT_KEY_ALGORITHM", "ed25519"))
+	switch algo {
+	case "ed25519", "rsa":
+		cfg.KeyAlgorithm = algo
+	default:
+		return Config{}, fmt.Errorf("invalid SAML_SCIM_AGENT_KEY_ALGORITHM %q: must be \"ed25519\" or \"rsa\"", algo)
+	}
+
+	return cfg, nil
 }
 
 func envOrDefault(key, defaultVal string) string {

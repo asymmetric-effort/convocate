@@ -1,6 +1,8 @@
 package saml
 
 import (
+	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -17,13 +19,15 @@ const kvPath = "secret/data/saml-scim-agent/saml-signing-key"
 
 // KeyPair holds the SAML signing key and certificate.
 type KeyPair struct {
-	PrivateKey  *rsa.PrivateKey
+	PrivateKey  crypto.PrivateKey
 	Certificate *x509.Certificate
 	CertPEM     []byte
+	Algorithm   string // "ed25519" or "rsa"
 }
 
 // LoadOrGenerateKeys loads SAML signing keys from OpenBao, generating them if they don't exist.
-func LoadOrGenerateKeys(client *openbao.Client) (*KeyPair, error) {
+// The algorithm parameter selects "ed25519" or "rsa" when generating new keys.
+func LoadOrGenerateKeys(client *openbao.Client, algorithm string) (*KeyPair, error) {
 	data, err := client.KVRead(kvPath)
 	if err != nil {
 		return nil, fmt.Errorf("read keys from openbao: %w", err)
@@ -35,6 +39,12 @@ func LoadOrGenerateKeys(client *openbao.Client) (*KeyPair, error) {
 		if ok1 && ok2 {
 			kp, err := decodeKeyPair([]byte(keyPEM), []byte(certPEMStr))
 			if err == nil {
+				// If algorithm field is missing in stored data, assume "rsa" (backward compat)
+				if storedAlgo, ok := data["algorithm"].(string); ok {
+					kp.Algorithm = storedAlgo
+				} else {
+					kp.Algorithm = "rsa"
+				}
 				return kp, nil
 			}
 			// If decode fails, regenerate
@@ -42,20 +52,41 @@ func LoadOrGenerateKeys(client *openbao.Client) (*KeyPair, error) {
 	}
 
 	// Generate new key pair
-	kp, err := generateKeyPair()
+	kp, err := generateKeyPair(algorithm)
 	if err != nil {
 		return nil, fmt.Errorf("generate key pair: %w", err)
 	}
 
-	// Store in OpenBao
-	keyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(kp.PrivateKey),
-	})
+	// PEM-encode private key based on algorithm
+	var keyPEM []byte
+	switch algorithm {
+	case "ed25519":
+		pkcs8Bytes, marshalErr := x509.MarshalPKCS8PrivateKey(kp.PrivateKey)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("marshal ed25519 private key: %w", marshalErr)
+		}
+		keyPEM = pem.EncodeToMemory(&pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: pkcs8Bytes,
+		})
+	case "rsa":
+		rsaKey, ok := kp.PrivateKey.(*rsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("expected *rsa.PrivateKey but got %T", kp.PrivateKey)
+		}
+		keyPEM = pem.EncodeToMemory(&pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: x509.MarshalPKCS1PrivateKey(rsaKey),
+		})
+	default:
+		return nil, fmt.Errorf("unsupported algorithm: %s", algorithm)
+	}
 
+	// Store in OpenBao
 	storeData := map[string]interface{}{
 		"private_key": string(keyPEM),
 		"certificate": string(kp.CertPEM),
+		"algorithm":   algorithm,
 	}
 
 	if err := client.KVWrite(kvPath, storeData); err != nil {
@@ -65,12 +96,7 @@ func LoadOrGenerateKeys(client *openbao.Client) (*KeyPair, error) {
 	return kp, nil
 }
 
-func generateKeyPair() (*KeyPair, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("generate RSA key: %w", err)
-	}
-
+func generateKeyPair(algorithm string) (*KeyPair, error) {
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
@@ -83,7 +109,29 @@ func generateKeyPair() (*KeyPair, error) {
 		BasicConstraintsValid: true,
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	var privKey crypto.PrivateKey
+	var pubKey crypto.PublicKey
+
+	switch algorithm {
+	case "ed25519":
+		pub, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return nil, fmt.Errorf("generate ed25519 key: %w", err)
+		}
+		privKey = priv
+		pubKey = pub
+	case "rsa":
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return nil, fmt.Errorf("generate RSA key: %w", err)
+		}
+		privKey = key
+		pubKey = &key.PublicKey
+	default:
+		return nil, fmt.Errorf("unsupported algorithm: %s", algorithm)
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, pubKey, privKey)
 	if err != nil {
 		return nil, fmt.Errorf("create certificate: %w", err)
 	}
@@ -99,9 +147,10 @@ func generateKeyPair() (*KeyPair, error) {
 	})
 
 	return &KeyPair{
-		PrivateKey:  key,
+		PrivateKey:  privKey,
 		Certificate: cert,
 		CertPEM:     certPEM,
+		Algorithm:   algorithm,
 	}, nil
 }
 
@@ -111,9 +160,35 @@ func decodeKeyPair(keyPEM, certPEM []byte) (*KeyPair, error) {
 		return nil, fmt.Errorf("failed to decode private key PEM")
 	}
 
-	key, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("parse private key: %w", err)
+	var privKey crypto.PrivateKey
+	var algorithm string
+
+	switch keyBlock.Type {
+	case "PRIVATE KEY":
+		// PKCS#8 format — used by ed25519 (and potentially other algorithms)
+		parsed, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("parse PKCS8 private key: %w", err)
+		}
+		switch parsed.(type) {
+		case ed25519.PrivateKey:
+			algorithm = "ed25519"
+		case *rsa.PrivateKey:
+			algorithm = "rsa"
+		default:
+			return nil, fmt.Errorf("unsupported PKCS8 key type: %T", parsed)
+		}
+		privKey = parsed
+	case "RSA PRIVATE KEY":
+		// PKCS#1 format — RSA only
+		key, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("parse PKCS1 private key: %w", err)
+		}
+		privKey = key
+		algorithm = "rsa"
+	default:
+		return nil, fmt.Errorf("unsupported PEM block type: %s", keyBlock.Type)
 	}
 
 	certBlock, _ := pem.Decode(certPEM)
@@ -127,8 +202,9 @@ func decodeKeyPair(keyPEM, certPEM []byte) (*KeyPair, error) {
 	}
 
 	return &KeyPair{
-		PrivateKey:  key,
+		PrivateKey:  privKey,
 		Certificate: cert,
 		CertPEM:     certPEM,
+		Algorithm:   algorithm,
 	}, nil
 }

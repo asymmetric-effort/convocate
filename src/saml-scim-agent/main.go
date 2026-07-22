@@ -51,11 +51,11 @@ func run(cfg Config) (*http.ServeMux, *openbao.Client, error) {
 
 	client := openbao.NewClient(cfg.OpenBaoAddr, cfg.OpenBaoToken, cfg.OpenBaoSkipTLS)
 
-	keys, err := saml.LoadOrGenerateKeys(client)
+	keys, err := saml.LoadOrGenerateKeys(client, cfg.KeyAlgorithm)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize SAML keys: %w", err)
 	}
-	log.Printf("SAML signing keys loaded (cert subject: %s)", keys.Certificate.Subject.CommonName)
+	log.Printf("SAML signing keys loaded (algorithm: %s, cert subject: %s)", keys.Algorithm, keys.Certificate.Subject.CommonName)
 
 	mux := buildMux(client, keys, cfg)
 	return mux, client, nil
@@ -77,7 +77,10 @@ func serve(cfg Config, mux *http.ServeMux) error {
 }
 
 func main() {
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
 	if err := start(cfg); err != nil {
 		log.Fatal(err)
 	}
