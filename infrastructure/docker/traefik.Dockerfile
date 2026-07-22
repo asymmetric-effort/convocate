@@ -2,7 +2,7 @@
 # We mirror to GHCR for container image policy compliance.
 
 ARG UBUNTU_BASE_TAG=latest
-FROM traefik:v3.4 AS upstream
+FROM traefik:v3.7 AS upstream
 
 FROM ghcr.io/asymmetric-effort/convocate/ubuntu-base:${UBUNTU_BASE_TAG}
 
