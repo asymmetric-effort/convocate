@@ -6,7 +6,7 @@ test('health endpoint responds with healthy status', async ({ request }) => {
   const response = await request.get(`${AGENT_URL}/health`);
   expect(response.ok()).toBeTruthy();
   const body = await response.json();
-  expect(body.status).toBe('healthy');
+  expect(body.status).toBe('ok');
 });
 
 test('SAML metadata endpoint returns valid XML', async ({ request }) => {
