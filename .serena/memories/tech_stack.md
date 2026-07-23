@@ -6,7 +6,7 @@
 - **Python 3** — Ansible, build scripts
 - **Bash** — CI/CD, bootstrap scripts
 
-## Approved Dependencies (HARD RULE: nothing else without explicit approval)
+## Approved Dependencies (HARD RULE: nothing else without approval)
 
 | Package | Language | Purpose |
 |---------|----------|---------|
@@ -20,14 +20,15 @@
 | `k8s.io/client-go` | Go | Kubernetes API client |
 
 ## Container Images
-- Base images: ubuntu:26.04, alpine, distroless ONLY — no pre-built app containers
+- Base images: ubuntu:26.04, alpine, distroless ONLY
+- Third-party binaries (Traefik, cloudflared) mirrored by extracting into ubuntu-base
 - All images built via multi-stage Dockerfiles in `infrastructure/docker/`
-- Third-party binaries (Traefik, cloudflared) mirrored by extracting binary into ubuntu-base
 
-## Infrastructure Tools
+## Infrastructure
 - Ansible — VM provisioning, svr00 service deployment
-- Helm 3 — K8s app deployment (umbrella chart with sub-charts)
-- Cilium 1.16.6 — K8s CNI (replaces kube-proxy, WireGuard encryption)
-- Traefik v3.7 — Ingress controller (Helm chart v41.0.2)
+- Helm 3 — K8s app deployment (umbrella chart)
+- Cilium 1.16.6 — CNI, WireGuard encryption, replaces kube-proxy
+- Traefik v3.7 (chart v41.0.2) — Ingress controller, TLS termination
 - External Secrets Operator — OpenBao integration
 - Playwright — PDV/smoke tests
+- Cloudflare ZTNA — tunnel via cloudflared on svr00
