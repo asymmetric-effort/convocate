@@ -255,6 +255,39 @@
           fi
       changed_when: false
 
+- name: Create TOTP MFA method on secrets-a
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.160:443
+      ROOT_TOKEN=$(cat /var/openbao/tls/secrets-a/.root-token 2>/dev/null)
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "No root token for secrets-a — skipping TOTP setup"
+        exit 0
+      fi
+
+      # Check if TOTP method already exists
+      EXISTING=$(curl -sf -k \
+        -H "X-Vault-Token:$ROOT_TOKEN" \
+        $BAO/v1/identity/mfa/method/totp 2>/dev/null \
+        | python3 -c 'import sys,json; d=json.load(sys.stdin).get("data",{}); methods=d.get("methods",[]); print(methods[0] if methods else "")' 2>/dev/null || echo "")
+
+      if [ -n "$EXISTING" ]; then
+        echo "TOTP method already exists: $EXISTING"
+        echo "$EXISTING" > /var/openbao/tls/secrets-a/.totp-method-id
+      else
+        TOTP_RESP=$(curl -sf -k -X POST \
+          -d '{"method_name":"totp","issuer":"Convocate","period":30,"key_size":20,"digits":6,"algorithm":"SHA1","qr_size":200}' \
+          -H "X-Vault-Token:$ROOT_TOKEN" \
+          -H "Content-Type: application/json" \
+          $BAO/v1/identity/mfa/method/totp)
+
+        METHOD_ID=$(echo "$TOTP_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["method_id"])')
+        echo "$METHOD_ID" > /var/openbao/tls/secrets-a/.totp-method-id
+        chmod 0400 /var/openbao/tls/secrets-a/.totp-method-id
+        echo "TOTP method created: $METHOD_ID"
+      fi
+  changed_when: false
+
 # =========================================================================
 # secrets-b — production instance
 # =========================================================================
@@ -450,6 +483,39 @@
             echo "secrets-b unsealed"
           fi
       changed_when: false
+
+- name: Create TOTP MFA method on secrets-b
+  ansible.builtin.shell:
+    cmd: |
+      BAO=https://192.168.3.161:443
+      ROOT_TOKEN=$(cat /var/openbao/tls/secrets-b/.root-token 2>/dev/null)
+      if [ -z "$ROOT_TOKEN" ]; then
+        echo "No root token for secrets-b — skipping TOTP setup"
+        exit 0
+      fi
+
+      # Check if TOTP method already exists
+      EXISTING=$(curl -sf -k \
+        -H "X-Vault-Token:$ROOT_TOKEN" \
+        $BAO/v1/identity/mfa/method/totp 2>/dev/null \
+        | python3 -c 'import sys,json; d=json.load(sys.stdin).get("data",{}); methods=d.get("methods",[]); print(methods[0] if methods else "")' 2>/dev/null || echo "")
+
+      if [ -n "$EXISTING" ]; then
+        echo "TOTP method already exists: $EXISTING"
+        echo "$EXISTING" > /var/openbao/tls/secrets-b/.totp-method-id
+      else
+        TOTP_RESP=$(curl -sf -k -X POST \
+          -d '{"method_name":"totp","issuer":"Convocate","period":30,"key_size":20,"digits":6,"algorithm":"SHA1","qr_size":200}' \
+          -H "X-Vault-Token:$ROOT_TOKEN" \
+          -H "Content-Type: application/json" \
+          $BAO/v1/identity/mfa/method/totp)
+
+        METHOD_ID=$(echo "$TOTP_RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["method_id"])')
+        echo "$METHOD_ID" > /var/openbao/tls/secrets-b/.totp-method-id
+        chmod 0400 /var/openbao/tls/secrets-b/.totp-method-id
+        echo "TOTP method created: $METHOD_ID"
+      fi
+  changed_when: false
 
 # =========================================================================
 # Ensure bootstrap token is available for downstream roles (grafana, etc.)

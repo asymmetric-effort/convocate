@@ -178,6 +178,19 @@ jobs:
             --from-literal=token="$BAO_TOKEN" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
 
+          # Create MFA method ID secret (from secrets-a for canary)
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          MFA_METHOD_ID=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/key \
+            samcaldwell@192.168.3.159 'sudo cat /var/openbao/tls/secrets-a/.totp-method-id 2>/dev/null' || echo "")
+          rm -f ~/.ssh/key
+          if [ -n "$MFA_METHOD_ID" ]; then
+            kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic mfa-method-id \
+              --from-literal=METHOD_ID="$MFA_METHOD_ID" \
+              --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          fi
+
       - name: Helm upgrade cluster-a
         run: |
           helm upgrade --install convocate ./infrastructure/charts/convocate \
@@ -357,6 +370,19 @@ jobs:
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic openbao-root-token \
             --from-literal=token="$BAO_TOKEN" \
             --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+
+          # Create MFA method ID secret (from secrets-b for production)
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/key
+          chmod 600 ~/.ssh/key
+          MFA_METHOD_ID=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/key \
+            samcaldwell@192.168.3.159 'sudo cat /var/openbao/tls/secrets-b/.totp-method-id 2>/dev/null' || echo "")
+          rm -f ~/.ssh/key
+          if [ -n "$MFA_METHOD_ID" ]; then
+            kubectl --kubeconfig=/tmp/kubeconfig -n convocate create secret generic mfa-method-id \
+              --from-literal=METHOD_ID="$MFA_METHOD_ID" \
+              --dry-run=client -o yaml | kubectl --kubeconfig=/tmp/kubeconfig apply -f -
+          fi
 
       - name: Helm upgrade cluster-b
         run: |

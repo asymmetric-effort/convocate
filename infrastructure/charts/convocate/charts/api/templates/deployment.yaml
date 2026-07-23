@@ -57,7 +57,11 @@ spec:
                   name: openbao-root-token
                   key: token
             - name: OPENBAO_MFA_METHOD_ID
-              value: {{ .Values.env.OPENBAO_MFA_METHOD_ID | default "" | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: mfa-method-id
+                  key: METHOD_ID
+                  optional: true
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
