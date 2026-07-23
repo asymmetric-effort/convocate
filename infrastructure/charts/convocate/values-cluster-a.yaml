@@ -15,6 +15,7 @@ api:
     enabled: true
   env:
     OPENBAO_ADDR: "https://192.168.3.161:443"
+    SAML_SCIM_AGENT_URL: "https://192.168.3.168:443"
   resources:
     requests:
       cpu: 100m
@@ -34,7 +35,17 @@ redis:
 
 # Disable services managed outside K8s or not needed on canary
 ui:
-  enabled: false
+  enabled: true
+  port: 8080
+  ingress:
+    enabled: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
 minio:
   enabled: false
 influxdb:

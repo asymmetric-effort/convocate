@@ -201,6 +201,7 @@ jobs:
       - name: Wait for rollout
         run: |
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate rollout status deployment/convocate-api --timeout=60s
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate rollout status deployment/convocate-ui --timeout=60s 2>/dev/null || true
           kubectl --kubeconfig=/tmp/kubeconfig -n data-layer rollout status deployment/postgresql --timeout=60s 2>/dev/null || true
           kubectl --kubeconfig=/tmp/kubeconfig -n data-layer rollout status deployment/redis --timeout=60s 2>/dev/null || true
 
@@ -242,6 +243,18 @@ jobs:
             exit 1
           fi
           echo "PDV PASS: API healthy"
+
+      - name: UI health checks
+        run: |
+          # UI health check
+          echo "Checking UI..."
+          UI_RESP=$(curl -sfk --resolve app.dev.convocate.net:443:192.168.3.171 --connect-timeout 10 https://app.dev.convocate.net/healthz 2>/dev/null) && echo "UI: $UI_RESP" || echo "UI not available yet"
+
+          # UI serves SPA
+          SPA_RESP=$(curl -sfk --resolve app.dev.convocate.net:443:192.168.3.171 --connect-timeout 10 https://app.dev.convocate.net/ 2>/dev/null | head -1) && echo "SPA: $SPA_RESP" || echo "SPA not available yet"
+
+          # API reachable through app hostname
+          API_RESP=$(curl -sfk --resolve app.dev.convocate.net:443:192.168.3.171 --connect-timeout 10 https://app.dev.convocate.net/api/v1/status 2>/dev/null) && echo "API via app: $API_RESP" || echo "API via app not available yet"
 
   deploy-cluster-b:
     name: Deploy to cluster-b (production)
@@ -358,6 +371,7 @@ jobs:
       - name: Wait for rollout
         run: |
           kubectl --kubeconfig=/tmp/kubeconfig -n convocate rollout status deployment/convocate-api --timeout=60s
+          kubectl --kubeconfig=/tmp/kubeconfig -n convocate rollout status deployment/convocate-ui --timeout=60s 2>/dev/null || true
           kubectl --kubeconfig=/tmp/kubeconfig -n data-layer rollout status deployment/postgresql --timeout=60s 2>/dev/null || true
           kubectl --kubeconfig=/tmp/kubeconfig -n data-layer rollout status deployment/redis --timeout=60s 2>/dev/null || true
 
@@ -391,3 +405,15 @@ jobs:
             exit 1
           fi
           echo "SMOKE PASS: API healthy"
+
+      - name: UI health checks
+        run: |
+          # UI health check
+          echo "Checking UI..."
+          UI_RESP=$(curl -sfk --resolve app.prod.convocate.net:443:192.168.3.181 --connect-timeout 10 https://app.prod.convocate.net/healthz 2>/dev/null) && echo "UI: $UI_RESP" || echo "UI not available yet"
+
+          # UI serves SPA
+          SPA_RESP=$(curl -sfk --resolve app.prod.convocate.net:443:192.168.3.181 --connect-timeout 10 https://app.prod.convocate.net/ 2>/dev/null | head -1) && echo "SPA: $SPA_RESP" || echo "SPA not available yet"
+
+          # API reachable through app hostname
+          API_RESP=$(curl -sfk --resolve app.prod.convocate.net:443:192.168.3.181 --connect-timeout 10 https://app.prod.convocate.net/api/v1/status 2>/dev/null) && echo "API via app: $API_RESP" || echo "API via app not available yet"

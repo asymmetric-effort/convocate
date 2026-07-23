@@ -305,7 +305,7 @@ jobs:
 
           for IMG in $CHANGED; do
             case "$IMG" in
-              convocate-api|pg|redis|ubuntu-base)
+              convocate-api|convocate-ui|pg|redis|ubuntu-base)
                 DEPLOY_APPS=true ;;
               openbao)
                 DEPLOY_OPENBAO=true ;;
