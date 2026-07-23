@@ -74,6 +74,10 @@ spec:
                   name: metrics-api-key
                   key: METRICS_API_KEY
                   optional: true
+            {{- if .Values.env.SAML_SCIM_AGENT_URL }}
+            - name: SAML_SCIM_AGENT_URL
+              value: {{ .Values.env.SAML_SCIM_AGENT_URL | quote }}
+            {{- end }}
           ports:
             - containerPort: {{ .Values.port | default 8443 }}
               name: api

@@ -47,6 +47,30 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Route through SAML/SCIM agent when configured
+	if agentURL := samlAgentURL(); agentURL != "" {
+		principal, err := samlLogin(agentURL, req.Username, req.Password)
+		if err != nil {
+			log.Printf("SAML login failed for user %q: %v", req.Username, err)
+			httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "authentication failed")
+			return
+		}
+		// Sign JWT with the SAML-derived principal
+		token, expiresAt, err := SignJWT(principal.ID, principal.Username, principal.Name, principal.Email, principal.Roles, principal.AuthorizedApplets, 24*time.Hour)
+		if err != nil {
+			log.Printf("JWT signing failed: %v", err)
+			httputil.WriteError(w, http.StatusInternalServerError, "server_error", "internal error")
+			return
+		}
+		httputil.WriteJSON(w, http.StatusOK, session{
+			AccessToken:  token,
+			RefreshToken: "",
+			ExpiresAt:    expiresAt.UTC().Format(time.RFC3339),
+			Principal:    *principal,
+		})
+		return
+	}
+
 	// Authenticate via OpenBao userpass
 	loginResp, err := openbaoLogin(req.Username, req.Password)
 	if err != nil {
