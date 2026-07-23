@@ -6,8 +6,10 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -710,5 +712,511 @@ func TestRegister(t *testing.T) {
 	// Should get a 401 for empty credentials, not a 404
 	if w.Code == http.StatusNotFound {
 		t.Error("login route not registered")
+	}
+}
+
+func TestHandleTOTPEnroll_Success(t *testing.T) {
+	methodID := "test-method-id"
+
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/identity/mfa/method/totp/admin-generate" && r.Method == http.MethodPost:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"url":     "otpauth://totp/convocate:testuser?secret=JBSWY3DPEHPK3PXP",
+					"barcode": "base64encodedqr",
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	principal := &httputil.Principal{
+		ID:       "ent-001",
+		Username: "testuser",
+	}
+	r := httptest.NewRequest("POST", "/api/v1/auth/totp/enroll", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPEnroll(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var result map[string]string
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result["url"] == "" {
+		t.Error("expected url in response")
+	}
+	if result["barcode"] == "" {
+		t.Error("expected barcode in response")
+	}
+}
+
+func TestHandleTOTPEnroll_NoMethodID(t *testing.T) {
+	os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+
+	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
+	r := httptest.NewRequest("POST", "/api/v1/auth/totp/enroll", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPEnroll(w, r)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHandleTOTPEnroll_NoPrincipal(t *testing.T) {
+	r := httptest.NewRequest("POST", "/api/v1/auth/totp/enroll", nil)
+	w := httptest.NewRecorder()
+
+	handleTOTPEnroll(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestHandleTOTPEnroll_EnrollmentFails(t *testing.T) {
+	methodID := "test-method-id"
+
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("enrollment error"))
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
+	r := httptest.NewRequest("POST", "/api/v1/auth/totp/enroll", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPEnroll(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleTOTPStatus_Enrolled(t *testing.T) {
+	methodID := "test-method-id"
+	entityID := "ent-001"
+
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/identity/entity/id/"+entityID {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":          entityID,
+					"name":        "testuser",
+					"mfa_secrets": map[string]any{methodID: map[string]any{"type": "totp"}},
+				},
+			})
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	principal := &httputil.Principal{ID: entityID, Username: "testuser"}
+	r := httptest.NewRequest("GET", "/api/v1/auth/totp/status", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPStatus(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var result map[string]bool
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if !result["enrolled"] {
+		t.Error("expected enrolled = true")
+	}
+}
+
+func TestHandleTOTPStatus_NotEnrolled(t *testing.T) {
+	methodID := "test-method-id"
+	entityID := "ent-001"
+
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/identity/entity/id/"+entityID {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":          entityID,
+					"name":        "testuser",
+					"mfa_secrets": map[string]any{},
+				},
+			})
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	principal := &httputil.Principal{ID: entityID, Username: "testuser"}
+	r := httptest.NewRequest("GET", "/api/v1/auth/totp/status", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPStatus(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var result map[string]bool
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result["enrolled"] {
+		t.Error("expected enrolled = false")
+	}
+}
+
+func TestHandleTOTPStatus_NoMethodID(t *testing.T) {
+	os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+
+	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
+	r := httptest.NewRequest("GET", "/api/v1/auth/totp/status", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPStatus(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var result map[string]bool
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result["enrolled"] {
+		t.Error("expected enrolled = false when method ID not set")
+	}
+}
+
+func TestHandleTOTPStatus_NoPrincipal(t *testing.T) {
+	r := httptest.NewRequest("GET", "/api/v1/auth/totp/status", nil)
+	w := httptest.NewRecorder()
+
+	handleTOTPStatus(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestHandleTOTPStatus_LookupFails(t *testing.T) {
+	methodID := "test-method-id"
+
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
+	r := httptest.NewRequest("GET", "/api/v1/auth/totp/status", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPStatus(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleTOTPDestroy_Success(t *testing.T) {
+	methodID := "test-method-id"
+
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/identity/mfa/method/totp/admin-destroy" && r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusNoContent)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
+	r := httptest.NewRequest("DELETE", "/api/v1/auth/totp", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPDestroy(w, r)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want %d; body = %s", w.Code, http.StatusNoContent, w.Body.String())
+	}
+}
+
+func TestHandleTOTPDestroy_NoMethodID(t *testing.T) {
+	os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+
+	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
+	r := httptest.NewRequest("DELETE", "/api/v1/auth/totp", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPDestroy(w, r)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHandleTOTPDestroy_NoPrincipal(t *testing.T) {
+	r := httptest.NewRequest("DELETE", "/api/v1/auth/totp", nil)
+	w := httptest.NewRecorder()
+
+	handleTOTPDestroy(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestHandleTOTPDestroy_DestroyFails(t *testing.T) {
+	methodID := "test-method-id"
+
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("destroy error"))
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
+	r := httptest.NewRequest("DELETE", "/api/v1/auth/totp", nil)
+	ctx := httputil.ContextWithPrincipal(r.Context(), principal)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handleTOTPDestroy(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestHandleLogin_SAML_MFARequired(t *testing.T) {
+	entityID := "samlmfauser"
+	methodID := "test-method-id"
+
+	// Mock SAML agent
+	samlXML := buildTestSAMLResponseXML(entityID, "mfa@example.com", []string{"node-ops"})
+	samlB64 := base64.StdEncoding.EncodeToString([]byte(samlXML))
+	samlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		html := fmt.Sprintf(`<form><input type="hidden" name="SAMLResponse" value="%s"/></form>`, samlB64)
+		w.Write([]byte(html))
+	}))
+	defer samlServer.Close()
+
+	// Mock OpenBao — entity is enrolled
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/identity/entity/id/"+entityID:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":          entityID,
+					"name":        entityID,
+					"mfa_secrets": map[string]any{methodID: map[string]any{}},
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer bao.Close()
+
+	os.Setenv("SAML_SCIM_AGENT_URL", samlServer.URL)
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("SAML_SCIM_AGENT_URL")
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	body, _ := json.Marshal(loginRequest{Username: entityID, Password: "secret"})
+	r := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleLogin(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+
+	var errResp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &errResp)
+	if errResp["code"] != "mfa_required" {
+		t.Errorf("error code = %q, want %q", errResp["code"], "mfa_required")
+	}
+}
+
+func TestHandleLogin_SAML_Success(t *testing.T) {
+	initJWTWithKey(t)
+
+	samlXML := buildTestSAMLResponseXML("samluser", "saml@example.com", []string{"node-ops"})
+	samlB64 := base64.StdEncoding.EncodeToString([]byte(samlXML))
+	samlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		html := fmt.Sprintf(`<form><input type="hidden" name="SAMLResponse" value="%s"/></form>`, samlB64)
+		w.Write([]byte(html))
+	}))
+	defer samlServer.Close()
+
+	os.Setenv("SAML_SCIM_AGENT_URL", samlServer.URL)
+	os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_URL") })
+
+	body, _ := json.Marshal(loginRequest{Username: "samluser", Password: "secret"})
+	r := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleLogin(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var sess session
+	json.Unmarshal(w.Body.Bytes(), &sess)
+	if sess.AccessToken == "" {
+		t.Error("AccessToken is empty")
+	}
+	if sess.Principal.Username != "samluser" {
+		t.Errorf("Username = %q, want %q", sess.Principal.Username, "samluser")
+	}
+	if sess.Principal.IDP != "saml" {
+		t.Errorf("IDP = %q, want %q", sess.Principal.IDP, "saml")
+	}
+}
+
+func TestHandleLogin_SAML_AuthFailed(t *testing.T) {
+	samlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		html := `<form><input type="text" name="username"/></form>`
+		w.Write([]byte(html))
+	}))
+	defer samlServer.Close()
+
+	os.Setenv("SAML_SCIM_AGENT_URL", samlServer.URL)
+	os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_URL") })
+
+	body, _ := json.Marshal(loginRequest{Username: "baduser", Password: "wrong"})
+	r := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleLogin(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestRegister_TOTPRoutes(t *testing.T) {
+	mux := http.NewServeMux()
+	Register(mux)
+
+	// Verify TOTP routes are registered (should not return 404)
+	routes := []struct {
+		method string
+		path   string
+	}{
+		{"POST", "/api/v1/auth/totp/enroll"},
+		{"GET", "/api/v1/auth/totp/status"},
+		{"DELETE", "/api/v1/auth/totp"},
+	}
+
+	for _, route := range routes {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(route.method, route.path, nil)
+		mux.ServeHTTP(w, r)
+
+		// Auth middleware should reject with 401, not 404
+		if w.Code == http.StatusNotFound {
+			t.Errorf("%s %s route not registered (got 404)", route.method, route.path)
+		}
 	}
 }

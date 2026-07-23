@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,15 +16,61 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/httputil"
 )
 
+// ErrMFARequired is returned when a user has MFA enrolled but did not provide a TOTP code.
+var ErrMFARequired = errors.New("mfa_required")
+
 // samlAgentURL returns the SAML/SCIM agent URL from env, or empty if not configured.
 func samlAgentURL() string {
 	return os.Getenv("SAML_SCIM_AGENT_URL")
 }
 
-// samlLogin authenticates a user via the SAML/SCIM agent backend proxy.
+// samlLogin authenticates a user via the SAML/SCIM agent and enforces MFA TOTP
+// when the user has TOTP enrolled. If MFA is required but mfaToken is empty,
+// ErrMFARequired is returned so the caller can prompt for a code.
+func samlLogin(agentURL, username, password, mfaToken string) (*httputil.Principal, error) {
+	principal, err := samlLoginCore(agentURL, username, password)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check MFA enrollment
+	methodID := openbaoMFAMethodID()
+	if methodID == "" {
+		return principal, nil // MFA not configured on this deployment
+	}
+
+	enrolled, err := openbaoGetMFAStatus(principal.ID, methodID)
+	if err != nil || !enrolled {
+		return principal, nil // User not enrolled or status check failed
+	}
+
+	// MFA is required for this user
+	if mfaToken == "" {
+		return nil, ErrMFARequired
+	}
+
+	// Validate TOTP by doing a userpass login (we still have the password)
+	// which triggers OpenBao MFA and gives us an mfa_request_id.
+	loginResp, err := openbaoLogin(username, password)
+	if err != nil {
+		return nil, fmt.Errorf("MFA validation login failed: %w", err)
+	}
+
+	if loginResp.Auth.MFARequirement != nil && loginResp.Auth.MFARequirement.MFARequestID != "" {
+		// Validate the TOTP code via the existing MFA validate flow
+		_, err = openbaoMFAValidate(loginResp.Auth.MFARequirement.MFARequestID, methodID, mfaToken)
+		if err != nil {
+			return nil, fmt.Errorf("invalid MFA code: %w", err)
+		}
+	}
+
+	return principal, nil
+}
+
+// samlLoginCore authenticates a user via the SAML/SCIM agent backend proxy.
 // It sends credentials to the agent's /saml/login endpoint, receives a
 // SAMLResponse, and extracts identity attributes from the assertion.
-func samlLogin(agentURL, username, password string) (*httputil.Principal, error) {
+func samlLoginCore(agentURL, username, password string) (*httputil.Principal, error) {
 	// Build a minimal SAMLRequest
 	samlReqXML := fmt.Sprintf(
 		`<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" `+

@@ -2,6 +2,8 @@ package auth
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -171,7 +173,7 @@ func TestSamlLogin_Integration(t *testing.T) {
 	}))
 	defer server.Close()
 
-	principal, err := samlLogin(server.URL, "integrationuser", "password123")
+	principal, err := samlLogin(server.URL, "integrationuser", "password123", "")
 	if err != nil {
 		t.Fatalf("samlLogin failed: %v", err)
 	}
@@ -203,7 +205,7 @@ func TestSamlLogin_BadPassword(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := samlLogin(server.URL, "baduser", "wrongpassword")
+	_, err := samlLogin(server.URL, "baduser", "wrongpassword", "")
 	if err == nil {
 		t.Fatal("expected error for bad credentials")
 	}
@@ -216,14 +218,14 @@ func TestSamlLogin_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := samlLogin(server.URL, "user", "pass")
+	_, err := samlLogin(server.URL, "user", "pass", "")
 	if err == nil {
 		t.Fatal("expected error for server error response")
 	}
 }
 
 func TestSamlLogin_ConnectionRefused(t *testing.T) {
-	_, err := samlLogin("http://127.0.0.1:1", "user", "pass")
+	_, err := samlLogin("http://127.0.0.1:1", "user", "pass", "")
 	if err == nil {
 		t.Fatal("expected error for connection refused")
 	}
@@ -237,7 +239,7 @@ func TestSamlLogin_InvalidSAMLResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := samlLogin(server.URL, "user", "pass")
+	_, err := samlLogin(server.URL, "user", "pass", "")
 	if err == nil {
 		t.Fatal("expected error for invalid base64 SAMLResponse")
 	}
@@ -252,8 +254,292 @@ func TestSamlLogin_MalformedXML(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := samlLogin(server.URL, "user", "pass")
+	_, err := samlLogin(server.URL, "user", "pass", "")
 	if err == nil {
 		t.Fatal("expected error for malformed XML in SAMLResponse")
+	}
+}
+
+// buildMockSAMLServer creates a test SAML agent server that returns a valid SAMLResponse.
+func buildMockSAMLServer(t *testing.T, nameID, email string, groups []string) *httptest.Server {
+	t.Helper()
+	samlXML := buildTestSAMLResponseXML(nameID, email, groups)
+	samlB64 := base64.StdEncoding.EncodeToString([]byte(samlXML))
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/saml/login" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		html := fmt.Sprintf(`<html><body><form method="post">
+			<input type="hidden" name="SAMLResponse" value="%s"/>
+			<input type="hidden" name="RelayState" value="convocate"/>
+		</form></body></html>`, samlB64)
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(html))
+	}))
+}
+
+// buildMockBaoForMFA creates a mock OpenBao server for MFA tests.
+// If enrolled is true, the entity will have mfa_secrets for the given method ID.
+// If mfaTriggered is true, the userpass login will return mfa_requirement.
+func buildMockBaoForMFA(t *testing.T, entityID, methodID string, enrolled, mfaTriggered bool) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/identity/entity/id/"+entityID && r.Method == http.MethodGet:
+			mfaSecrets := map[string]any{}
+			if enrolled {
+				mfaSecrets[methodID] = map[string]any{"type": "totp"}
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":          entityID,
+					"name":        "testuser",
+					"metadata":    map[string]string{"name": "Test User", "email": "test@example.com"},
+					"policies":    []string{"default"},
+					"group_ids":   []string{},
+					"mfa_secrets": mfaSecrets,
+				},
+			})
+
+		case r.URL.Path == "/v1/auth/userpass/login/testuser" && r.Method == http.MethodPost:
+			if mfaTriggered {
+				json.NewEncoder(w).Encode(map[string]any{
+					"auth": map[string]any{
+						"client_token":   "",
+						"entity_id":      "",
+						"policies":       nil,
+						"metadata":       nil,
+						"lease_duration": 0,
+						"mfa_requirement": map[string]any{
+							"mfa_request_id": "mfa-req-saml-001",
+						},
+					},
+				})
+			} else {
+				json.NewEncoder(w).Encode(map[string]any{
+					"auth": map[string]any{
+						"client_token":   "tok-saml-valid",
+						"entity_id":      entityID,
+						"policies":       []string{"default"},
+						"metadata":       map[string]string{"name": "Test User"},
+						"lease_duration": 3600,
+					},
+				})
+			}
+
+		case r.URL.Path == "/v1/sys/mfa/validate" && r.Method == http.MethodPost:
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			payload, _ := body["mfa_payload"].(map[string]any)
+			codes, _ := payload[methodID].([]any)
+			if len(codes) == 1 && codes[0] == "123456" {
+				json.NewEncoder(w).Encode(map[string]any{
+					"auth": map[string]any{
+						"client_token":   "tok-mfa-saml-ok",
+						"entity_id":      entityID,
+						"policies":       []string{"default"},
+						"metadata":       map[string]string{"name": "Test User"},
+						"lease_duration": 3600,
+					},
+				})
+			} else {
+				w.WriteHeader(http.StatusForbidden)
+			}
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+func TestSamlLogin_MFANotConfigured(t *testing.T) {
+	// No MFA method ID set — should pass without MFA
+	os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+
+	samlServer := buildMockSAMLServer(t, "testuser", "test@example.com", []string{"node-ops"})
+	defer samlServer.Close()
+
+	principal, err := samlLogin(samlServer.URL, "testuser", "password123", "")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if principal.Username != "testuser" {
+		t.Errorf("Username = %q, want %q", principal.Username, "testuser")
+	}
+}
+
+func TestSamlLogin_MFANotEnrolled(t *testing.T) {
+	entityID := "testuser"
+	methodID := "test-mfa-method"
+
+	bao := buildMockBaoForMFA(t, entityID, methodID, false, false)
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
+	defer samlServer.Close()
+
+	principal, err := samlLogin(samlServer.URL, "testuser", "password123", "")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if principal.Username != entityID {
+		t.Errorf("Username = %q, want %q", principal.Username, entityID)
+	}
+}
+
+func TestSamlLogin_MFARequired_NoCode(t *testing.T) {
+	entityID := "testuser"
+	methodID := "test-mfa-method"
+
+	bao := buildMockBaoForMFA(t, entityID, methodID, true, true)
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
+	defer samlServer.Close()
+
+	_, err := samlLogin(samlServer.URL, "testuser", "password123", "")
+	if err == nil {
+		t.Fatal("expected ErrMFARequired, got nil")
+	}
+	if !errors.Is(err, ErrMFARequired) {
+		t.Errorf("expected ErrMFARequired, got: %v", err)
+	}
+}
+
+func TestSamlLogin_MFASuccess(t *testing.T) {
+	entityID := "testuser"
+	methodID := "test-mfa-method"
+
+	bao := buildMockBaoForMFA(t, entityID, methodID, true, true)
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
+	defer samlServer.Close()
+
+	principal, err := samlLogin(samlServer.URL, "testuser", "password123", "123456")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if principal.Username != entityID {
+		t.Errorf("Username = %q, want %q", principal.Username, entityID)
+	}
+}
+
+func TestSamlLogin_MFAInvalidCode(t *testing.T) {
+	entityID := "testuser"
+	methodID := "test-mfa-method"
+
+	bao := buildMockBaoForMFA(t, entityID, methodID, true, true)
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
+	defer samlServer.Close()
+
+	_, err := samlLogin(samlServer.URL, "testuser", "password123", "000000")
+	if err == nil {
+		t.Fatal("expected error for invalid MFA code")
+	}
+	if errors.Is(err, ErrMFARequired) {
+		t.Error("should not be ErrMFARequired, should be invalid code error")
+	}
+}
+
+func TestSamlLogin_MFALoginFails(t *testing.T) {
+	entityID := "testuser"
+	methodID := "test-mfa-method"
+
+	// Create a bao that has MFA enrolled but userpass login fails
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/identity/entity/id/"+entityID && r.Method == http.MethodGet:
+			mfaSecrets := map[string]any{methodID: map[string]any{"type": "totp"}}
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"id":          entityID,
+					"name":        "testuser",
+					"metadata":    map[string]string{},
+					"policies":    []string{"default"},
+					"group_ids":   []string{},
+					"mfa_secrets": mfaSecrets,
+				},
+			})
+		case r.URL.Path == "/v1/auth/userpass/login/testuser" && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusUnauthorized)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
+	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
+	defer samlServer.Close()
+
+	_, err := samlLogin(samlServer.URL, "testuser", "password123", "123456")
+	if err == nil {
+		t.Fatal("expected error when userpass login fails")
+	}
+}
+
+func TestSamlLoginCore(t *testing.T) {
+	samlServer := buildMockSAMLServer(t, "coreuser", "core@example.com", []string{"admin"})
+	defer samlServer.Close()
+
+	principal, err := samlLoginCore(samlServer.URL, "coreuser", "pass123")
+	if err != nil {
+		t.Fatalf("samlLoginCore failed: %v", err)
+	}
+	if principal.Username != "coreuser" {
+		t.Errorf("Username = %q, want %q", principal.Username, "coreuser")
+	}
+	if principal.Email != "core@example.com" {
+		t.Errorf("Email = %q, want %q", principal.Email, "core@example.com")
 	}
 }

@@ -211,6 +211,148 @@ func openbaoRevokeSelf(token string) error {
 	return nil
 }
 
+// openbaoServiceToken returns the API's OpenBao service token for admin operations.
+// It reads the token from OPENBAO_TOKEN_FILE (preferred) or OPENBAO_TOKEN env var.
+func openbaoServiceToken() string {
+	if f := os.Getenv("OPENBAO_TOKEN_FILE"); f != "" {
+		data, err := os.ReadFile(f)
+		if err == nil {
+			return strings.TrimSpace(string(data))
+		}
+	}
+	return os.Getenv("OPENBAO_TOKEN")
+}
+
+// MFAEnrollResult holds the TOTP enrollment data returned by OpenBao.
+type MFAEnrollResult struct {
+	URL     string `json:"url"`
+	Barcode string `json:"barcode"`
+}
+
+// openbaoTOTPEnroll generates a TOTP key for a user entity via the admin-generate endpoint.
+func openbaoTOTPEnroll(entityID, methodID string) (*MFAEnrollResult, error) {
+	token := openbaoServiceToken()
+	if token == "" {
+		return nil, fmt.Errorf("no service token available")
+	}
+
+	reqURL := fmt.Sprintf("%s/v1/identity/mfa/method/totp/admin-generate", openbaoAddr())
+
+	// json.Marshal cannot fail on map[string]string literals.
+	body, _ := json.Marshal(map[string]string{
+		"method_id": methodID,
+		"entity_id": entityID,
+	})
+
+	// http.NewRequest cannot fail with a valid sprintf-formatted URL.
+	req, _ := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(body))
+	req.Header.Set("X-Vault-Token", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("totp enroll request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("totp enroll status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Data struct {
+			URL     string `json:"url"`
+			Barcode string `json:"barcode"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode totp enroll response: %w", err)
+	}
+
+	return &MFAEnrollResult{
+		URL:     result.Data.URL,
+		Barcode: result.Data.Barcode,
+	}, nil
+}
+
+// openbaoTOTPDestroy removes a user's TOTP enrollment via the admin-destroy endpoint.
+func openbaoTOTPDestroy(entityID, methodID string) error {
+	token := openbaoServiceToken()
+	if token == "" {
+		return fmt.Errorf("no service token available")
+	}
+
+	reqURL := fmt.Sprintf("%s/v1/identity/mfa/method/totp/admin-destroy", openbaoAddr())
+
+	// json.Marshal cannot fail on map[string]string literals.
+	body, _ := json.Marshal(map[string]string{
+		"method_id": methodID,
+		"entity_id": entityID,
+	})
+
+	// http.NewRequest cannot fail with a valid sprintf-formatted URL.
+	req, _ := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(body))
+	req.Header.Set("X-Vault-Token", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("totp destroy request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("totp destroy status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// openbaoGetMFAStatus checks if a user has TOTP enrolled by inspecting the
+// entity's mfa_secrets field for the given method ID.
+func openbaoGetMFAStatus(entityID, methodID string) (bool, error) {
+	token := openbaoServiceToken()
+	if token == "" {
+		return false, fmt.Errorf("no service token available")
+	}
+
+	reqURL := fmt.Sprintf("%s/v1/identity/entity/id/%s", openbaoAddr(), entityID)
+
+	// http.NewRequest cannot fail with a valid sprintf-formatted URL.
+	req, _ := http.NewRequest(http.MethodGet, reqURL, nil)
+	req.Header.Set("X-Vault-Token", token)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("entity lookup for MFA status failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("entity lookup for MFA status returned %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data struct {
+			MFASecrets map[string]any `json:"mfa_secrets"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, fmt.Errorf("decode entity for MFA status: %w", err)
+	}
+
+	if len(result.Data.MFASecrets) == 0 {
+		return false, nil
+	}
+
+	_, enrolled := result.Data.MFASecrets[methodID]
+	return enrolled, nil
+}
+
 // allApplets is the full list of applet shortnames.
 var allApplets = []string{"nmgr", "amgr", "pb", "ide", "repo", "ac", "sup"}
 

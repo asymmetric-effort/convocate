@@ -646,6 +646,370 @@ func TestOpenbaoMFAValidate_Unauthorized(t *testing.T) {
 	}
 }
 
+func TestOpenbaoServiceToken_FromEnv(t *testing.T) {
+	os.Setenv("OPENBAO_TOKEN", "env-token")
+	os.Unsetenv("OPENBAO_TOKEN_FILE")
+	t.Cleanup(func() { os.Unsetenv("OPENBAO_TOKEN") })
+
+	got := openbaoServiceToken()
+	if got != "env-token" {
+		t.Errorf("openbaoServiceToken() = %q, want %q", got, "env-token")
+	}
+}
+
+func TestOpenbaoServiceToken_FromFile(t *testing.T) {
+	tmpFile := t.TempDir() + "/token"
+	os.WriteFile(tmpFile, []byte("file-token\n"), 0400)
+
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpFile)
+	os.Setenv("OPENBAO_TOKEN", "env-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	got := openbaoServiceToken()
+	if got != "file-token" {
+		t.Errorf("openbaoServiceToken() = %q, want %q (file takes precedence)", got, "file-token")
+	}
+}
+
+func TestOpenbaoServiceToken_FileNotFound(t *testing.T) {
+	os.Setenv("OPENBAO_TOKEN_FILE", "/nonexistent/path")
+	os.Setenv("OPENBAO_TOKEN", "fallback-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	got := openbaoServiceToken()
+	if got != "fallback-token" {
+		t.Errorf("openbaoServiceToken() = %q, want %q (fallback to env)", got, "fallback-token")
+	}
+}
+
+func TestOpenbaoServiceToken_Empty(t *testing.T) {
+	os.Unsetenv("OPENBAO_TOKEN_FILE")
+	os.Unsetenv("OPENBAO_TOKEN")
+
+	got := openbaoServiceToken()
+	if got != "" {
+		t.Errorf("openbaoServiceToken() = %q, want empty", got)
+	}
+}
+
+func TestOpenbaoTOTPEnroll_Success(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/identity/mfa/method/totp/admin-generate" || r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.Header.Get("X-Vault-Token") == "" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"url":     "otpauth://totp/test?secret=ABC",
+				"barcode": "base64data",
+			},
+		})
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	result, err := openbaoTOTPEnroll("ent-001", "method-001")
+	if err != nil {
+		t.Fatalf("openbaoTOTPEnroll failed: %v", err)
+	}
+	if result.URL != "otpauth://totp/test?secret=ABC" {
+		t.Errorf("URL = %q, unexpected", result.URL)
+	}
+	if result.Barcode != "base64data" {
+		t.Errorf("Barcode = %q, unexpected", result.Barcode)
+	}
+}
+
+func TestOpenbaoTOTPEnroll_NoToken(t *testing.T) {
+	os.Unsetenv("OPENBAO_TOKEN")
+	os.Unsetenv("OPENBAO_TOKEN_FILE")
+
+	_, err := openbaoTOTPEnroll("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error when no service token")
+	}
+}
+
+func TestOpenbaoTOTPEnroll_ServerError(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("error"))
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	_, err := openbaoTOTPEnroll("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error for server error")
+	}
+}
+
+func TestOpenbaoTOTPEnroll_InvalidJSON(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("not json"))
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	_, err := openbaoTOTPEnroll("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestOpenbaoTOTPEnroll_ConnectionRefused(t *testing.T) {
+	os.Setenv("OPENBAO_ADDR", "http://127.0.0.1:1")
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	_, err := openbaoTOTPEnroll("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error for connection refused")
+	}
+}
+
+func TestOpenbaoTOTPDestroy_Success(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/identity/mfa/method/totp/admin-destroy" || r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	err := openbaoTOTPDestroy("ent-001", "method-001")
+	if err != nil {
+		t.Fatalf("openbaoTOTPDestroy failed: %v", err)
+	}
+}
+
+func TestOpenbaoTOTPDestroy_NoToken(t *testing.T) {
+	os.Unsetenv("OPENBAO_TOKEN")
+	os.Unsetenv("OPENBAO_TOKEN_FILE")
+
+	err := openbaoTOTPDestroy("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error when no service token")
+	}
+}
+
+func TestOpenbaoTOTPDestroy_ServerError(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("error"))
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	err := openbaoTOTPDestroy("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error for server error")
+	}
+}
+
+func TestOpenbaoTOTPDestroy_ConnectionRefused(t *testing.T) {
+	os.Setenv("OPENBAO_ADDR", "http://127.0.0.1:1")
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	err := openbaoTOTPDestroy("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error for connection refused")
+	}
+}
+
+func TestOpenbaoGetMFAStatus_Enrolled(t *testing.T) {
+	methodID := "method-001"
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id":          "ent-001",
+				"mfa_secrets": map[string]any{methodID: map[string]any{"type": "totp"}},
+			},
+		})
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	enrolled, err := openbaoGetMFAStatus("ent-001", methodID)
+	if err != nil {
+		t.Fatalf("openbaoGetMFAStatus failed: %v", err)
+	}
+	if !enrolled {
+		t.Error("expected enrolled = true")
+	}
+}
+
+func TestOpenbaoGetMFAStatus_NotEnrolled(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id":          "ent-001",
+				"mfa_secrets": map[string]any{},
+			},
+		})
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	enrolled, err := openbaoGetMFAStatus("ent-001", "method-001")
+	if err != nil {
+		t.Fatalf("openbaoGetMFAStatus failed: %v", err)
+	}
+	if enrolled {
+		t.Error("expected enrolled = false")
+	}
+}
+
+func TestOpenbaoGetMFAStatus_NoToken(t *testing.T) {
+	os.Unsetenv("OPENBAO_TOKEN")
+	os.Unsetenv("OPENBAO_TOKEN_FILE")
+
+	_, err := openbaoGetMFAStatus("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error when no service token")
+	}
+}
+
+func TestOpenbaoGetMFAStatus_ServerError(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	_, err := openbaoGetMFAStatus("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error for server error")
+	}
+}
+
+func TestOpenbaoGetMFAStatus_InvalidJSON(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("not json"))
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	_, err := openbaoGetMFAStatus("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestOpenbaoGetMFAStatus_ConnectionRefused(t *testing.T) {
+	os.Setenv("OPENBAO_ADDR", "http://127.0.0.1:1")
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	_, err := openbaoGetMFAStatus("ent-001", "method-001")
+	if err == nil {
+		t.Fatal("expected error for connection refused")
+	}
+}
+
+func TestOpenbaoGetMFAStatus_DifferentMethodID(t *testing.T) {
+	bao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id":          "ent-001",
+				"mfa_secrets": map[string]any{"other-method": map[string]any{"type": "totp"}},
+			},
+		})
+	}))
+	defer bao.Close()
+
+	os.Setenv("OPENBAO_ADDR", bao.URL)
+	os.Setenv("OPENBAO_TOKEN", "service-token")
+	t.Cleanup(func() {
+		os.Unsetenv("OPENBAO_ADDR")
+		os.Unsetenv("OPENBAO_TOKEN")
+	})
+
+	enrolled, err := openbaoGetMFAStatus("ent-001", "method-001")
+	if err != nil {
+		t.Fatalf("openbaoGetMFAStatus failed: %v", err)
+	}
+	if enrolled {
+		t.Error("expected enrolled = false for different method ID")
+	}
+}
+
 func TestBuildPrincipalFromEntity_SkipsEmptyPolicies(t *testing.T) {
 	entity := &openbaoEntityResponse{}
 	entity.Data.ID = "ent-004"

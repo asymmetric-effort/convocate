@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -34,6 +35,14 @@ func Register(mux *http.ServeMux) {
 		http.HandlerFunc(handleLogout), middleware.Auth))
 	mux.Handle("GET /api/v1/auth/me", middleware.Chain(
 		http.HandlerFunc(handleMe), middleware.Auth))
+
+	// Self-service TOTP MFA endpoints
+	mux.Handle("POST /api/v1/auth/totp/enroll", middleware.Chain(
+		http.HandlerFunc(handleTOTPEnroll), middleware.Auth))
+	mux.Handle("GET /api/v1/auth/totp/status", middleware.Chain(
+		http.HandlerFunc(handleTOTPStatus), middleware.Auth))
+	mux.Handle("DELETE /api/v1/auth/totp", middleware.Chain(
+		http.HandlerFunc(handleTOTPDestroy), middleware.Auth))
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -49,8 +58,12 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Route through SAML/SCIM agent when configured
 	if agentURL := samlAgentURL(); agentURL != "" {
-		principal, err := samlLogin(agentURL, req.Username, req.Password)
+		principal, err := samlLogin(agentURL, req.Username, req.Password, req.MFAToken)
 		if err != nil {
+			if errors.Is(err, ErrMFARequired) {
+				httputil.WriteError(w, http.StatusUnauthorized, "mfa_required", "MFA code required")
+				return
+			}
 			log.Printf("SAML login failed for user %q: %v", req.Username, err)
 			httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "authentication failed")
 			return
@@ -197,4 +210,72 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, p)
+}
+
+func handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
+	p, ok := httputil.PrincipalFromContext(r.Context())
+	if !ok {
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "no principal in context")
+		return
+	}
+
+	methodID := openbaoMFAMethodID()
+	if methodID == "" {
+		httputil.WriteError(w, http.StatusServiceUnavailable, "mfa_not_configured", "MFA not configured")
+		return
+	}
+
+	result, err := openbaoTOTPEnroll(p.ID, methodID)
+	if err != nil {
+		log.Printf("TOTP enrollment failed for user %q: %v", p.Username, err)
+		httputil.WriteError(w, http.StatusInternalServerError, "enrollment_failed", "enrollment failed")
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, result)
+}
+
+func handleTOTPStatus(w http.ResponseWriter, r *http.Request) {
+	p, ok := httputil.PrincipalFromContext(r.Context())
+	if !ok {
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "no principal in context")
+		return
+	}
+
+	methodID := openbaoMFAMethodID()
+	if methodID == "" {
+		httputil.WriteJSON(w, http.StatusOK, map[string]bool{"enrolled": false})
+		return
+	}
+
+	enrolled, err := openbaoGetMFAStatus(p.ID, methodID)
+	if err != nil {
+		log.Printf("TOTP status check failed for user %q: %v", p.Username, err)
+		httputil.WriteError(w, http.StatusInternalServerError, "status_check_failed", "status check failed")
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, map[string]bool{"enrolled": enrolled})
+}
+
+func handleTOTPDestroy(w http.ResponseWriter, r *http.Request) {
+	p, ok := httputil.PrincipalFromContext(r.Context())
+	if !ok {
+		httputil.WriteError(w, http.StatusUnauthorized, "unauthorized", "no principal in context")
+		return
+	}
+
+	methodID := openbaoMFAMethodID()
+	if methodID == "" {
+		httputil.WriteError(w, http.StatusServiceUnavailable, "mfa_not_configured", "MFA not configured")
+		return
+	}
+
+	if err := openbaoTOTPDestroy(p.ID, methodID); err != nil {
+		log.Printf("TOTP destroy failed for user %q: %v", p.Username, err)
+		httputil.WriteError(w, http.StatusInternalServerError, "destroy_failed", "destroy failed")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
