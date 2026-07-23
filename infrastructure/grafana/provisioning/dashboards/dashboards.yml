@@ -2,10 +2,19 @@ apiVersion: 1
 providers:
   - name: 'convocate'
     orgId: 1
-    folder: 'Platform'
+    folder: 'Convocate'
     type: file
     disableDeletion: false
     editable: true
     options:
       path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
+  - name: 'platform'
+    orgId: 1
+    folder: 'Platform'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/platform
       foldersFromFilesStructure: false
