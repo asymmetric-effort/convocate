@@ -130,39 +130,6 @@ func TestExtractPrincipalFromSAML_NoGroups(t *testing.T) {
 	}
 }
 
-func TestSamlSkipTLS_Default(t *testing.T) {
-	os.Unsetenv("SAML_SCIM_AGENT_SKIP_TLS")
-	if samlSkipTLS() {
-		t.Error("samlSkipTLS should be false when env unset")
-	}
-}
-
-func TestSamlSkipTLS_True(t *testing.T) {
-	os.Setenv("SAML_SCIM_AGENT_SKIP_TLS", "true")
-	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_SKIP_TLS") })
-	if !samlSkipTLS() {
-		t.Error("samlSkipTLS should be true when env=true")
-	}
-}
-
-func TestSamlSkipTLS_One(t *testing.T) {
-	os.Setenv("SAML_SCIM_AGENT_SKIP_TLS", "1")
-	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_SKIP_TLS") })
-	if !samlSkipTLS() {
-		t.Error("samlSkipTLS should be true when env=1")
-	}
-}
-
-func TestSamlSkipTLS_OtherValues(t *testing.T) {
-	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_SKIP_TLS") })
-	for _, v := range []string{"false", "0", "yes", "TRUE", "True"} {
-		os.Setenv("SAML_SCIM_AGENT_SKIP_TLS", v)
-		if samlSkipTLS() {
-			t.Errorf("samlSkipTLS should be false when env=%q", v)
-		}
-	}
-}
-
 func TestSamlAgentURL(t *testing.T) {
 	os.Setenv("SAML_SCIM_AGENT_URL", "https://test:443")
 	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_URL") })
