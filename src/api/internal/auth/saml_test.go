@@ -147,6 +147,29 @@ func TestSamlAgentURL_NotSet(t *testing.T) {
 	}
 }
 
+func TestSamlAgentSkipTLS_Enabled(t *testing.T) {
+	os.Setenv("SAML_SCIM_AGENT_SKIP_TLS", "true")
+	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_SKIP_TLS") })
+	if !samlAgentSkipTLS() {
+		t.Error("expected samlAgentSkipTLS to return true when env var is 'true'")
+	}
+}
+
+func TestSamlAgentSkipTLS_Disabled(t *testing.T) {
+	os.Unsetenv("SAML_SCIM_AGENT_SKIP_TLS")
+	if samlAgentSkipTLS() {
+		t.Error("expected samlAgentSkipTLS to return false when env var is unset")
+	}
+}
+
+func TestSamlAgentSkipTLS_InvalidValue(t *testing.T) {
+	os.Setenv("SAML_SCIM_AGENT_SKIP_TLS", "yes")
+	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_SKIP_TLS") })
+	if samlAgentSkipTLS() {
+		t.Error("expected samlAgentSkipTLS to return false for non-'true' value")
+	}
+}
+
 func TestSamlLogin_Integration(t *testing.T) {
 	// Build a valid SAMLResponse XML
 	samlXML := buildTestSAMLResponseXML("integrationuser", "int@example.com", []string{"node-ops"})
