@@ -24,14 +24,19 @@ var (
 )
 
 func InitJWT() {
-	keyPEM := os.Getenv("JWT_EC_PRIVATE_KEY")
-	if keyPEM == "" {
-		fmt.Println("WARNING: JWT_EC_PRIVATE_KEY not set — JWT signing/verification disabled")
+	keyPath := os.Getenv("JWT_EC_PRIVATE_KEY_FILE")
+	if keyPath == "" {
+		fmt.Println("WARNING: JWT_EC_PRIVATE_KEY_FILE not set — JWT signing/verification disabled")
 		return
 	}
-	key, err := parseECPrivateKey([]byte(keyPEM))
+	keyPEM, err := os.ReadFile(keyPath)
 	if err != nil {
-		fmt.Printf("WARNING: failed to parse JWT_EC_PRIVATE_KEY: %v — JWT signing/verification disabled\n", err)
+		fmt.Printf("WARNING: failed to read JWT_EC_PRIVATE_KEY_FILE %q: %v — JWT signing/verification disabled\n", keyPath, err)
+		return
+	}
+	key, err := parseECPrivateKey(keyPEM)
+	if err != nil {
+		fmt.Printf("WARNING: failed to parse JWT EC private key: %v — JWT signing/verification disabled\n", err)
 		return
 	}
 	signingKey = key
@@ -86,6 +91,9 @@ type jwtClaims struct {
 }
 
 func SignJWT(userID, username, name, email string, roles, applets []string, ttl time.Duration) (string, time.Time, error) {
+	if signingKey == nil {
+		return "", time.Time{}, fmt.Errorf("JWT signing key not initialized")
+	}
 	now := time.Now()
 	exp := now.Add(ttl)
 
@@ -128,6 +136,9 @@ func SignJWT(userID, username, name, email string, roles, applets []string, ttl 
 }
 
 func VerifyJWT(token string) (*jwtClaims, error) {
+	if verifyKey == nil {
+		return nil, fmt.Errorf("JWT verification key not initialized")
+	}
 	parts := strings.SplitN(token, ".", 3)
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("invalid token format")

@@ -18,7 +18,7 @@ import (
 	"github.com/asymmetric-effort/convocate/internal/httputil"
 )
 
-// initJWTWithKey generates a key, sets the env var, and calls InitJWT.
+// initJWTWithKey generates a key, writes it to a 0400 temp file, and calls InitJWT.
 func initJWTWithKey(t *testing.T) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -30,8 +30,23 @@ func initJWTWithKey(t *testing.T) {
 		t.Fatalf("marshal key: %v", err)
 	}
 	pemBlock := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: derBytes})
-	os.Setenv("JWT_EC_PRIVATE_KEY", string(pemBlock))
-	t.Cleanup(func() { os.Unsetenv("JWT_EC_PRIVATE_KEY") })
+	f, err := os.CreateTemp(t.TempDir(), "jwt-key-*.pem")
+	if err != nil {
+		t.Fatalf("create temp key file: %v", err)
+	}
+	keyPath := f.Name()
+	if _, err := f.Write(pemBlock); err != nil {
+		t.Fatalf("write key file: %v", err)
+	}
+	f.Close()
+	if err := os.Chmod(keyPath, 0400); err != nil {
+		t.Fatalf("chmod key file: %v", err)
+	}
+	t.Setenv("JWT_EC_PRIVATE_KEY_FILE", keyPath)
+	t.Cleanup(func() {
+		signingKey = nil
+		verifyKey = nil
+	})
 	InitJWT()
 }
 
@@ -508,7 +523,6 @@ func TestHandleRefresh_NoEntityID(t *testing.T) {
 }
 
 func TestInitJWT_WithValidPEM(t *testing.T) {
-	// Generate a valid EC private key in PEM format
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
@@ -518,9 +532,16 @@ func TestInitJWT_WithValidPEM(t *testing.T) {
 		t.Fatalf("marshal key: %v", err)
 	}
 	pemBlock := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: derBytes})
+	f, ferr := os.CreateTemp(t.TempDir(), "jwt-key-*.pem")
+	if ferr != nil {
+		t.Fatalf("create temp file: %v", ferr)
+	}
+	f.Write(pemBlock)
+	f.Close()
+	os.Chmod(f.Name(), 0400)
 
-	os.Setenv("JWT_EC_PRIVATE_KEY", string(pemBlock))
-	defer os.Unsetenv("JWT_EC_PRIVATE_KEY")
+	t.Setenv("JWT_EC_PRIVATE_KEY_FILE", f.Name())
+	t.Cleanup(func() { signingKey = nil; verifyKey = nil })
 
 	InitJWT()
 
@@ -537,10 +558,15 @@ func TestInitJWT_WithInvalidPEM(t *testing.T) {
 	defer func() { signingKey, verifyKey = origSigning, origVerify }()
 
 	signingKey, verifyKey = nil, nil
-	os.Setenv("JWT_EC_PRIVATE_KEY", "not-a-valid-pem")
-	defer os.Unsetenv("JWT_EC_PRIVATE_KEY")
+	f, ferr := os.CreateTemp(t.TempDir(), "jwt-key-*.pem")
+	if ferr != nil {
+		t.Fatalf("create temp file: %v", ferr)
+	}
+	f.WriteString("not-a-valid-pem")
+	f.Close()
+	t.Setenv("JWT_EC_PRIVATE_KEY_FILE", f.Name())
 
-	// Should not panic; keys should remain nil (no ephemeral fallback)
+	// Should not panic; keys should remain nil
 	InitJWT()
 
 	if signingKey != nil {
@@ -553,10 +579,14 @@ func TestInitJWT_WithBadASN1PEM(t *testing.T) {
 	defer func() { signingKey, verifyKey = origSigning, origVerify }()
 
 	signingKey, verifyKey = nil, nil
-	// Valid PEM block but invalid ASN1 content
 	pemBlock := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: []byte("not-asn1")})
-	os.Setenv("JWT_EC_PRIVATE_KEY", string(pemBlock))
-	defer os.Unsetenv("JWT_EC_PRIVATE_KEY")
+	f, ferr := os.CreateTemp(t.TempDir(), "jwt-key-*.pem")
+	if ferr != nil {
+		t.Fatalf("create temp file: %v", ferr)
+	}
+	f.Write(pemBlock)
+	f.Close()
+	t.Setenv("JWT_EC_PRIVATE_KEY_FILE", f.Name())
 
 	InitJWT()
 
