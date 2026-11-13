@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -53,9 +52,10 @@ func (p *Process) start() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Build the claude command with flags
-	args := []string{"-c", "claude " + strings.Join(p.flags, " ")}
-	cmd := exec.Command("bash", args...)
+	// Build the claude command with flags (exec directly — no shell, no injection risk)
+	claudeArgs := make([]string, len(p.flags))
+	copy(claudeArgs, p.flags)
+	cmd := exec.Command("claude", claudeArgs...)
 	cmd.Dir = p.workDir
 	cmd.Env = os.Environ()
 
