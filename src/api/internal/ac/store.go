@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/asymmetric-effort/convocate/internal/secrets"
 )
 
 type User struct {
@@ -58,7 +60,7 @@ func NewStore() *Store {
 	addr = strings.TrimRight(addr, "/")
 	return &Store{
 		addr:   addr,
-		token:  os.Getenv("OPENBAO_TOKEN"),
+		token:  secrets.ReadToken("OPENBAO_TOKEN_FILE", "OPENBAO_TOKEN"),
 		client: &http.Client{},
 		roles: []Role{
 			{ID: "admin", Description: "Full access to all features", Applet: "all"},

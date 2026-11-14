@@ -2,14 +2,14 @@ package middleware
 
 import (
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/asymmetric-effort/convocate/internal/httputil"
+	"github.com/asymmetric-effort/convocate/internal/secrets"
 )
 
-// metricsAPIKey is loaded once at startup from METRICS_API_KEY.
-var metricsAPIKey = os.Getenv("METRICS_API_KEY")
+// metricsAPIKey is loaded once at startup from METRICS_API_KEY_FILE or METRICS_API_KEY.
+var metricsAPIKey = secrets.ReadToken("METRICS_API_KEY_FILE", "METRICS_API_KEY")
 
 // InternalAuth validates requests from internal services (e.g. the
 // node-metrics DaemonSet) using a shared API key.  If METRICS_API_KEY

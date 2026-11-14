@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/asymmetric-effort/convocate/internal/secrets"
 )
 
 var (
@@ -21,7 +23,7 @@ func Init() {
 	if endpoint == "" {
 		endpoint = "https://api.anthropic.com/v1/messages"
 	}
-	apiKey = os.Getenv("LLM_API_KEY")
+	apiKey = secrets.ReadToken("LLM_API_KEY_FILE", "LLM_API_KEY")
 	model = os.Getenv("LLM_MODEL")
 	if model == "" {
 		model = "claude-sonnet-4-20250514"

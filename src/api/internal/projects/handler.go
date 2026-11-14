@@ -11,12 +11,12 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/events"
 	"github.com/asymmetric-effort/convocate/internal/httputil"
 	"github.com/asymmetric-effort/convocate/internal/middleware"
+	"github.com/asymmetric-effort/convocate/internal/secrets"
 )
 
 // ProjectResponse is the unified project view returned to clients.
@@ -48,7 +48,7 @@ func doInternalCall(baseURL, method, path string, body interface{}) ([]byte, int
 		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+os.Getenv("OPENBAO_TOKEN"))
+	req.Header.Set("Authorization", "Bearer "+secrets.ReadToken("OPENBAO_TOKEN_FILE", "OPENBAO_TOKEN"))
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
