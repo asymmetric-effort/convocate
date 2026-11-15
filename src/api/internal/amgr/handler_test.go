@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/httputil"
 	"github.com/asymmetric-effort/convocate/internal/types"
@@ -84,18 +85,20 @@ func newNonAdminRequest(method, path string, body interface{}) *http.Request {
 // newTestHandler creates a Handler with useK8s=false (in-memory store).
 func newTestHandler() *Handler {
 	return &Handler{
-		store:  NewStore(),
-		useK8s: false,
+		store:      NewStore(),
+		useK8s:     false,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 // newK8sTestHandler creates a Handler with useK8s=true and a mock manager.
 func newK8sTestHandler(mgr *mockAgentManager) *Handler {
 	return &Handler{
-		store:   NewStore(),
-		useK8s:  true,
-		saToken: "test-sa-token",
-		mgr:     mgr,
+		store:      NewStore(),
+		useK8s:     true,
+		saToken:    "test-sa-token",
+		mgr:        mgr,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -910,10 +913,11 @@ func TestProxyStdinK8s_UpstreamError(t *testing.T) {
 		},
 	}
 	h := &Handler{
-		store:   NewStore(),
-		useK8s:  true,
-		saToken: "test-token",
-		mgr:     mgr,
+		store:      NewStore(),
+		useK8s:     true,
+		saToken:    "test-token",
+		mgr:        mgr,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 	req := newCancelledRequest("POST", "/api/v1/amgr/agent/agent-a/stdin", bytes.NewReader([]byte("hello")))
 	req.SetPathValue("agentId", "agent-a")
@@ -1052,10 +1056,11 @@ func TestProxyStdinK8s_NoSAToken(t *testing.T) {
 		},
 	}
 	h := &Handler{
-		store:   NewStore(),
-		useK8s:  true,
-		saToken: "",
-		mgr:     mgr,
+		store:      NewStore(),
+		useK8s:     true,
+		saToken:    "",
+		mgr:        mgr,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 	req := newCancelledRequest("POST", "/api/v1/amgr/agent/agent-a/stdin", bytes.NewReader([]byte("hello")))
 	req.SetPathValue("agentId", "agent-a")
@@ -1074,10 +1079,11 @@ func TestProxyMetricsK8s_NoSAToken(t *testing.T) {
 		},
 	}
 	h := &Handler{
-		store:   NewStore(),
-		useK8s:  true,
-		saToken: "",
-		mgr:     mgr,
+		store:      NewStore(),
+		useK8s:     true,
+		saToken:    "",
+		mgr:        mgr,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 	req := newCancelledRequest("GET", "/api/v1/amgr/agent/agent-a/metrics", nil)
 	req.SetPathValue("agentId", "agent-a")
@@ -1096,10 +1102,11 @@ func TestProxyStreamK8s_NoSAToken(t *testing.T) {
 		},
 	}
 	h := &Handler{
-		store:   NewStore(),
-		useK8s:  true,
-		saToken: "",
-		mgr:     mgr,
+		store:      NewStore(),
+		useK8s:     true,
+		saToken:    "",
+		mgr:        mgr,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 	req := newCancelledRequest("GET", "/api/v1/amgr/agent/agent-a/stdout", nil)
 	req.SetPathValue("agentId", "agent-a")
@@ -1144,7 +1151,7 @@ func TestProxyK8s_SuccessPaths(t *testing.T) {
 			return "127.0.0.1", nil
 		},
 	}
-	h := &Handler{store: NewStore(), useK8s: true, saToken: "test-token", mgr: mgr}
+	h := &Handler{store: NewStore(), useK8s: true, saToken: "test-token", mgr: mgr, httpClient: &http.Client{Timeout: 30 * time.Second}}
 
 	t.Run("stdin", func(t *testing.T) {
 		raw := httptest.NewRequest("POST", "/api/v1/amgr/agent/agent-a/stdin", bytes.NewReader([]byte("hello")))

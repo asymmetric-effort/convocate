@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
@@ -93,9 +92,6 @@ func samlLoginCore(agentURL, username, password string) (*httputil.Principal, er
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
 		// Don't follow redirects — we need the HTML response
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
