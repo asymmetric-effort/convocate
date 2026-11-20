@@ -44,18 +44,7 @@ updates:
       - "dependencies"
       - "go"
 
-  - package-ecosystem: "gomod"
-    directory: "/o11y/metrics"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    reviewers:
-      - "asymmetric-effort/convocate"
-    labels:
-      - "dependencies"
-      - "go"
-
-  - package-ecosystem: "npm"
+  - package-ecosystem: "bun"
     directory: "/src/ui"
     schedule:
       interval: "weekly"
@@ -66,7 +55,7 @@ updates:
       - "dependencies"
       - "javascript"
 
-  - package-ecosystem: "npm"
+  - package-ecosystem: "bun"
     directory: "/test/pdv"
     schedule:
       interval: "weekly"
