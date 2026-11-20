@@ -7,6 +7,6 @@
     "install-browsers": "bunx playwright install chromium --with-deps"
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0"
+    "@playwright/test": "^1.65.1"
   }
 }
