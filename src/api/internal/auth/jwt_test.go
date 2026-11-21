@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// initJWTForTest generates a key, sets the env var, and calls InitJWT.
+// initJWTForTest generates a key, writes it to a 0400 temp file, and calls InitJWT.
 func initJWTForTest(t *testing.T) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -26,8 +26,23 @@ func initJWTForTest(t *testing.T) {
 		t.Fatalf("marshal key: %v", err)
 	}
 	pemBlock := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: derBytes})
-	os.Setenv("JWT_EC_PRIVATE_KEY", string(pemBlock))
-	t.Cleanup(func() { os.Unsetenv("JWT_EC_PRIVATE_KEY") })
+	f, err := os.CreateTemp(t.TempDir(), "jwt-key-*.pem")
+	if err != nil {
+		t.Fatalf("create temp key file: %v", err)
+	}
+	keyPath := f.Name()
+	if _, err := f.Write(pemBlock); err != nil {
+		t.Fatalf("write key file: %v", err)
+	}
+	f.Close()
+	if err := os.Chmod(keyPath, 0400); err != nil {
+		t.Fatalf("chmod key file: %v", err)
+	}
+	t.Setenv("JWT_EC_PRIVATE_KEY_FILE", keyPath)
+	t.Cleanup(func() {
+		signingKey = nil
+		verifyKey = nil
+	})
 	InitJWT()
 }
 
@@ -202,5 +217,43 @@ func TestVerifyJWT_ValidSigBadBase64Claims(t *testing.T) {
 	_, err = VerifyJWT(token)
 	if err == nil {
 		t.Fatal("expected error for bad base64 claims")
+	}
+}
+
+func TestSignJWT_KeyNotInitialized(t *testing.T) {
+	// Ensure global keys are nil
+	signingKey = nil
+	verifyKey = nil
+	_, _, err := SignJWT("u", "u", "U", "", nil, nil, time.Hour)
+	if err == nil {
+		t.Fatal("expected error when signing key is nil")
+	}
+}
+
+func TestVerifyJWT_KeyNotInitialized(t *testing.T) {
+	signingKey = nil
+	verifyKey = nil
+	_, err := VerifyJWT("a.b.c")
+	if err == nil {
+		t.Fatal("expected error when verify key is nil")
+	}
+}
+
+func TestInitJWT_MissingFile(t *testing.T) {
+	t.Setenv("JWT_EC_PRIVATE_KEY_FILE", "/nonexistent/key.pem")
+	t.Cleanup(func() { signingKey = nil; verifyKey = nil })
+	InitJWT()
+	// Key should remain nil when file is missing
+	if signingKey != nil {
+		t.Error("signingKey should be nil when key file is missing")
+	}
+}
+
+func TestInitJWT_NoFileConfigured(t *testing.T) {
+	os.Unsetenv("JWT_EC_PRIVATE_KEY_FILE")
+	t.Cleanup(func() { signingKey = nil; verifyKey = nil })
+	InitJWT()
+	if signingKey != nil {
+		t.Error("signingKey should be nil when no key file is configured")
 	}
 }

@@ -1,14 +1,25 @@
 package auth
 
 import (
+	"crypto"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestExtractSAMLResponseFromHTML(t *testing.T) {
@@ -541,5 +552,244 @@ func TestSamlLoginCore(t *testing.T) {
 	}
 	if principal.Email != "core@example.com" {
 		t.Errorf("Email = %q, want %q", principal.Email, "core@example.com")
+	}
+}
+
+// ——— Signature verification tests ———————————————————————————————————————
+
+// testKeyPair generates a signing key pair and self-signed cert for tests.
+func testKeyPair(t *testing.T, algo string) (crypto.PrivateKey, *x509.Certificate, []byte) {
+	t.Helper()
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test-saml"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	var privKey crypto.PrivateKey
+	var pubKey crypto.PublicKey
+	switch algo {
+	case "ed25519":
+		pub, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("generate ed25519: %v", err)
+		}
+		privKey, pubKey = priv, pub
+	case "rsa":
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatalf("generate rsa: %v", err)
+		}
+		privKey, pubKey = key, &key.PublicKey
+	default:
+		t.Fatalf("unknown algo %q", algo)
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, pubKey, privKey)
+	if err != nil {
+		t.Fatalf("create cert: %v", err)
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		t.Fatalf("parse cert: %v", err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	return privKey, cert, certPEM
+}
+
+// buildSignedSAMLResponse builds a signed SAMLResponse using the same logic as
+// the saml-scim-agent (re-marshal SignedInfo → samlCanonicalize → sign).
+func buildSignedSAMLResponse(t *testing.T, nameID, email string, groups []string, privKey crypto.PrivateKey, cert *x509.Certificate) []byte {
+	t.Helper()
+	assertionID := "assert001"
+	certB64 := base64.StdEncoding.EncodeToString(cert.Raw)
+
+	// Build SignedInfo
+	now := time.Now().UTC()
+	var sigAlgo string
+	switch privKey.(type) {
+	case ed25519.PrivateKey:
+		sigAlgo = "http://www.w3.org/2021/04/xmldsig-more#eddsa-ed25519"
+	default:
+		sigAlgo = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+	}
+
+	// Minimal assertion XML for digest computation
+	groupAttrs := ""
+	for _, g := range groups {
+		groupAttrs += fmt.Sprintf(`<saml:AttributeValue>%s</saml:AttributeValue>`, g)
+	}
+	assertionBody := fmt.Sprintf(
+		`<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="%s" Version="2.0" IssueInstant="%s">`+
+			`<saml:Subject><saml:NameID>%s</saml:NameID></saml:Subject>`+
+			`<saml:AttributeStatement>`+
+			`<saml:Attribute Name="email"><saml:AttributeValue>%s</saml:AttributeValue></saml:Attribute>`+
+			`<saml:Attribute Name="groups">%s</saml:Attribute>`+
+			`</saml:AttributeStatement>`+
+			`</saml:Assertion>`,
+		assertionID, now.Format(time.RFC3339), nameID, email, groupAttrs,
+	)
+	digest := sha256.Sum256(samlCanonicalize([]byte(assertionBody)))
+	digestB64 := base64.StdEncoding.EncodeToString(digest[:])
+
+	si := samlDSigSignedInfo{
+		CanonicalizationMethod: samlDSigAlgorithm{Algorithm: "http://www.w3.org/2001/10/xml-exc-c14n#"},
+		SignatureMethod:        samlDSigAlgorithm{Algorithm: sigAlgo},
+		Reference: samlDSigReference{
+			URI: "#" + assertionID,
+			Transforms: samlDSigTransforms{
+				Transform: []samlDSigAlgorithm{
+					{Algorithm: "http://www.w3.org/2000/09/xmldsig#enveloped-signature"},
+					{Algorithm: "http://www.w3.org/2001/10/xml-exc-c14n#"},
+				},
+			},
+			DigestMethod: samlDSigAlgorithm{Algorithm: "http://www.w3.org/2001/04/xmlenc#sha256"},
+			DigestValue:  samlDSigDigestVal{Value: digestB64},
+		},
+	}
+	siXML, _ := xml.Marshal(si)
+	canonical := samlCanonicalize(siXML)
+
+	var sigBytes []byte
+	switch k := privKey.(type) {
+	case ed25519.PrivateKey:
+		sigBytes = ed25519.Sign(k, canonical)
+	case *rsa.PrivateKey:
+		h := sha256.Sum256(canonical)
+		var err error
+		sigBytes, err = rsa.SignPKCS1v15(rand.Reader, k, crypto.SHA256, h[:])
+		if err != nil {
+			t.Fatalf("rsa sign: %v", err)
+		}
+	}
+	sigB64 := base64.StdEncoding.EncodeToString(sigBytes)
+
+	sigXML := samlSignatureXML{
+		SignedInfo:     si,
+		SignatureValue: samlDSigSigValue{Value: sigB64},
+		KeyInfo: samlDSigKeyInfo{
+			X509Data: samlDSigX509Data{
+				X509Certificate: samlDSigX509Cert{Value: certB64},
+			},
+		},
+	}
+	sigXMLBytes, _ := xml.Marshal(sigXML)
+
+	resp := fmt.Sprintf(
+		`<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol">`+
+			`<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="%s" Version="2.0" IssueInstant="%s">`+
+			`<saml:Subject><saml:NameID>%s</saml:NameID></saml:Subject>`+
+			`<saml:AttributeStatement>`+
+			`<saml:Attribute Name="email"><saml:AttributeValue>%s</saml:AttributeValue></saml:Attribute>`+
+			`<saml:Attribute Name="groups">%s</saml:Attribute>`+
+			`</saml:AttributeStatement>`+
+			`%s`+
+			`</saml:Assertion>`+
+			`</samlp:Response>`,
+		assertionID, now.Format(time.RFC3339), nameID, email, groupAttrs, string(sigXMLBytes),
+	)
+	return []byte(resp)
+}
+
+func TestNewSAMLClient_NoCAFile(t *testing.T) {
+	os.Unsetenv("SAML_SCIM_AGENT_CA_CERT_FILE")
+	client, err := newSAMLClient()
+	if err != nil {
+		t.Fatalf("newSAMLClient: %v", err)
+	}
+	if client == nil {
+		t.Fatal("expected non-nil client")
+	}
+}
+
+func TestNewSAMLClient_MissingCAFile(t *testing.T) {
+	t.Setenv("SAML_SCIM_AGENT_CA_CERT_FILE", "/nonexistent/ca.pem")
+	_, err := newSAMLClient()
+	if err == nil {
+		t.Fatal("expected error for missing CA file")
+	}
+}
+
+func TestVerifySAMLSignature_Ed25519(t *testing.T) {
+	privKey, cert, certPEM := testKeyPair(t, "ed25519")
+
+	f, _ := os.CreateTemp(t.TempDir(), "saml-cert-*.pem")
+	f.Write(certPEM)
+	f.Close()
+	t.Setenv("SAML_SIGNING_CERT_FILE", f.Name())
+	t.Cleanup(func() { os.Unsetenv("SAML_SIGNING_CERT_FILE") })
+
+	samlXML := buildSignedSAMLResponse(t, "signeduser", "s@example.com", []string{"admin"}, privKey, cert)
+	principal, err := extractPrincipalFromSAML(samlXML)
+	if err != nil {
+		t.Fatalf("extractPrincipalFromSAML: %v", err)
+	}
+	if principal.Username != "signeduser" {
+		t.Errorf("Username = %q, want %q", principal.Username, "signeduser")
+	}
+}
+
+func TestVerifySAMLSignature_RSA(t *testing.T) {
+	privKey, cert, certPEM := testKeyPair(t, "rsa")
+
+	f, _ := os.CreateTemp(t.TempDir(), "saml-cert-*.pem")
+	f.Write(certPEM)
+	f.Close()
+	t.Setenv("SAML_SIGNING_CERT_FILE", f.Name())
+	t.Cleanup(func() { os.Unsetenv("SAML_SIGNING_CERT_FILE") })
+
+	samlXML := buildSignedSAMLResponse(t, "rsauser", "r@example.com", []string{"node-ops"}, privKey, cert)
+	principal, err := extractPrincipalFromSAML(samlXML)
+	if err != nil {
+		t.Fatalf("extractPrincipalFromSAML: %v", err)
+	}
+	if principal.Username != "rsauser" {
+		t.Errorf("Username = %q, want %q", principal.Username, "rsauser")
+	}
+}
+
+func TestVerifySAMLSignature_WrongCert(t *testing.T) {
+	privKey, cert, _ := testKeyPair(t, "ed25519")
+	_, _, wrongCertPEM := testKeyPair(t, "ed25519") // different cert
+
+	f, _ := os.CreateTemp(t.TempDir(), "saml-cert-*.pem")
+	f.Write(wrongCertPEM)
+	f.Close()
+	t.Setenv("SAML_SIGNING_CERT_FILE", f.Name())
+	t.Cleanup(func() { os.Unsetenv("SAML_SIGNING_CERT_FILE") })
+
+	samlXML := buildSignedSAMLResponse(t, "user", "u@example.com", []string{}, privKey, cert)
+	_, err := extractPrincipalFromSAML(samlXML)
+	if err == nil {
+		t.Fatal("expected error when cert does not match pinned cert")
+	}
+}
+
+func TestVerifySAMLSignature_NoCertFile_NoPanic(t *testing.T) {
+	os.Unsetenv("SAML_SIGNING_CERT_FILE")
+	// Without SAML_SIGNING_CERT_FILE, unsigned responses are still accepted.
+	xmlData := buildTestSAMLResponseXML("user", "u@example.com", []string{"admin"})
+	principal, err := extractPrincipalFromSAML([]byte(xmlData))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if principal.Username != "user" {
+		t.Errorf("Username = %q, want %q", principal.Username, "user")
+	}
+}
+
+func TestVerifySAMLSignature_CertFileSet_NoSignature(t *testing.T) {
+	_, _, certPEM := testKeyPair(t, "ed25519")
+	f, _ := os.CreateTemp(t.TempDir(), "saml-cert-*.pem")
+	f.Write(certPEM)
+	f.Close()
+	t.Setenv("SAML_SIGNING_CERT_FILE", f.Name())
+	t.Cleanup(func() { os.Unsetenv("SAML_SIGNING_CERT_FILE") })
+
+	// Unsigned XML — should fail when cert file is configured
+	xmlData := buildTestSAMLResponseXML("user", "u@example.com", []string{"admin"})
+	_, err := extractPrincipalFromSAML([]byte(xmlData))
+	if err == nil {
+		t.Fatal("expected error for unsigned assertion when SAML_SIGNING_CERT_FILE is set")
 	}
 }
