@@ -147,6 +147,29 @@ func TestSamlAgentURL_NotSet(t *testing.T) {
 	}
 }
 
+func TestSamlAgentTLSSkipVerify_Default(t *testing.T) {
+	os.Unsetenv("SAML_SCIM_AGENT_TLS_SKIP_VERIFY")
+	if samlAgentTLSSkipVerify() {
+		t.Error("expected false (TLS verify enabled) by default")
+	}
+}
+
+func TestSamlAgentTLSSkipVerify_Enabled(t *testing.T) {
+	os.Setenv("SAML_SCIM_AGENT_TLS_SKIP_VERIFY", "true")
+	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_TLS_SKIP_VERIFY") })
+	if !samlAgentTLSSkipVerify() {
+		t.Error("expected true when SAML_SCIM_AGENT_TLS_SKIP_VERIFY=true")
+	}
+}
+
+func TestSamlAgentTLSSkipVerify_Disabled(t *testing.T) {
+	os.Setenv("SAML_SCIM_AGENT_TLS_SKIP_VERIFY", "false")
+	t.Cleanup(func() { os.Unsetenv("SAML_SCIM_AGENT_TLS_SKIP_VERIFY") })
+	if samlAgentTLSSkipVerify() {
+		t.Error("expected false when SAML_SCIM_AGENT_TLS_SKIP_VERIFY=false")
+	}
+}
+
 func TestSamlLogin_Integration(t *testing.T) {
 	// Build a valid SAMLResponse XML
 	samlXML := buildTestSAMLResponseXML("integrationuser", "int@example.com", []string{"node-ops"})
