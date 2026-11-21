@@ -24,6 +24,12 @@ func samlAgentURL() string {
 	return os.Getenv("SAML_SCIM_AGENT_URL")
 }
 
+// samlAgentSkipTLS returns true only when SAML_SCIM_AGENT_SKIP_TLS=true is set.
+// Never set in production; use only for dev with self-signed certificates.
+func samlAgentSkipTLS() bool {
+	return os.Getenv("SAML_SCIM_AGENT_SKIP_TLS") == "true"
+}
+
 // samlLogin authenticates a user via the SAML/SCIM agent and enforces MFA TOTP
 // when the user has TOTP enrolled. If MFA is required but mfaToken is empty,
 // ErrMFARequired is returned so the caller can prompt for a code.
@@ -94,7 +100,7 @@ func samlLoginCore(agentURL, username, password string) (*httputil.Principal, er
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: samlAgentSkipTLS()}, //nolint:gosec
 		},
 		// Don't follow redirects — we need the HTML response
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
