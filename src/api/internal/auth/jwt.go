@@ -12,9 +12,10 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"os"
 	"strings"
 	"time"
+
+	"github.com/asymmetric-effort/convocate/internal/secrets"
 )
 
 var (
@@ -24,7 +25,7 @@ var (
 )
 
 func InitJWT() {
-	keyPEM := os.Getenv("JWT_EC_PRIVATE_KEY")
+	keyPEM := secrets.ReadToken("JWT_EC_PRIVATE_KEY_FILE", "JWT_EC_PRIVATE_KEY")
 	if keyPEM == "" {
 		fmt.Println("WARNING: JWT_EC_PRIVATE_KEY not set — JWT signing/verification disabled")
 		return
