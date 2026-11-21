@@ -32,10 +32,11 @@ type AgentManager interface {
 }
 
 type Handler struct {
-	store   *Store
-	useK8s  bool
-	saToken string // API's own K8s SA token for agent auth
-	mgr     AgentManager
+	store      *Store
+	useK8s     bool
+	saToken    string // API's own K8s SA token for agent auth
+	mgr        AgentManager
+	httpClient *http.Client
 }
 
 func Register(mux *http.ServeMux) {
@@ -46,10 +47,11 @@ func Register(mux *http.ServeMux) {
 	}
 
 	h := &Handler{
-		store:   NewStore(),
-		useK8s:  k8s.Client != nil,
-		saToken: saToken,
-		mgr:     k8sAgentManager{},
+		store:      NewStore(),
+		useK8s:     k8s.Client != nil,
+		saToken:    saToken,
+		mgr:        k8sAgentManager{},
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 	auth := middleware.Auth
 
@@ -324,7 +326,7 @@ func (h *Handler) proxyStdin(w http.ResponseWriter, r *http.Request) {
 		proxyReq.Header.Set(k8sSATokenHeader, h.saToken)
 	}
 
-	resp, err := http.DefaultClient.Do(proxyReq)
+	resp, err := h.httpClient.Do(proxyReq)
 	if err != nil {
 		httputil.WriteError(w, http.StatusBadGateway, "proxy_error", err.Error())
 		return
@@ -359,7 +361,7 @@ func (h *Handler) proxyMetrics(w http.ResponseWriter, r *http.Request) {
 		proxyReq.Header.Set(k8sSATokenHeader, h.saToken)
 	}
 
-	resp, err := http.DefaultClient.Do(proxyReq)
+	resp, err := h.httpClient.Do(proxyReq)
 	if err != nil {
 		httputil.WriteError(w, http.StatusBadGateway, "proxy_error", err.Error())
 		return
@@ -387,7 +389,7 @@ func (h *Handler) proxyStream(w http.ResponseWriter, r *http.Request, stream str
 		proxyReq.Header.Set(k8sSATokenHeader, h.saToken)
 	}
 
-	resp, err := http.DefaultClient.Do(proxyReq)
+	resp, err := h.httpClient.Do(proxyReq)
 	if err != nil {
 		httputil.WriteError(w, http.StatusBadGateway, "proxy_error", err.Error())
 		return
