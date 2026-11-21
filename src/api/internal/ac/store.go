@@ -2,6 +2,8 @@ package ac
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -319,7 +321,11 @@ func (s *Store) CreateUser(u User) (User, error) {
 
 	password := u.Password
 	if password == "" {
-		password = "changeme"
+		buf := make([]byte, 24)
+		if _, err := rand.Read(buf); err != nil {
+			return User{}, fmt.Errorf("generate password: %w", err)
+		}
+		password = base64.RawURLEncoding.EncodeToString(buf)
 	}
 
 	// Create userpass login with the caller-supplied password.
