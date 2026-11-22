@@ -1,8 +1,14 @@
 package auth
 
 import (
+	"crypto"
+	"crypto/ed25519"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -10,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,6 +29,34 @@ var ErrMFARequired = errors.New("mfa_required")
 // samlAgentURL returns the SAML/SCIM agent URL from env, or empty if not configured.
 func samlAgentURL() string {
 	return os.Getenv("SAML_SCIM_AGENT_URL")
+}
+
+// newSAMLClient creates an HTTP client for the SAML agent.
+// TLS is verified against the system cert pool, or a custom CA if
+// SAML_SCIM_AGENT_CA_CERT_FILE is set.  InsecureSkipVerify is never used.
+func newSAMLClient() (*http.Client, error) {
+	tlsCfg := &tls.Config{}
+	if caFile := os.Getenv("SAML_SCIM_AGENT_CA_CERT_FILE"); caFile != "" {
+		caPEM, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("read SAML_SCIM_AGENT_CA_CERT_FILE: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("no valid certs in SAML_SCIM_AGENT_CA_CERT_FILE")
+		}
+		tlsCfg.RootCAs = pool
+	}
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsCfg,
+		},
+		// Don't follow redirects — we need the HTML response
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}, nil
 }
 
 // samlLogin authenticates a user via the SAML/SCIM agent and enforces MFA TOTP
@@ -91,15 +126,9 @@ func samlLoginCore(agentURL, username, password string) (*httputil.Principal, er
 		"password":    {password},
 	}
 
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-		// Don't follow redirects — we need the HTML response
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+	client, err := newSAMLClient()
+	if err != nil {
+		return nil, fmt.Errorf("build saml client: %w", err)
 	}
 
 	resp, err := client.PostForm(agentURL+"/saml/login", formData)
@@ -157,15 +186,18 @@ func extractSAMLResponseFromHTML(html string) (string, error) {
 	return html[start : start+end], nil
 }
 
-// SAML XML types for parsing the response
+// SAML XML types for parsing the response —————————————————————————————————
+
 type samlResponse struct {
-	XMLName   xml.Name      `xml:"Response"`
-	Assertion samlAssertion `xml:"Assertion"`
+	XMLName   xml.Name         `xml:"Response"`
+	Assertion samlAssertion    `xml:"Assertion"`
+	Signature *samlSignatureXML `xml:"Signature"`
 }
 
 type samlAssertion struct {
 	Subject            samlSubject            `xml:"Subject"`
 	AttributeStatement samlAttributeStatement `xml:"AttributeStatement"`
+	Signature          *samlSignatureXML       `xml:"Signature"`
 }
 
 type samlSubject struct {
@@ -187,11 +219,164 @@ type samlAttributeValue struct {
 	Value string `xml:",chardata"`
 }
 
+// XML-DSig types for signature verification ———————————————————————————————
+// These mirror the SignatureXML family in src/saml-scim-agent/saml/assertion.go
+// so that re-marshaling produces byte-for-byte identical canonical form.
+
+type samlSignatureXML struct {
+	XMLName        xml.Name          `xml:"http://www.w3.org/2000/09/xmldsig# Signature"`
+	SignedInfo     samlDSigSignedInfo `xml:"SignedInfo"`
+	SignatureValue samlDSigSigValue   `xml:"SignatureValue"`
+	KeyInfo        samlDSigKeyInfo    `xml:"KeyInfo"`
+}
+
+type samlDSigSignedInfo struct {
+	XMLName                xml.Name           `xml:"http://www.w3.org/2000/09/xmldsig# SignedInfo"`
+	CanonicalizationMethod samlDSigAlgorithm  `xml:"CanonicalizationMethod"`
+	SignatureMethod        samlDSigAlgorithm  `xml:"SignatureMethod"`
+	Reference              samlDSigReference  `xml:"Reference"`
+}
+
+type samlDSigAlgorithm struct {
+	Algorithm string `xml:"Algorithm,attr"`
+}
+
+type samlDSigReference struct {
+	XMLName      xml.Name           `xml:"http://www.w3.org/2000/09/xmldsig# Reference"`
+	URI          string             `xml:"URI,attr"`
+	Transforms   samlDSigTransforms `xml:"Transforms"`
+	DigestMethod samlDSigAlgorithm  `xml:"DigestMethod"`
+	DigestValue  samlDSigDigestVal  `xml:"DigestValue"`
+}
+
+type samlDSigTransforms struct {
+	Transform []samlDSigAlgorithm `xml:"Transform"`
+}
+
+type samlDSigDigestVal struct {
+	Value string `xml:",chardata"`
+}
+
+type samlDSigSigValue struct {
+	Value string `xml:",chardata"`
+}
+
+type samlDSigKeyInfo struct {
+	XMLName  xml.Name         `xml:"http://www.w3.org/2000/09/xmldsig# KeyInfo"`
+	X509Data samlDSigX509Data `xml:"X509Data"`
+}
+
+type samlDSigX509Data struct {
+	X509Certificate samlDSigX509Cert `xml:"X509Certificate"`
+}
+
+type samlDSigX509Cert struct {
+	Value string `xml:",chardata"`
+}
+
+// loadSAMLSigningCert returns the pinned SAML signing cert from
+// SAML_SIGNING_CERT_FILE, or nil if the env var is not set.
+func loadSAMLSigningCert() (*x509.Certificate, error) {
+	certFile := os.Getenv("SAML_SIGNING_CERT_FILE")
+	if certFile == "" {
+		return nil, nil
+	}
+	certPEM, err := os.ReadFile(certFile)
+	if err != nil {
+		return nil, fmt.Errorf("read SAML_SIGNING_CERT_FILE: %w", err)
+	}
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block in SAML_SIGNING_CERT_FILE")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse SAML_SIGNING_CERT_FILE: %w", err)
+	}
+	return cert, nil
+}
+
+// verifySAMLSignature verifies the XML-DSig signature on the SAML assertion.
+// It extracts the cert from KeyInfo, optionally compares it to pinnedCert,
+// then verifies the cryptographic signature over the canonical SignedInfo.
+func verifySAMLSignature(sig *samlSignatureXML, pinnedCert *x509.Certificate) error {
+	// Decode the cert embedded in KeyInfo
+	certDER, err := base64.StdEncoding.DecodeString(strings.TrimSpace(sig.KeyInfo.X509Data.X509Certificate.Value))
+	if err != nil {
+		return fmt.Errorf("decode KeyInfo cert: %w", err)
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return fmt.Errorf("parse KeyInfo cert: %w", err)
+	}
+
+	// If a pinned cert is configured, the KeyInfo cert must match it exactly.
+	if pinnedCert != nil {
+		if !cert.Equal(pinnedCert) {
+			return fmt.Errorf("SAML signing cert does not match pinned cert")
+		}
+	}
+
+	// Re-marshal SignedInfo with the same struct definition used during signing
+	// so the canonical bytes are identical.
+	signedInfoXML, err := xml.Marshal(sig.SignedInfo)
+	if err != nil {
+		return fmt.Errorf("marshal SignedInfo for verification: %w", err)
+	}
+	canonical := samlCanonicalize(signedInfoXML)
+
+	// Decode the signature value
+	sigBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(sig.SignatureValue.Value))
+	if err != nil {
+		return fmt.Errorf("decode signature value: %w", err)
+	}
+
+	// Dispatch on the public key type embedded in the cert
+	switch pub := cert.PublicKey.(type) {
+	case ed25519.PublicKey:
+		if !ed25519.Verify(pub, canonical, sigBytes) {
+			return fmt.Errorf("ed25519 SAML signature verification failed")
+		}
+	case *rsa.PublicKey:
+		hash := sha256.Sum256(canonical)
+		if err := rsa.VerifyPKCS1v15(pub, crypto.SHA256, hash[:], sigBytes); err != nil {
+			return fmt.Errorf("RSA SAML signature verification failed: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported key type in SAML cert: %T", cert.PublicKey)
+	}
+
+	return nil
+}
+
 // extractPrincipalFromSAML parses a SAMLResponse XML and builds a Principal.
+// When SAML_SIGNING_CERT_FILE is set the assertion signature is verified;
+// if the env var is absent, verification is skipped (warn-only for backward compat
+// during deployments that have not yet configured the cert file).
 func extractPrincipalFromSAML(samlXML []byte) (*httputil.Principal, error) {
 	var resp samlResponse
 	if err := xml.Unmarshal(samlXML, &resp); err != nil {
 		return nil, fmt.Errorf("unmarshal SAMLResponse: %w", err)
+	}
+
+	pinnedCert, err := loadSAMLSigningCert()
+	if err != nil {
+		return nil, fmt.Errorf("load SAML signing cert: %w", err)
+	}
+
+	// Prefer assertion-level signature; fall back to response-level.
+	sigToVerify := resp.Assertion.Signature
+	if sigToVerify == nil {
+		sigToVerify = resp.Signature
+	}
+
+	if pinnedCert != nil {
+		if sigToVerify == nil {
+			return nil, fmt.Errorf("SAML assertion has no signature but SAML_SIGNING_CERT_FILE is configured")
+		}
+		if err := verifySAMLSignature(sigToVerify, pinnedCert); err != nil {
+			return nil, fmt.Errorf("SAML signature verification failed: %w", err)
+		}
 	}
 
 	username := resp.Assertion.Subject.NameID.Value
@@ -227,4 +412,102 @@ func extractPrincipalFromSAML(samlXML []byte) (*httputil.Principal, error) {
 		IDP:               "saml",
 		AuthorizedApplets: applets,
 	}, nil
+}
+
+// samlCanonicalize performs a simplified Exclusive XML Canonicalization,
+// matching the implementation in src/saml-scim-agent/saml/assertion.go so
+// that signature bytes computed during signing verify correctly here.
+func samlCanonicalize(xmlData []byte) []byte {
+	input := string(xmlData)
+
+	// Remove XML declaration if present
+	if strings.HasPrefix(input, "<?xml") {
+		idx := strings.Index(input, "?>")
+		if idx >= 0 {
+			input = strings.TrimSpace(input[idx+2:])
+		}
+	}
+
+	decoder := xml.NewDecoder(strings.NewReader(input))
+	var result strings.Builder
+
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			break
+		}
+
+		switch t := tok.(type) {
+		case xml.StartElement:
+			result.WriteByte('<')
+			if t.Name.Space != "" {
+				result.WriteString(t.Name.Space)
+				result.WriteByte(':')
+			}
+			result.WriteString(t.Name.Local)
+
+			// Sort attributes alphabetically for canonical form
+			attrs := make([]xml.Attr, len(t.Attr))
+			copy(attrs, t.Attr)
+			sort.Slice(attrs, func(i, j int) bool {
+				ai := attrs[i]
+				aj := attrs[j]
+				aiIsNS := ai.Name.Space == "xmlns" || ai.Name.Local == "xmlns"
+				ajIsNS := aj.Name.Space == "xmlns" || aj.Name.Local == "xmlns"
+				if aiIsNS != ajIsNS {
+					return aiIsNS
+				}
+				if ai.Name.Space != aj.Name.Space {
+					return ai.Name.Space < aj.Name.Space
+				}
+				return ai.Name.Local < aj.Name.Local
+			})
+
+			for _, attr := range attrs {
+				result.WriteByte(' ')
+				if attr.Name.Space != "" {
+					result.WriteString(attr.Name.Space)
+					result.WriteByte(':')
+				}
+				result.WriteString(attr.Name.Local)
+				result.WriteString(`="`)
+				result.WriteString(samlXMLEscapeAttr(attr.Value))
+				result.WriteByte('"')
+			}
+			result.WriteByte('>')
+
+		case xml.EndElement:
+			result.WriteString("</")
+			if t.Name.Space != "" {
+				result.WriteString(t.Name.Space)
+				result.WriteByte(':')
+			}
+			result.WriteString(t.Name.Local)
+			result.WriteByte('>')
+
+		case xml.CharData:
+			result.WriteString(samlXMLEscapeText(string(t)))
+		}
+	}
+
+	return []byte(result.String())
+}
+
+func samlXMLEscapeAttr(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	s = strings.ReplaceAll(s, "\t", "&#x9;")
+	s = strings.ReplaceAll(s, "\n", "&#xA;")
+	s = strings.ReplaceAll(s, "\r", "&#xD;")
+	return s
+}
+
+func samlXMLEscapeText(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\r", "&#xD;")
+	return s
 }

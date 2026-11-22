@@ -2,6 +2,8 @@ package k8s
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -288,8 +290,17 @@ func DrainAndDeleteNode(ctx context.Context, nodeName string) error {
 func generateJoinCredentials(ctx context.Context) (token string, caCertHash string, err error) {
 	// Create a bootstrap token via the K8s API
 	// Token format: [a-z0-9]{6}.[a-z0-9]{16}
-	tokenID := fmt.Sprintf("%06x", time.Now().UnixNano()%0xffffff)
-	tokenSecret := fmt.Sprintf("%016x", time.Now().UnixNano())
+	idBytes := make([]byte, 3)
+	if _, err = rand.Read(idBytes); err != nil {
+		return "", "", fmt.Errorf("generate token ID: %w", err)
+	}
+	tokenID := hex.EncodeToString(idBytes)
+
+	secretBytes := make([]byte, 8)
+	if _, err = rand.Read(secretBytes); err != nil {
+		return "", "", fmt.Errorf("generate token secret: %w", err)
+	}
+	tokenSecret := hex.EncodeToString(secretBytes)
 
 	fullToken := fmt.Sprintf("%s.%s", tokenID, tokenSecret)
 
