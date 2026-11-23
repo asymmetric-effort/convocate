@@ -7,12 +7,24 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// validUnixUsernameRE enforces safe Unix usernames to prevent shell injection
+// via /etc/sudoers.d path and double-quoted shell strings.
+var validUnixUsernameRE = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
+// shellEscapeSingleQuote escapes s for safe embedding inside a POSIX shell
+// single-quoted string.  Every ' is ended, a literal ' is appended, and the
+// single-quoted context is re-opened: foo'bar → foo'\''bar.
+func shellEscapeSingleQuote(s string) string {
+	return strings.ReplaceAll(s, "'", `'\''`)
+}
 
 // ProvisionRequest holds the parameters for provisioning a new worker node.
 type ProvisionRequest struct {
@@ -59,6 +71,12 @@ func ProvisionNode(ctx context.Context, req ProvisionRequest) error {
 	}
 	pass := req.Password
 
+	// Validate username: only safe characters allowed to prevent shell
+	// injection in sudoers path and double-quoted sh -c command.
+	if !validUnixUsernameRE.MatchString(user) {
+		return fmt.Errorf("invalid username %q: must match ^[a-z_][a-z0-9_-]{0,31}$", user)
+	}
+
 	log.Printf("[provision] starting provisioning of %s as %s", host, user)
 
 	// Step 0: Set up passwordless sudo for the provisioning user.
@@ -67,7 +85,7 @@ func ProvisionNode(ctx context.Context, req ProvisionRequest) error {
 	if pass != "" {
 		sudoSetup := fmt.Sprintf(
 			`echo '%s' | sudo -S sh -c 'echo "%s ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/%s && chmod 0440 /etc/sudoers.d/%s' && echo "[provision] passwordless sudo configured"`,
-			pass, user, user, user,
+			shellEscapeSingleQuote(pass), user, user, user,
 		)
 		log.Printf("[provision] configuring passwordless sudo on %s", host)
 		if err := sshExecRetry(host, user, pass, sudoSetup, 6, 10*time.Second); err != nil {
