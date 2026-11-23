@@ -5,14 +5,14 @@
     "": {
       "name": "convocate-ui",
       "dependencies": {
-        "@asymmetric-effort/nogginlessdom": "^0.0.27",
-        "@asymmetric-effort/specifyjs": "^0.3.8",
+        "@asymmetric-effort/nogginlessdom": "^0.0.42",
+        "@asymmetric-effort/specifyjs": "^1.0.0",
       },
     },
   },
   "packages": {
-    "@asymmetric-effort/nogginlessdom": ["@asymmetric-effort/nogginlessdom@0.0.27", "", {}, "sha512-CLKqwQbS4UbQieT1C4k6YlgGhweXiuAya2FIqOdNyBMg5w/F920I83kYk0cLN+e3ifoLSyfnob2iSaJPnfe2dw=="],
+    "@asymmetric-effort/nogginlessdom": ["@asymmetric-effort/nogginlessdom@0.0.42", "", { "bin": { "nogginlessdom": "build/cli.js" } }, "sha512-hpislo+gnIwS+YWF4tYjfD/40g9hTil7ZexJzj36eh9Hh/0RB+j2rfj6ZSYt1vS5D2JHORqZgxVNmafcoUMpsA=="],
 
-    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@0.3.8", "", {}, "sha512-iylvGhgQLQxGCIslfE0NsbMoUJ1JwwcymAe5Ii+Yki0dq6OyQIbwTVBSc5fHpdk8+27fakidhGhxOMJj3tRAWQ=="],
+    "@asymmetric-effort/specifyjs": ["@asymmetric-effort/specifyjs@1.3.1", "", {}, "sha512-3QATdDoJtMAKY1Od/at5uXRtV+d16tlHj4SLK3n5HZVcuDocFRUtuL91kHUJl6tmowLTUfbFgukbn1/nm6IPhQ=="],
   }
 }
