@@ -1304,3 +1304,102 @@ func TestGetJoinCommandViaJob_GetPodError(t *testing.T) {
 	// Whether it errors or not depends on timing, just make sure it doesn't hang
 	_ = err
 }
+
+// --- Input validation and shell-escaping tests ---
+
+func TestShellEscapeSingleQuote(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"", ""},
+		{"nospecial", "nospecial"},
+		{"it's", `it'\''s`},
+		{"a'b'c", `a'\''b'\''c`},
+		{"'leading", `'\''leading`},
+		{"trailing'", `trailing'\''`},
+		{"double''quote", `double'\'''\''quote`},
+	}
+	for _, tc := range cases {
+		got := shellEscapeSingleQuote(tc.input)
+		if got != tc.want {
+			t.Errorf("shellEscapeSingleQuote(%q) = %q; want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestValidUnixUsernameRE(t *testing.T) {
+	valid := []string{"convocate", "user1", "_admin", "my-user", "a", "_"}
+	for _, u := range valid {
+		if !validUnixUsernameRE.MatchString(u) {
+			t.Errorf("expected %q to be valid", u)
+		}
+	}
+	invalid := []string{"", "1user", "User", "ro ot", "ro;ot", "ro'ot", `ro"ot`, "ro`ot", "ro$ot", "ro/ot", "../etc", strings.Repeat("a", 33)}
+	for _, u := range invalid {
+		if validUnixUsernameRE.MatchString(u) {
+			t.Errorf("expected %q to be invalid", u)
+		}
+	}
+}
+
+func TestProvisionNode_InvalidUsername(t *testing.T) {
+	restore := saveProvisionGlobals()
+	defer restore()
+
+	badNames := []string{"root'; rm -rf /", `admin"$(id)`, "user with space", "1badstart", strings.Repeat("a", 33)}
+	for _, name := range badNames {
+		req := ProvisionRequest{Host: "192.168.1.1", User: name, Password: "pw"}
+		err := ProvisionNode(context.Background(), req)
+		if err == nil {
+			t.Errorf("expected error for username %q, got nil", name)
+		}
+	}
+}
+
+func TestProvisionNode_PasswordWithSingleQuote(t *testing.T) {
+	restore := saveProvisionGlobals()
+	defer restore()
+
+	cs := fake.NewSimpleClientset()
+	Client = cs
+	ctx := context.Background()
+
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "new-worker"},
+		Status: corev1.NodeStatus{
+			Addresses:  []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "192.168.1.50"}},
+			Conditions: []corev1.NodeCondition{{Type: "Ready", Status: "True"}},
+		},
+	}
+	cs.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{})
+
+	mock := &mockSSHExecutor{}
+	sshExecutor = mock
+
+	JoinCommandFn = func(ctx context.Context) (string, error) {
+		return "TOKEN=abc123.0123456789abcdef\napiVersion: v1\nclusters:\n- cluster:\n    server: https://10.0.0.1:6443\n", nil
+	}
+
+	// A password containing single-quotes must NOT cause an error — it
+	// should be safely escaped and passed through to SSH.
+	req := ProvisionRequest{
+		Host:     "192.168.1.50",
+		User:     "convocate",
+		Password: "p'ass'word",
+	}
+	err := ProvisionNode(ctx, req)
+	if err != nil {
+		t.Fatalf("ProvisionNode with single-quote password: %v", err)
+	}
+
+	// The first SSH call is sudoSetup; verify the password is properly escaped.
+	if len(mock.execCalls) == 0 {
+		t.Fatal("expected at least one SSH exec call")
+	}
+	firstScript := mock.execCalls[0].Script
+	// Properly escaped form of p'ass'word inside single-quoted shell string
+	if !strings.Contains(firstScript, `p'\''ass'\''word`) {
+		t.Errorf("expected escaped password in sudoSetup script, got:\n%s", firstScript)
+	}
+}
