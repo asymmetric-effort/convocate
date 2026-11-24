@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -21,7 +22,12 @@ func Init() {
 	if endpoint == "" {
 		endpoint = "https://api.anthropic.com/v1/messages"
 	}
-	apiKey = os.Getenv("LLM_API_KEY")
+	apiKey = ""
+	if f := os.Getenv("LLM_API_KEY_FILE"); f != "" {
+		if data, err := os.ReadFile(f); err == nil {
+			apiKey = strings.TrimSpace(string(data))
+		}
+	}
 	model = os.Getenv("LLM_MODEL")
 	if model == "" {
 		model = "claude-sonnet-4-20250514"
@@ -59,7 +65,7 @@ func SetAPIKey(s string) { apiKey = s }
 
 func Complete(systemPrompt, userPrompt string) (string, error) {
 	if apiKey == "" {
-		return "", fmt.Errorf("LLM_API_KEY not configured")
+		return "", fmt.Errorf("LLM_API_KEY_FILE not configured")
 	}
 
 	reqBody := CompletionRequest{

@@ -14,7 +14,6 @@ func TestLoadConfigDefaults(t *testing.T) {
 		"SAML_SCIM_AGENT_TLS_CERT",
 		"SAML_SCIM_AGENT_TLS_KEY",
 		"OPENBAO_ADDR",
-		"OPENBAO_TOKEN",
 		"OPENBAO_SKIP_VERIFY",
 		"SAML_SCIM_AGENT_ENTITY_ID",
 		"SAML_SCIM_AGENT_SSO_URL",
@@ -57,11 +56,14 @@ func TestLoadConfigDefaults(t *testing.T) {
 }
 
 func TestLoadConfigFromEnv(t *testing.T) {
+	tmpTokenFile := filepath.Join(t.TempDir(), "token")
+	os.WriteFile(tmpTokenFile, []byte("s.mytoken123"), 0400)
+
 	os.Setenv("SAML_SCIM_AGENT_LISTEN_ADDR", "localhost:9999")
 	os.Setenv("SAML_SCIM_AGENT_TLS_CERT", "/path/to/cert.pem")
 	os.Setenv("SAML_SCIM_AGENT_TLS_KEY", "/path/to/key.pem")
 	os.Setenv("OPENBAO_ADDR", "https://vault.example.com:8200")
-	os.Setenv("OPENBAO_TOKEN", "s.mytoken123")
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	os.Setenv("OPENBAO_SKIP_VERIFY", "true")
 	os.Setenv("SAML_SCIM_AGENT_ENTITY_ID", "https://custom.entity.id")
 	os.Setenv("SAML_SCIM_AGENT_SSO_URL", "https://custom.sso.url/saml/sso")
@@ -70,7 +72,7 @@ func TestLoadConfigFromEnv(t *testing.T) {
 		os.Unsetenv("SAML_SCIM_AGENT_TLS_CERT")
 		os.Unsetenv("SAML_SCIM_AGENT_TLS_KEY")
 		os.Unsetenv("OPENBAO_ADDR")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 		os.Unsetenv("OPENBAO_SKIP_VERIFY")
 		os.Unsetenv("SAML_SCIM_AGENT_ENTITY_ID")
 		os.Unsetenv("SAML_SCIM_AGENT_SSO_URL")
@@ -129,12 +131,13 @@ func TestLoadConfigTokenFromFile(t *testing.T) {
 	}
 }
 
-func TestLoadConfigTokenDirectOverridesFile(t *testing.T) {
+func TestLoadConfigTokenFileWinsOverEnvVar(t *testing.T) {
 	tmpDir := t.TempDir()
 	tokenFile := filepath.Join(tmpDir, "token")
-	os.WriteFile(tokenFile, []byte("s.file-token"), 0600)
+	os.WriteFile(tokenFile, []byte("s.file-token"), 0400)
 
-	os.Setenv("OPENBAO_TOKEN", "s.direct-token")
+	// OPENBAO_TOKEN env var must be ignored; only file-based loading is permitted.
+	os.Setenv("OPENBAO_TOKEN", "s.direct-token-should-be-ignored")
 	os.Setenv("OPENBAO_TOKEN_FILE", tokenFile)
 	defer func() {
 		os.Unsetenv("OPENBAO_TOKEN")
@@ -146,8 +149,8 @@ func TestLoadConfigTokenDirectOverridesFile(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.OpenBaoToken != "s.direct-token" {
-		t.Errorf("expected direct token to take precedence, got %s", cfg.OpenBaoToken)
+	if cfg.OpenBaoToken != "s.file-token" {
+		t.Errorf("expected file token %q, got %q (env var must not override file)", "s.file-token", cfg.OpenBaoToken)
 	}
 }
 

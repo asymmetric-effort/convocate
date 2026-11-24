@@ -646,14 +646,15 @@ func TestOpenbaoMFAValidate_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestOpenbaoServiceToken_FromEnv(t *testing.T) {
+func TestOpenbaoServiceToken_EnvVarAloneReturnsEmpty(t *testing.T) {
 	os.Setenv("OPENBAO_TOKEN", "env-token")
 	os.Unsetenv("OPENBAO_TOKEN_FILE")
 	t.Cleanup(func() { os.Unsetenv("OPENBAO_TOKEN") })
 
+	// Token values must never come from environment variables — only from files.
 	got := openbaoServiceToken()
-	if got != "env-token" {
-		t.Errorf("openbaoServiceToken() = %q, want %q", got, "env-token")
+	if got != "" {
+		t.Errorf("openbaoServiceToken() = %q, want empty (env var must not be used)", got)
 	}
 }
 
@@ -682,9 +683,10 @@ func TestOpenbaoServiceToken_FileNotFound(t *testing.T) {
 		os.Unsetenv("OPENBAO_TOKEN")
 	})
 
+	// When file is unreadable, return empty — no env var fallback.
 	got := openbaoServiceToken()
-	if got != "fallback-token" {
-		t.Errorf("openbaoServiceToken() = %q, want %q (fallback to env)", got, "fallback-token")
+	if got != "" {
+		t.Errorf("openbaoServiceToken() = %q, want empty (no env var fallback)", got)
 	}
 }
 

@@ -765,11 +765,13 @@ func TestHandleTOTPEnroll_Success(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	principal := &httputil.Principal{
@@ -835,11 +837,13 @@ func TestHandleTOTPEnroll_EnrollmentFails(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
@@ -876,11 +880,13 @@ func TestHandleTOTPStatus_Enrolled(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	principal := &httputil.Principal{ID: entityID, Username: "testuser"}
@@ -923,11 +929,13 @@ func TestHandleTOTPStatus_NotEnrolled(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	principal := &httputil.Principal{ID: entityID, Username: "testuser"}
@@ -992,11 +1000,13 @@ func TestHandleTOTPStatus_LookupFails(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
@@ -1026,11 +1036,13 @@ func TestHandleTOTPDestroy_Success(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
@@ -1084,11 +1096,13 @@ func TestHandleTOTPDestroy_DestroyFails(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	principal := &httputil.Principal{ID: "ent-001", Username: "testuser"}
@@ -1137,12 +1151,14 @@ func TestHandleLogin_SAML_MFARequired(t *testing.T) {
 	os.Setenv("SAML_SCIM_AGENT_URL", samlServer.URL)
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile2 := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile2, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile2)
 	t.Cleanup(func() {
 		os.Unsetenv("SAML_SCIM_AGENT_URL")
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	body, _ := json.Marshal(loginRequest{Username: entityID, Password: "secret"})

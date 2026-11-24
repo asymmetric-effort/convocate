@@ -10,7 +10,7 @@ import (
 
 func TestInit_Defaults(t *testing.T) {
 	os.Unsetenv("LLM_ENDPOINT")
-	os.Unsetenv("LLM_API_KEY")
+	os.Unsetenv("LLM_API_KEY_FILE")
 	os.Unsetenv("LLM_MODEL")
 
 	Init()
@@ -24,12 +24,14 @@ func TestInit_Defaults(t *testing.T) {
 }
 
 func TestInit_CustomValues(t *testing.T) {
+	tmpKeyFile := t.TempDir() + "/llm_api_key"
+	os.WriteFile(tmpKeyFile, []byte("test-key"), 0400)
 	os.Setenv("LLM_ENDPOINT", "http://custom:8080/v1/messages")
-	os.Setenv("LLM_API_KEY", "test-key")
+	os.Setenv("LLM_API_KEY_FILE", tmpKeyFile)
 	os.Setenv("LLM_MODEL", "custom-model")
 	defer func() {
 		os.Unsetenv("LLM_ENDPOINT")
-		os.Unsetenv("LLM_API_KEY")
+		os.Unsetenv("LLM_API_KEY_FILE")
 		os.Unsetenv("LLM_MODEL")
 	}()
 
@@ -83,7 +85,7 @@ func TestComplete_NoAPIKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when no API key")
 	}
-	if err.Error() != "LLM_API_KEY not configured" {
+	if err.Error() != "LLM_API_KEY_FILE not configured" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

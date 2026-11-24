@@ -212,7 +212,7 @@ func openbaoRevokeSelf(token string) error {
 }
 
 // openbaoServiceToken returns the API's OpenBao service token for admin operations.
-// It reads the token from OPENBAO_TOKEN_FILE (preferred) or OPENBAO_TOKEN env var.
+// It reads the token from the file pointed to by OPENBAO_TOKEN_FILE.
 func openbaoServiceToken() string {
 	if f := os.Getenv("OPENBAO_TOKEN_FILE"); f != "" {
 		data, err := os.ReadFile(f)
@@ -220,7 +220,7 @@ func openbaoServiceToken() string {
 			return strings.TrimSpace(string(data))
 		}
 	}
-	return os.Getenv("OPENBAO_TOKEN")
+	return ""
 }
 
 // MFAEnrollResult holds the TOTP enrollment data returned by OpenBao.

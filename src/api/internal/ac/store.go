@@ -49,16 +49,23 @@ type Store struct {
 }
 
 // NewStore creates a Store backed by OpenBao. It reads OPENBAO_ADDR
-// (default http://openbao.security.svc:8200) and OPENBAO_TOKEN from the environment.
+// (default http://openbao.security.svc:8200) and the token from the file
+// pointed to by OPENBAO_TOKEN_FILE.
 func NewStore() *Store {
 	addr := os.Getenv("OPENBAO_ADDR")
 	if addr == "" {
 		addr = "http://openbao.security.svc:8200"
 	}
 	addr = strings.TrimRight(addr, "/")
+	token := ""
+	if f := os.Getenv("OPENBAO_TOKEN_FILE"); f != "" {
+		if data, err := os.ReadFile(f); err == nil {
+			token = strings.TrimSpace(string(data))
+		}
+	}
 	return &Store{
 		addr:   addr,
-		token:  os.Getenv("OPENBAO_TOKEN"),
+		token:  token,
 		client: &http.Client{},
 		roles: []Role{
 			{ID: "admin", Description: "Full access to all features", Applet: "all"},

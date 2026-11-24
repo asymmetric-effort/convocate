@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/asymmetric-effort/convocate/internal/events"
@@ -26,6 +27,21 @@ type ProjectResponse struct {
 	RepoID  string `json:"repoId"`
 	BoardID string `json:"boardId"`
 	AgentID string `json:"agentId"`
+}
+
+// readTokenFile reads a secret token from the file whose path is stored in the
+// given environment variable. Returns "" if the env var is unset or the file
+// cannot be read. Token values must never be stored in environment variables.
+func readTokenFile(envVar string) string {
+	path := os.Getenv(envVar)
+	if path == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // internalCallFn is the function used to make internal API calls.
@@ -48,7 +64,7 @@ func doInternalCall(baseURL, method, path string, body interface{}) ([]byte, int
 		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+os.Getenv("OPENBAO_TOKEN"))
+	req.Header.Set("Authorization", "Bearer "+readTokenFile("OPENBAO_TOKEN_FILE"))
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

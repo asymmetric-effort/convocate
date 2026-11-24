@@ -391,11 +391,13 @@ func TestSamlLogin_MFANotEnrolled(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
@@ -419,11 +421,13 @@ func TestSamlLogin_MFARequired_NoCode(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
@@ -447,11 +451,13 @@ func TestSamlLogin_MFASuccess(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
@@ -475,11 +481,13 @@ func TestSamlLogin_MFAInvalidCode(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
@@ -523,11 +531,13 @@ func TestSamlLogin_MFALoginFails(t *testing.T) {
 
 	os.Setenv("OPENBAO_ADDR", bao.URL)
 	os.Setenv("OPENBAO_MFA_METHOD_ID", methodID)
-	os.Setenv("OPENBAO_TOKEN", "test-service-token")
+	tmpTokenFile := t.TempDir() + "/openbao_token"
+	os.WriteFile(tmpTokenFile, []byte("test-service-token"), 0400)
+	os.Setenv("OPENBAO_TOKEN_FILE", tmpTokenFile)
 	t.Cleanup(func() {
 		os.Unsetenv("OPENBAO_ADDR")
 		os.Unsetenv("OPENBAO_MFA_METHOD_ID")
-		os.Unsetenv("OPENBAO_TOKEN")
+		os.Unsetenv("OPENBAO_TOKEN_FILE")
 	})
 
 	samlServer := buildMockSAMLServer(t, entityID, "test@example.com", []string{"node-ops"})
