@@ -7,12 +7,55 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 )
+
+var (
+	sshKnownHostsMu   sync.Mutex
+	sshKnownHostsPath string
+)
+
+// sshKnownHosts returns the path to a process-scoped temp file used as the
+// SSH known_hosts store. The file persists across all SSH calls within this
+// process, so a host-key change mid-session is detected and rejected.
+// Falls back to /dev/null if temp file creation fails.
+func sshKnownHosts() string {
+	sshKnownHostsMu.Lock()
+	defer sshKnownHostsMu.Unlock()
+	if sshKnownHostsPath != "" {
+		return sshKnownHostsPath
+	}
+	f, err := os.CreateTemp("", "convocate-known-hosts-*")
+	if err != nil {
+		log.Printf("[ssh] could not create known_hosts temp file: %v — accepting new host keys without mid-session change detection", err)
+		return "/dev/null"
+	}
+	if err := f.Chmod(0600); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "/dev/null"
+	}
+	f.Close()
+	sshKnownHostsPath = f.Name()
+	return sshKnownHostsPath
+}
+
+// resetSSHKnownHosts clears the known_hosts temp file and global state.
+// Used in tests to ensure isolation between test cases.
+func resetSSHKnownHosts() {
+	sshKnownHostsMu.Lock()
+	defer sshKnownHostsMu.Unlock()
+	if sshKnownHostsPath != "" {
+		os.Remove(sshKnownHostsPath)
+		sshKnownHostsPath = ""
+	}
+}
 
 // SSHExecutor abstracts SSH command execution for testability.
 type SSHExecutor interface {
@@ -80,8 +123,8 @@ func sshExecReal(host, user, password, script string) error {
 	args := []string{
 		"-p", password,
 		"ssh",
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "UserKnownHostsFile=" + sshKnownHosts(),
 		"-o", "ConnectTimeout=10",
 		"-o", "ServerAliveInterval=30",
 		fmt.Sprintf("%s@%s", user, hostOnly),
@@ -113,8 +156,8 @@ func sshExecWithOutputReal(host, user, password, cmd string) (string, error) {
 	args := []string{
 		"-p", password,
 		"ssh",
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "UserKnownHostsFile=" + sshKnownHosts(),
 		"-o", "ConnectTimeout=10",
 		fmt.Sprintf("%s@%s", user, hostOnly),
 		cmd,

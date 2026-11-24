@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -419,5 +420,48 @@ func TestSSHExecReal_OutputWithEmptyLines(t *testing.T) {
 	err := sshExecReal("10.0.0.1", "user", "pass", "echo hello")
 	if err != nil {
 		t.Fatalf("expected success, got: %v", err)
+	}
+}
+
+func TestSSHKnownHosts_Create(t *testing.T) {
+	resetSSHKnownHosts()
+	defer resetSSHKnownHosts()
+
+	path := sshKnownHosts()
+	if path == "/dev/null" {
+		t.Skip("temp file creation not supported in this environment")
+	}
+	if path == "" {
+		t.Fatal("expected non-empty path")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected temp file to exist: %v", err)
+	}
+}
+
+func TestSSHKnownHosts_Reuse(t *testing.T) {
+	resetSSHKnownHosts()
+	defer resetSSHKnownHosts()
+
+	path1 := sshKnownHosts()
+	path2 := sshKnownHosts()
+	if path1 != path2 {
+		t.Fatalf("expected same path on reuse, got %s and %s", path1, path2)
+	}
+}
+
+func TestResetSSHKnownHosts(t *testing.T) {
+	resetSSHKnownHosts()
+	defer resetSSHKnownHosts()
+
+	path1 := sshKnownHosts()
+	if path1 == "/dev/null" {
+		t.Skip("temp file creation not supported in this environment")
+	}
+
+	resetSSHKnownHosts()
+	path2 := sshKnownHosts()
+	if path1 == path2 {
+		t.Fatal("expected different path after reset")
 	}
 }

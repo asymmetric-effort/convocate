@@ -160,7 +160,7 @@ echo "[provision] base preparation complete"
 	if token == "" || discoveryConf == "" {
 		return fmt.Errorf("failed to parse join credentials from output: %s", joinOutput[:min(200, len(joinOutput))])
 	}
-	log.Printf("[provision] token=%s, discovery kubeconfig obtained", token)
+	log.Printf("[provision] token=<redacted>, discovery kubeconfig obtained")
 
 	// Step 3: Write discovery kubeconfig to target and join
 	writeScript := fmt.Sprintf(`sudo mkdir -p /etc/kubernetes
