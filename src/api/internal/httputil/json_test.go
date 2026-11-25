@@ -87,6 +87,21 @@ func TestReadJSON_EmptyBody(t *testing.T) {
 	}
 }
 
+func TestReadJSON_OversizedBody(t *testing.T) {
+	// Build a JSON object larger than maxRequestBodyBytes.
+	// A string field of maxRequestBodyBytes+100 characters exceeds the limit.
+	large := `{"name":"` + string(bytes.Repeat([]byte("x"), maxRequestBodyBytes+100)) + `"}`
+	r := httptest.NewRequest("POST", "/", bytes.NewBufferString(large))
+
+	var target struct {
+		Name string `json:"name"`
+	}
+	err := ReadJSON(r, &target)
+	if err == nil {
+		t.Fatal("expected error for oversized body")
+	}
+}
+
 func TestWriteJSON_NilData(t *testing.T) {
 	w := httptest.NewRecorder()
 	WriteJSON(w, http.StatusOK, nil)

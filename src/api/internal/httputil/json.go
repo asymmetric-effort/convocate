@@ -2,8 +2,12 @@ package httputil
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 )
+
+// maxRequestBodyBytes is the per-request JSON body read limit (1 MiB).
+const maxRequestBodyBytes = 1 << 20
 
 type Error struct {
 	Code    string        `json:"code"`
@@ -28,5 +32,5 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 
 func ReadJSON(r *http.Request, target any) error {
 	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(target)
+	return json.NewDecoder(io.LimitReader(r.Body, maxRequestBodyBytes)).Decode(target)
 }
