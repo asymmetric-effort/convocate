@@ -199,7 +199,7 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 // updateProject delegates to the IDE project update.
 func updateProject(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("projectId")
-	body, _ := io.ReadAll(r.Body)
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	respBody, status, err := internalCall("PATCH", "/api/v1/ide/project/"+id, json.RawMessage(body))
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, "internal_error", err.Error())
