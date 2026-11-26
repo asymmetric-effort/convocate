@@ -205,7 +205,7 @@ func TestCreateUser(t *testing.T) {
 	s, srv := newTestStore(t)
 	defer srv.Close()
 
-	u, err := s.CreateUser(User{Email: "new@test.com", Name: "New User"})
+	u, err := s.CreateUser(User{Email: "new@test.com", Name: "New User", Password: "test-pass-1"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -591,7 +591,7 @@ func TestCreateUser_UsesNameWhenNoEmail(t *testing.T) {
 	s, srv := newTestStore(t)
 	defer srv.Close()
 
-	u, err := s.CreateUser(User{Name: "just-name"})
+	u, err := s.CreateUser(User{Name: "just-name", Password: "test-pass-1"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -853,7 +853,7 @@ func TestCreateUser_NilEntityResp(t *testing.T) {
 	defer srv.Close()
 
 	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
-	u, err := s.CreateUser(User{Email: "test@test.com", Name: "Test"})
+	u, err := s.CreateUser(User{Email: "test@test.com", Name: "Test", Password: "test-pass-1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1214,7 +1214,7 @@ func TestCreateUser_IdentityEntityError(t *testing.T) {
 	defer srv.Close()
 
 	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
-	_, err := s.CreateUser(User{Email: "test@test.com", Name: "Test"})
+	_, err := s.CreateUser(User{Email: "test@test.com", Name: "Test", Password: "test-pass-1"})
 	if err == nil {
 		t.Error("expected error from identity entity creation failure")
 	}
@@ -1905,7 +1905,7 @@ func TestCreateUser_FallbackToEmail(t *testing.T) {
 	s, srv := newTestStore(t)
 	defer srv.Close()
 
-	u, err := s.CreateUser(User{Email: "fallback@test.com"})
+	u, err := s.CreateUser(User{Email: "fallback@test.com", Password: "test-pass-1"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -1924,6 +1924,16 @@ func TestCreateUser_WithPassword(t *testing.T) {
 	}
 	if u.Name != "PW" {
 		t.Errorf("expected name 'PW', got %q", u.Name)
+	}
+}
+
+func TestCreateUser_EmptyPassword(t *testing.T) {
+	s, srv := newTestStore(t)
+	defer srv.Close()
+
+	_, err := s.CreateUser(User{Email: "nopw@test.com", Name: "NoPW"})
+	if err == nil {
+		t.Fatal("expected error for empty password, got nil")
 	}
 }
 
@@ -2330,7 +2340,7 @@ func TestCreateUser_WithAccessor(t *testing.T) {
 	defer srv.Close()
 
 	s := &Store{addr: srv.URL, token: "t", client: srv.Client(), roles: NewStore().roles}
-	u, err := s.CreateUser(User{Email: "test@test.com", Name: "Test"})
+	u, err := s.CreateUser(User{Email: "test@test.com", Name: "Test", Password: "test-pass-1"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}

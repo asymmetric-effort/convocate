@@ -52,8 +52,9 @@ func TestHandlerCreateUser_Happy(t *testing.T) {
 	defer srv.Close()
 
 	req := newAuthRequest("POST", "/api/v1/ac/user", User{
-		Email: "new@test.com",
-		Name:  "New User",
+		Email:    "new@test.com",
+		Name:     "New User",
+		Password: "test-pass-1",
 	})
 	rec := httptest.NewRecorder()
 	h.createUser(rec, req)

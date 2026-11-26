@@ -2,6 +2,8 @@ package ac
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -326,7 +328,7 @@ func (s *Store) CreateUser(u User) (User, error) {
 
 	password := u.Password
 	if password == "" {
-		password = "changeme"
+		return User{}, fmt.Errorf("create user: password must not be empty")
 	}
 
 	// Create userpass login with the caller-supplied password.
@@ -442,9 +444,18 @@ func (s *Store) UpdateUser(id string, u User) (User, bool, error) {
 		// Delete the userpass entry to prevent login.
 		_, _ = s.baoRequest("DELETE", "/v1/auth/userpass/users/"+username, nil)
 	} else if u.Status == "active" {
-		// Recreate userpass entry (with a temporary password).
+		// Recreate userpass entry. Use caller-supplied password or generate a
+		// cryptographically random one so no two accounts share a known default.
+		reactivatePassword := u.Password
+		if reactivatePassword == "" {
+			var tmp [16]byte
+			if _, err := io.ReadFull(rand.Reader, tmp[:]); err != nil {
+				return User{}, false, fmt.Errorf("generate temporary password: %w", err)
+			}
+			reactivatePassword = hex.EncodeToString(tmp[:])
+		}
 		_, _ = s.baoRequest("PUT", "/v1/auth/userpass/users/"+username, map[string]any{
-			"password": "changeme",
+			"password": reactivatePassword,
 		})
 	}
 
